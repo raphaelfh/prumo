@@ -1,6 +1,7 @@
 """The OAuth authorization server's domain rules, called directly on
 ``db_session`` (ADR 0022): the redirect allow-list, client registration and
-lookup, the pending authorization request and the consent decision."""
+lookup, the pending authorization request, the consent decision, the code
+exchange, refresh rotation, access-token lookup, revocation and pruning."""
 
 from __future__ import annotations
 
@@ -11,22 +12,29 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
-from mcp.server.auth.provider import AuthorizationParams, AuthorizeError, RegistrationError
+from mcp.server.auth.provider import (
+    AuthorizationParams,
+    AuthorizeError,
+    RegistrationError,
+    TokenError,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
-from sqlalchemy import func, select, text
+from sqlalchemy import false, func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, settings
-from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest
+from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
 from app.services import mcp_oauth_service as svc
+from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
 from tests.integration.helpers.pat_rows import (
     insert_oauth_client,
     insert_oauth_connection,
     insert_oauth_request,
 )
+from tests.integration.mcp.oauth_flow import approve
 
 BASE_URL = "http://localhost:8000"
 MCP_URL = BASE_URL + "/mcp"
@@ -529,3 +537,389 @@ async def test_concurrent_approvals_for_one_user_and_client_admit_one(
                 {"cid": str(client_id)},
             )
             await cleanup.commit()
+
+
+# --------------------------------------------------------------------------- code exchange
+
+
+async def _code(db: AsyncSession, *, write: bool = True) -> tuple[UUID, str, UUID]:
+    """client_id, an approved request's code and that request's id."""
+    client_id = await insert_oauth_client(db)
+    request_id = await insert_oauth_request(db, client_id=client_id)
+    return client_id, await approve(db, request_id, SEED.primary_profile, write=write), request_id
+
+
+async def _request(db: AsyncSession, request_id: UUID) -> McpOAuthRequest:
+    row = await db.get(McpOAuthRequest, request_id, populate_existing=True)
+    assert row is not None
+    return row
+
+
+async def _token_row(db: AsyncSession, secret: str) -> McpOAuthToken | None:
+    return (
+        await db.execute(
+            select(McpOAuthToken)
+            .where(McpOAuthToken.token_hash == hash_secret(secret))
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+
+
+async def _set(db: AsyncSession, sql: str, **params: object) -> None:
+    await db.execute(text(sql), {k: str(v) for k, v in params.items()})
+
+
+async def test_load_code_returns_the_approved_code(db_session: AsyncSession) -> None:
+    client_id, code, request_id = await _code(db_session)
+
+    loaded = await svc.load_code(db_session, client_id=str(client_id), code=code)
+
+    request = await _request(db_session, request_id)
+    assert loaded is not None
+    assert loaded.code == code
+    assert loaded.client_id == str(client_id)
+    assert loaded.scopes == ["read", "write"]
+    assert loaded.code_challenge == request.code_challenge
+    assert str(loaded.redirect_uri) == CLAUDE_CB
+    assert loaded.redirect_uri_provided_explicitly is True
+    assert loaded.subject == str(SEED.primary_profile)
+    assert request.code_expires_at is not None
+    assert loaded.expires_at == request.code_expires_at.timestamp()
+
+
+async def test_load_code_unknown_or_foreign_is_none(db_session: AsyncSession) -> None:
+    client_id, code, _ = await _code(db_session)
+    other = await insert_oauth_client(db_session)
+
+    assert await svc.load_code(db_session, client_id=str(client_id), code="nope") is None
+    assert await svc.load_code(db_session, client_id=str(other), code=code) is None
+    assert await svc.load_code(db_session, client_id="not-a-uuid", code=code) is None
+
+
+@pytest.mark.parametrize(("write", "scope"), [(True, "read write"), (False, "read")])
+async def test_exchange_code_issues_a_pair(
+    db_session: AsyncSession, write: bool, scope: str
+) -> None:
+    client_id, code, request_id = await _code(db_session, write=write)
+
+    issued = await svc.exchange_code(db_session, client_id=str(client_id), code=code)
+
+    assert issued.access_token.startswith(svc.ACCESS_PREFIX)
+    assert issued.refresh_token is not None
+    assert issued.refresh_token.startswith(svc.REFRESH_PREFIX)
+    assert issued.token_type == "Bearer"
+    assert issued.expires_in == 3600
+    assert issued.scope == scope
+    request = await _request(db_session, request_id)
+    assert request.code_used_at is not None
+    access = await _token_row(db_session, issued.access_token)
+    refresh = await _token_row(db_session, issued.refresh_token)
+    assert access is not None and access.kind == "access"
+    assert refresh is not None and refresh.kind == "refresh"
+    assert access.resource == refresh.resource == MCP_URL
+    assert access.connection_id == refresh.connection_id == request.connection_id
+    assert request.connection_id is not None
+    connection = await _connection(db_session, request.connection_id)
+    assert refresh.expires_at == connection.expires_at
+    assert (access.expires_at - access.created_at) == timedelta(hours=1)
+    client = await db_session.get(McpOAuthClient, client_id, populate_existing=True)
+    assert client is not None and client.last_used_at is not None
+
+
+async def test_exchange_code_twice_revokes_the_connection(db_session: AsyncSession) -> None:
+    client_id, code, request_id = await _code(db_session)
+    await svc.exchange_code(db_session, client_id=str(client_id), code=code)
+
+    with pytest.raises(TokenError) as caught:
+        await svc.exchange_code(db_session, client_id=str(client_id), code=code)
+
+    assert caught.value.error == "invalid_grant"
+    request = await _request(db_session, request_id)
+    assert request.connection_id is not None
+    assert (await _connection(db_session, request.connection_id)).revoked_at is not None
+
+
+async def test_exchange_code_on_a_revoked_connection_is_invalid_grant(
+    db_session: AsyncSession,
+) -> None:
+    client_id, code, request_id = await _code(db_session)
+    request = await _request(db_session, request_id)
+    await _set(
+        db_session,
+        "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :id",
+        id=request.connection_id,
+    )
+
+    with pytest.raises(TokenError) as caught:
+        await svc.exchange_code(db_session, client_id=str(client_id), code=code)
+
+    assert caught.value.error == "invalid_grant"
+    assert (await _request(db_session, request_id)).code_used_at is None
+
+
+async def test_exchange_code_after_expiry_is_invalid_grant_without_revoking(
+    db_session: AsyncSession,
+) -> None:
+    client_id, code, request_id = await _code(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_requests SET code_expires_at = now() - interval '1 minute' "
+        "WHERE id = :id",
+        id=request_id,
+    )
+
+    with pytest.raises(TokenError) as caught:
+        await svc.exchange_code(db_session, client_id=str(client_id), code=code)
+
+    assert caught.value.error == "invalid_grant"
+    request = await _request(db_session, request_id)
+    assert request.connection_id is not None
+    assert (await _connection(db_session, request.connection_id)).revoked_at is None
+
+
+async def test_exchange_code_unknown_is_invalid_grant(db_session: AsyncSession) -> None:
+    client_id, _, _ = await _code(db_session)
+    with pytest.raises(TokenError) as caught:
+        await svc.exchange_code(db_session, client_id=str(client_id), code="nope")
+    assert caught.value.error == "invalid_grant"
+
+
+# --------------------------------------------------------------------------- refresh
+
+
+async def _issued(db: AsyncSession, *, write: bool = True) -> tuple[UUID, str, str, UUID]:
+    """client_id, access secret, refresh secret and the connection id."""
+    client_id, code, request_id = await _code(db, write=write)
+    issued = await svc.exchange_code(db, client_id=str(client_id), code=code)
+    assert issued.refresh_token is not None
+    request = await _request(db, request_id)
+    assert request.connection_id is not None
+    return client_id, issued.access_token, issued.refresh_token, request.connection_id
+
+
+async def test_load_refresh_returns_the_token(db_session: AsyncSession) -> None:
+    client_id, _, refresh, connection_id = await _issued(db_session)
+
+    loaded = await svc.load_refresh(db_session, client_id=str(client_id), token=refresh)
+
+    assert loaded is not None
+    assert loaded.token == refresh
+    assert loaded.client_id == str(client_id)
+    assert loaded.scopes == ["read", "write", "offline_access"]
+    assert loaded.resource == MCP_URL
+    assert loaded.subject == str(SEED.primary_profile)
+    connection = await _connection(db_session, connection_id)
+    assert loaded.expires_at == int(connection.expires_at.timestamp())
+
+
+async def test_load_refresh_unknown_foreign_or_revoked_is_none(db_session: AsyncSession) -> None:
+    client_id, access, refresh, connection_id = await _issued(db_session)
+    other = await insert_oauth_client(db_session)
+
+    assert await svc.load_refresh(db_session, client_id=str(client_id), token="nope") is None
+    assert await svc.load_refresh(db_session, client_id=str(client_id), token=access) is None
+    assert await svc.load_refresh(db_session, client_id=str(other), token=refresh) is None
+    assert await svc.load_refresh(db_session, client_id="not-a-uuid", token=refresh) is None
+    await _set(
+        db_session,
+        "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :id",
+        id=connection_id,
+    )
+    assert await svc.load_refresh(db_session, client_id=str(client_id), token=refresh) is None
+
+
+async def test_rotate_refresh_issues_a_new_pair(db_session: AsyncSession) -> None:
+    client_id, access, refresh, connection_id = await _issued(db_session, write=False)
+
+    issued = await svc.rotate_refresh(db_session, client_id=str(client_id), token=refresh)
+
+    assert issued.access_token.startswith(svc.ACCESS_PREFIX)
+    assert issued.access_token != access
+    assert issued.refresh_token is not None and issued.refresh_token != refresh
+    assert issued.scope == "read"
+    assert issued.expires_in == 3600
+    old = await _token_row(db_session, refresh)
+    new = await _token_row(db_session, issued.refresh_token)
+    assert old is not None and old.rotated_at is not None
+    assert new is not None and new.rotated_at is None
+    assert new.connection_id == connection_id
+    assert new.resource == MCP_URL
+
+
+async def test_rotate_refresh_twice_revokes_the_connection(db_session: AsyncSession) -> None:
+    client_id, _, refresh, connection_id = await _issued(db_session)
+    await svc.rotate_refresh(db_session, client_id=str(client_id), token=refresh)
+
+    with pytest.raises(TokenError) as caught:
+        await svc.rotate_refresh(db_session, client_id=str(client_id), token=refresh)
+
+    assert caught.value.error == "invalid_grant"
+    assert (await _connection(db_session, connection_id)).revoked_at is not None
+
+
+async def test_rotate_refresh_on_a_revoked_connection_is_invalid_grant(
+    db_session: AsyncSession,
+) -> None:
+    client_id, _, refresh, connection_id = await _issued(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :id",
+        id=connection_id,
+    )
+
+    with pytest.raises(TokenError) as caught:
+        await svc.rotate_refresh(db_session, client_id=str(client_id), token=refresh)
+
+    assert caught.value.error == "invalid_grant"
+    old = await _token_row(db_session, refresh)
+    assert old is not None and old.rotated_at is None
+
+
+@pytest.mark.parametrize("token", ["nope", "access"], ids=["unknown", "access-token"])
+async def test_rotate_refresh_unknown_is_invalid_grant(
+    db_session: AsyncSession, token: str
+) -> None:
+    client_id, access, _, _ = await _issued(db_session)
+    with pytest.raises(TokenError) as caught:
+        await svc.rotate_refresh(
+            db_session, client_id=str(client_id), token=access if token == "access" else token
+        )
+    assert caught.value.error == "invalid_grant"
+
+
+# --------------------------------------------------------------------------- access tokens
+
+
+async def test_load_access_returns_the_token(db_session: AsyncSession) -> None:
+    client_id, access, _, _ = await _issued(db_session, write=False)
+
+    loaded = await svc.load_access(db_session, access)
+
+    row = await _token_row(db_session, access)
+    assert loaded is not None and row is not None
+    assert loaded.token == access
+    assert loaded.client_id == str(client_id)
+    assert loaded.scopes == ["read"]
+    assert loaded.resource == MCP_URL
+    assert loaded.expires_at == int(row.expires_at.timestamp())
+
+
+async def test_load_access_refuses_a_refresh_token(db_session: AsyncSession) -> None:
+    _, _, refresh, _ = await _issued(db_session)
+    assert await svc.load_access(db_session, refresh) is None
+    assert await svc.load_access(db_session, "nope") is None
+
+
+async def test_load_access_is_none_once_expired(db_session: AsyncSession) -> None:
+    _, access, _, _ = await _issued(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_tokens SET expires_at = now() - interval '1 second' "
+        "WHERE token_hash = :h",
+        h=hash_secret(access),
+    )
+    assert await svc.load_access(db_session, access) is None
+
+
+async def test_load_access_is_none_once_revoked(db_session: AsyncSession) -> None:
+    _, access, _, connection_id = await _issued(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :id",
+        id=connection_id,
+    )
+    assert await svc.load_access(db_session, access) is None
+
+
+async def test_active_access_row_applies_extra_predicates(db_session: AsyncSession) -> None:
+    _, access, _, connection_id = await _issued(db_session)
+
+    found = await svc._active_access_row(db_session, access)
+    assert found is not None
+    token_row, connection = found
+    assert token_row.kind == "access"
+    assert connection.id == connection_id
+
+    assert await svc._active_access_row(db_session, access, false()) is None
+
+
+@pytest.mark.parametrize("which", ["access", "refresh"])
+async def test_revoke_connection_by_token_revokes(db_session: AsyncSession, which: str) -> None:
+    _, access, refresh, connection_id = await _issued(db_session)
+
+    await svc.revoke_connection_by_token(db_session, access if which == "access" else refresh)
+
+    assert (await _connection(db_session, connection_id)).revoked_at is not None
+
+
+async def test_revoke_connection_by_unknown_token_is_a_no_op(db_session: AsyncSession) -> None:
+    _, _, _, connection_id = await _issued(db_session)
+    await svc.revoke_connection_by_token(db_session, "nope")
+    assert (await _connection(db_session, connection_id)).revoked_at is None
+
+
+# --------------------------------------------------------------------------- prune
+
+
+async def _exists(db: AsyncSession, sql: str, **params: object) -> bool:
+    return (await db.execute(text(sql), {k: str(v) for k, v in params.items()})).first() is not None
+
+
+_CLIENT = "SELECT 1 FROM public.mcp_oauth_clients WHERE client_id = :id"
+_REQUEST = "SELECT 1 FROM public.mcp_oauth_requests WHERE id = :id"
+_TOKEN = "SELECT 1 FROM public.mcp_oauth_tokens WHERE token_hash = :h"
+
+
+async def test_prune_deletes_exactly_the_stale_rows(db_session: AsyncSession) -> None:
+    old_unused = await insert_oauth_client(db_session, created_at_offset=timedelta(hours=25))
+    old_used = await insert_oauth_client(db_session, created_at_offset=timedelta(hours=25))
+    await insert_oauth_connection(db_session, user_id=SEED.reviewer_profile, client_id=old_used)
+    young_unused = await insert_oauth_client(db_session, created_at_offset=timedelta(hours=23))
+    pending = await insert_oauth_request(db_session, client_id=young_unused)
+    lapsed = await insert_oauth_request(
+        db_session, client_id=young_unused, expires_in=-timedelta(minutes=1)
+    )
+    _, _, fresh_decision = await _code(db_session)
+    old_decision = await _decided(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_requests SET decided_at = now() - interval '25 hours' "
+        "WHERE id = :id",
+        id=old_decision,
+    )
+    _, access, refresh, _ = await _issued(db_session)
+    _, expired_access, recently_rotated, _ = await _issued(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_tokens SET expires_at = now() - interval '1 second' "
+        "WHERE token_hash = :h",
+        h=hash_secret(expired_access),
+    )
+    _, _, long_rotated, _ = await _issued(db_session)
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_tokens SET rotated_at = now() - interval '61 minutes' "
+        "WHERE token_hash = :h",
+        h=hash_secret(long_rotated),
+    )
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_tokens SET rotated_at = now() - interval '59 minutes' "
+        "WHERE token_hash = :h",
+        h=hash_secret(recently_rotated),
+    )
+
+    await svc.prune(db_session)
+
+    assert not await _exists(db_session, _CLIENT, id=old_unused)
+    assert await _exists(db_session, _CLIENT, id=old_used)
+    assert await _exists(db_session, _CLIENT, id=young_unused)
+    assert await _exists(db_session, _REQUEST, id=pending)
+    assert not await _exists(db_session, _REQUEST, id=lapsed)
+    assert await _exists(db_session, _REQUEST, id=fresh_decision)
+    assert not await _exists(db_session, _REQUEST, id=old_decision)
+    assert await _exists(db_session, _TOKEN, h=hash_secret(access))
+    assert await _exists(db_session, _TOKEN, h=hash_secret(refresh))
+    assert not await _exists(db_session, _TOKEN, h=hash_secret(expired_access))
+    assert await _exists(db_session, _TOKEN, h=hash_secret(recently_rotated))
+    assert not await _exists(db_session, _TOKEN, h=hash_secret(long_rotated))

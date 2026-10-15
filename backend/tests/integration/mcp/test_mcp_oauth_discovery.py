@@ -110,3 +110,18 @@ async def test_register_preflight_from_unlisted_origin(oauth_http_client: AsyncC
     r = await oauth_http_client.options("/register", headers=preflight)
     assert r.headers.get("access-control-allow-origin") == "*"
     assert "access-control-allow-credentials" not in r.headers
+
+
+async def test_token_and_revoke_are_404_when_oauth_off(mcp_http_client: AsyncClient) -> None:
+    for path in ("/token", "/revoke"):
+        assert (await mcp_http_client.post(path, data={})).status_code == 404, path
+
+
+@pytest.mark.parametrize("path", ["/token", "/revoke"])
+async def test_token_and_revoke_preflight_from_unlisted_origin(
+    oauth_http_client: AsyncClient, path: str
+) -> None:
+    preflight = {**PREFLIGHT, "Access-Control-Request-Method": "POST"}
+    r = await oauth_http_client.options(path, headers=preflight)
+    assert r.headers.get("access-control-allow-origin") == "*"
+    assert "access-control-allow-credentials" not in r.headers

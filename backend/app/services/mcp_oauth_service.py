@@ -2,9 +2,14 @@
 
 Functions take the caller's session and never commit; they return the SDK's
 pydantic types and raise its protocol errors (``RegistrationError``,
-``AuthorizeError``), which its handlers turn into RFC 6749/7591 responses.
-The consent functions serve the ``/api/v1/oauth`` routes instead and raise
-``AppError`` subclasses, which the global handler maps.
+``AuthorizeError``, ``TokenError``), which its handlers turn into RFC
+6749/7591 responses. The consent functions serve the ``/api/v1/oauth`` routes
+instead and raise ``AppError`` subclasses, which the global handler maps.
+
+Clocks: a timestamp is compared on the clock that wrote it. Request and code
+times (``expires_at``, ``decided_at``, ``code_expires_at``) are app-clock
+(``datetime.now(UTC)``); connection and token times (``expires_at``,
+``rotated_at``) and client ``created_at`` are database-clock (``now()``).
 """
 
 from __future__ import annotations
@@ -16,24 +21,28 @@ from uuid import UUID, uuid4
 
 from fastapi import status
 from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
     AuthorizationParams,
     AuthorizeError,
+    RefreshToken,
     RegistrationError,
+    TokenError,
     construct_redirect_uri,
 )
-from mcp.shared.auth import OAuthClientInformationFull
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import ColumnElement, and_, delete, exists, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.error_handler import AppError, NotFoundError
 from app.core.integrity import violates_constraint
-from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest
+from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
 from app.schemas.mcp_oauth import OAuthConsentRefusalCode, OAuthConsentRequestRead
-from app.services.pat_service import hash_secret, revoke_credential
+from app.services.pat_service import active_clause, hash_secret, new_secret, revoke_credential
 
 # The granting scopes: what a connection can hold (``read`` / ``read_write``).
 OAUTH_SCOPES: tuple[str, ...] = ("read", "write")
@@ -49,6 +58,10 @@ REQUEST_TTL = timedelta(minutes=10)
 CODE_TTL = timedelta(minutes=5)
 # How long a connection lives before the user must approve the app again.
 CONNECTION_TTL = timedelta(days=90)
+# How long an access token is valid; a refresh token lives as long as its connection.
+ACCESS_TTL = timedelta(hours=1)
+ACCESS_PREFIX = "prumo_oat_"
+REFRESH_PREFIX = "prumo_ort_"
 DEFAULT_CLIENT_NAME = "MCP client"
 
 _MAX_REDIRECT_URIS = 5
@@ -56,6 +69,11 @@ _ALWAYS_GRANTED = "read"
 _MAX_CLIENT_NAME = 80
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _UQ_USER_CLIENT = "uq_personal_access_tokens_oauth_user_client"
+# Pruning horizons: a client nobody connected, a decided request, a rotated
+# refresh token (kept this long so a replay still trips reuse detection).
+_UNUSED_CLIENT_TTL = timedelta(hours=24)
+_DECIDED_REQUEST_TTL = timedelta(hours=24)
+_ROTATED_TOKEN_TTL = timedelta(hours=1)
 
 
 class ConsentRequestNotFoundError(NotFoundError):
@@ -117,11 +135,17 @@ async def register_client(db: AsyncSession, info: OAuthClientInformationFull) ->
     await db.flush()
 
 
+def _client_key(client_id: str) -> UUID | None:
+    try:
+        return UUID(client_id)
+    except ValueError:
+        return None
+
+
 async def get_client(db: AsyncSession, client_id: str) -> OAuthClientInformationFull | None:
     """The registered client, or ``None`` for an unknown or malformed id."""
-    try:
-        key = UUID(client_id)
-    except ValueError:
+    key = _client_key(client_id)
+    if key is None:
         return None
     row = await db.get(McpOAuthClient, key)
     if row is None:
@@ -216,7 +240,7 @@ async def get_consent_request(db: AsyncSession, *, request_id: UUID) -> OAuthCon
     )
 
 
-async def _record_decision(db: AsyncSession, request_id: UUID, **values: object) -> None:
+async def _update_request(db: AsyncSession, request_id: UUID, **values: object) -> None:
     # One ORM UPDATE: it also refreshes the request row held by this session.
     await db.execute(
         update(McpOAuthRequest).where(McpOAuthRequest.id == request_id).values(**values)
@@ -236,7 +260,7 @@ async def decide_request(
     row = await _undecided_request(db, request_id, lock=True)
     now = datetime.now(UTC)
     if not approve:
-        await _record_decision(db, request_id, decided_at=now)
+        await _update_request(db, request_id, decided_at=now)
         return construct_redirect_uri(row.redirect_uri, error="access_denied", state=row.state)
 
     previous = (
@@ -276,7 +300,7 @@ async def decide_request(
         raise
 
     code = secrets.token_urlsafe(32)
-    await _record_decision(
+    await _update_request(
         db,
         request_id,
         decided_at=now,
@@ -286,3 +310,288 @@ async def decide_request(
         code_expires_at=now + CODE_TTL,
     )
     return construct_redirect_uri(row.redirect_uri, code=code, state=row.state)
+
+
+# --------------------------------------------------------------------------- tokens
+
+
+def granted_scopes(scope: str) -> list[str]:
+    """A connection's ``scope`` (``read`` / ``read_write``) as OAuth scopes."""
+    return list(OAUTH_SCOPES) if scope == "read_write" else [_ALWAYS_GRANTED]
+
+
+def _invalid_grant() -> TokenError:
+    return TokenError("invalid_grant")
+
+
+async def _active_connection(
+    db: AsyncSession, connection_id: UUID, *extra: ColumnElement[bool]
+) -> PersonalAccessToken | None:
+    return (
+        await db.execute(
+            select(PersonalAccessToken)
+            .where(PersonalAccessToken.id == connection_id, active_clause(), *extra)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+
+
+async def _issue_pair(
+    db: AsyncSession, connection: PersonalAccessToken, *, resource: str
+) -> OAuthToken:
+    """Mint an access and a refresh token for ``connection``, stored as hashes."""
+    access, refresh = new_secret(ACCESS_PREFIX), new_secret(REFRESH_PREFIX)
+    await db.execute(
+        insert(McpOAuthToken).values(
+            [
+                {
+                    "id": uuid4(),
+                    "connection_id": connection.id,
+                    "kind": "access",
+                    "token_hash": hash_secret(access),
+                    "resource": resource,
+                    "expires_at": func.now() + ACCESS_TTL,
+                },
+                {
+                    "id": uuid4(),
+                    "connection_id": connection.id,
+                    "kind": "refresh",
+                    "token_hash": hash_secret(refresh),
+                    "resource": resource,
+                    "expires_at": connection.expires_at,
+                },
+            ]
+        )
+    )
+    await db.execute(
+        update(McpOAuthClient)
+        .where(McpOAuthClient.client_id == connection.oauth_client_id)
+        .values(last_used_at=func.now())
+    )
+    return OAuthToken(
+        access_token=access,
+        token_type="Bearer",
+        expires_in=int(ACCESS_TTL.total_seconds()),
+        refresh_token=refresh,
+        scope=" ".join(granted_scopes(connection.scope)),
+    )
+
+
+async def load_code(db: AsyncSession, *, client_id: str, code: str) -> AuthorizationCode | None:
+    """The approved code ``client_id`` holds, or ``None``.
+
+    No expiry or reuse check: the SDK checks expiry, client, redirect URI and
+    the PKCE verifier next; reuse is detected in ``exchange_code`` only.
+    """
+    key = _client_key(client_id)
+    if key is None:
+        return None
+    found = (
+        await db.execute(
+            select(McpOAuthRequest, PersonalAccessToken.scope)
+            .join(PersonalAccessToken, PersonalAccessToken.id == McpOAuthRequest.connection_id)
+            .where(McpOAuthRequest.code_hash == hash_secret(code), McpOAuthRequest.client_id == key)
+        )
+    ).one_or_none()
+    if found is None:
+        return None
+    row, scope = found
+    # decide_request writes the hash, its expiry and the user together.
+    assert row.code_expires_at is not None and row.user_id is not None
+    return AuthorizationCode(
+        code=code,
+        scopes=granted_scopes(scope),
+        expires_at=row.code_expires_at.timestamp(),
+        client_id=str(row.client_id),
+        code_challenge=row.code_challenge,
+        redirect_uri=AnyUrl(row.redirect_uri),
+        redirect_uri_provided_explicitly=row.redirect_uri_provided_explicitly,
+        resource=row.resource,
+        subject=str(row.user_id),
+    )
+
+
+async def exchange_code(db: AsyncSession, *, client_id: str, code: str) -> OAuthToken:
+    """Spend a code once for a token pair; ``TokenError("invalid_grant")`` otherwise.
+
+    The request row is locked, so of two concurrent exchanges one issues and
+    the other sees the code spent. A spent code presented again revokes the
+    connection it minted.
+    """
+    key = _client_key(client_id)
+    row = (
+        None
+        if key is None
+        else (
+            await db.execute(
+                select(McpOAuthRequest)
+                .where(
+                    McpOAuthRequest.code_hash == hash_secret(code),
+                    McpOAuthRequest.client_id == key,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    )
+    if row is None or row.connection_id is None or row.code_expires_at is None:
+        raise _invalid_grant()
+    if row.code_used_at is not None:
+        await revoke_credential(db, row.connection_id)
+        raise _invalid_grant()
+    now = datetime.now(UTC)
+    connection = await _active_connection(db, row.connection_id)
+    if connection is None or row.code_expires_at <= now:
+        raise _invalid_grant()
+    await _update_request(db, row.id, code_used_at=now)
+    return await _issue_pair(db, connection, resource=row.resource or settings.mcp_resource_url)
+
+
+async def load_refresh(db: AsyncSession, *, client_id: str, token: str) -> RefreshToken | None:
+    """``client_id``'s refresh token on an active connection, or ``None``.
+
+    A rotated token is still returned: ``rotate_refresh`` detects the reuse.
+    """
+    key = _client_key(client_id)
+    if key is None:
+        return None
+    found = (
+        await db.execute(
+            select(McpOAuthToken, PersonalAccessToken)
+            .join(PersonalAccessToken, PersonalAccessToken.id == McpOAuthToken.connection_id)
+            .where(
+                McpOAuthToken.token_hash == hash_secret(token),
+                McpOAuthToken.kind == "refresh",
+                PersonalAccessToken.oauth_client_id == key,
+                active_clause(),
+            )
+        )
+    ).one_or_none()
+    if found is None:
+        return None
+    row, connection = found
+    return RefreshToken(
+        token=token,
+        client_id=str(connection.oauth_client_id),
+        # offline_access listed so a refresh repeating it passes the SDK's
+        # subset check; it is never echoed back.
+        scopes=[*granted_scopes(connection.scope), OFFLINE_ACCESS],
+        expires_at=int(row.expires_at.timestamp()),
+        resource=row.resource,
+        subject=str(connection.user_id),
+    )
+
+
+async def rotate_refresh(db: AsyncSession, *, client_id: str, token: str) -> OAuthToken:
+    """Spend a refresh token for a new pair; ``TokenError("invalid_grant")`` otherwise.
+
+    The token row is locked; a token already rotated (a replay, or the loser
+    of a concurrent use) revokes its connection.
+    """
+    row = (
+        await db.execute(
+            select(McpOAuthToken)
+            .where(McpOAuthToken.token_hash == hash_secret(token), McpOAuthToken.kind == "refresh")
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise _invalid_grant()
+    if row.rotated_at is not None:
+        await revoke_credential(db, row.connection_id)
+        raise _invalid_grant()
+    key = _client_key(client_id)
+    connection = (
+        None
+        if key is None
+        else await _active_connection(
+            db, row.connection_id, PersonalAccessToken.oauth_client_id == key
+        )
+    )
+    if connection is None:
+        raise _invalid_grant()
+    await db.execute(
+        update(McpOAuthToken).where(McpOAuthToken.id == row.id).values(rotated_at=func.now())
+    )
+    return await _issue_pair(db, connection, resource=row.resource)
+
+
+async def _active_access_row(
+    db: AsyncSession, secret: str, *extra: ColumnElement[bool]
+) -> tuple[McpOAuthToken, PersonalAccessToken] | None:
+    """THE lookup of a live access token: unexpired, on an active OAuth connection."""
+    found = (
+        await db.execute(
+            select(McpOAuthToken, PersonalAccessToken)
+            .join(PersonalAccessToken, PersonalAccessToken.id == McpOAuthToken.connection_id)
+            .where(
+                McpOAuthToken.token_hash == hash_secret(secret),
+                McpOAuthToken.kind == "access",
+                McpOAuthToken.expires_at > func.now(),
+                PersonalAccessToken.kind == "oauth",
+                active_clause(),
+                *extra,
+            )
+        )
+    ).one_or_none()
+    if found is None:
+        return None
+    row, connection = found
+    return row, connection
+
+
+async def load_access(db: AsyncSession, token: str) -> AccessToken | None:
+    found = await _active_access_row(db, token)
+    if found is None:
+        return None
+    row, connection = found
+    return AccessToken(
+        token=token,
+        client_id=str(connection.oauth_client_id),
+        scopes=granted_scopes(connection.scope),
+        expires_at=int(row.expires_at.timestamp()),
+        resource=row.resource,
+        subject=str(connection.user_id),
+    )
+
+
+async def revoke_connection_by_token(db: AsyncSession, token: str) -> None:
+    """Revoke the connection an access or refresh token belongs to; unknown is a no-op."""
+    connection_id = (
+        await db.execute(
+            select(McpOAuthToken.connection_id).where(
+                McpOAuthToken.token_hash == hash_secret(token)
+            )
+        )
+    ).scalar_one_or_none()
+    if connection_id is not None:
+        await revoke_credential(db, connection_id)
+
+
+async def prune(db: AsyncSession) -> None:
+    """Delete clients nobody connected after a day, lapsed or day-old decided
+    requests, and expired or rotated-over-an-hour tokens."""
+    now = datetime.now(UTC)
+    await db.execute(
+        delete(McpOAuthClient).where(
+            McpOAuthClient.created_at < func.now() - _UNUSED_CLIENT_TTL,
+            ~exists().where(PersonalAccessToken.oauth_client_id == McpOAuthClient.client_id),
+        )
+    )
+    await db.execute(
+        delete(McpOAuthRequest).where(
+            or_(
+                and_(McpOAuthRequest.decided_at.is_(None), McpOAuthRequest.expires_at <= now),
+                McpOAuthRequest.decided_at < now - _DECIDED_REQUEST_TTL,
+            )
+        )
+    )
+    await db.execute(
+        delete(McpOAuthToken).where(
+            or_(
+                McpOAuthToken.expires_at <= func.now(),
+                McpOAuthToken.rotated_at < func.now() - _ROTATED_TOKEN_TTL,
+            )
+        )
+    )

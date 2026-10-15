@@ -2,8 +2,8 @@
 
 RFC 9728 protected-resource metadata and RFC 8414 authorization-server
 metadata, both built by the SDK and served through its credential-less CORS
-(``allow_origins="*"``); the SDK's authorize and dynamic-registration
-endpoints over ``PrumoOAuthProvider``. ``OAUTH_CORS_PATHS`` is what
+(``allow_origins="*"``); the SDK's authorize, token, dynamic-registration and
+revocation endpoints over ``PrumoOAuthProvider``. ``OAUTH_CORS_PATHS`` is what
 ``main.py`` exempts from the global allow-list CORS so that route-level CORS
 answers.
 """
@@ -11,11 +11,9 @@ answers.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
 
 from limits import parse
 from mcp.server.auth.handlers.metadata import MetadataHandler, ProtectedResourceMetadataHandler
-from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.auth.routes import (
     build_metadata,
     cors_middleware,
@@ -72,11 +70,10 @@ def build_oauth_routes() -> list[Route]:
         authorization_servers=[issuer],
         scopes_supported=scopes,
     )
-    # The cast: the provider implements only the methods these two routes call.
     sdk = {
         route.path: route.endpoint
         for route in create_auth_routes(
-            cast(OAuthAuthorizationServerProvider[Any, Any, Any], PrumoOAuthProvider()),
+            PrumoOAuthProvider(),
             issuer,
             client_registration_options=registration,
             revocation_options=revocation,
@@ -102,6 +99,28 @@ def build_oauth_routes() -> list[Route]:
                 PublicClientDefault(sdk["/register"]),
                 limit=parse("10/minute"),
                 bucket="oauth-register",
+                key=ip_key,
+                reads_body=False,
+            ),
+            methods=["POST", "OPTIONS"],
+        ),
+        Route(
+            "/token",
+            endpoint=Limited(
+                sdk["/token"],
+                limit=parse("60/minute"),
+                bucket="oauth-token",
+                key=client_id_key,
+                reads_body=True,
+            ),
+            methods=["POST", "OPTIONS"],
+        ),
+        Route(
+            "/revoke",
+            endpoint=Limited(
+                sdk["/revoke"],
+                limit=_PER_IP_60,
+                bucket="oauth-revoke",
                 key=ip_key,
                 reads_body=False,
             ),
