@@ -1,4 +1,5 @@
-"""PAT bearer auth for the exact ``/mcp`` route (spec §3, §7).
+"""Bearer auth for the exact ``/mcp`` route: a PAT, or with OAuth on a
+prumo-issued OAuth access token (spec §3, §7, ADR 0022).
 
 Pure ASGI, not the SDK ``token_verifier`` — that forces OAuth
 ``resource_metadata`` 401s unconditionally. Here the 401 is a plain ``Bearer``
@@ -24,10 +25,13 @@ from app.api.mcp.oauth.routes import resource_metadata_url
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.mcp_auth import McpPrincipal
+from app.services import mcp_oauth_service
+from app.services.mcp_oauth_service import ACCESS_PREFIX
 from app.services.pat_service import hash_secret, resolve_principal, touch_last_used
 from app.utils.rate_limiter import client_ip, hit_shared
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = get_logger(__name__)
@@ -65,6 +69,14 @@ def _bearer(scope: Scope) -> str | None:
         return None
     secret = secret.strip()
     return secret or None
+
+
+async def _resolve(db: AsyncSession, secret: str) -> McpPrincipal | None:
+    """The principal for ``secret``: an OAuth access token only while OAuth is
+    on; anything else goes to the PAT lookup, which refuses a non-PAT secret."""
+    if settings.oauth_enabled and secret.startswith(ACCESS_PREFIX):
+        return await mcp_oauth_service.resolve_principal(db, secret)
+    return await resolve_principal(db, secret)
 
 
 class _PatAuthApp:
@@ -109,7 +121,7 @@ class _PatAuthApp:
     async def _serve(self, secret: str, scope: Scope, receive: Receive, send: Send) -> None:
         async with mcp_session.request_session() as db:
             try:
-                principal = await resolve_principal(db, secret)
+                principal = await _resolve(db, secret)
             except Exception as exc:
                 # Only "no usable connection" is a 503; any other lookup failure
                 # is a bug and propagates as a 500 with its traceback.

@@ -1,4 +1,4 @@
-"""The MCP principal (spec §3, ADR 0020)."""
+"""The MCP principal (spec §3, ADR 0020, ADR 0022)."""
 
 from __future__ import annotations
 
@@ -10,10 +10,13 @@ from pydantic import BaseModel, ConfigDict
 
 
 class McpPrincipal(BaseModel):
-    """The verified PAT principal for one ``/mcp`` request.
+    """The verified principal for one ``/mcp`` request: a PAT or an OAuth
+    connection (ADR 0022).
 
-    ``user_sub`` comes from the token row, never request input (ADR 0020):
-    a PAT carries no caller-supplied identity to impersonate.
+    ``user_sub`` comes from the credential row, never request input (ADR
+    0020): a bearer carries no caller-supplied identity to impersonate.
+    ``token_id`` is the credential row id (the PAT, or the OAuth connection
+    an access token belongs to); ``token_expires_at`` is that row's expiry.
     """
 
     model_config = ConfigDict(frozen=True)

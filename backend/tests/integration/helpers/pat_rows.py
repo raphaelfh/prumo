@@ -6,7 +6,8 @@ callers here don't need); tests that only need a row to hang an
 ``agent_actions.token_id`` or FK-delete case off of use these, instead of
 each integration module writing its own raw INSERT. The ``insert_oauth_*``
 helpers build the OAuth side (migration 0083): a registered client, a
-pending authorization request and a ``kind='oauth'`` connection row.
+pending authorization request, a ``kind='oauth'`` connection row and an
+access token on it.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
 
 
@@ -130,3 +132,31 @@ async def insert_oauth_connection(
         },
     )
     return connection_id
+
+
+async def insert_oauth_access_token(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+    secret: str,
+    resource: str,
+    expires_in: timedelta = timedelta(hours=1),
+) -> UUID:
+    """Insert a ``kind='access'`` token row for ``secret`` (stored as its hash)
+    on ``connection_id``; ``expires_at = now() + expires_in``."""
+    token_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.mcp_oauth_tokens "
+            "(id, connection_id, kind, token_hash, resource, expires_at) "
+            "VALUES (:id, :cid, 'access', :hash, :resource, now() + CAST(:interval AS interval))"
+        ),
+        {
+            "id": str(token_id),
+            "cid": str(connection_id),
+            "hash": hash_secret(secret),
+            "resource": resource,
+            "interval": expires_in,
+        },
+    )
+    return token_id

@@ -31,8 +31,14 @@ from app.core.config import settings
 from app.main import create_app
 from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
-from app.services.pat_service import create_token, resolve_principal
+from app.services import mcp_oauth_service
+from app.services.pat_service import create_token, new_secret, resolve_principal
 from tests.integration.conftest import SEED
+from tests.integration.helpers.pat_rows import (
+    insert_oauth_access_token,
+    insert_oauth_client,
+    insert_oauth_connection,
+)
 
 
 class _FakeStorage:
@@ -185,6 +191,31 @@ async def _seed_pat(
     principal = await resolve_principal(db, created.secret)
     assert principal is not None
     return SeededPat(created.secret, principal)
+
+
+async def seed_oauth_principal(
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    user_id: UUID,
+    scope: Literal["read", "read_write"],
+) -> SeededPat:
+    """An OAuth connection of ``scope`` for ``user_id`` with one live access
+    token, resolved through the OAuth lookup. Turns OAuth on (the access token
+    is bound to ``settings.mcp_resource_url``)."""
+    monkeypatch.setattr(settings, "PUBLIC_API_URL", OAUTH_BASE_URL)
+    connection_id = await insert_oauth_connection(
+        db,
+        user_id=user_id,
+        client_id=await insert_oauth_client(db),
+        scope=scope,
+    )
+    secret = new_secret(mcp_oauth_service.ACCESS_PREFIX)
+    await insert_oauth_access_token(
+        db, connection_id=connection_id, secret=secret, resource=settings.mcp_resource_url
+    )
+    principal = await mcp_oauth_service.resolve_principal(db, secret)
+    assert principal is not None
+    return SeededPat(secret, principal)
 
 
 @pytest_asyncio.fixture

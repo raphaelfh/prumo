@@ -30,6 +30,10 @@ from app.services.template_versioning import (
     get_template_config_status,
 )
 from tests.integration.conftest import SEED, set_config_draft_marker
+from tests.integration.helpers.pat_rows import (
+    insert_oauth_client,
+    insert_oauth_connection,
+)
 from tests.integration.helpers.pat_rows import insert_pat_row as _pat
 from tests.integration.helpers.template_fixtures import force_narrow_baseline
 
@@ -320,6 +324,23 @@ async def test_agent_edit_inside_the_draft_lights_the_chip(db_session: AsyncSess
     status = await _status(db_session)
     assert status.has_agent_edits is True
     assert status.agent_edit_token_name == "Claude laptop"
+
+
+@pytest.mark.asyncio
+async def test_agent_edit_by_oauth_connection_shows_client_name(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    connection_id = await insert_oauth_connection(
+        db_session,
+        user_id=SEED.primary_profile,
+        client_id=await insert_oauth_client(db_session, client_name="Claude"),
+        name="Claude",
+    )
+    await _agent_action(db_session, connection_id)
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is True
+    assert status.agent_edit_token_name == "Claude"
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from contextlib import AbstractAsyncContextManager
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from limits import parse
 from mcp import Client
 from pydantic import BaseModel
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.mcp import server
 from app.core.config import API_VERSION
 from tests.integration.conftest import SEED
-from tests.integration.mcp.conftest import SeededPat
+from tests.integration.mcp.conftest import SeededPat, seed_oauth_principal
 
 # Tools allowed a destructive/open-world hint or a requiresUserInteraction meta.
 # INSTRUCTIONS length before the untrusted_fields paragraph: that paragraph
@@ -25,6 +26,32 @@ from tests.integration.mcp.conftest import SeededPat
 _PRE_HARDEN_INSTRUCTIONS_LEN = 1095
 
 _HINT_ALLOWLIST: frozenset[str] = frozenset()
+
+
+# Every test here runs with a PAT and with an OAuth connection of the same
+# scope: an OAuth principal must pass the choke point exactly as a PAT does.
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_rw(
+    request: pytest.FixtureRequest,
+    pat_primary_rw: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_rw
+    return await seed_oauth_principal(db_session, monkeypatch, SEED.primary_profile, "read_write")
+
+
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_read(
+    request: pytest.FixtureRequest,
+    pat_primary_read: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_read
+    return await seed_oauth_principal(db_session, monkeypatch, SEED.primary_profile, "read")
 
 
 async def test_tools_list_is_scope_filtered(

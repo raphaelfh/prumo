@@ -843,6 +843,107 @@ async def test_active_access_row_applies_extra_predicates(db_session: AsyncSessi
     assert await svc._active_access_row(db_session, access, false()) is None
 
 
+@pytest.mark.parametrize(("write", "scope"), [(True, "read_write"), (False, "read")])
+async def test_resolve_principal_returns_the_connection_principal(
+    db_session: AsyncSession, write: bool, scope: str
+) -> None:
+    _, access, _, connection_id = await _issued(db_session, write=write)
+
+    principal = await svc.resolve_principal(db_session, access)
+
+    connection = await _connection(db_session, connection_id)
+    assert principal is not None
+    assert principal.user_sub == SEED.primary_profile
+    assert principal.token_id == connection_id
+    assert principal.scope == scope
+    assert principal.token_expires_at == connection.expires_at
+    assert principal.project_ids is None
+
+
+async def _expire_access(db: AsyncSession, access: str, _connection_id: UUID) -> None:
+    await _set(
+        db,
+        "UPDATE public.mcp_oauth_tokens SET expires_at = now() - interval '1 second' "
+        "WHERE token_hash = :h",
+        h=hash_secret(access),
+    )
+
+
+async def _foreign_resource(db: AsyncSession, access: str, _connection_id: UUID) -> None:
+    await _set(
+        db,
+        "UPDATE public.mcp_oauth_tokens SET resource = 'https://other.example/mcp' "
+        "WHERE token_hash = :h",
+        h=hash_secret(access),
+    )
+
+
+async def _revoke(db: AsyncSession, _access: str, connection_id: UUID) -> None:
+    await _set(
+        db,
+        "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :id",
+        id=connection_id,
+    )
+
+
+async def _expire_connection(db: AsyncSession, _access: str, connection_id: UUID) -> None:
+    await _set(
+        db,
+        "UPDATE public.personal_access_tokens "
+        "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day' "
+        "WHERE id = :id",
+        id=connection_id,
+    )
+
+
+async def _ban(db: AsyncSession, _access: str, _connection_id: UUID) -> None:
+    await _set(
+        db,
+        "UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :id",
+        id=SEED.primary_profile,
+    )
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [_expire_access, _foreign_resource, _revoke, _expire_connection, _ban],
+    ids=["access-expired", "resource-mismatch", "revoked", "connection-expired", "banned"],
+)
+async def test_resolve_principal_refuses(db_session: AsyncSession, spoil: Any) -> None:
+    _, access, _, connection_id = await _issued(db_session)
+    assert await svc.resolve_principal(db_session, access) is not None
+
+    await spoil(db_session, access, connection_id)
+
+    assert await svc.resolve_principal(db_session, access) is None
+
+
+@pytest.mark.parametrize(
+    "secret",
+    ["prumo_pat_" + "a" * 43, "prumo_oat_" + "a" * 43, "nope"],
+    ids=["pat-prefix", "unknown", "no-prefix"],
+)
+async def test_resolve_principal_unknown_is_none(db_session: AsyncSession, secret: str) -> None:
+    assert await svc.resolve_principal(db_session, secret) is None
+
+
+async def test_resolve_principal_ignores_a_pat_prefixed_hash_match(
+    db_session: AsyncSession,
+) -> None:
+    """The prefix gate runs first: a PAT secret never reaches the OAuth lookup."""
+    _, access, _, _ = await _issued(db_session)
+    pat_shaped = "prumo_pat_" + access.removeprefix(svc.ACCESS_PREFIX)
+    await _set(
+        db_session,
+        "UPDATE public.mcp_oauth_tokens SET token_hash = :new WHERE token_hash = :old",
+        new=hash_secret(pat_shaped),
+        old=hash_secret(access),
+    )
+    assert await svc._active_access_row(db_session, pat_shaped) is not None
+
+    assert await svc.resolve_principal(db_session, pat_shaped) is None
+
+
 @pytest.mark.parametrize("which", ["access", "refresh"])
 async def test_revoke_connection_by_token_revokes(db_session: AsyncSession, which: str) -> None:
     _, access, refresh, connection_id = await _issued(db_session)

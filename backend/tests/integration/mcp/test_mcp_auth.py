@@ -203,3 +203,11 @@ async def test_banned_users_live_token_is_401(
     r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
     assert r.status_code == 401
     assert r.headers["www-authenticate"] == "Bearer"
+
+
+async def test_oat_bearer_with_oauth_off_is_plain_401(mcp_http_client: AsyncClient) -> None:
+    r = await rpc(
+        mcp_http_client, "tools/list", headers={"Authorization": "Bearer prumo_oat_" + "a" * 43}
+    )
+    assert r.status_code == 401
+    assert r.headers["www-authenticate"] == "Bearer"

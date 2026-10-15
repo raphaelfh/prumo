@@ -41,8 +41,15 @@ from app.core.error_handler import AppError, NotFoundError
 from app.core.integrity import violates_constraint
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
+from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.mcp_oauth import OAuthConsentRefusalCode, OAuthConsentRequestRead
-from app.services.pat_service import active_clause, hash_secret, new_secret, revoke_credential
+from app.services.pat_service import (
+    active_clause,
+    hash_secret,
+    new_secret,
+    revoke_credential,
+    user_locked_out,
+)
 
 # The granting scopes: what a connection can hold (``read`` / ``read_write``).
 OAUTH_SCOPES: tuple[str, ...] = ("read", "write")
@@ -553,6 +560,28 @@ async def load_access(db: AsyncSession, token: str) -> AccessToken | None:
         expires_at=int(row.expires_at.timestamp()),
         resource=row.resource,
         subject=str(connection.user_id),
+    )
+
+
+async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | None:
+    """The ``/mcp`` principal for an access token bound to this server's MCP
+    resource, of a user who is neither banned nor soft-deleted; ``None``
+    otherwise. ``token_id`` is the connection id, so audit rows, the draft
+    label and the per-token limits work as for a PAT."""
+    if not secret.startswith(ACCESS_PREFIX):
+        return None
+    found = await _active_access_row(
+        db, secret, McpOAuthToken.resource == settings.mcp_resource_url, ~user_locked_out()
+    )
+    if found is None:
+        return None
+    _, connection = found
+    return McpPrincipal(
+        user_sub=connection.user_id,
+        token_id=connection.id,
+        scope=connection.scope,
+        token_expires_at=connection.expires_at,
+        project_ids=None if connection.project_ids is None else frozenset(connection.project_ids),
     )
 
 
