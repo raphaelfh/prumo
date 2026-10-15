@@ -3575,12 +3575,12 @@ export interface components {
          * ChangeVariant
          * @description The shape of one row — the client's discriminator (D1).
          *
-         *     One member per reachable ``(kind, node_kind[, option polarity])`` the
+         *     One member per reachable ``(kind, node_kind[, option add/remove/rename])`` the
          *     engine can emit, so a renderer never has to re-derive which of the
          *     engine's overloaded fields are meaningful.
          * @enum {string}
          */
-        ChangeVariant: "template_instruction_added" | "template_instruction_removed" | "template_instruction_modified" | "entity_type_added" | "entity_type_removed" | "entity_type_modified" | "entity_type_fields_reordered" | "field_added" | "field_removed" | "field_moved" | "field_modified" | "field_option_added" | "field_option_removed" | "field_options_reordered";
+        ChangeVariant: "template_instruction_added" | "template_instruction_removed" | "template_instruction_modified" | "entity_type_added" | "entity_type_removed" | "entity_type_modified" | "entity_type_fields_reordered" | "field_added" | "field_removed" | "field_moved" | "field_modified" | "field_option_added" | "field_option_removed" | "field_option_renamed" | "field_options_reordered";
         /** CloneTemplateRequest */
         CloneTemplateRequest: {
             /**

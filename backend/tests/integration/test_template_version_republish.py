@@ -33,6 +33,12 @@ from app.services.template_versioning import (
     clone_template,
 )
 from tests.integration.conftest import SEED, get_config_draft_marker
+from tests.integration.helpers.template_fixtures import (
+    CANONICAL_OPTIONS,
+    fresh_charms,
+    plant_legacy_option_baseline,
+    set_options_silently,
+)
 
 CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
 
@@ -887,3 +893,32 @@ async def test_republish_endpoint_409_when_publish_blocked(
     assert section_label in error["message"]
 
     await db_session.rollback()
+
+
+async def _version_count(db: AsyncSession, template_id: UUID) -> int:
+    return (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_republish_ignores_option_shape_only_difference(db_session: AsyncSession) -> None:
+    """A live tree whose options are canonical equals a baseline that stores
+    the same codes as bare strings: republish with no edit mints no version."""
+    project_id, template_id, _ = await fresh_charms(db_session)
+    target = await plant_legacy_option_baseline(db_session, project_id, template_id)
+    versions = await _version_count(db_session, template_id)
+
+    await set_options_silently(db_session, target, CANONICAL_OPTIONS)
+    result = await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+
+    assert result.changed is False
+    assert await _version_count(db_session, template_id) == versions

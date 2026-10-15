@@ -42,7 +42,7 @@ from app.schemas.hitl_session import (
     TemplatePublishRefusalDetails,
 )
 from app.services.advisory_locks import take_advisory_xact_lock
-from app.services.extraction_snapshot import build_template_version_snapshot
+from app.services.extraction_snapshot import build_template_version_snapshot, canonical_snapshot
 from app.services.instance_seeding import ensure_instances
 from app.services.template_clone_service import TemplateNotFoundError
 from app.services.template_section_service import has_multi_entry_parent
@@ -252,7 +252,11 @@ class TemplateVersionService:
             )
         ).scalar_one_or_none()
 
-        if current is not None and current.schema_ == snapshot:
+        # Option shape is not structure: a baseline frozen with legacy options
+        # equals a live tree holding the same options canonically.
+        if current is not None and canonical_snapshot(current.schema_) == canonical_snapshot(
+            snapshot
+        ):
             # Nothing changed — don't spawn version rows, but still re-pin:
             # runs created before this service existed may sit on an older
             # version even though the active snapshot is current.

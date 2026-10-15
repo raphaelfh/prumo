@@ -329,6 +329,14 @@ def _field_option_removed() -> _Pair:
     )
 
 
+def _field_option_renamed() -> _Pair:
+    section_id, field_id = uuid4(), uuid4()
+    return (
+        _snapshot(_entity(section_id, _select(field_id, [{"value": "no", "label": "No"}]))),
+        _snapshot(_entity(section_id, _select(field_id, [{"value": "no", "label": "Not at all"}]))),
+    )
+
+
 def _field_options_reordered() -> _Pair:
     section_id, field_id = uuid4(), uuid4()
     return (
@@ -487,6 +495,16 @@ _RENDERER_CASES: tuple[
         ChangeTier.DESTRUCTIVE,
     ),
     (
+        _field_option_renamed,
+        ChangeVariant.FIELD_OPTION_RENAMED,
+        "No",
+        "Not at all",
+        "allowed_values",
+        None,
+        ["Participants", "Age"],
+        ChangeTier.COSMETIC,
+    ),
+    (
         _field_options_reordered,
         ChangeVariant.FIELD_OPTIONS_REORDERED,
         None,
@@ -532,7 +550,7 @@ def test_variant_map_is_exhaustive_over_the_reachable_kind_pairs() -> None:
 
     Bounded claim: this catches a new *pair*, not a future sub-split inside an
     existing one — the way ``_diff_options`` already splits
-    ``(MODIFIED, FIELD, allowed_values)`` by polarity. That split stays covered
+    ``(MODIFIED, FIELD, allowed_values)`` into add, remove and rename. That split stays covered
     by the per-variant cases below.
     """
     every_pair = {(kind, node_kind) for kind in ChangeKind for node_kind in NodeKind}
@@ -543,8 +561,9 @@ def test_no_variant_exists_outside_the_map_and_the_option_split() -> None:
     assert set(VARIANT_BY_KIND.values()) | {
         ChangeVariant.FIELD_OPTION_ADDED,
         ChangeVariant.FIELD_OPTION_REMOVED,
+        ChangeVariant.FIELD_OPTION_RENAMED,
     } == set(ChangeVariant)
-    assert len(ChangeVariant) == 14
+    assert len(ChangeVariant) == 15
 
 
 def test_every_variant_is_reachable_from_a_real_diff() -> None:

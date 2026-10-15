@@ -4252,7 +4252,7 @@
         "type": "string"
       },
       "ChangeVariant": {
-        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option polarity])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
+        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option add/remove/rename])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
         "enum": [
           "template_instruction_added",
           "template_instruction_removed",
@@ -4267,6 +4267,7 @@
           "field_modified",
           "field_option_added",
           "field_option_removed",
+          "field_option_renamed",
           "field_options_reordered"
         ],
         "title": "ChangeVariant",

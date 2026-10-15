@@ -2,8 +2,8 @@
 
 A legacy bare-string option list and its canonical ``{value, label}`` form must
 read identically through each reader, and the ``{"options": [...]}`` wrapper is
-tolerated everywhere (pure, no IO). ``_diff._option_codes`` is pinned in
-``test_template_diff.py``, the one unit file allowed to import that private
+tolerated everywhere (pure, no IO). The draft diff's option reading is pinned
+in ``test_template_diff.py``, the one unit file allowed to import that private
 module.
 """
 

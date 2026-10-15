@@ -23,6 +23,7 @@ which all pre-date this key.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 from uuid import UUID
 
@@ -30,6 +31,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.llm.claim_value import normalize_options
 from app.models.extraction import ExtractionEntityType
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.extraction_run import RunViewEntityType
@@ -189,6 +191,21 @@ def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
             if "llm_description" not in field or "allow_other" not in field:
                 return True
     return False
+
+
+def canonical_snapshot(schema_: dict[str, Any] | None) -> dict[str, Any]:
+    """A deep copy of a snapshot with every field's options canonical.
+
+    Frozen snapshots keep whatever option shape they were published with, so a
+    structural compare reads both sides through here: a legacy bare-string
+    baseline and a canonical live tree with the same options are equal.
+    """
+    canonical = deepcopy(schema_ or {})
+    for et in canonical.get("entity_types") or []:
+        for field in et.get("fields") or []:
+            if field.get("allowed_values") is not None:
+                field["allowed_values"] = normalize_options(field["allowed_values"])
+    return canonical
 
 
 def baseline_is_restorable(schema_: dict[str, Any] | None) -> bool:

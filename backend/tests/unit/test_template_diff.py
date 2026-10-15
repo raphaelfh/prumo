@@ -21,7 +21,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.domain.template_change import ChangeTier
+from app.domain.template_change import ChangeTier, ChangeVariant
 from app.services.extraction_snapshot import SNAPSHOT_SQL
 from app.services.template_versioning import _diff
 from app.services.template_versioning._diff import (
@@ -29,6 +29,7 @@ from app.services.template_versioning._diff import (
     NodeKind,
     diff_snapshots,
 )
+from app.services.template_versioning._diff_read import _row_id, _variant_of
 from tests.unit.helpers.snapshot_builders import entity_node as _entity
 from tests.unit.helpers.snapshot_builders import field_node as _field
 from tests.unit.helpers.snapshot_builders import snapshot as _snapshot
@@ -381,7 +382,7 @@ def test_true_sibling_swap_is_one_cosmetic_reorder() -> None:
 
 
 # --------------------------------------------------------------------------
-# D1 — options (bare strings, legacy dict shape, no rename detection)
+# D1 — options (bare strings, legacy dict shape, compared by code)
 # --------------------------------------------------------------------------
 
 
@@ -397,11 +398,11 @@ def test_dict_shaped_legacy_options_match_the_bare_list() -> None:
     assert diff_snapshots(base, curr, fields_with_values=NO_VALUES).total == 0
 
 
-def test_dict_shaped_value_label_options_match_the_bare_codes() -> None:
+def test_dict_shaped_value_label_options_match_the_canonical_list() -> None:
     section_id, field_id = uuid4(), uuid4()
-    legacy = {"options": [{"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}]}
-    base = _snapshot(_entity(section_id, _select(field_id, legacy)))
-    curr = _snapshot(_entity(section_id, _select(field_id, ["yes", "no"])))
+    canonical = [{"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}]
+    base = _snapshot(_entity(section_id, _select(field_id, {"options": canonical})))
+    curr = _snapshot(_entity(section_id, _select(field_id, canonical)))
 
     assert diff_snapshots(base, curr, fields_with_values=NO_VALUES).total == 0
 
@@ -415,6 +416,8 @@ def test_removed_option_is_destructive() -> None:
     assert change.tier is ChangeTier.DESTRUCTIVE
     assert change.attribute == "allowed_values"
     assert (change.before, change.after) == ("unclear", None)
+    assert change.option_code == "unclear"
+    assert _variant_of(change) is ChangeVariant.FIELD_OPTION_REMOVED
 
 
 def test_added_option_is_additive() -> None:
@@ -425,6 +428,54 @@ def test_added_option_is_additive() -> None:
     change = _only(diff_snapshots(base, curr, fields_with_values=NO_VALUES))
     assert change.tier is ChangeTier.ADDITIVE
     assert (change.before, change.after) == (None, "unclear")
+    assert change.option_code == "unclear"
+    assert _variant_of(change) is ChangeVariant.FIELD_OPTION_ADDED
+
+
+def test_label_only_change_is_one_cosmetic_rename() -> None:
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(
+        _entity(
+            section_id,
+            _select(
+                field_id,
+                [{"value": "dev", "label": "Development"}, {"value": "val", "label": "Validation"}],
+            ),
+        )
+    )
+    curr = _snapshot(
+        _entity(
+            section_id,
+            _select(
+                field_id,
+                [
+                    {"value": "dev", "label": "Development only"},
+                    {"value": "val", "label": "Validation"},
+                ],
+            ),
+        )
+    )
+
+    change = _only(diff_snapshots(base, curr, fields_with_values=NO_VALUES))
+    assert change.kind is ChangeKind.MODIFIED
+    assert change.tier is ChangeTier.COSMETIC
+    assert (change.attribute, change.before, change.after, change.option_code) == (
+        "allowed_values",
+        "Development",
+        "Development only",
+        "dev",
+    )
+    assert _variant_of(change) is ChangeVariant.FIELD_OPTION_RENAMED
+    assert _row_id(change).endswith(":allowed_values:dev")
+
+
+def test_legacy_and_canonical_options_with_the_same_codes_are_no_change() -> None:
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _select(field_id, ["Yes", "No"])))
+    canonical = [{"value": "Yes", "label": "Yes"}, {"value": "No", "label": "No"}]
+    curr = _snapshot(_entity(section_id, _select(field_id, canonical)))
+
+    assert diff_snapshots(base, curr, fields_with_values=NO_VALUES).total == 0
 
 
 def test_reordered_options_are_one_cosmetic_change_for_the_field() -> None:
@@ -725,16 +776,24 @@ def test_baseline_without_the_key_reads_as_no_key() -> None:
 
 
 @pytest.mark.parametrize(
-    "raw",
+    ("raw", "kept"),
     [
-        ["development_only", "validation_only"],
-        [
-            {"value": "development_only", "label": "Development only"},
-            {"value": "validation_only", "label": "Validation only"},
-        ],
-        {"options": ["development_only", "validation_only"]},
+        (["development_only", "validation_only"], ["development_only"]),
+        (
+            [
+                {"value": "development_only", "label": "Development only"},
+                {"value": "validation_only", "label": "Validation only"},
+            ],
+            [{"value": "development_only", "label": "Development only"}],
+        ),
+        ({"options": ["development_only", "validation_only"]}, ["development_only"]),
     ],
     ids=["legacy", "canonical", "wrapped"],
 )
-def test_option_codes_read_values_from_every_shape(raw: object) -> None:
-    assert _diff._option_codes(raw) == ["development_only", "validation_only"]
+def test_option_codes_read_values_from_every_shape(raw: object, kept: list[Any]) -> None:
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _select(field_id, raw)))
+    curr = _snapshot(_entity(section_id, _select(field_id, kept)))
+
+    change = _only(diff_snapshots(base, curr, fields_with_values=NO_VALUES))
+    assert (change.tier, change.option_code) == (ChangeTier.DESTRUCTIVE, "validation_only")

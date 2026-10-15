@@ -118,6 +118,43 @@ async def fresh_charms(db: AsyncSession) -> tuple[UUID, UUID, dict[str, Any]]:
     return project_id, template_id, await active_schema(db, template_id)
 
 
+LEGACY_OPTIONS = ["Yes", "No"]
+CANONICAL_OPTIONS = [{"value": "Yes", "label": "Yes"}, {"value": "No", "label": "No"}]
+
+
+async def set_options_silently(db: AsyncSession, target_field_id: UUID, options: Any) -> None:
+    """Write a field's ``allowed_values`` with the draft-marker trigger off,
+    so the write alone neither opens nor counts as a draft."""
+    await db.execute(
+        text(
+            "ALTER TABLE public.extraction_fields DISABLE TRIGGER trg_extraction_fields_mark_draft"
+        )
+    )
+    await db.execute(
+        text(
+            "UPDATE public.extraction_fields SET allowed_values = CAST(:v AS jsonb) WHERE id = :id"
+        ),
+        {"v": _json.dumps(options), "id": str(target_field_id)},
+    )
+    await db.execute(
+        text("ALTER TABLE public.extraction_fields ENABLE TRIGGER trg_extraction_fields_mark_draft")
+    )
+    await db.flush()
+
+
+async def plant_legacy_option_baseline(
+    db: AsyncSession, project_id: UUID, template_id: UUID
+) -> UUID:
+    """Publish a baseline whose ``model_development.shrinkage`` options are
+    stored in the legacy bare-string shape; returns that field's id."""
+    target = await field_id(db, template_id, "model_development", "shrinkage")
+    await set_options_silently(db, target, LEGACY_OPTIONS)
+    await TemplateVersionService(db).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    return target
+
+
 async def force_narrow_baseline(db: AsyncSession, template_id: UUID, section: UUID) -> None:
     """Rewrite the active version's schema into the pre-0017 "narrow" shape.
 

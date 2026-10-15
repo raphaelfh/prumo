@@ -17,9 +17,9 @@ change, never remove+add. ``sort_order`` is excluded from the attribute loop
 entirely — ``planFieldMove`` renumbers whole sections on every move, so the
 integers are noise; reorder is derived from the *relative* sequence of ids
 present under the same parent on both sides. Options, in any stored shape, are
-reduced to their codes (values) via the shared :func:`normalize_options` and
-set-differenced — no rename detection is
-possible, so callers must never claim one.
+read through the shared :func:`normalize_options` and compared by code (value):
+a code on one side only is an add or a remove, and a label change on a kept code
+is a cosmetic rename — the stored code, and so every recorded answer, survives it.
 
 **D2 — tiers** answer one question: *can this invalidate data a reviewer already
 entered, or change the completion gate of an in-flight run?* :data:`ATTRIBUTE_TIERS`
@@ -186,11 +186,14 @@ class TemplateChange:
     """One difference between the published version and the live draft.
 
     ``before``/``after`` carry the raw snapshot values for a
-    :attr:`ChangeKind.MODIFIED` attribute, the removed/added option code for an
-    ``allowed_values`` change, and the **parent labels** for a
+    :attr:`ChangeKind.MODIFIED` attribute and the **parent labels** for a
     :attr:`ChangeKind.MOVED` field ("Section A" → "Section B"). For
     :attr:`ChangeKind.REORDERED`, ``after`` is how many siblings the reorder
     covers.
+
+    ``option_code`` is the option's stored code for an ``allowed_values``
+    MODIFIED change; ``before``/``after`` carry the removed/added code, or the
+    old/new label for a rename.
     """
 
     kind: ChangeKind
@@ -209,6 +212,7 @@ class TemplateChange:
     attribute: str | None = None
     before: Any = None
     after: Any = None
+    option_code: str | None = None
 
     @property
     def node_id(self) -> UUID | None:
@@ -340,7 +344,8 @@ def _normalize_entity(raw: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_field(raw: dict[str, Any]) -> dict[str, Any]:
     data = {key: raw.get(key, default) for key, default in FIELD_ATTRIBUTE_DEFAULTS.items()}
-    data[OPTION_KEY] = raw.get(OPTION_KEY)
+    options = raw.get(OPTION_KEY)
+    data[OPTION_KEY] = None if options is None else normalize_options(options)
     return data
 
 
@@ -574,53 +579,51 @@ def _attribute_tier(key: str, before: Any, after: Any, *, has_values: bool) -> C
 
 
 # --------------------------------------------------------------------------
-# Options — set difference over codes, then a relative-order check (D1)
+# Options — compared by code: add, remove, rename, then a relative-order check (D1)
 # --------------------------------------------------------------------------
 
 
-def _option_codes(allowed_values: Any) -> list[str]:
-    """The stored option codes (values), in order."""
-    return [o["value"] for o in normalize_options(allowed_values)]
-
-
 def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
-    old = _option_codes(before.data[OPTION_KEY])
-    new = _option_codes(after.data[OPTION_KEY])
-    if old == new:
+    old_labels = {o["value"]: o["label"] for o in normalize_options(before.data[OPTION_KEY])}
+    new_labels = {o["value"]: o["label"] for o in normalize_options(after.data[OPTION_KEY])}
+    old, new = list(old_labels), list(new_labels)
+    if old == new and old_labels == new_labels:
         return []
 
     path = (after.parent_label, after.label)
-    old_set, new_set = set(old), set(new)
-    changes = [
-        TemplateChange(
+
+    def option_change(
+        tier: ChangeTier, code: str, *, was: str | None = None, now: str | None = None
+    ) -> TemplateChange:
+        return TemplateChange(
             kind=ChangeKind.MODIFIED,
             node_kind=NodeKind.FIELD,
-            tier=ChangeTier.DESTRUCTIVE,
+            tier=tier,
             label_path=path,
             raw_node_id=after.node_id,
             attribute=OPTION_KEY,
-            before=code,
+            before=was,
+            after=now,
+            option_code=code,
         )
-        for code in dict.fromkeys(old)
-        if code not in new_set
+
+    changes = [
+        option_change(ChangeTier.DESTRUCTIVE, code, was=code)
+        for code in old
+        if code not in new_labels
     ]
     changes += [
-        TemplateChange(
-            kind=ChangeKind.MODIFIED,
-            node_kind=NodeKind.FIELD,
-            tier=ChangeTier.ADDITIVE,
-            label_path=path,
-            raw_node_id=after.node_id,
-            attribute=OPTION_KEY,
-            after=code,
-        )
-        for code in dict.fromkeys(new)
-        if code not in old_set
+        option_change(ChangeTier.ADDITIVE, code, now=code) for code in new if code not in old_labels
+    ]
+    changes += [
+        option_change(ChangeTier.COSMETIC, code, was=old_labels[code], now=new_labels[code])
+        for code in new
+        if code in old_labels and old_labels[code] != new_labels[code]
     ]
 
-    # Renames are undetectable on bare strings, so only the *relative* order of
-    # the options common to both sides can be called a reorder.
-    if [c for c in old if c in new_set] != [c for c in new if c in old_set]:
+    # A rename keeps its code, so the relative order of the shared codes is the
+    # reorder signal.
+    if [c for c in old if c in new_labels] != [c for c in new if c in old_labels]:
         changes.append(
             TemplateChange(
                 kind=ChangeKind.REORDERED,
