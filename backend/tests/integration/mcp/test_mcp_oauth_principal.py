@@ -125,6 +125,15 @@ async def test_expired_access_token_401_then_refresh_works(
     assert (await _list_tools(oauth_http_client, r.json()["access_token"])).status_code == 200
 
 
+async def test_refresh_token_as_bearer_is_401(
+    oauth_http_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await connect(oauth_http_client, db_session, SEED.primary_profile)
+    assert (await _list_tools(oauth_http_client, tokens.access)).status_code == 200
+
+    _assert_rejected(await _list_tools(oauth_http_client, tokens.refresh))
+
+
 async def test_resource_mismatch_is_401(
     oauth_http_client: AsyncClient, db_session: AsyncSession
 ) -> None:
