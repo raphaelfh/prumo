@@ -120,7 +120,7 @@ export const extraction = {
     sectionExtractionErrorAuth: 'Authentication error',
     sectionExtractionErrorNoEntryKey: 'Entry key missing',
     sectionExtractionErrorRunBusy: 'AI extraction is paused during consensus',
-    sectionExtractionErrorRunFinalized: 'This article is finalized. Reopen it to run AI again.',
+    sectionExtractionErrorRunFinalized: 'Run already finalized',
     sectionExtractionErrorEndpointUnavailable: 'The AI connection for this engine is unavailable',
     fullAICompleteSummary: '{{n}} suggestion(s) created across {{ok}}/{{total}} sections.',
     // Field/template management toasts
