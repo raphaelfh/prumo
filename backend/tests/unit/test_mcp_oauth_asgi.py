@@ -4,13 +4,21 @@ a recorded ``send``, so the lines register diff coverage (ADR 0022)."""
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import pytest
 from limits import parse
 from mcp.server.transport_security import DEFAULT_MAX_REQUEST_BODY_SIZE
 
-from app.api.mcp.oauth.asgi import Limited, ip_key, read_body, replay
+from app.api.mcp.oauth.asgi import (
+    Limited,
+    PublicClientDefault,
+    client_id_key,
+    ip_key,
+    read_body,
+    replay,
+)
 from app.core.middleware import PathScopedCORSMiddleware
 
 _TWO_PER_MINUTE = parse("2/minute")
@@ -195,6 +203,107 @@ async def test_a_lifespan_scope_passes_straight_through() -> None:
 
 def test_ip_key_is_the_client_host() -> None:
     assert ip_key(_scope(), b"") == "9.8.7.6"
+
+
+_CLIENT_ID = "0b6f1f9e-3c1a-4c55-9a43-2f0b2c1d9e10"
+_FORM = [(b"content-type", b"application/x-www-form-urlencoded")]
+
+
+def test_client_id_key_reads_the_query_string() -> None:
+    scope = {**_scope(), "query_string": f"response_type=code&client_id={_CLIENT_ID}".encode()}
+    assert client_id_key(scope, b"") == f"client:{_CLIENT_ID}"
+
+
+def test_client_id_key_reads_a_form_body() -> None:
+    scope = {**_scope("POST", headers=_FORM), "query_string": b""}
+    body = f"response_type=code&client_id={_CLIENT_ID}".encode()
+    assert client_id_key(scope, body) == f"client:{_CLIENT_ID}"
+
+
+def test_client_id_key_ignores_a_json_body() -> None:
+    scope = {**_scope("POST", headers=[(b"content-type", b"application/json")])}
+    body = f"client_id={_CLIENT_ID}".encode()
+    assert client_id_key(scope, body) == "ip:9.8.7.6"
+
+
+@pytest.mark.parametrize(
+    "query", [b"", b"client_id=", b"client_id=not-a-uuid"], ids=["absent", "empty", "not-uuid"]
+)
+def test_client_id_key_falls_back_to_the_ip(query: bytes) -> None:
+    scope = {**_scope(), "query_string": query}
+    assert client_id_key(scope, b"") == "ip:9.8.7.6"
+
+
+class _BodyInner(_Inner):
+    """Records the scope and the whole replayed body."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.scope: dict | None = None
+
+    async def __call__(self, scope: dict, receive, send) -> None:
+        self.scope = scope
+        await super().__call__(scope, receive, send)
+
+
+async def _register_through(body: bytes) -> _BodyInner:
+    inner = _BodyInner()
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode()),
+    ]
+    sent = _Sent()
+    await PublicClientDefault(inner)(_scope("POST", "/register", headers), _receiver(body), sent)
+    assert sent.status == 200
+    return inner
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"redirect_uris": ["x"]}, {"redirect_uris": ["x"], "token_endpoint_auth_method": None}],
+    ids=["missing", "null"],
+)
+async def test_public_client_default_sets_none(payload: dict) -> None:
+    inner = await _register_through(json.dumps(payload).encode())
+    assert inner.body is not None
+    sent_body = json.loads(inner.body)
+    assert sent_body["token_endpoint_auth_method"] == "none"
+    assert sent_body["redirect_uris"] == ["x"]
+    assert inner.scope is not None
+    lengths = [v for k, v in inner.scope["headers"] if k == b"content-length"]
+    assert lengths == [str(len(inner.body)).encode()]
+
+
+async def test_public_client_default_keeps_an_explicit_method() -> None:
+    raw = json.dumps({"token_endpoint_auth_method": "client_secret_post"}).encode()
+    inner = await _register_through(raw)
+    assert inner.body == raw
+
+
+@pytest.mark.parametrize("raw", [b"not json", b"[1, 2]", b"\xff"], ids=["text", "array", "binary"])
+async def test_public_client_default_passes_other_bodies_unchanged(raw: bytes) -> None:
+    inner = await _register_through(raw)
+    assert inner.body == raw
+
+
+async def test_public_client_default_oversized_body_is_413() -> None:
+    inner = _Inner()
+    sent = _Sent()
+    oversized = _receiver(b"x" * DEFAULT_MAX_REQUEST_BODY_SIZE, b"y")
+    await PublicClientDefault(inner)(_scope("POST", "/register"), oversized, sent)
+    assert sent.status == 413
+    assert inner.calls == 0
+
+
+@pytest.mark.parametrize(
+    "scope", [_scope("OPTIONS", "/register"), {"type": "lifespan"}], ids=["options", "lifespan"]
+)
+async def test_public_client_default_passes_options_and_non_http(scope: dict) -> None:
+    inner = _Inner()
+    await PublicClientDefault(inner)(scope, _receiver(b"untouched"), _Sent())
+    assert inner.calls == 1
+    if scope["type"] == "http":
+        assert inner.body == b"untouched"
 
 
 def _cors(inner: _Inner) -> PathScopedCORSMiddleware:

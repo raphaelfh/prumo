@@ -207,7 +207,14 @@ ignore_decorators = [
 # a validator that ignores it still cannot drop the parameter, so the
 # finding is never actionable. `model_config` is the same story for the
 # Pydantic settings/schema declaration.
-ignore_names = ["model_config", "cls"]
+ignore_names = [
+    "model_config",
+    "cls",
+    # OAuth provider protocol: called by mcp.server.auth handlers, never by name
+    "get_client",
+    "register_client",
+    "authorize",
+]
 min_confidence = 60
 
 [tool.uv]

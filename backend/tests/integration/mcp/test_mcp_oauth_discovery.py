@@ -98,3 +98,15 @@ def test_settings_fail_closed(value: str | None, enabled: bool) -> None:
     else:
         with pytest.raises(RuntimeError):
             _ = built.public_api_url
+
+
+async def test_authorize_and_register_are_404_when_oauth_off(mcp_http_client: AsyncClient) -> None:
+    assert (await mcp_http_client.get("/authorize")).status_code == 404
+    assert (await mcp_http_client.post("/register", json={})).status_code == 404
+
+
+async def test_register_preflight_from_unlisted_origin(oauth_http_client: AsyncClient) -> None:
+    preflight = {**PREFLIGHT, "Access-Control-Request-Method": "POST"}
+    r = await oauth_http_client.options("/register", headers=preflight)
+    assert r.headers.get("access-control-allow-origin") == "*"
+    assert "access-control-allow-credentials" not in r.headers

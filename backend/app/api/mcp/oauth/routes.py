@@ -2,17 +2,26 @@
 
 RFC 9728 protected-resource metadata and RFC 8414 authorization-server
 metadata, both built by the SDK and served through its credential-less CORS
-(``allow_origins="*"``); ``OAUTH_CORS_PATHS`` is what ``main.py`` exempts from
-the global allow-list CORS so that route-level CORS answers.
+(``allow_origins="*"``); the SDK's authorize and dynamic-registration
+endpoints over ``PrumoOAuthProvider``. ``OAUTH_CORS_PATHS`` is what
+``main.py`` exempts from the global allow-list CORS so that route-level CORS
+answers.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from limits import parse
 from mcp.server.auth.handlers.metadata import MetadataHandler, ProtectedResourceMetadataHandler
-from mcp.server.auth.routes import build_metadata, cors_middleware, validate_issuer_url
+from mcp.server.auth.provider import OAuthAuthorizationServerProvider
+from mcp.server.auth.routes import (
+    build_metadata,
+    cors_middleware,
+    create_auth_routes,
+    validate_issuer_url,
+)
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import ProtectedResourceMetadata
 from pydantic import AnyHttpUrl
@@ -20,7 +29,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from app.api.mcp.oauth.asgi import Limited, ip_key
+from app.api.mcp.oauth.asgi import Limited, PublicClientDefault, client_id_key, ip_key
+from app.api.mcp.oauth.provider import PrumoOAuthProvider
 from app.core.config import settings
 from app.services.mcp_oauth_service import OAUTH_SCOPES, OFFLINE_ACCESS
 
@@ -62,9 +72,41 @@ def build_oauth_routes() -> list[Route]:
         authorization_servers=[issuer],
         scopes_supported=scopes,
     )
+    # The cast: the provider implements only the methods these two routes call.
+    sdk = {
+        route.path: route.endpoint
+        for route in create_auth_routes(
+            cast(OAuthAuthorizationServerProvider[Any, Any, Any], PrumoOAuthProvider()),
+            issuer,
+            client_registration_options=registration,
+            revocation_options=revocation,
+        )
+    }
     return [
         _metadata_route(PRM_PATH, ProtectedResourceMetadataHandler(prm).handle, "oauth-prm"),
         _metadata_route(AS_METADATA_PATH, MetadataHandler(as_metadata).handle, "oauth-as-meta"),
+        Route(
+            "/authorize",
+            endpoint=Limited(
+                sdk["/authorize"],
+                limit=parse("30/minute"),
+                bucket="oauth-authorize",
+                key=client_id_key,
+                reads_body=True,
+            ),
+            methods=["GET", "POST"],
+        ),
+        Route(
+            "/register",
+            endpoint=Limited(
+                PublicClientDefault(sdk["/register"]),
+                limit=parse("10/minute"),
+                bucket="oauth-register",
+                key=ip_key,
+                reads_body=False,
+            ),
+            methods=["POST", "OPTIONS"],
+        ),
     ]
 
 

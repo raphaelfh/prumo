@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     def mcp_resource_url(self) -> str:
         return self.public_api_url + "/mcp"
 
+    # Comma-separated OAuth redirect URIs a client may register (exact match);
+    # loopback http URIs are always allowed (ADR 0022).
+    MCP_OAUTH_REDIRECT_URIS: str = "https://claude.ai/api/mcp/auth_callback"
+
+    @property
+    def mcp_oauth_redirect_uris_list(self) -> list[str]:
+        return [u.strip() for u in self.MCP_OAUTH_REDIRECT_URIS.split(",") if u.strip()]
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Return the CORS allow-list with a safe development fallback."""

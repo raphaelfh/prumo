@@ -1,4 +1,5 @@
-"""ASGI plumbing for the OAuth routes: body buffering and THE rate-limit wrapper.
+"""ASGI plumbing for the OAuth routes: body buffering, THE rate-limit wrapper
+and its keys, and the public-client default for registration.
 
 ``Limited`` is the only rate limiter for OAuth routes (ADR 0022). It is a raw
 ASGI class, not a slowapi decorator: the SDK handlers are plain request ->
@@ -8,10 +9,13 @@ a form body (``client_id``) needs the body before the handler runs.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from mcp.server.transport_security import DEFAULT_MAX_REQUEST_BODY_SIZE
+from starlette.datastructures import Headers, QueryParams
 from starlette.responses import JSONResponse
 
 from app.utils.rate_limiter import client_ip, too_many
@@ -57,6 +61,67 @@ def replay(body: bytes, receive: Receive) -> Receive:
 
 def ip_key(scope: Scope, body: bytes) -> str:  # noqa: ARG001 - the Limited key signature
     return client_ip(scope)
+
+
+def _is_form(scope: Scope) -> bool:
+    content_type = Headers(scope=scope).get("content-type", "")
+    return content_type.split(";", 1)[0].strip().lower() == "application/x-www-form-urlencoded"
+
+
+def client_id_key(scope: Scope, body: bytes) -> str:
+    """``client:<id>`` for a well-formed ``client_id`` (query string, else a form
+    body); otherwise ``ip:<host>``, so malformed ids share their caller's bucket."""
+    client_id = QueryParams(scope.get("query_string", b"")).get("client_id")
+    if client_id is None and _is_form(scope):
+        client_id = QueryParams(body).get("client_id")
+    try:
+        return f"client:{UUID(client_id or '')}"
+    except ValueError:
+        return "ip:" + client_ip(scope)
+
+
+def _with_public_default(body: bytes) -> bytes | None:
+    """The JSON object with a missing/null ``token_endpoint_auth_method`` set to
+    ``"none"``, re-encoded; ``None`` when ``body`` needs no change."""
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get("token_endpoint_auth_method") is not None:
+        return None
+    data["token_endpoint_auth_method"] = "none"
+    return json.dumps(data).encode()
+
+
+class PublicClientDefault:
+    """Make a registration that names no token auth method a public client.
+
+    The SDK's registration handler defaults a missing method to
+    ``client_secret_post``; this server registers public clients only, so the
+    default is rewritten to ``"none"`` before the handler parses the body.
+    An explicit method is left alone (and refused later unless ``"none"``).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+        body = await read_body(receive)
+        if body is None:
+            await JSONResponse({"error": "request_too_large"}, status_code=413)(
+                scope, receive, send
+            )
+            return
+        patched = _with_public_default(body)
+        if patched is not None:
+            body = patched
+            headers = [(k, v) for k, v in scope["headers"] if k != b"content-length"]
+            headers.append((b"content-length", str(len(body)).encode("ascii")))
+            scope = {**scope, "headers": headers}
+        await self.app(scope, replay(body, receive), send)
 
 
 def _is_preflight(scope: Scope) -> bool:
