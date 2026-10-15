@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-09-24
+last_reviewed: 2026-10-15
 owner: '@raphaelfh'
 adr_number: '0020'
 ---
@@ -61,6 +61,8 @@ registration for zero clients that need it. A PAT reaches the same
 long-lived-credential goal with the shape those clients already expect
 (paste a bearer token into a config file), and issuance instead of a JWT
 refresh loop avoids inventing agent-side session renewal.
+
+**Amended by ADR 0022 (2026-10):** OAuth is now accepted for /mcp, with prumo as the authorization server; PATs remain the credential for header-capable agents.
 
 Reusing the JWT unmodified was rejected: it is short-lived by design (session
 security for the browser), and widening its lifetime for MCP would weaken it
