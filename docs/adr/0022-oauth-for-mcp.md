@@ -144,6 +144,9 @@ Live-only facts to verify when OAuth is first enabled:
 - Whether the host sends `offline_access` and how it behaves without a
   refresh token when `scopes_supported` omits it.
 - The production value of `PUBLIC_API_URL`.
+- Before enabling, that the server sees real client IPs behind the hosting
+  proxy (forwarded-IP trust is configured). Otherwise every request carries
+  the proxy's address and the per-IP OAuth limits act as one global limit.
 
 ## Validation
 
