@@ -1,6 +1,7 @@
 """Which failures mean "the database is unavailable" for one /mcp request,
 and the per-request mark the auth wrapper turns into a 503."""
 
+import asyncio
 from types import SimpleNamespace
 
 import asyncpg
@@ -15,32 +16,56 @@ def _invalidated() -> DBAPIError:
     return DBAPIError("SELECT 1", {}, Exception("gone"), connection_invalidated=True)
 
 
+def _wrapped(cls: type[DBAPIError], cause: BaseException) -> DBAPIError:
+    """A driver error as SQLAlchemy's asyncpg dialect raises it: the DBAPI
+    adapter error (``orig``) chained ``from`` the asyncpg exception."""
+    orig = Exception(str(cause))
+    orig.__cause__ = cause
+    return cls("SELECT 1", {}, orig)
+
+
 @pytest.mark.parametrize(
     ("exc", "unavailable"),
     [
         (PoolTimeoutError(), True),
-        (InterfaceError("x", {}, Exception()), True),
         (_invalidated(), True),
-        (OSError("connection refused"), True),
-        (TimeoutError(), True),
+        (ConnectionRefusedError("connection refused"), True),
         (asyncpg.exceptions.TooManyConnectionsError("too many clients"), True),
         (asyncpg.exceptions.CannotConnectNowError("starting up"), True),
         (asyncpg.exceptions.ConnectionDoesNotExistError("closed"), True),
+        (_wrapped(OperationalError, asyncpg.exceptions.TooManyConnectionsError("x")), True),
+        (_wrapped(InterfaceError, asyncpg.exceptions.ConnectionDoesNotExistError("x")), True),
+        (_wrapped(InterfaceError, ConnectionRefusedError("refused")), True),
+        (InterfaceError("x", {}, Exception()), False),
         (OperationalError("x", {}, Exception()), False),
         (IntegrityError("x", {}, Exception()), False),
+        (asyncpg.exceptions.InterfaceError("another operation is in progress"), False),
+        (FileNotFoundError("missing.pdf"), False),
+        (PermissionError("denied"), False),
+        (OSError("disk"), False),
+        (TimeoutError(), False),
+        (asyncio.TimeoutError(), False),
         (RuntimeError("bug"), False),
     ],
     ids=[
         "pool-timeout",
-        "interface",
         "invalidated",
-        "os-error",
-        "timeout",
+        "connection-refused",
         "too-many-clients",
         "cannot-connect-now",
         "connection-gone",
+        "wrapped-too-many-clients",
+        "wrapped-connection-gone",
+        "wrapped-connection-refused",
+        "interface-no-connection-cause",
         "operational-live-connection",
         "integrity",
+        "asyncpg-interface-misuse",
+        "file-not-found",
+        "permission",
+        "os-error",
+        "timeout",
+        "asyncio-timeout",
         "bug",
     ],
 )

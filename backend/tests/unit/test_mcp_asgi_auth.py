@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import asyncpg
 import pytest
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.mcp import asgi_auth
@@ -27,6 +27,7 @@ PRINCIPAL = McpPrincipal(
     token_id=uuid4(),
     scope="read",
     token_expires_at=datetime(2099, 1, 1, tzinfo=UTC),
+    project_ids=None,
 )
 
 
@@ -216,16 +217,21 @@ async def test_contextvar_reset_when_inner_raises(monkeypatch: pytest.MonkeyPatc
         asgi_auth.current_principal()
 
 
+def _wrapped_operational(cause: BaseException) -> OperationalError:
+    orig = Exception(str(cause))
+    orig.__cause__ = cause
+    return OperationalError("SELECT 1", {}, orig)
+
+
 @pytest.mark.parametrize(
     "exc",
     [
-        OperationalError("x", {}, Exception()),
+        _wrapped_operational(asyncpg.exceptions.TooManyConnectionsError("too many clients")),
         PoolTimeoutError(),
-        OSError("connection refused"),
-        TimeoutError(),
+        ConnectionRefusedError("connection refused"),
         asyncpg.exceptions.TooManyConnectionsError("too many clients"),
     ],
-    ids=["operational", "pool-timeout", "os-error", "timeout", "too-many-clients"],
+    ids=["operational-too-many-clients", "pool-timeout", "connection-refused", "too-many-clients"],
 )
 async def test_database_unavailable_during_lookup_is_503(
     monkeypatch: pytest.MonkeyPatch, exc: Exception
@@ -253,6 +259,77 @@ async def test_database_unavailable_during_lookup_is_503(
 
     assert recorder.calls == [("mcp_auth_unavailable", {"error": type(exc).__name__})]
     assert secret not in repr(recorder.calls)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        OperationalError("x", {}, Exception()),
+        IntegrityError("x", {}, Exception()),
+        FileNotFoundError("x"),
+        TimeoutError(),
+    ],
+    ids=["operational-live-connection", "integrity", "file-not-found", "timeout"],
+)
+async def test_a_lookup_bug_propagates_as_a_500(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(side_effect=exc))
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        raise AssertionError("inner must not be called")
+
+    sent: list[dict] = []
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    secret = "prumo_pat_" + "s" * 43
+    with pytest.raises(type(exc)):
+        await asgi_auth._PatAuthApp(inner)(
+            _scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, send
+        )
+    assert sent == []
+
+
+async def test_a_failing_rollback_after_a_touch_failure_still_serves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def factory() -> object:
+        class _Ctx:
+            async def __aenter__(self) -> SimpleNamespace:
+                return SimpleNamespace(
+                    commit=AsyncMock(), rollback=AsyncMock(side_effect=PoolTimeoutError())
+                )
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(asgi_auth.mcp_session, "session_factory", factory)
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
+    monkeypatch.setattr(
+        asgi_auth, "touch_last_used", AsyncMock(side_effect=RuntimeError("touch failed"))
+    )
+    recorder = _Recorder()
+    monkeypatch.setattr(asgi_auth, "logger", recorder)
+
+    served: list[bool] = []
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        served.append(True)
+
+    secret = "prumo_pat_" + "a" * 43
+    await asgi_auth._PatAuthApp(inner)(
+        _scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda _m: None
+    )
+
+    assert served == [True]
+    assert [event for event, _ in recorder.calls] == [
+        "mcp_touch_last_used_failed",
+        "mcp_touch_rollback_failed",
+    ]
 
 
 async def test_one_session_serves_lookup_touch_and_dispatch(

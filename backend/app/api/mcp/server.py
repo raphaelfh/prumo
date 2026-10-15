@@ -303,7 +303,7 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
             if db is not None:
                 # Discards a tool's partial, unaudited writes; an audited refusal
                 # already committed its own row through ``audit.refuse``.
-                await db.rollback()
+                await _rollback_quietly(db, name)
             if mcp_session.is_database_unavailable(exc):
                 # Over HTTP the auth wrapper answers 503 + Retry-After instead;
                 # this retryable result is what an in-process client sees.
@@ -324,6 +324,15 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
             refusal = error_result(err)
             span.set_attribute("response_size", _response_size(refusal))
             return refusal
+
+
+async def _rollback_quietly(db: AsyncSession, tool: str) -> None:
+    """Roll back without letting a rollback failure (often the same dead
+    connection) replace the tool's own error and its mapping."""
+    try:
+        await db.rollback()
+    except Exception as exc:  # noqa: BLE001 - the original error is what the caller maps
+        logger.warning("mcp_tool_rollback_failed", tool=tool, error=type(exc).__name__)
 
 
 def _response_size(result: Any) -> int:

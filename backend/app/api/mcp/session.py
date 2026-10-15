@@ -14,7 +14,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 import asyncpg
-from sqlalchemy.exc import DBAPIError, InterfaceError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,18 +24,15 @@ from app.infrastructure.storage import StorageAdapter
 
 session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal
 
-# Failures that mean "no usable connection", not a bug: a pool checkout that
-# timed out, a dropped or refused connection, a server refusing new clients.
-# asyncpg's connect-time errors reach us raw, not wrapped in a DBAPIError.
-_UNAVAILABLE: tuple[type[BaseException], ...] = (
-    PoolTimeoutError,
-    InterfaceError,
-    OSError,
-    TimeoutError,
+# Driver failures that mean "no usable connection", not a bug: a dropped or
+# refused connection, a server refusing new clients or still starting. Never a
+# bare OSError/TimeoutError -- a missing file or a tool's own timeout is a bug
+# to log with its traceback, not a retryable "database busy".
+_CONNECTION_FAILURES: tuple[type[BaseException], ...] = (
+    ConnectionError,  # refused / reset / broken pipe at the socket level
+    asyncpg.exceptions.PostgresConnectionError,  # SQLSTATE class 08, incl. connection gone
     asyncpg.exceptions.TooManyConnectionsError,
     asyncpg.exceptions.CannotConnectNowError,
-    asyncpg.exceptions.PostgresConnectionError,
-    asyncpg.exceptions.InterfaceError,
 )
 
 
@@ -73,10 +70,24 @@ def current_session() -> AsyncSession:
 
 def is_database_unavailable(exc: BaseException) -> bool:
     """True when ``exc`` means the database could not serve the call (retry
-    later), never for a query or data error on a live connection."""
-    if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+    later), never for a query or data error on a live connection.
+
+    A pool checkout timeout or an invalidated connection qualifies outright.
+    Otherwise the driver cause decides: asyncpg's connect-time errors reach us
+    raw, and SQLAlchemy's asyncpg dialect wraps the rest as a ``DBAPIError``
+    whose ``orig`` is chained ``from`` the asyncpg exception.
+    """
+    if isinstance(exc, PoolTimeoutError):
         return True
-    return isinstance(exc, _UNAVAILABLE)
+    if isinstance(exc, DBAPIError):
+        if exc.connection_invalidated:
+            return True
+        orig = exc.orig
+        return orig is not None and (
+            isinstance(orig, _CONNECTION_FAILURES)
+            or isinstance(orig.__cause__, _CONNECTION_FAILURES)
+        )
+    return isinstance(exc, _CONNECTION_FAILURES)
 
 
 def mark_database_unavailable() -> None:

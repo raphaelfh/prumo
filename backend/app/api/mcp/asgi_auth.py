@@ -15,7 +15,6 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from limits import parse
-from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import Response
 
 from app.api.mcp import session as mcp_session
@@ -109,9 +108,9 @@ class _PatAuthApp:
             try:
                 principal = await resolve_principal(db, secret)
             except Exception as exc:
-                if not (
-                    isinstance(exc, SQLAlchemyError) or mcp_session.is_database_unavailable(exc)
-                ):
+                # Only "no usable connection" is a 503; any other lookup failure
+                # is a bug and propagates as a 500 with its traceback.
+                if not mcp_session.is_database_unavailable(exc):
                     raise
                 logger.warning("mcp_auth_unavailable", error=type(exc).__name__)
                 await _service_unavailable(scope, receive, send)
@@ -126,7 +125,10 @@ class _PatAuthApp:
                     await db.commit()
             except Exception:  # noqa: BLE001 - best-effort stamp; auth must proceed regardless
                 logger.warning("mcp_touch_last_used_failed", token_id=str(principal.token_id))
-                await db.rollback()
+                try:
+                    await db.rollback()
+                except Exception as exc:  # noqa: BLE001 - auth still proceeds; dispatch maps a dead session
+                    logger.warning("mcp_touch_rollback_failed", error=type(exc).__name__)
 
             replaced = False
 

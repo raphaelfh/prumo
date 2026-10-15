@@ -244,6 +244,7 @@ async def test_resolve_principal_matches_only_active_well_formed(db_session: Asy
         token_id=created.token.id,
         scope="read_write",
         token_expires_at=created.token.expires_at,
+        project_ids=None,
     )
 
     assert await resolve_principal(db_session, "abc") is None
