@@ -32,6 +32,9 @@ _LEGACY: list[Any] = [
     {"options": ["A", "B"]},
     ["Y", {"value": "NI", "label": "No information"}, {"label": "Z"}],
     [{"value": "dev", "label": "Development only"}],
+    [{"value": 1, "label": "One"}, {"value": "a", "label": 5}, {"value": True}],
+    [{"value": "b", "label": "B"}, "\t\n", " c "],
+    [{"value": "e", "label": "E", "note": "dropped"}],
 ]
 _CANONICAL: list[Any] = [
     [{"value": "Yes", "label": "Yes"}, {"value": "No", "label": "No"}],
@@ -42,6 +45,27 @@ _CANONICAL: list[Any] = [
         {"value": "Z", "label": "Z"},
     ],
     [{"value": "dev", "label": "Development only"}],
+    [
+        {"value": "1", "label": "One"},
+        {"value": "a", "label": "5"},
+        {"value": "True", "label": "True"},
+    ],
+    [{"value": "b", "label": "B"}, {"value": " c ", "label": " c "}],
+    [{"value": "e", "label": "E"}],
+]
+
+#: Every JSON scalar shape ``normalize_options`` accepts, and the edges of
+#: Python's ``str()`` of a float (``1.0``, the [1e15, 1e16) fixed-notation band,
+#: the exponent switch) and of ``str.strip()`` (non-ASCII whitespace).
+_READ_SIDE_PROBES: list[Any] = [
+    [{"value": 0, "label": "zero"}, {"value": False, "label": "F"}, {"label": True}],
+    [{"value": 1.0}, {"value": 100.0}, {"value": 1.5}, {"value": -2.5}],
+    [{"value": 1e15}, {"value": 1234567890123456.5}, {"value": 1e16}, {"value": 1e22}],
+    [{"value": 0.0001}, {"value": 0.00001}, {"value": 3.141592653589793}],
+    [{"value": 0.0, "label": "z"}, {"value": 12345678901234567890}, {"value": "x", "label": None}],
+    [{"value": "a", "label": 2.0}, {"value": "b", "label": False}, {"value": "c", "label": 0}],
+    ["\u00a0", "\u3000x", "\u2028", " ", "y"],
+    [None, 3, True, [1], {"value": ""}, {"label": ""}, {}],
 ]
 
 
@@ -101,18 +125,22 @@ async def test_legacy_rows_become_canonical(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_matches_the_read_side_normalizer(db_session: AsyncSession) -> None:
-    """The stored labels are exactly what ``normalize_options`` derives for the
-    same legacy input, so a legacy baseline and its migrated live row compare
-    equal (no spurious "option renamed" rows)."""
+    """The stored options are exactly what ``normalize_options`` derives from
+    the same stored row, so a legacy baseline and its migrated live row compare
+    equal (no spurious "option renamed" rows). The expectation is computed from
+    the row as read back, because jsonb normalizes numbers on the way in."""
     _, template_id, _ = await fresh_charms(db_session)
-    fields = await _select_fields(db_session, template_id, len(_LEGACY))
-    await _plant(db_session, dict(zip(fields, _LEGACY, strict=True)))
+    fields = await _select_fields(db_session, template_id, len(_READ_SIDE_PROBES))
+    await _plant(db_session, dict(zip(fields, _READ_SIDE_PROBES, strict=True)))
+    expected = [normalize_options(await _options(db_session, f)) or None for f in fields]
+    assert expected[-1] is None and expected[2][0] == {
+        "value": "1000000000000000.0",
+        "label": "1000000000000000.0",
+    }  # the probes reach the empty-result and fixed-notation branches
 
     await _upgrade(db_session)
 
-    assert [await _options(db_session, f) for f in fields] == [
-        normalize_options(raw) for raw in _LEGACY
-    ]
+    assert [await _options(db_session, f) for f in fields] == expected
 
 
 @pytest.mark.asyncio
