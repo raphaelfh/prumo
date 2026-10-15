@@ -17,6 +17,7 @@ from uuid import UUID, uuid5
 
 import pytest
 
+from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -135,7 +136,7 @@ def _signaling_rows(session: CapturingSession) -> list[tuple[str, Any]]:
         (sec, f)
         for sec, rows in _fields_by_section(session).items()
         for f in rows
-        if f.allowed_values == _PAI_SIGNALING
+        if f.allowed_values == normalize_options(_PAI_SIGNALING)
     ]
 
 
@@ -331,7 +332,7 @@ async def test_judgments_use_the_probast_vocabulary() -> None:
     for sec, rows in _fields_by_section(session).items():
         for f in rows:
             if f.name in ("quality_concern", "risk_of_bias", "applicability_concerns"):
-                assert f.allowed_values == _PROBAST_JUDGMENT, (sec, f.name)
+                assert f.allowed_values == normalize_options(_PROBAST_JUDGMENT), (sec, f.name)
                 assert not f.allows_not_applicable, (sec, f.name)
 
 

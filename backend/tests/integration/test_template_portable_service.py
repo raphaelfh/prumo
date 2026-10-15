@@ -427,3 +427,59 @@ async def test_export_reads_legacy_option_rows_canonical(db_session: AsyncSessio
         {"value": "Yes", "label": "Yes"},
         {"value": "No", "label": "No"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_legacy_option_file_is_stored_canonical(db_session: AsyncSession) -> None:
+    """A file written before options carried labels (bare strings, or the
+    ``{"options": [...]}`` wrapper) still imports, and its rows are stored
+    as canonical ``{value, label}`` items."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    doc = parse_portable_document(
+        {
+            "prumo_template": 1,
+            "kind": "extraction",
+            "name": "Legacy options",
+            "sections": [
+                {
+                    "name": "design",
+                    "label": "Design",
+                    "fields": [
+                        {
+                            "name": "study_type",
+                            "label": "Study type",
+                            "type": "select",
+                            "allowed_values": ["Cohort", "RCT"],
+                        },
+                        {
+                            "name": "wrapped",
+                            "label": "Wrapped",
+                            "type": "select",
+                            "allowed_values": {"options": ["X"]},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    result = await import_portable(
+        db_session, project_id=project_id, doc=doc, user_id=SEED.primary_profile
+    )
+
+    rows = await db_session.execute(
+        text(
+            "SELECT f.name, f.allowed_values FROM public.extraction_fields f "
+            "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+            "WHERE et.project_template_id = :tid"
+        ),
+        {"tid": str(result.project_template_id)},
+    )
+    assert dict(rows.tuples().all()) == {
+        "study_type": [
+            {"value": "Cohort", "label": "Cohort"},
+            {"value": "RCT", "label": "RCT"},
+        ],
+        "wrapped": [{"value": "X", "label": "X"}],
+    }

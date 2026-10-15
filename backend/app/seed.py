@@ -59,6 +59,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
+from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -463,7 +464,7 @@ async def seed_charms(session: AsyncSession) -> None:
             field_type=ftype,
             sort_order=sort,
             is_required=required,
-            allowed_values=allowed,
+            allowed_values=normalize_options(allowed) or None,
             unit=unit,
             llm_description=llm,
             allows_not_applicable=allows_not_applicable,
@@ -1397,7 +1398,7 @@ def _field(
         field_type=ftype,
         sort_order=sort,
         is_required=is_required,
-        allowed_values=allowed,
+        allowed_values=normalize_options(allowed) or None,
         unit=unit,
         llm_description=llm,
         allows_not_applicable=allows_not_applicable,

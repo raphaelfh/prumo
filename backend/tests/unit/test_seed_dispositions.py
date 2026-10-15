@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.llm.claim_value import normalize_options
 from app.llm.schema import _enum_values
 from app.models.extraction import ExtractionField
 from app.seed import (
@@ -56,7 +57,7 @@ def test_signaling_sets_not_applicable_for_probast() -> None:
     assert field.allows_not_applicable is True
     # not_evaluated is not a PROBAST option; no_information defaults on (0062).
     assert field.allows_not_evaluated is False
-    assert field.allowed_values == _PROBAST_SIGNALING
+    assert field.allowed_values == normalize_options(_PROBAST_SIGNALING)
 
 
 def test_signaling_no_flag_for_quadas() -> None:
@@ -79,7 +80,7 @@ async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     fields = await seeded(seed_fn, ExtractionField)
     assert fields, "seed produced no fields"
     for f in fields:
-        values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
+        values = {v["value"] for v in (f.allowed_values or [])}
         assert _DISPOSITION_STRINGS.isdisjoint(values), (f.name, values)
 
 
@@ -100,7 +101,7 @@ async def test_probast_ai_owns_ni_as_an_answer_with_the_marker_turned_off() -> N
     assert fields, "seed produced no fields"
     carrying_ni = []
     for f in fields:
-        values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
+        values = {v["value"] for v in (f.allowed_values or [])}
         offending = values & (_DISPOSITION_STRINGS - {"NI"})
         assert not offending, (f.name, offending)
         if "NI" in values:
@@ -127,7 +128,7 @@ async def test_probast_signaling_fields_allow_not_applicable() -> None:
     """Every PROBAST signaling question (which historically offered NA) enables
     the not_applicable disposition; the domain-judgment fields do not."""
     fields = await seeded(seed_probast, ExtractionField)
-    signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
+    signaling = [f for f in fields if f.allowed_values == normalize_options(_PROBAST_SIGNALING)]
     assert signaling, "expected PROBAST signaling fields"
     assert all(f.allows_not_applicable for f in signaling)
 
@@ -141,7 +142,7 @@ async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
     fields = await seeded(seed_probast_ai, ExtractionField)
     # 2.1.0's answer set is v2-local (five answers, NI included), so selecting
     # on the shared four-answer constant would match nothing and pass vacuously.
-    signaling = [f for f in fields if f.allowed_values == _PAI_SIGNALING]
+    signaling = [f for f in fields if f.allowed_values == normalize_options(_PAI_SIGNALING)]
     assert len(signaling) == 42
     flagged = sorted(f.name for f in signaling if f.allows_not_applicable)
     assert flagged == [
@@ -152,7 +153,7 @@ async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
         "q5_data_leakage_avoided",
         "q6_resampling_replicates_all_steps",
     ]
-    judgments = [f for f in fields if f.allowed_values == _PROBAST_JUDGMENT]
+    judgments = [f for f in fields if f.allowed_values == normalize_options(_PROBAST_JUDGMENT)]
     assert judgments
     assert not any(f.allows_not_applicable or f.allows_not_evaluated for f in judgments)
 

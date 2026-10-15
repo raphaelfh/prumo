@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-14
+last_reviewed: 2026-10-15
 owner: '@raphaelfh'
 ---
 
@@ -136,7 +136,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0081_revoke_member_writes` (post-squash numbering; run
+`0084_canonical_field_options` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 

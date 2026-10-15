@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0083_mcp_oauth"
+    expected_head = "0084_canonical_field_options"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2086,3 +2086,15 @@ async def test_migration_0083_mcp_oauth_roundtrip(
         ):
             await session.execute(text(sql), {"u": str(user_id), "p": str(project_id)})
         await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_migration_0084_canonical_options_roundtrip(migration_db_url: str) -> None:
+    """Data-only and forward-only: the downgrade is a no-op, and the upgrade
+    re-runs cleanly over rows that are already canonical."""
+    try:
+        _run_alembic("downgrade", "0083_mcp_oauth", database_url=migration_db_url)
+        assert "0083_mcp_oauth" in _run_alembic("current", database_url=migration_db_url)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "0084_canonical_field_options" in _run_alembic("current", database_url=migration_db_url)

@@ -179,3 +179,32 @@ async def test_convergence_leaves_project_clones_untouched(db_session: AsyncSess
         )
     ).scalar()
     assert still_linked == _PROBAST_AI_TEMPLATE_ID
+
+
+@pytest.mark.asyncio
+async def test_seeded_options_are_canonical(db_session: AsyncSession) -> None:
+    """Every seeded option is a ``{value, label}`` item, never a bare string."""
+    await seed_probast_ai(db_session)
+    await db_session.flush()
+
+    options = (
+        (
+            await db_session.execute(
+                text(
+                    "SELECT f.allowed_values FROM public.extraction_fields f "
+                    "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+                    "WHERE et.template_id = :tid AND jsonb_typeof(f.allowed_values) <> 'null'"
+                ),
+                {"tid": str(_PROBAST_AI_TEMPLATE_ID)},
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert options  # the signaling questions carry options
+    for allowed in options:
+        assert isinstance(allowed, list) and allowed
+        for item in allowed:
+            assert isinstance(item, dict) and set(item) == {"value", "label"}
+            assert item["value"] and item["label"]

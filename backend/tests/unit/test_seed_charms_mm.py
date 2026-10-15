@@ -296,13 +296,17 @@ async def test_confidence_intervals_are_paired_number_fields() -> None:
             assert fields[stem + bound].field_type == "number", stem + bound
 
 
+def _codes(field: ExtractionField) -> list[str]:
+    return [o["value"] for o in field.allowed_values]
+
+
 @pytest.mark.asyncio
 async def test_controlled_vocabularies_match_the_protocol() -> None:
     fields = {f.name: f for f in await seeded(seed_charms_mm, ExtractionField)}
 
     modalities = fields["mm_modalities"]
     assert modalities.field_type == "multiselect"
-    assert modalities.allowed_values == [
+    assert _codes(modalities) == [
         "ecg",
         "pcg",
         "cxr",
@@ -316,36 +320,36 @@ async def test_controlled_vocabularies_match_the_protocol() -> None:
         "wearable-iot",
     ]
 
-    assert fields["mm_fusion_type"].allowed_values == [
+    assert _codes(fields["mm_fusion_type"]) == [
         "early",
         "intermediate",
         "late",
         "none",
     ]
-    assert fields["mm_representation_tier"].allowed_values == [
+    assert _codes(fields["mm_representation_tier"]) == [
         "tier-1",
         "tier-2",
         "tier-3",
     ]
-    assert fields["mm_provenance_flag"].allowed_values == [
+    assert _codes(fields["mm_provenance_flag"]) == [
         "separate-stream",
         "single-field-imaging-origin",
         "na",
     ]
-    assert fields["mm_comparator_type"].allowed_values == [
+    assert _codes(fields["mm_comparator_type"]) == [
         "guideline-score",
         "unimodal-ml",
         "logistic-linear",
         "human-expert",
         "none",
     ]
-    assert fields["mdl_role"].allowed_values == [
+    assert _codes(fields["mdl_role"]) == [
         "multimodal",
         "unimodal-comparator",
         "baseline",
         "guideline-score",
     ]
-    assert fields["pnum_validation_type"].allowed_values == [
+    assert _codes(fields["pnum_validation_type"]) == [
         "apparent",
         "internal",
         "external",
