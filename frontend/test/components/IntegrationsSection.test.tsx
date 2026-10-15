@@ -22,9 +22,14 @@ vi.mock('@/services/personalAccessTokenService', async (importOriginal) => ({
   createMyToken: vi.fn(),
   revokeMyToken: vi.fn(),
 }));
+vi.mock('@/services/oauthConnectionsService', () => ({
+  fetchMyConnections: vi.fn(),
+  revokeMyConnection: vi.fn(),
+}));
 
 import * as svc from '@/services/llmConnectionsService';
 import * as patSvc from '@/services/personalAccessTokenService';
+import * as oauthSvc from '@/services/oauthConnectionsService';
 import {useZoteroIntegration} from '@/hooks/useZoteroIntegration';
 import {IntegrationsSection} from '@/components/user/IntegrationsSection';
 
@@ -33,6 +38,7 @@ beforeEach(() => {
   vi.mocked(svc.fetchMyConnections).mockResolvedValue({ok: true, data: []});
   vi.mocked(svc.fetchProviders).mockResolvedValue({ok: true, data: []});
   vi.mocked(patSvc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
+  vi.mocked(oauthSvc.fetchMyConnections).mockResolvedValue({ok: true, data: []});
   vi.mocked(useZoteroIntegration).mockReturnValue({
     integration: null, isConfigured: false, loading: false, testing: false,
     loadIntegration: vi.fn(), saveCredentials: vi.fn(), testConnection: vi.fn(), disconnect: vi.fn(),
@@ -40,7 +46,7 @@ beforeEach(() => {
 });
 
 describe('IntegrationsSection', () => {
-  it('renders one SettingsPage whose body holds exactly the four groups', () => {
+  it('renders one SettingsPage whose body holds exactly the five groups', () => {
     const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
     const {container} = render(
       <QueryClientProvider client={client}><TooltipProvider><IntegrationsSection /></TooltipProvider></QueryClientProvider>,
@@ -49,13 +55,14 @@ describe('IntegrationsSection', () => {
     const body = container.querySelector('[class~="@container/settings"]');
     expect(body).not.toBeNull();
     const groups = Array.from(body!.children);
-    expect(groups).toHaveLength(4);
+    expect(groups).toHaveLength(5);
     groups.forEach((g) => expect(g).toHaveClass('border-t'));
     expect(within(groups[0] as HTMLElement).getByRole('heading', {level: 2, name: t('llmConnections', 'integrationsTitle')})).toBeInTheDocument();
     expect(within(groups[1] as HTMLElement).getByRole('heading', {level: 2, name: t('user', 'integrationsZoteroTitle')})).toBeInTheDocument();
     expect(within(groups[2] as HTMLElement).getByRole('heading', {level: 2, name: t('personalAccessTokens', 'groupTitle')})).toBeInTheDocument();
-    expect(within(groups[3] as HTMLElement).getByRole('heading', {level: 2, name: t('personalAccessTokens', 'connectTitle')})).toBeInTheDocument();
+    expect(within(groups[3] as HTMLElement).getByRole('heading', {level: 2, name: t('connectedApps', 'groupTitle')})).toBeInTheDocument();
+    expect(within(groups[4] as HTMLElement).getByRole('heading', {level: 2, name: t('personalAccessTokens', 'connectTitle')})).toBeInTheDocument();
     expect(container.querySelector('.space-y-8')).toBeNull();
-    expect(screen.getAllByRole('heading', {level: 2})).toHaveLength(4);
+    expect(screen.getAllByRole('heading', {level: 2})).toHaveLength(5);
   });
 });
