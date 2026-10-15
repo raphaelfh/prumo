@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0082_pat_project_scope"
+    expected_head = "0083_mcp_oauth"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1912,3 +1912,177 @@ async def test_migration_0082_pat_project_scope_roundtrip(
             text("DELETE FROM auth.users WHERE id = :u"), {"u": str(user_id)}
         )
         await migration_session.commit()
+
+
+# --- 0083: OAuth connections to the MCP server -------------------------------
+_OAUTH_TABLES = ("mcp_oauth_clients", "mcp_oauth_requests", "mcp_oauth_tokens")
+_OAUTH_CHECKS = (
+    "ck_personal_access_tokens_kind_check",
+    "ck_personal_access_tokens_kind_shape_check",
+    "ck_mcp_oauth_clients_client_name_check",
+    "ck_mcp_oauth_clients_redirect_uris_check",
+    "ck_mcp_oauth_tokens_kind_check",
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0083_mcp_oauth_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    user_id, project_id, client_id = uuid4(), uuid4(), uuid4()
+    pat_id, connection_id, action_id = uuid4(), uuid4(), uuid4()
+    session = migration_session
+
+    async def schema() -> tuple[set[str], set[str], set[str]]:
+        tables = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = ANY(:t)"
+                    ),
+                    {"t": list(_OAUTH_TABLES)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        columns = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'personal_access_tokens' "
+                        "AND column_name IN ('kind', 'oauth_client_id')"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checks = set(
+            (
+                await session.execute(
+                    text("SELECT conname FROM pg_constraint WHERE conname = ANY(:c)"),
+                    {"c": list(_OAUTH_CHECKS)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.rollback()
+        return tables, columns, checks
+
+    async def scalar(sql: str, **params: str) -> object:
+        value = (await session.execute(text(sql), params)).scalar_one_or_none()
+        await session.rollback()
+        return value
+
+    at_head = (set(_OAUTH_TABLES), {"kind", "oauth_client_id"}, set(_OAUTH_CHECKS))
+    assert await schema() == at_head
+    for sql in (
+        "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (:u,"
+        " 'oauth-0083@test.local', '00000000-0000-0000-0000-000000000000',"
+        " 'authenticated', 'authenticated')",
+        "INSERT INTO public.profiles (id, email) VALUES (:u, 'oauth-0083@test.local')",
+        "INSERT INTO public.projects (id, name, created_by_id, is_active)"
+        " VALUES (:p, 'OAuth 0083 Project', :u, true)",
+    ):
+        await session.execute(text(sql), {"u": str(user_id), "p": str(project_id)})
+    await session.commit()
+    try:
+        # A PAT row written without `kind` defaults to 'pat'.
+        await session.execute(
+            text(
+                "INSERT INTO public.personal_access_tokens (id, user_id, name, token_prefix,"
+                " token_hash, scope, expires_at) VALUES (:id, :u, 'pat', 'prumo_pat_x',"
+                " 'hash-0083', 'read', now() + interval '1 day')"
+            ),
+            {"id": str(pat_id), "u": str(user_id)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO public.mcp_oauth_clients (client_id, client_name, redirect_uris,"
+                " scope) VALUES (:c, 'Claude', ARRAY['https://claude.ai/cb'], 'read write')"
+            ),
+            {"c": str(client_id)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO public.personal_access_tokens (id, user_id, kind, oauth_client_id,"
+                " name, scope, expires_at) VALUES (:id, :u, 'oauth', :c, 'Claude', 'read_write',"
+                " now() + interval '90 days')"
+            ),
+            {"id": str(connection_id), "u": str(user_id), "c": str(client_id)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO public.agent_actions (id, token_id, user_id, project_id, tool,"
+                " input, before, after, outcome, error_code) VALUES (:id, :tok, :u, :p,"
+                " 'edit_template_draft', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'applied', NULL)"
+            ),
+            {
+                "id": str(action_id),
+                "tok": str(connection_id),
+                "u": str(user_id),
+                "p": str(project_id),
+            },
+        )
+        await session.commit()
+        assert (
+            await scalar(
+                "SELECT kind FROM public.personal_access_tokens WHERE id = :id", id=str(pat_id)
+            )
+            == "pat"
+        )
+
+        with pytest.raises(Exception, match="uq_personal_access_tokens_oauth_user_client"):
+            await session.execute(
+                text(
+                    "INSERT INTO public.personal_access_tokens (id, user_id, kind, oauth_client_id,"
+                    " name, scope, expires_at) VALUES (gen_random_uuid(), :u, 'oauth', :c, 'Claude', 'read',"
+                    " now() + interval '90 days')"
+                ),
+                {"u": str(user_id), "c": str(client_id)},
+            )
+        await session.rollback()
+
+        _run_alembic("downgrade", "0082_pat_project_scope", database_url=migration_db_url)
+        try:
+            assert await schema() == (set(), set(), set())
+            assert (
+                await scalar(
+                    "SELECT count(*) FROM public.personal_access_tokens WHERE id = :id",
+                    id=str(connection_id),
+                )
+                == 0
+            )
+            assert (
+                await scalar(
+                    "SELECT token_id IS NULL FROM public.agent_actions WHERE id = :id",
+                    id=str(action_id),
+                )
+                is True
+            )
+            assert (
+                await scalar(
+                    "SELECT token_hash FROM public.personal_access_tokens WHERE id = :id",
+                    id=str(pat_id),
+                )
+                == "hash-0083"
+            )
+        finally:
+            _run_alembic("upgrade", "head", database_url=migration_db_url)
+        assert await schema() == at_head
+    finally:
+        await session.rollback()
+        await session.execute(
+            text("DELETE FROM public.mcp_oauth_clients WHERE client_id = :c"), {"c": str(client_id)}
+        )
+        for sql in (
+            "DELETE FROM public.projects WHERE id = :p",
+            "DELETE FROM public.profiles WHERE id = :u",
+            "DELETE FROM auth.users WHERE id = :u",
+        ):
+            await session.execute(text(sql), {"u": str(user_id), "p": str(project_id)})
+        await session.commit()

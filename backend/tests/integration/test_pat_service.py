@@ -23,10 +23,12 @@ from app.services.pat_service import (
     list_tokens,
     owned_token,
     resolve_principal,
+    revoke_owned,
     revoke_token,
     touch_last_used,
 )
 from tests.integration.conftest import SEED
+from tests.integration.helpers.pat_rows import insert_oauth_client, insert_oauth_connection
 
 
 def _req(name: str = "t", scope: str = "read", days: int = 30) -> PersonalAccessTokenCreateRequest:
@@ -173,13 +175,20 @@ async def test_owned_token_is_none_for_foreign_and_missing(db_session: AsyncSess
     foreign = await create_token(db_session, user_id=SEED.primary_profile, payload=_req())
 
     assert (
-        await owned_token(db_session, user_id=SEED.reviewer_profile, token_id=foreign.token.id)
+        await owned_token(
+            db_session, user_id=SEED.reviewer_profile, token_id=foreign.token.id, kind="pat"
+        )
         is None
     )
-    assert await owned_token(db_session, user_id=SEED.reviewer_profile, token_id=uuid4()) is None
+    assert (
+        await owned_token(db_session, user_id=SEED.reviewer_profile, token_id=uuid4(), kind="pat")
+        is None
+    )
 
     own = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
-    row = await owned_token(db_session, user_id=SEED.reviewer_profile, token_id=own.token.id)
+    row = await owned_token(
+        db_session, user_id=SEED.reviewer_profile, token_id=own.token.id, kind="pat"
+    )
     assert row is not None
     assert row.id == own.token.id
 
@@ -409,4 +418,129 @@ def test_create_request_rejects_bad_project_ids(project_ids) -> None:
     with pytest.raises(ValidationError):
         PersonalAccessTokenCreateRequest(
             name="x", scope="read", expires_in_days=30, project_ids=project_ids
+        )
+
+
+# --- OAuth connection rows (migration 0083) ----------------------------------
+
+
+async def _oauth_connection(db: AsyncSession, user_id=SEED.primary_profile):
+    client_id = await insert_oauth_client(db)
+    return await insert_oauth_connection(db, user_id=user_id, client_id=client_id)
+
+
+@pytest.mark.asyncio
+async def test_oauth_rows_are_not_listed_or_counted(db_session: AsyncSession) -> None:
+    oauth_ids = {await _oauth_connection(db_session) for _ in range(10)}
+    active_oauth = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM public.personal_access_tokens "
+                "WHERE user_id = :u AND kind = 'oauth' AND revoked_at IS NULL"
+            ),
+            {"u": str(SEED.primary_profile)},
+        )
+    ).scalar_one()
+    assert active_oauth >= 10  # precondition: the cap would bite if OAuth rows counted
+
+    listed = await list_tokens(db_session, user_id=SEED.primary_profile)
+    assert oauth_ids.isdisjoint({t.id for t in listed})
+
+    created = await create_token(db_session, user_id=SEED.primary_profile, payload=_req())
+    assert created.token.status == "active"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "insert_sql",
+    [
+        "INSERT INTO public.personal_access_tokens "
+        "(id, user_id, kind, oauth_client_id, name, token_hash, scope, expires_at) "
+        "VALUES (gen_random_uuid(), :u, 'oauth', :c, 'x', 'h', 'read', now() + interval '1 day')",
+        "INSERT INTO public.personal_access_tokens "
+        "(id, user_id, kind, oauth_client_id, name, token_prefix, token_hash, scope, "
+        "expires_at) VALUES (gen_random_uuid(), :u, 'pat', :c, 'x', 'prumo_pat_abcdef', 'h', 'read', now() + interval '1 day')",
+    ],
+    ids=["oauth-with-hash", "pat-with-client"],
+)
+async def test_kind_shape_check_refuses_mixed_rows(
+    db_session: AsyncSession, insert_sql: str
+) -> None:
+    client_id = await insert_oauth_client(db_session)
+    with pytest.raises(Exception, match="ck_personal_access_tokens_kind_shape_check"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text(insert_sql), {"u": str(SEED.primary_profile), "c": str(client_id)}
+            )
+
+
+@pytest.mark.asyncio
+async def test_owned_token_is_kind_scoped(db_session: AsyncSession) -> None:
+    connection_id = await _oauth_connection(db_session)
+
+    assert (
+        await owned_token(
+            db_session, user_id=SEED.primary_profile, token_id=connection_id, kind="pat"
+        )
+        is None
+    )
+    row = await owned_token(
+        db_session, user_id=SEED.primary_profile, token_id=connection_id, kind="oauth"
+    )
+    assert row is not None
+    assert row.id == connection_id
+    assert row.kind == "oauth"
+    for kind in ("pat", "oauth"):
+        assert (
+            await owned_token(
+                db_session, user_id=SEED.reviewer_profile, token_id=connection_id, kind=kind
+            )
+            is None
+        )
+
+
+@pytest.mark.asyncio
+async def test_revoke_token_ignores_oauth_rows(db_session: AsyncSession) -> None:
+    connection_id = await _oauth_connection(db_session)
+
+    with pytest.raises(TokenNotFoundError):
+        await revoke_token(db_session, user_id=SEED.primary_profile, token_id=connection_id)
+    still_active = (
+        await db_session.execute(
+            text("SELECT revoked_at IS NULL FROM public.personal_access_tokens WHERE id = :id"),
+            {"id": str(connection_id)},
+        )
+    ).scalar_one()
+    assert still_active is True
+
+
+@pytest.mark.asyncio
+async def test_revoke_owned_oauth_is_idempotent(db_session: AsyncSession) -> None:
+    connection_id = await _oauth_connection(db_session)
+
+    first = await revoke_owned(
+        db_session, user_id=SEED.primary_profile, token_id=connection_id, kind="oauth"
+    )
+    assert first.revoked_at is not None
+    # now() is fixed inside the test transaction: backdate the first revocation so a
+    # second write (a missing `revoked_at IS NULL` guard) would be visible.
+    first_revoked_at = (
+        await db_session.execute(
+            text(
+                "UPDATE public.personal_access_tokens "
+                "SET revoked_at = revoked_at - interval '1 hour' WHERE id = :id "
+                "RETURNING revoked_at"
+            ),
+            {"id": str(connection_id)},
+        )
+    ).scalar_one()
+    second = await revoke_owned(
+        db_session, user_id=SEED.primary_profile, token_id=connection_id, kind="oauth"
+    )
+    assert second.id == connection_id
+    assert second.revoked_at == first_revoked_at
+
+    with pytest.raises(TokenNotFoundError):
+        await revoke_owned(
+            db_session, user_id=SEED.reviewer_profile, token_id=connection_id, kind="oauth"
         )

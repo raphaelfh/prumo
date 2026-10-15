@@ -58,6 +58,7 @@ from app.models.extraction_workflow import (
 from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
 from app.models.integration import ZoteroIntegration
 from app.models.llm_connection import LlmConnection, UserProjectEngine
+from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
@@ -120,6 +121,9 @@ __all__ = [
     "ReviewType",
     "LlmConnection",
     "PersonalAccessToken",
+    "McpOAuthClient",
+    "McpOAuthRequest",
+    "McpOAuthToken",
     # Article
     "Article",
     "ArticleFile",

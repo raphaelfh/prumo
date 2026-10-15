@@ -1,7 +1,13 @@
 """Personal access token issuance, listing and revocation (spec §4.2, ADR 0020).
 
+The ``personal_access_tokens`` table also holds OAuth connections
+(``kind='oauth'``, ADR 0022): list, cap and revoke filter on ``kind``, and
+the bearer lookup matches ``token_hash``, which an OAuth row never has, so
+no PAT path sees one.
+
 One active predicate (``active_clause``), one ownership guard
-(``owned_token``) — both imported by later tasks rather than re-typed. The
+(``owned_token``, for both kinds), one revocation write
+(``revoke_credential``) — all imported rather than re-typed. The
 cap (``MAX_ACTIVE_TOKENS``) is enforced by locking the caller's own profile
 row before counting, so two concurrent creates at the boundary cannot both
 observe "9 active" and both succeed; ``expires_at`` is computed in SQL so
@@ -92,18 +98,45 @@ def active_clause() -> ColumnElement[bool]:
     )
 
 
-def _new_secret() -> str:
+def status_expr() -> ColumnElement[str]:
+    """A credential row's status: ``'active'``, ``'revoked'`` or ``'expired'``."""
+    return case(
+        (active_clause(), "active"),
+        (PersonalAccessToken.revoked_at.is_not(None), "revoked"),
+        else_="expired",
+    )
+
+
+# Supabase's `auth.users`, which the app does not map: only the two columns
+# that end a user's access. A hard delete needs no check -- it cascades
+# through `profiles` to the user's tokens.
+_auth_users = table(
+    "users", column("id"), column("banned_until"), column("deleted_at"), schema="auth"
+)
+
+
+def user_locked_out() -> ColumnElement[bool]:
+    """True when the credential row's user is banned or soft-deleted."""
+    return exists().where(
+        _auth_users.c.id == PersonalAccessToken.user_id,
+        or_(_auth_users.c.banned_until > func.now(), _auth_users.c.deleted_at.is_not(None)),
+    )
+
+
+def new_secret(prefix: str) -> str:
+    """``prefix`` + 43 base62 characters (256 bits of entropy)."""
     n = int.from_bytes(secrets.token_bytes(32), "big")
     chars = []
     for _ in range(_SECRET_CHARS):
         n, r = divmod(n, 62)
         chars.append(_BASE62[r])
-    return PAT_PREFIX + "".join(chars)
+    return prefix + "".join(chars)
 
 
 def _read(
     row: PersonalAccessToken, token_status: Literal["active", "expired", "revoked"]
 ) -> PersonalAccessTokenRead:
+    assert row.token_prefix is not None  # a PAT row always has one (kind_shape_check)
     return PersonalAccessTokenRead(
         id=row.id,
         name=row.name,
@@ -119,16 +152,46 @@ def _read(
 
 
 async def owned_token(
-    db: AsyncSession, *, user_id: UUID, token_id: UUID
+    db: AsyncSession, *, user_id: UUID, token_id: UUID, kind: Literal["pat", "oauth"]
 ) -> PersonalAccessToken | None:
-    """THE token ownership guard: scope in the WHERE clause."""
+    """THE ownership guard for a credential row — a personal access token or an
+    OAuth connection — in its owner: owner and ``kind`` in the WHERE clause."""
     return (
         await db.execute(
             select(PersonalAccessToken).where(
-                PersonalAccessToken.id == token_id, PersonalAccessToken.user_id == user_id
+                PersonalAccessToken.id == token_id,
+                PersonalAccessToken.user_id == user_id,
+                PersonalAccessToken.kind == kind,
             )
         )
     ).scalar_one_or_none()
+
+
+async def revoke_credential(db: AsyncSession, token_id: UUID) -> None:
+    """THE revocation write for a credential row of either kind; idempotent.
+
+    id-only WHERE: the caller has already proven ownership (``owned_token``)
+    or holds a capability for the row — never re-state ``user_id`` here, or
+    check_scope_guards would count a second predicate.
+    """
+    await db.execute(
+        update(PersonalAccessToken)
+        .where(PersonalAccessToken.id == token_id, PersonalAccessToken.revoked_at.is_(None))
+        .values(revoked_at=func.now())
+    )
+
+
+async def revoke_owned(
+    db: AsyncSession, *, user_id: UUID, token_id: UUID, kind: Literal["pat", "oauth"]
+) -> PersonalAccessToken:
+    """Revoke the caller's own credential row of ``kind``; missing and foreign
+    alike raise ``TokenNotFoundError``."""
+    row = await owned_token(db, user_id=user_id, token_id=token_id, kind=kind)
+    if row is None:
+        raise TokenNotFoundError()
+    await revoke_credential(db, row.id)
+    await db.refresh(row)
+    return row
 
 
 async def _assert_projects_reachable(
@@ -157,14 +220,18 @@ async def create_token(
         await db.execute(
             select(func.count())
             .select_from(PersonalAccessToken)
-            .where(PersonalAccessToken.user_id == user_id, active_clause())
+            .where(
+                PersonalAccessToken.user_id == user_id,
+                PersonalAccessToken.kind == "pat",
+                active_clause(),
+            )
         )
     ).scalar_one()
     if active >= MAX_ACTIVE_TOKENS:
         raise TokenLimitReachedError()
     if payload.project_ids is not None:
         await _assert_projects_reachable(db, user_id=user_id, project_ids=payload.project_ids)
-    secret = _new_secret()
+    secret = new_secret(PAT_PREFIX)
     row = (
         await db.execute(
             insert(PersonalAccessToken)
@@ -184,15 +251,10 @@ async def create_token(
 
 
 async def list_tokens(db: AsyncSession, *, user_id: UUID) -> list[PersonalAccessTokenRead]:
-    status_expr = case(
-        (active_clause(), "active"),
-        (PersonalAccessToken.revoked_at.is_not(None), "revoked"),
-        else_="expired",
-    )
     rows = (
         await db.execute(
-            select(PersonalAccessToken, status_expr.label("status"))
-            .where(PersonalAccessToken.user_id == user_id)
+            select(PersonalAccessToken, status_expr().label("status"))
+            .where(PersonalAccessToken.user_id == user_id, PersonalAccessToken.kind == "pat")
             .order_by(
                 case((active_clause(), 0), else_=1),
                 PersonalAccessToken.created_at.desc(),
@@ -210,26 +272,7 @@ async def list_tokens(db: AsyncSession, *, user_id: UUID) -> list[PersonalAccess
 async def revoke_token(
     db: AsyncSession, *, user_id: UUID, token_id: UUID
 ) -> PersonalAccessTokenRead:
-    row = await owned_token(db, user_id=user_id, token_id=token_id)
-    if row is None:
-        raise TokenNotFoundError()
-    # id-only WHERE: ownership was proven by owned_token — never re-state user_id here,
-    # or check_scope_guards would count a second predicate.
-    await db.execute(
-        update(PersonalAccessToken)
-        .where(PersonalAccessToken.id == row.id, PersonalAccessToken.revoked_at.is_(None))
-        .values(revoked_at=func.now())
-    )
-    await db.refresh(row)
-    return _read(row, "revoked")
-
-
-# Supabase's `auth.users`, which the app does not map: only the two columns
-# that end a user's access. A hard delete needs no check -- it cascades
-# through `profiles` to the user's tokens.
-_auth_users = table(
-    "users", column("id"), column("banned_until"), column("deleted_at"), schema="auth"
-)
+    return _read(await revoke_owned(db, user_id=user_id, token_id=token_id, kind="pat"), "revoked")
 
 
 async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | None:
@@ -237,16 +280,12 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
     nor soft-deleted, by the indexed hash, in one query (ADR 0020)."""
     if not secret.startswith(PAT_PREFIX):
         return None
-    user_locked_out = exists().where(
-        _auth_users.c.id == PersonalAccessToken.user_id,
-        or_(_auth_users.c.banned_until > func.now(), _auth_users.c.deleted_at.is_not(None)),
-    )
     row = (
         await db.execute(
             select(PersonalAccessToken).where(
                 PersonalAccessToken.token_hash == hash_secret(secret),
                 active_clause(),
-                ~user_locked_out,
+                ~user_locked_out(),
             )
         )
     ).scalar_one_or_none()
