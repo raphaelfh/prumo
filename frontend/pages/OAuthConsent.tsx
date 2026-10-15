@@ -7,7 +7,7 @@
 import {useId, useState} from 'react';
 import {useSearchParams} from 'react-router';
 import {z} from 'zod';
-import {AlertCircle, Check, CheckCircle2, Clock, Loader2} from 'lucide-react';
+import {AlertCircle, Check, CheckCircle2, Clock, Loader2, ShieldAlert} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Card} from '@/components/ui/card';
 import {Checkbox} from '@/components/ui/checkbox';
@@ -29,6 +29,18 @@ const requestIdSchema = z.string().uuid();
 function parseRequestId(raw: string | null): string | null {
   const parsed = requestIdSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * True inside any frame. The host headers already forbid framing; this is the
+ * in-page backstop against clickjacking. A check that throws counts as framed.
+ */
+function isFramed(): boolean {
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true;
+  }
 }
 
 function ConsentFrame({children}: {children: React.ReactNode}) {
@@ -75,7 +87,7 @@ function Notice({
 
 function RetryButton({onClick, disabled}: {onClick: () => void; disabled?: boolean}) {
   return (
-    <Button variant="outline" onClick={onClick} disabled={disabled}>
+    <Button variant="default" onClick={onClick} disabled={disabled}>
       {t('oauthConsent', 'retry')}
     </Button>
   );
@@ -172,8 +184,10 @@ function ReadyView({
 
 export default function OAuthConsent() {
   const [searchParams] = useSearchParams();
+  const framed = isFramed();
   const requestId = parseRequestId(searchParams.get('request'));
-  const consent = useConsentRequest(requestId);
+  // Framed: load nothing, offer nothing.
+  const consent = useConsentRequest(framed ? null : requestId);
   const decide = useDecideConsent(requestId ?? '');
 
   const submit = (body: OAuthConsentDecisionRequest) =>
@@ -181,6 +195,9 @@ export default function OAuthConsent() {
 
   const expired = <Notice icon={Clock} title={t('oauthConsent', 'expiredTitle')} body={t('oauthConsent', 'expiredBody')} />;
 
+  if (framed) {
+    return <Notice icon={ShieldAlert} title={t('oauthConsent', 'pageTitle')} body={t('oauthConsent', 'framedBody')} />;
+  }
   if (requestId === null) return expired;
   // Before the error checks: once decided, a background read answering 409 is expected.
   if (decide.isSuccess) return <Progress label={t('oauthConsent', 'returning')} />;

@@ -23,4 +23,5 @@ export const oauthConsent = {
     submitError: "Couldn't send your answer.",
     rateLimited: 'Too many attempts. Wait a minute and try again.',
     retry: 'Retry',
+    framedBody: "For your safety, this page can't be used inside another site. Open it in its own tab.",
 } as const;

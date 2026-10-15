@@ -89,7 +89,7 @@ function ConnectionRow({row}: {row: OAuthConnectionRead}) {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{t('connectedApps', 'revokeCancel')}</AlertDialogCancel>
-                  <AlertDialogAction onClick={onConfirm} disabled={revoke.isPending}>
+                  <AlertDialogAction onClick={onConfirm} disabled={revoke.isPending} variant="destructive">
                     {revoke.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />}
                     {t('connectedApps', 'revokeConfirm')}
                   </AlertDialogAction>
@@ -118,7 +118,7 @@ export function ConnectedAppsGroup() {
       {connections.isError && (
         <p className="flex items-center gap-2 text-[13px] text-destructive">
           {t('connectedApps', 'listLoadError')}
-          <Button size="sm" onClick={() => void connections.refetch()}>{t('connectedApps', 'retry')}</Button>
+          <Button size="sm" variant="ghost" onClick={() => void connections.refetch()}>{t('connectedApps', 'retry')}</Button>
         </p>
       )}
 

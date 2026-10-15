@@ -4,7 +4,7 @@ import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {http, HttpResponse} from 'msw';
 import {MemoryRouter, Route, Routes} from 'react-router';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {t} from '@/lib/copy';
 import {server} from '../mocks/server';
 
@@ -249,6 +249,35 @@ describe('OAuthConsent', () => {
     renderAt(`?request=${ID}`);
 
     expect(await screen.findByText(t('oauthConsent', 'rateLimited'))).toBeInTheDocument();
+  });
+
+  describe('inside a frame', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    async function expectRefusal() {
+      expect(screen.getByText(t('oauthConsent', 'framedBody'))).toBeInTheDocument();
+      // Give a GET (and anything it would unlock) the chance to land.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.queryByRole('button', {name: t('oauthConsent', 'allow')})).toBeNull();
+      expect(screen.queryByRole('button', {name: t('oauthConsent', 'deny')})).toBeNull();
+      expect(gets).toBe(0);
+      expect(posts).toEqual([]);
+    }
+
+    it('refuses to offer Allow or Deny when framed', async () => {
+      // window.top is unforgeable in jsdom; a distinct `self` makes top !== self.
+      vi.spyOn(window, 'self', 'get').mockReturnValue({} as Window & typeof globalThis);
+      renderAt(`?request=${ID}`);
+      await expectRefusal();
+    });
+
+    it('treats a frame check that throws as framed', async () => {
+      vi.spyOn(window, 'self', 'get').mockImplementation(() => {
+        throw new DOMException('Blocked a frame', 'SecurityError');
+      });
+      renderAt(`?request=${ID}`);
+      await expectRefusal();
+    });
   });
 
   it('disables both buttons while the POST is pending', async () => {
