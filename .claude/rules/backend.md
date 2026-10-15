@@ -95,6 +95,10 @@ guard that drifted or was never made.
   `api/deps/scope.assert_kickoff_scope` (`POST /extraction/sections`). A new
   kickoff endpoint imports it: the retired `/extraction/models` shipped
   without the binding because the logic lived inline in its sibling.
+- **The AI kickoff gate** (reviewer role 403, then the engine-credential
+  precheck 409) → `api/deps/scope.assert_ai_kickoff`. `assert_kickoff_scope`
+  ends in it; an endpoint that queues AI work without a coordinate (the batch
+  kickoff) calls it directly. Never re-check the role or credentials inline.
 - **An MCP tool's project** → the `@agent_tool(requires=…, project_arg=…)`
   choke point in `app/api/mcp/server.py`, in order: token scope, per-token
   rate limit, project resolution (`get_article_project_id` for

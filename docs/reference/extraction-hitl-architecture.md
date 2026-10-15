@@ -263,15 +263,29 @@ there is **no question-level extraction** action or endpoint.
 browser's job store (`useSectionExtractionJobs.begin`,
 `frontend/stores/sectionExtractionJobs.ts`) mints `crypto.randomUUID()` for
 every deliberate kickoff. It reuses the previous id and payload only when the
-last transport outcome was uncertain. After kickoff scope authorization,
-`ExtractionAttemptService.prepare_request` does the following:
+last transport outcome was uncertain.
+
+**The server-side AI kickoff gate.** Every endpoint that queues AI work runs
+`api/deps/scope.assert_ai_kickoff` before any work is queued: the section
+kickoff reaches it through `assert_kickoff_scope`, which first binds the
+request coordinate (project, article, template, run) to the caller; the batch
+kickoff (`extraction_batches.py`) calls it directly on its project. The gate
+checks, in order, the reviewer role (403 for a viewer or non-member), then the
+engine-credential precheck (`engine_credentials.assert_engine_ready`, 409 when
+no usable credential is configured), so a caller without the role never learns
+the project's engine configuration. The worker re-resolves the engine at
+execution time; the gate only fails fast.
+
+After the gate, `ExtractionAttemptService.prepare_request` does the following:
 
 1. Uses a server `uuid4()` when the id is absent.
 2. Picks the run: a client-sent `run_id` takes precedence; otherwise it reuses
    the run of an attempt the caller already owns, or resolves the live extract
    run (`CurrentRunResolver.resolve_or_create_extract`).
-3. Refuses a run outside the `extract` stage (`InvalidStageTransitionError`,
-   400).
+3. Refuses a run outside the `extract` stage: a finalized run answers 409
+   `RUN_FINALIZED` (reopen it first), a run in consensus answers 409
+   `RUN_BUSY`, and any other invalid stage transition answers 400
+   (`InvalidStageTransitionError`).
 4. Inserts through `ExtractionAttemptRepository.get_or_create`
    (`ON CONFLICT (request_id) DO NOTHING`).
 5. Answers a different owner with 404 and a changed payload with 409
@@ -306,7 +320,9 @@ row, a stage gate on a named `ExtractionRunStage` set (`live()`, `editable()`,
 `reviewing()`, `with_current_values()`, `<stage>.only()`), coordinate coherence
 for the (instance, field) pair, one `RunWriteError(reason=missing|stage|coordinate)`.
 `extraction_runs.py` maps a coordinate refusal to 422 and the rest to 400; the
-section-extraction kickoff maps every refusal to 400. The AI-extraction module
+section-extraction kickoff maps a finalized run to 409 `RUN_FINALIZED`
+(`RunFinalizedError`), a run in consensus to 409 `RUN_BUSY` (`RunBusyError`)
+and every other refusal to 400. The AI-extraction module
 (`app/services/ai_extraction/`, interface `AiExtraction.run_from_request`)
 commits a worker session before PDF assembly and before every model call.
 Every candidate then lands through ONE seam, `ProposalLanding.land(run,

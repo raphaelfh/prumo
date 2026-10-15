@@ -18,7 +18,7 @@ owner: '@raphaelfh'
 
 ## Global Constraints
 
-- **Worktree.** `WT=/Users/raphaelfedericcihaddad/PycharmProjects/prumo/.claude/worktrees/mcp-adjustments-multi-slice-e9cb55` (branch `feat/mcp-adjustments-harden`). Every command uses `git -C "$WT"` or absolute `$WT/...` paths; never touch the main checkout. Confirm with `git -C "$WT" status` that edits landed there.
+- **Worktree.** `$WT` = the slice worktree (under `.claude/worktrees/`) (branch `feat/mcp-adjustments-harden`). Every command uses `git -C "$WT"` or absolute `$WT/...` paths; never touch the main checkout. Confirm with `git -C "$WT" status` that edits landed there.
 - **Test-first.** Each task writes its failing test, runs it red, then implements; no "done" without the green command output.
 - **Migrations.** The current Alembic head is `0080_article_text_fts`. A new migration takes the next free number at implementation time (`ls "$WT/backend/alembic/versions" | sort | tail`), never a number guessed in advance; revision id ≤ 32 characters, `down_revision` = the head you found. The same task moves `expected_head` in `backend/tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision` and adds a roundtrip test there. Never apply app-schema DDL through the Supabase MCP; no seed data in migrations.
 - **Backend tests run against a per-worktree `postgres:17` container, never the shared local Supabase stack:**
