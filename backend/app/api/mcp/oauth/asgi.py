@@ -59,10 +59,20 @@ def ip_key(scope: Scope, body: bytes) -> str:  # noqa: ARG001 - the Limited key 
     return client_ip(scope)
 
 
+def _is_preflight(scope: Scope) -> bool:
+    """A CORS preflight, as the SDK's CORS layer recognizes (and answers) one."""
+    if scope["method"] != "OPTIONS":
+        return False
+    names = {name for name, _ in scope.get("headers") or []}
+    return b"origin" in names and b"access-control-request-method" in names
+
+
 class Limited:
     """Rate-limit ``app`` per ``key(scope, body)`` in ``bucket``.
 
-    Non-http scopes and ``OPTIONS`` preflights pass straight through, uncounted.
+    Non-http scopes and genuine CORS preflights (``OPTIONS`` with ``Origin`` and
+    ``Access-Control-Request-Method``) pass straight through, uncounted; any
+    other ``OPTIONS`` reaches the handler, so it is counted and capped.
     With ``reads_body`` the body is buffered (413 over the SDK's size cap,
     before the wrapped app runs) and replayed to ``app``.
     """
@@ -83,7 +93,7 @@ class Limited:
         self.reads_body = reads_body
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] == "OPTIONS":
+        if scope["type"] != "http" or _is_preflight(scope):
             await self.app(scope, receive, send)
             return
 

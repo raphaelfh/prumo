@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
 from limits import parse
 from mcp.server.transport_security import DEFAULT_MAX_REQUEST_BODY_SIZE
 
@@ -13,6 +14,11 @@ from app.api.mcp.oauth.asgi import Limited, ip_key, read_body, replay
 from app.core.middleware import PathScopedCORSMiddleware
 
 _TWO_PER_MINUTE = parse("2/minute")
+
+_PREFLIGHT_HEADERS = [
+    (b"origin", b"https://unlisted.example"),
+    (b"access-control-request-method", b"GET"),
+]
 
 
 def _receiver(*chunks: bytes):
@@ -113,9 +119,37 @@ async def test_preflights_pass_through_uncounted() -> None:
     app = _limited(inner)
     for _ in range(5):
         sent = _Sent()
-        await app(_scope("OPTIONS"), _receiver(b""), sent)
+        await app(_scope("OPTIONS", headers=_PREFLIGHT_HEADERS), _receiver(b""), sent)
         assert sent.status == 200
     assert inner.calls == 5
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [[], [_PREFLIGHT_HEADERS[0]], [_PREFLIGHT_HEADERS[1]]],
+    ids=["no-cors-headers", "origin-only", "request-method-only"],
+)
+async def test_a_plain_options_is_counted(headers: list) -> None:
+    inner = _Inner()
+    app = _limited(inner)
+    for _ in range(2):
+        sent = _Sent()
+        await app(_scope("OPTIONS", headers=headers), _receiver(b""), sent)
+        assert sent.status == 200
+
+    sent = _Sent()
+    await app(_scope("OPTIONS", headers=headers), _receiver(b""), sent)
+    assert sent.status == 429
+    assert inner.calls == 2
+
+
+async def test_an_oversized_plain_options_is_413() -> None:
+    inner = _Inner()
+    sent = _Sent()
+    oversized = _receiver(b"x" * DEFAULT_MAX_REQUEST_BODY_SIZE, b"y")
+    await _limited(inner, reads_body=True)(_scope("OPTIONS"), oversized, sent)
+    assert sent.status == 413
+    assert inner.calls == 0
 
 
 async def test_the_third_get_is_429_and_skips_the_inner_app() -> None:
@@ -161,12 +195,6 @@ async def test_a_lifespan_scope_passes_straight_through() -> None:
 
 def test_ip_key_is_the_client_host() -> None:
     assert ip_key(_scope(), b"") == "9.8.7.6"
-
-
-_PREFLIGHT_HEADERS = [
-    (b"origin", b"https://unlisted.example"),
-    (b"access-control-request-method", b"GET"),
-]
 
 
 def _cors(inner: _Inner) -> PathScopedCORSMiddleware:
