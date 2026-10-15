@@ -33,7 +33,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import register_middlewares
 from app.core.security import get_jwks
 from app.llm.observability import configure_observability
-from app.utils.rate_limiter import limiter
+from app.utils.rate_limiter import limiter, log_storage_backend
 
 logger = get_logger(__name__)
 
@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         project_name=settings.PROJECT_NAME,
         debug=settings.DEBUG,
     )
+    log_storage_backend(settings.RATE_LIMIT_STORAGE_URI)
 
     # Warm-up: avoid first request paying JWKS and DB pool latency
     app.state.jwks_ready = False

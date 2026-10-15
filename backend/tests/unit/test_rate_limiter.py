@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -9,7 +13,7 @@ from limits import parse
 from structlog.testing import capture_logs
 
 from app.utils import rate_limiter
-from app.utils.rate_limiter import build_limiter, hit_shared, retry_after
+from app.utils.rate_limiter import build_limiter, hit_shared, log_storage_backend, retry_after
 
 _READ = parse("120/minute")
 _TIGHT = parse("1/minute")
@@ -76,13 +80,34 @@ def test_retry_after_is_at_least_one_second(monkeypatch: pytest.MonkeyPatch) -> 
     ],
     ids=["unset", "memory", "redis"],
 )
-def test_build_limiter_logs_the_backend_never_the_uri(uri: str | None, backend: str) -> None:
+def test_log_storage_backend_logs_the_backend_never_the_uri(uri: str | None, backend: str) -> None:
     with capture_logs() as logs:
-        built = build_limiter(uri)
-    entry = next(e for e in logs if e["event"] == "rate_limit_storage_configured")
-    assert entry["backend"] == backend
+        log_storage_backend(uri)
+    assert logs == [
+        {"event": "rate_limit_storage_configured", "backend": backend, "log_level": "info"}
+    ]
     assert "s3cret" not in repr(logs)
+
+
+def test_build_limiter_logs_nothing() -> None:
+    """It runs at import, before ``configure_logging``: a log there is a
+    non-JSON stdout line. The backend is logged at app startup instead."""
+    with capture_logs() as logs:
+        built = build_limiter("redis://u:s3cret@redis.internal:6379/0")
+    assert logs == []
     assert built._key_prefix == "prumo-rl"
+
+
+def test_importing_the_module_writes_nothing_to_stdout() -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.utils.rate_limiter"],
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+        cwd=Path(__file__).resolve().parents[2],
+        check=True,
+    )
+    assert result.stdout == ""
 
 
 def test_storage_uri_defaults_unset() -> None:

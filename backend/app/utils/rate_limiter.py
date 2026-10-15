@@ -52,12 +52,24 @@ def _principal_key(request: Request) -> str:
 _REDIS_TIMEOUTS = {"socket_connect_timeout": 0.5, "socket_timeout": 0.5}
 
 
+def _backend(storage_uri: str | None) -> str:
+    """The storage scheme only: the URI can carry a password."""
+    uri = storage_uri or "memory://"
+    return "redis" if uri.split("://", 1)[0].startswith("redis") else "memory"
+
+
+def log_storage_backend(storage_uri: str | None) -> None:
+    """Log which counter storage is in use, never the URI. Called at app
+    startup, after ``configure_logging``: ``build_limiter`` runs at import,
+    where a log line would bypass the JSON renderer."""
+    logger.info("rate_limit_storage_configured", backend=_backend(storage_uri))
+
+
 def build_limiter(storage_uri: str | None) -> Limiter:
     """A slowapi ``Limiter`` over ``storage_uri`` (``memory://`` when unset)."""
     uri = storage_uri or "memory://"
-    # The scheme only: the URI can carry a password.
-    backend = "redis" if uri.split("://", 1)[0].startswith("redis") else "memory"
-    built = Limiter(
+    backend = _backend(uri)
+    return Limiter(
         key_func=_principal_key,
         default_limits=[f"{settings.RATE_LIMIT_PER_MINUTE}/minute"],
         storage_uri=uri,
@@ -70,8 +82,6 @@ def build_limiter(storage_uri: str | None) -> Limiter:
         key_prefix="prumo-rl",
         in_memory_fallback_enabled=True,
     )
-    logger.info("rate_limit_storage_configured", backend=backend)
-    return built
 
 
 limiter = build_limiter(settings.RATE_LIMIT_STORAGE_URI)
