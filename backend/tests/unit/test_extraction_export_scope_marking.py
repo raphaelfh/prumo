@@ -22,6 +22,7 @@ from app.models.extraction import (
     ExtractionFieldType,
 )
 from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -62,7 +63,7 @@ def _field(
         field_id=field_id,
         label=name.replace("_", " ").title(),
         type=ExtractionFieldType.SELECT,
-        allowed_values=allowed,
+        allowed_values=tuple(AllowedValue(x, x) for x in allowed),
         name=name,
     )
 

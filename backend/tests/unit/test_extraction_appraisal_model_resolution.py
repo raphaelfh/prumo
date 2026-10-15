@@ -8,6 +8,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -18,10 +19,14 @@ from app.services.extraction_export_service import (
 )
 
 
+def _pairs(*labels: str) -> tuple[AllowedValue, ...]:
+    return tuple(AllowedValue(x, x) for x in labels)
+
+
 def _field(
     label,
     ftype=ExtractionFieldType.SELECT,
-    allowed_values=("Low", "Unclear", "High"),
+    allowed_values=_pairs("Low", "Unclear", "High"),
 ):
     return FieldDescriptor(
         field_id=uuid.uuid4(),
@@ -191,19 +196,19 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
         field_id=uuid.uuid4(),
         label="q1_1 appropriate data sources",
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Y", "PY", "PN", "N", "NI", "NA"),  # _PROBAST_SIGNALING
+        allowed_values=_pairs("Y", "PY", "PN", "N", "NI", "NA"),  # _PROBAST_SIGNALING
     )
     risk = FieldDescriptor(
         field_id=uuid.uuid4(),
         label="Risk of bias",
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Low", "High", "Unclear"),  # _PROBAST_JUDGMENT
+        allowed_values=_pairs("Low", "High", "Unclear"),  # _PROBAST_JUDGMENT
     )
     applicability = FieldDescriptor(
         field_id=uuid.uuid4(),
         label="Applicability concerns",
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Low", "High", "Unclear"),
+        allowed_values=_pairs("Low", "High", "Unclear"),
     )
     d1 = SectionDescriptor(
         entity_type_id=sid,
@@ -275,7 +280,7 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
             fld(
                 "q2_reasonable_sample_size",
                 ExtractionFieldType.SELECT,
-                ("Y", "PY", "PN", "N"),
+                _pairs("Y", "PY", "PN", "N"),
             )
         ],
         1,
@@ -287,7 +292,7 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
             fld(
                 "study_type",
                 ExtractionFieldType.SELECT,
-                ("development_only", "evaluation_only", "combination"),
+                _pairs("development_only", "evaluation_only", "combination"),
             )
         ],
         2,
@@ -295,7 +300,7 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
     judgment = sec(
         "eval_d4_judgment",
         "Evaluation D4 — judgment",
-        [fld("risk_of_bias", ExtractionFieldType.SELECT, ("Low", "High", "Unclear"))],
+        [fld("risk_of_bias", ExtractionFieldType.SELECT, _pairs("Low", "High", "Unclear"))],
         3,
     )
     overall = sec(
@@ -320,3 +325,25 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
     )
     assert model is not None
     assert model.domain_labels == ("Evaluation D4 — judgment",)
+
+
+def test_coded_verdict_options_are_selected_by_their_labels() -> None:
+    # The risk vocabulary lives in the labels; the stored codes may be anything.
+    verdict = _field(
+        "Risk of bias",
+        allowed_values=(
+            AllowedValue("L", "Low"),
+            AllowedValue("H", "High"),
+            AllowedValue("U", "Unclear"),
+        ),
+    )
+    d1 = _section("Participants", verdict, 0)
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(d1,),
+        articles=(),
+        reviewers=(),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+    )
+    assert model is not None
+    assert model.domain_labels == ("Participants",)

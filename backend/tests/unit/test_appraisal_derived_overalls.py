@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     AppraisalModel,
     AppraisalRow,
@@ -152,7 +153,7 @@ def _section(name: str, label: str, field_name: str) -> tuple[SectionDescriptor,
         field_id=field_id,
         label="Risk of bias",
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Low", "High", "Unclear"),
+        allowed_values=tuple(AllowedValue(x, x) for x in ("Low", "High", "Unclear")),
         name=field_name,
     )
     return (

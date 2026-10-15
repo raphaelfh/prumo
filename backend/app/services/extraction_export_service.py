@@ -110,7 +110,7 @@ class FieldDescriptor:
     field_id: UUID
     label: str
     type: ExtractionFieldType
-    allowed_values: tuple[str, ...]
+    allowed_values: tuple[AllowedValue, ...]  # (value, label) pairs, ordered
     description: str | None = None
     unit: str | None = None
     is_required: bool = False
@@ -641,13 +641,13 @@ class ExtractionExportService(LoggerMixin):
         )
 
         # Verdict field per domain: first SELECT field in sort_order whose
-        # allowed_values are the recognised risk-label set (excludes signalling
+        # option labels are the recognised risk-label set (excludes signalling
         # SELECT fields, whose answer sets differ — see _appraisal_overall's
         # severity table for the recognised labels).
         def _is_verdict(field: FieldDescriptor) -> bool:
             if field.type is not ExtractionFieldType.SELECT:
                 return False
-            labels = [v.strip().lower() for v in field.allowed_values if v.strip()]
+            labels = [av.label.strip().lower() for av in field.allowed_values if av.label.strip()]
             return bool(labels) and all(label in _RISK_LABELS for label in labels)
 
         domains: list[tuple[SectionDescriptor, FieldDescriptor]] = []
@@ -857,7 +857,7 @@ class ExtractionExportService(LoggerMixin):
                         field_id=f.field_id,
                         label=f.label,
                         type=f.type,
-                        allowed_values=tuple(av.label for av in f.allowed_values),
+                        allowed_values=tuple(f.allowed_values),
                         description=f.description or f.llm_description,
                         unit=f.unit,
                         is_required=f.is_required,
@@ -1845,8 +1845,8 @@ def _build_data_dictionary(
     """Flatten the snapshot sections into one ``FieldDictEntry`` per field (§4 #k+2).
 
     Order follows section then field order as already resolved on the
-    descriptors (snapshot ``sort_order``). ``allowed_values`` are surfaced as
-    value+label pairs (value == label in prumo; both preserved — §11). The
+    descriptors (snapshot ``sort_order``). ``allowed_values`` are the snapshot's
+    (value, label) pairs, in option order. The
     ``description`` is already the ``field.description`` (falling back to
     ``field.llm_description``) collapsed on the descriptor at load time.
     """
@@ -1861,9 +1861,7 @@ def _build_data_dictionary(
                     type=field_.type,
                     unit=field_.unit,
                     description=field_.description,
-                    allowed_values=tuple(
-                        AllowedValue(value=v, label=v) for v in field_.allowed_values
-                    ),
+                    allowed_values=field_.allowed_values,
                     is_required=field_.is_required,
                     allow_other=field_.allow_other,
                 )
