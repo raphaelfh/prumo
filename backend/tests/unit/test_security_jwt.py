@@ -15,6 +15,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from structlog.testing import capture_logs
 
 import app.core.security as security_module
 from app.core.config import settings
@@ -137,6 +138,25 @@ async def test_malformed_token_rejected() -> None:
         await verify_supabase_jwt(_creds("not-a-jwt"))
 
     assert exc_info.value.status_code == 401
+
+
+@pytest.mark.usefixtures("local_env")
+@pytest.mark.parametrize(
+    "token",
+    ["prumo_oat_" + "Z9y8X7w6V5" * 4 + "abc", "prumo_pat_" + "Q1r2S3t4U5" * 4 + "xyz"],
+    ids=["oauth-access", "pat"],
+)
+async def test_rejected_bearer_is_never_logged(token: str) -> None:
+    """No log record carries any part of a presented bearer (beyond its public prefix)."""
+    secret_part = token[len("prumo_xxx_") :]
+    with capture_logs() as logs, pytest.raises(HTTPException):
+        await verify_supabase_jwt(_creds(token))
+
+    assert {"jwt_validation_start", "jwt_validation_error"} <= {e["event"] for e in logs}
+    for record in logs:
+        rendered = " ".join(str(v) for v in record.values())
+        for start in range(len(secret_part) - 3):
+            assert secret_part[start : start + 4] not in rendered, record
 
 
 @pytest.mark.usefixtures("local_env")
