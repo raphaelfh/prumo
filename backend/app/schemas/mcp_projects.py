@@ -29,6 +29,7 @@ class McpProjectList(BaseModel):
     caller_name: str | None
     token_scope: Literal["read", "read_write"]
     token_expires_at: datetime
+    token_project_ids: list[UUID] | None = None  # None = every project of the token's user
     note: str | None = None
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [

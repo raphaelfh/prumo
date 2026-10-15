@@ -36,8 +36,10 @@ from app.services.extraction_snapshot import snapshot_is_narrow
 __all__ = ["get_project_overview", "list_projects_for_user", "template_summaries"]
 
 
-async def list_projects_for_user(db: AsyncSession, *, user_id: UUID) -> list[McpProjectListItem]:
-    members = await ProjectMemberRepository(db).list_for_user(user_id)
+async def list_projects_for_user(
+    db: AsyncSession, *, user_id: UUID, project_ids: frozenset[UUID] | None = None
+) -> list[McpProjectListItem]:
+    members = await ProjectMemberRepository(db).list_for_user(user_id, project_ids=project_ids)
     return [
         McpProjectListItem(
             project_id=m.project_id,

@@ -22,3 +22,9 @@ class McpPrincipal(BaseModel):
     token_id: UUID
     scope: Literal["read", "read_write"]
     token_expires_at: datetime
+    project_ids: frozenset[UUID] | None = None
+    """The token's project restriction; ``None`` = every project of its user."""
+
+    def reaches(self, project_id: UUID) -> bool:
+        """THE token-restriction predicate (membership is checked separately)."""
+        return self.project_ids is None or project_id in self.project_ids

@@ -26,18 +26,22 @@ from app.services.profile_names import profile_names
     destructive=False,
     description=(
         "List the systematic-review projects this token's user belongs to, with the "
-        "caller's role in each, plus the token's scope and expiry. Call get_project next."
+        "caller's role in each, plus the token's scope, expiry and project restriction "
+        "(token_project_ids; null = every project of the user). Call get_project next."
     ),
 )
 async def list_projects(db: AsyncSession) -> McpProjectList:
     principal = current_principal()
-    rows = await project_read_service.list_projects_for_user(db, user_id=principal.user_sub)
+    rows = await project_read_service.list_projects_for_user(
+        db, user_id=principal.user_sub, project_ids=principal.project_ids
+    )
     names = await profile_names(db, {principal.user_sub})
     return McpProjectList(
         projects=rows,
         caller_name=names.get(principal.user_sub),
         token_scope=principal.scope,
         token_expires_at=principal.token_expires_at,
+        token_project_ids=None if principal.project_ids is None else sorted(principal.project_ids),
         note=None if rows else "This token's user belongs to no project.",
     )
 

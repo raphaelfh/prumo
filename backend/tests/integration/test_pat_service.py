@@ -8,6 +8,7 @@ import re
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -15,6 +16,7 @@ from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services.pat_service import (
     PAT_PREFIX,
+    ProjectNotAccessibleError,
     TokenLimitReachedError,
     TokenNotFoundError,
     create_token,
@@ -329,3 +331,81 @@ async def test_resolve_principal_refuses_banned_or_deleted_user(
 
     await db_session.execute(text(update_user), {"id": str(SEED.reviewer_profile)})
     assert (await resolve_principal(db_session, created.secret) is not None) is resolves
+
+
+# --- optional per-project restriction ----------------------------------------
+
+
+async def _token_count(db: AsyncSession, user_id) -> int:
+    return (
+        await db.execute(
+            text("SELECT count(*) FROM public.personal_access_tokens WHERE user_id = :u"),
+            {"u": str(user_id)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_create_without_project_ids_is_unrestricted(db_session: AsyncSession) -> None:
+    created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
+
+    assert created.token.project_ids is None
+    principal = await resolve_principal(db_session, created.secret)
+    assert principal is not None
+    assert principal.project_ids is None
+    assert principal.reaches(uuid4())
+
+
+@pytest.mark.asyncio
+async def test_create_with_project_ids_restricts_the_principal(db_session: AsyncSession) -> None:
+    payload = PersonalAccessTokenCreateRequest(
+        name="a-only", scope="read", expires_in_days=30, project_ids=[SEED.primary_project]
+    )
+    created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=payload)
+
+    assert created.token.project_ids == [SEED.primary_project]
+    principal = await resolve_principal(db_session, created.secret)
+    assert principal is not None
+    assert principal.project_ids == frozenset({SEED.primary_project})
+    assert principal.reaches(SEED.primary_project)
+    assert not principal.reaches(SEED.secondary_project)
+    listed = await list_tokens(db_session, user_id=SEED.reviewer_profile)
+    assert next(t for t in listed if t.id == created.token.id).project_ids == [SEED.primary_project]
+
+
+@pytest.mark.parametrize(
+    "project_id",
+    [pytest.param(SEED.secondary_project, id="foreign"), pytest.param(uuid4(), id="missing")],
+)
+@pytest.mark.asyncio
+async def test_create_refuses_a_project_the_caller_cannot_reach(
+    db_session: AsyncSession, project_id
+) -> None:
+    before = await _token_count(db_session, SEED.reviewer_profile)
+    payload = PersonalAccessTokenCreateRequest(
+        name="x",
+        scope="read",
+        expires_in_days=30,
+        project_ids=[SEED.primary_project, project_id],
+    )
+    with pytest.raises(ProjectNotAccessibleError) as exc:
+        await create_token(db_session, user_id=SEED.reviewer_profile, payload=payload)
+
+    assert exc.value.code == "PROJECT_NOT_ACCESSIBLE"
+    assert exc.value.status_code == 422
+    assert await _token_count(db_session, SEED.reviewer_profile) == before
+
+
+@pytest.mark.parametrize(
+    "project_ids",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([uuid4() for _ in range(21)], id="twenty-one"),
+        pytest.param([SEED.primary_project, SEED.primary_project], id="duplicate"),
+    ],
+)
+def test_create_request_rejects_bad_project_ids(project_ids) -> None:
+    with pytest.raises(ValidationError):
+        PersonalAccessTokenCreateRequest(
+            name="x", scope="read", expires_in_days=30, project_ids=project_ids
+        )

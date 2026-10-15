@@ -506,3 +506,81 @@ async def test_edit_template_draft_bola_writes_no_row(
         await db_session.execute(text("SELECT count(*) FROM public.agent_actions"))
     ).scalar_one()
     assert after == before
+
+
+# --- per-project token restriction ------------------------------------------
+
+
+def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[str, dict]:
+    """Arguments naming project B for every tool with a project or article coordinate."""
+    b = str(SEED.secondary_project)
+    return {
+        "get_project": {"project_id": b},
+        "list_articles": {"project_id": b},
+        "get_article": {"article_id": b_article},
+        "get_article_text": {"article_id": b_article},
+        "get_article_pdf": {"article_id": b_article},
+        "search_project_text": {"project_id": b, "query": "x"},
+        "get_template": {"project_id": b, "template_id": b_template},
+        "get_extractions": {"project_id": b, "template_id": b_template},
+        "update_project_details": {
+            "project_id": b,
+            "fields": {"description": "restricted"},
+            "expected": {"description": None},
+        },
+        "edit_template_draft": {
+            "project_id": b,
+            "template_id": b_template,
+            "ops": [{"op": "add_question", "section_id": b_section, "label": "Q", "type": "text"}],
+        },
+    }
+
+
+_COORDINATE_TOOLS = sorted(_coordinate_cases("a", "t", "s"))
+
+
+async def test_restriction_table_covers_every_coordinate_tool(mcp_client, pat_primary_rw) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        tools = (await client.list_tools()).tools
+    with_coordinate = {
+        t.name
+        for t in tools
+        if {"project_id", "article_id"} & set(t.input_schema.get("properties", {}))
+    }
+    assert with_coordinate == set(_COORDINATE_TOOLS)
+
+
+@pytest.mark.parametrize("tool", _COORDINATE_TOOLS)
+async def test_token_restricted_to_a_gets_not_found_on_b(
+    mcp_client,
+    pat_primary_rw,
+    pat_primary_rw_only_a,
+    db_session: AsyncSession,
+    tool: str,
+) -> None:
+    b_article = await insert_article(db_session, SEED.secondary_project, title="B article")
+    await insert_pdf(db_session, SEED.secondary_project, b_article)
+    _project_id, b_template, schema = await fresh_charms(db_session)
+    b_section = next(et for et in schema["entity_types"] if et.get("fields"))["id"]
+    arguments = _coordinate_cases(str(b_article), str(b_template), b_section)[tool]
+
+    # Same user, unrestricted token: membership alone lets the call through.
+    unrestricted = await call_tool(mcp_client, pat_primary_rw, tool, arguments)
+    assert not unrestricted.is_error or error_payload(unrestricted)["code"] != "NOT_FOUND"
+
+    restricted = await call_tool(mcp_client, pat_primary_rw_only_a, tool, arguments)
+    outsider_shape = await call_tool(
+        mcp_client, pat_primary_rw, "get_project", {"project_id": str(uuid4())}
+    )
+    assert error_payload(restricted) == error_payload(outsider_shape)
+
+
+async def test_token_restricted_to_a_still_reaches_a(mcp_client, pat_primary_rw_only_a) -> None:
+    result = await call_tool(
+        mcp_client, pat_primary_rw_only_a, "get_project", {"project_id": str(SEED.primary_project)}
+    )
+    assert not result.is_error
+    article = await call_tool(
+        mcp_client, pat_primary_rw_only_a, "get_article", {"article_id": str(SEED.primary_article)}
+    )
+    assert not article.is_error

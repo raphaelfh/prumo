@@ -192,7 +192,7 @@ succeeded or not.
 | HTTP 429 | Rate limit hit | Wait and retry |
 | HTTP 429 with `Retry-After: 1` | Too many simultaneous calls on one token (more than 4 at once by default) | Lower the agent's parallelism |
 | HTTP 503 with `Retry-After` | The database is busy | Retry after the given seconds |
-| `NOT_FOUND` | You are not a member of the project, or the id belongs to another project | Call `list_projects` / `list_articles` |
+| `NOT_FOUND` | You are not a member of the project, the id belongs to another project, or your token is restricted to other projects | Call `list_projects` / `list_articles` |
 | `MANAGER_REQUIRED` | The call needs a project manager | Ask a project manager |
 | `SCOPE_INSUFFICIENT` | A `read` token tried a write tool | Use a `read_write` token |
 | `INVALID_ARGUMENT` | A tool argument is out of range or malformed; `field` names it | Fix that argument and call again |

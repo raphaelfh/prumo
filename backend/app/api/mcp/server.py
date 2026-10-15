@@ -247,7 +247,8 @@ def _argument_refusal(name: str, exc: ValidationError) -> CallToolResult:
 
 
 async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any]) -> Any:
-    """The ONE place the checks run, in order: scope, rate limit, membership, role."""
+    """The ONE place the checks run, in order: scope, rate limit, membership,
+    token project restriction, role."""
     principal = current_principal()
     write = rule.requires == "write"
     db: AsyncSession | None = None
@@ -266,6 +267,9 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                 span.set_attribute("project_id", str(project_id))
 
                 if not await is_project_member(db, project_id, principal.user_sub):
+                    raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
+                # A project outside the token's restriction answers exactly like non-membership.
+                if not principal.reaches(project_id):
                     raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
 
                 if write and not await is_project_manager(db, project_id, principal.user_sub):

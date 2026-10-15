@@ -2416,6 +2416,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[NoneType] */
+        ApiResponse_NoneType_: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[OpenHITLSessionResponse] */
         ApiResponse_OpenHITLSessionResponse_: {
             /** @description Dados da resposta */
@@ -4861,6 +4881,11 @@ export interface components {
              */
             name: string;
             /**
+             * Project Ids
+             * @description Projects the token may reach (1-20 distinct ids, each one the caller belongs to). Omit or null for every project of the caller.
+             */
+            project_ids?: string[] | null;
+            /**
              * Scope
              * @description Which MCP tool tier the token may call.
              * @enum {string}
@@ -4906,6 +4931,11 @@ export interface components {
             last_used_at: string | null;
             /** Name */
             name: string;
+            /**
+             * Project Ids
+             * @description Projects the token is restricted to; null means every project of its user.
+             */
+            project_ids: string[] | null;
             /** Revoked At */
             revoked_at: string | null;
             /**
@@ -4926,14 +4956,18 @@ export interface components {
         };
         /**
          * PersonalAccessTokenRefusalCode
-         * @description Why ``POST /api/v1/me/tokens`` returned 409.
+         * @description Why ``POST /api/v1/me/tokens`` refused.
+         *
+         *     409 ``TOKEN_LIMIT_REACHED``: the caller already holds the maximum number of
+         *     active tokens. 422 ``PROJECT_NOT_ACCESSIBLE``: a listed project is missing
+         *     or the caller is not a member of it (one answer for both).
          *
          *     Slice-local, like ``TemplateDraftLockRefusalCode``
          *     (``app/schemas/hitl_session.py``): one endpoint's outcome, not part of
          *     the cross-cutting ``ApiErrorCode`` vocabulary.
          * @enum {string}
          */
-        PersonalAccessTokenRefusalCode: "TOKEN_LIMIT_REACHED";
+        PersonalAccessTokenRefusalCode: "TOKEN_LIMIT_REACHED" | "PROJECT_NOT_ACCESSIBLE";
         /** PersonalAccessTokenRefusalError */
         PersonalAccessTokenRefusalError: {
             code: components["schemas"]["PersonalAccessTokenRefusalCode"];
@@ -4942,7 +4976,8 @@ export interface components {
         };
         /**
          * PersonalAccessTokenRefusalResponse
-         * @description The 409 body, declared so the generated client types the refusal.
+         * @description The 409 (``TOKEN_LIMIT_REACHED``) and 422 (``PROJECT_NOT_ACCESSIBLE``)
+         *     body, declared so the generated client types the refusal.
          */
         PersonalAccessTokenRefusalResponse: {
             error: components["schemas"]["PersonalAccessTokenRefusalError"];
@@ -8311,12 +8346,14 @@ export interface operations {
                     "application/json": components["schemas"]["PersonalAccessTokenRefusalResponse"];
                 };
             };
-            /** @description Invalid name, scope or expires_in_days */
+            /** @description Invalid body, or a listed project the caller cannot reach */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PersonalAccessTokenRefusalResponse"] | components["schemas"]["ApiResponse_NoneType_"];
+                };
             };
         };
     };

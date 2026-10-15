@@ -34,6 +34,7 @@ from sqlalchemy import (
     or_,
     select,
     table,
+    text,
     update,
 )
 from sqlalchemy.engine import CursorResult
@@ -62,6 +63,17 @@ class TokenLimitReachedError(AppError):
             code=PersonalAccessTokenRefusalCode.TOKEN_LIMIT_REACHED,
             message=f"{MAX_ACTIVE_TOKENS} active tokens is the limit; revoke one first.",
             status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class ProjectNotAccessibleError(AppError):
+    """A listed project is missing or foreign: one answer for both (no existence oracle)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=PersonalAccessTokenRefusalCode.PROJECT_NOT_ACCESSIBLE,
+            message="A listed project does not exist or you are not a member of it.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
 
@@ -102,6 +114,7 @@ def _read(
         last_used_at=row.last_used_at,
         revoked_at=row.revoked_at,
         created_at=row.created_at,
+        project_ids=row.project_ids,
     )
 
 
@@ -118,6 +131,23 @@ async def owned_token(
     ).scalar_one_or_none()
 
 
+async def _assert_projects_reachable(
+    db: AsyncSession, *, user_id: UUID, project_ids: list[UUID]
+) -> None:
+    """Every listed project, in one query, through the membership helper RLS uses."""
+    reachable = (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM unnest(CAST(:ids AS uuid[])) AS p(id) "
+                "WHERE public.is_project_member(p.id, :uid)"
+            ),
+            {"ids": [str(p) for p in project_ids], "uid": str(user_id)},
+        )
+    ).scalar_one()
+    if reachable != len(project_ids):
+        raise ProjectNotAccessibleError()
+
+
 async def create_token(
     db: AsyncSession, *, user_id: UUID, payload: PersonalAccessTokenCreateRequest
 ) -> PersonalAccessTokenCreated:
@@ -132,6 +162,8 @@ async def create_token(
     ).scalar_one()
     if active >= MAX_ACTIVE_TOKENS:
         raise TokenLimitReachedError()
+    if payload.project_ids is not None:
+        await _assert_projects_reachable(db, user_id=user_id, project_ids=payload.project_ids)
     secret = _new_secret()
     row = (
         await db.execute(
@@ -143,6 +175,7 @@ async def create_token(
                 token_hash=hash_secret(secret),
                 scope=payload.scope,
                 expires_at=func.now() + func.make_interval(0, 0, 0, payload.expires_in_days),
+                project_ids=payload.project_ids,
             )
             .returning(PersonalAccessToken)
         )
@@ -220,7 +253,11 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
     if row is None:
         return None
     return McpPrincipal(
-        user_sub=row.user_id, token_id=row.id, scope=row.scope, token_expires_at=row.expires_at
+        user_sub=row.user_id,
+        token_id=row.id,
+        scope=row.scope,
+        token_expires_at=row.expires_at,
+        project_ids=None if row.project_ids is None else frozenset(row.project_ids),
     )
 
 

@@ -70,24 +70,29 @@ class ProjectMemberRepository(BaseRepository[ProjectMember]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectMember)
 
-    async def list_for_user(self, user_id: UUID | str) -> list[ProjectMember]:
+    async def list_for_user(
+        self, user_id: UUID | str, *, project_ids: frozenset[UUID] | None = None
+    ) -> list[ProjectMember]:
         """The caller's own membership rows, each with `.project` loaded.
 
         The ONE membership predicate of a `list_projects` read: `user_id` is
         the verified principal, never a client-supplied id, so there is
         nothing to bind against a second party — unlike `get_member`, which
-        checks a specific project a caller names.
+        checks a specific project a caller names. `project_ids` (a token's
+        restriction, server-stored) narrows the rows in the same WHERE clause.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
 
-        result = await self.db.execute(
+        stmt = (
             select(ProjectMember)
             .join(ProjectMember.project)
             .options(contains_eager(ProjectMember.project))
             .where(ProjectMember.user_id == user_id)
-            .order_by(Project.name, Project.id)
         )
+        if project_ids is not None:
+            stmt = stmt.where(ProjectMember.project_id.in_(project_ids))
+        result = await self.db.execute(stmt.order_by(Project.name, Project.id))
         return list(result.scalars().all())
 
     async def get_member(

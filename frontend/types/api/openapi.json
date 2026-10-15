@@ -1372,6 +1372,48 @@
         "title": "ApiResponse[ManagerReviewVisibilityRead]",
         "type": "object"
       },
+      "ApiResponse_NoneType_": {
+        "properties": {
+          "data": {
+            "description": "Dados da resposta",
+            "title": "Data",
+            "type": "null"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[NoneType]",
+        "type": "object"
+      },
       "ApiResponse_OpenHITLSessionResponse_": {
         "properties": {
           "data": {
@@ -7045,6 +7087,24 @@
             "title": "Name",
             "type": "string"
           },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Projects the token may reach (1-20 distinct ids, each one the caller belongs to). Omit or null for every project of the caller.",
+            "title": "Project Ids"
+          },
           "scope": {
             "description": "Which MCP tool tier the token may call.",
             "enum": [
@@ -7116,6 +7176,22 @@
             "title": "Name",
             "type": "string"
           },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Projects the token is restricted to; null means every project of its user.",
+            "title": "Project Ids"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -7157,6 +7233,7 @@
           "token_prefix",
           "scope",
           "status",
+          "project_ids",
           "expires_at",
           "last_used_at",
           "revoked_at",
@@ -7166,9 +7243,10 @@
         "type": "object"
       },
       "PersonalAccessTokenRefusalCode": {
-        "description": "Why ``POST /api/v1/me/tokens`` returned 409.\n\nSlice-local, like ``TemplateDraftLockRefusalCode``\n(``app/schemas/hitl_session.py``): one endpoint's outcome, not part of\nthe cross-cutting ``ApiErrorCode`` vocabulary.",
+        "description": "Why ``POST /api/v1/me/tokens`` refused.\n\n409 ``TOKEN_LIMIT_REACHED``: the caller already holds the maximum number of\nactive tokens. 422 ``PROJECT_NOT_ACCESSIBLE``: a listed project is missing\nor the caller is not a member of it (one answer for both).\n\nSlice-local, like ``TemplateDraftLockRefusalCode``\n(``app/schemas/hitl_session.py``): one endpoint's outcome, not part of\nthe cross-cutting ``ApiErrorCode`` vocabulary.",
         "enum": [
-          "TOKEN_LIMIT_REACHED"
+          "TOKEN_LIMIT_REACHED",
+          "PROJECT_NOT_ACCESSIBLE"
         ],
         "title": "PersonalAccessTokenRefusalCode",
         "type": "string"
@@ -7191,7 +7269,7 @@
         "type": "object"
       },
       "PersonalAccessTokenRefusalResponse": {
-        "description": "The 409 body, declared so the generated client types the refusal.",
+        "description": "The 409 (``TOKEN_LIMIT_REACHED``) and 422 (``PROJECT_NOT_ACCESSIBLE``)\nbody, declared so the generated client types the refusal.",
         "properties": {
           "error": {
             "$ref": "#/components/schemas/PersonalAccessTokenRefusalError"
@@ -13893,7 +13971,22 @@
             "description": "Refused: 10 active tokens is the limit"
           },
           "422": {
-            "description": "Invalid name, scope or expires_in_days"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PersonalAccessTokenRefusalResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiResponse_NoneType_"
+                    }
+                  ],
+                  "title": "Response 422 Create My Token Api V1 Me Tokens Post"
+                }
+              }
+            },
+            "description": "Invalid body, or a listed project the caller cannot reach"
           }
         },
         "security": [

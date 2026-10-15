@@ -121,13 +121,16 @@ class SeededPat:
 
 
 async def _seed_pat(
-    db: AsyncSession, user_id: UUID, scope: Literal["read", "read_write"]
+    db: AsyncSession,
+    user_id: UUID,
+    scope: Literal["read", "read_write"],
+    project_ids: list[UUID] | None = None,
 ) -> SeededPat:
     created = await create_token(
         db,
         user_id=user_id,
         payload=PersonalAccessTokenCreateRequest(
-            name=f"pytest-{scope}", scope=scope, expires_in_days=30
+            name=f"pytest-{scope}", scope=scope, expires_in_days=30, project_ids=project_ids
         ),
     )
     principal = await resolve_principal(db, created.secret)
@@ -138,6 +141,16 @@ async def _seed_pat(
 @pytest_asyncio.fixture
 async def pat_primary_rw(db_session: AsyncSession) -> SeededPat:
     return await _seed_pat(db_session, SEED.primary_profile, "read_write")
+
+
+@pytest_asyncio.fixture
+async def pat_primary_rw_only_a(db_session: AsyncSession) -> SeededPat:
+    """``primary_profile`` manages both seed projects; this token is restricted
+    to ``SEED.primary_project`` (A), so ``SEED.secondary_project`` (B) is
+    refused by the token alone, never by membership."""
+    return await _seed_pat(
+        db_session, SEED.primary_profile, "read_write", project_ids=[SEED.primary_project]
+    )
 
 
 @pytest_asyncio.fixture

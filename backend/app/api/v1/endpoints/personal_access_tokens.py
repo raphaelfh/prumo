@@ -45,7 +45,10 @@ def _trace_id(request: Request) -> str | None:
             "model": PersonalAccessTokenRefusalResponse,
             "description": "Refused: 10 active tokens is the limit",
         },
-        422: {"description": "Invalid name, scope or expires_in_days"},
+        422: {
+            "model": PersonalAccessTokenRefusalResponse | ApiResponse[None],
+            "description": "Invalid body, or a listed project the caller cannot reach",
+        },
     },
 )
 @limiter.limit("20/minute")
@@ -55,7 +58,8 @@ async def create_my_token(
     db: DbSession,
     user_id: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[PersonalAccessTokenCreated]:
-    # TokenLimitReachedError propagates: the AppError handler turns it into the typed 409.
+    # TokenLimitReachedError / ProjectNotAccessibleError propagate: the AppError
+    # handler turns them into the typed 409 / 422.
     data = await create_token(db, user_id=user_id, payload=body)
     await db.commit()
     return ApiResponse.success(data, trace_id=_trace_id(request))

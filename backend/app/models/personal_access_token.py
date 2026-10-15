@@ -13,6 +13,7 @@ from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Text, func, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +36,8 @@ class PersonalAccessToken(Base, UUIDMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # NULL = every project of the token's user; otherwise the only projects it reaches.
+    project_ids: Mapped[list[UUID] | None] = mapped_column(ARRAY(PG_UUID(as_uuid=True)))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -46,6 +49,10 @@ class PersonalAccessToken(Base, UUIDMixin):
         CheckConstraint(
             "expires_at > created_at AND expires_at <= created_at + interval '365 days'",
             name="expires_at_check",
+        ),
+        CheckConstraint(
+            "project_ids IS NULL OR cardinality(project_ids) BETWEEN 1 AND 20",
+            name="project_ids_check",
         ),
         Index(
             "ix_personal_access_tokens_active_user",

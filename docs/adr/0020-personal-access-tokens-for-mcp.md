@@ -50,6 +50,10 @@ Chosen option: **personal access tokens**, issued and managed through
 `/api/v1/me/tokens` and accepted as a second bearer credential on `/mcp`
 only.
 
+**Amended (2026-10):** a token may carry an optional project restriction
+(default: all of the user's projects), enforced exactly like non-membership.
+The personal-access-token decision itself stands.
+
 OAuth was rejected: prumo has no web chat client to support (the entire
 consumer base for `/mcp` is header-capable agents), so an authorization-code
 flow would add a redirect endpoint, a consent screen and a provider

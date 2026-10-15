@@ -193,3 +193,100 @@ async def test_token_routes_rate_limited(client_as_reviewer: AsyncClient) -> Non
         assert resp.status_code == 200, resp.text
     limited_get = await client_as_reviewer.get(_BASE)
     assert limited_get.status_code == 429, limited_get.text
+
+
+# --- optional per-project restriction ----------------------------------------
+
+
+async def _reviewer_token_count(db_session: AsyncSession) -> int:
+    return (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.personal_access_tokens WHERE user_id = :uid"),
+            {"uid": str(SEED.reviewer_profile)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_create_with_and_without_project_ids(client_as_reviewer: AsyncClient) -> None:
+    unrestricted = await client_as_reviewer.post(
+        _BASE, json={"name": "all", "scope": "read", "expires_in_days": 30}
+    )
+    assert unrestricted.status_code == 201, unrestricted.text
+    assert unrestricted.json()["data"]["token"]["project_ids"] is None
+
+    restricted = await client_as_reviewer.post(
+        _BASE,
+        json={
+            "name": "a-only",
+            "scope": "read",
+            "expires_in_days": 30,
+            "project_ids": [str(SEED.primary_project)],
+        },
+    )
+    assert restricted.status_code == 201, restricted.text
+    assert restricted.json()["data"]["token"]["project_ids"] == [str(SEED.primary_project)]
+
+
+@pytest.mark.asyncio
+async def test_unreachable_project_is_one_422_for_foreign_and_missing(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    before = await _reviewer_token_count(db_session)
+    bodies = []
+    for project_id in (SEED.secondary_project, uuid4()):
+        resp = await client_as_reviewer.post(
+            _BASE,
+            json={
+                "name": "x",
+                "scope": "read",
+                "expires_in_days": 30,
+                "project_ids": [str(project_id)],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        body.pop("trace_id", None)
+        bodies.append(body)
+
+    assert bodies[0]["error"]["code"] == "PROJECT_NOT_ACCESSIBLE"
+    assert bodies[0] == bodies[1]
+    assert await _reviewer_token_count(db_session) == before
+
+
+@pytest.mark.parametrize(
+    "project_ids",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([str(uuid4()) for _ in range(21)], id="twenty-one"),
+        pytest.param([str(SEED.primary_project)] * 2, id="duplicate"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bad_project_ids_are_validation_errors(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession, project_ids: list[str]
+) -> None:
+    before = await _reviewer_token_count(db_session)
+    resp = await client_as_reviewer.post(
+        _BASE,
+        json={"name": "x", "scope": "read", "expires_in_days": 30, "project_ids": project_ids},
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert await _reviewer_token_count(db_session) == before
+
+
+def test_create_422_contract_types_both_refusals() -> None:
+    spec = create_app().openapi()
+    schema = spec["paths"]["/api/v1/me/tokens"]["post"]["responses"]["422"]["content"][
+        "application/json"
+    ]["schema"]
+    refs = {item["$ref"].rsplit("/", 1)[-1] for item in schema["anyOf"]}
+    assert refs == {"PersonalAccessTokenRefusalResponse", "ApiResponse_NoneType_"}
+
+    components = spec["components"]["schemas"]
+    error_ref = components["PersonalAccessTokenRefusalResponse"]["properties"]["error"]["$ref"]
+    error = components[error_ref.rsplit("/", 1)[-1]]
+    code_ref = error["properties"]["code"]["$ref"]
+    codes = set(components[code_ref.rsplit("/", 1)[-1]]["enum"])
+    assert {"TOKEN_LIMIT_REACHED", "PROJECT_NOT_ACCESSIBLE"} <= codes

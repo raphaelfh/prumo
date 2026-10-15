@@ -50,6 +50,7 @@ def _read(token_id: UUID | None = None) -> PersonalAccessTokenRead:
         last_used_at=None,
         revoked_at=None,
         created_at=datetime.now(UTC),
+        project_ids=None,
     )
 
 

@@ -45,3 +45,18 @@ async def test_project_tools_metadata(mcp_client, pat_primary_read):
             True,
             False,
         )
+
+
+async def test_list_projects_with_restricted_token_lists_only_its_projects(
+    mcp_client, pat_primary_rw_only_a
+):
+    body = structured(await call_tool(mcp_client, pat_primary_rw_only_a, "list_projects", {}))
+    assert [p["project_id"] for p in body["projects"]] == [str(SEED.primary_project)]
+    assert body["token_project_ids"] == [str(SEED.primary_project)]
+
+
+async def test_list_projects_with_unrestricted_token_has_no_token_project_ids(
+    mcp_client, pat_primary_read
+):
+    body = structured(await call_tool(mcp_client, pat_primary_read, "list_projects", {}))
+    assert body["token_project_ids"] is None
