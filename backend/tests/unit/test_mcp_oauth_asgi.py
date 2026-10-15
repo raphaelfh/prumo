@@ -220,6 +220,31 @@ def test_client_id_key_reads_a_form_body() -> None:
     assert client_id_key(scope, body) == f"client:{_CLIENT_ID}"
 
 
+_OTHER_ID = "7d1c3a52-0f4e-4b8a-9c6d-1e2f3a4b5c6d"
+
+
+def test_client_id_key_post_ignores_the_query_string() -> None:
+    """The SDK reads only the form on POST: so does the key."""
+    scope = {**_scope("POST", headers=_FORM), "query_string": f"client_id={_OTHER_ID}".encode()}
+    body = f"response_type=code&client_id={_CLIENT_ID}".encode()
+    assert client_id_key(scope, body) == f"client:{_CLIENT_ID}"
+
+
+def test_client_id_key_post_without_a_form_id_is_the_ip() -> None:
+    scope = {**_scope("POST", headers=_FORM), "query_string": f"client_id={_OTHER_ID}".encode()}
+    assert client_id_key(scope, b"response_type=code") == "ip:9.8.7.6"
+
+
+def test_client_id_key_get_ignores_a_form_body() -> None:
+    scope = {**_scope("GET", headers=_FORM), "query_string": b""}
+    assert client_id_key(scope, f"client_id={_CLIENT_ID}".encode()) == "ip:9.8.7.6"
+
+
+def test_client_id_key_other_methods_are_the_ip() -> None:
+    scope = {**_scope("PUT", headers=_FORM), "query_string": f"client_id={_OTHER_ID}".encode()}
+    assert client_id_key(scope, f"client_id={_CLIENT_ID}".encode()) == "ip:9.8.7.6"
+
+
 def test_client_id_key_ignores_a_json_body() -> None:
     scope = {**_scope("POST", headers=[(b"content-type", b"application/json")])}
     body = f"client_id={_CLIENT_ID}".encode()
@@ -282,6 +307,19 @@ async def test_public_client_default_keeps_an_explicit_method() -> None:
 
 @pytest.mark.parametrize("raw", [b"not json", b"[1, 2]", b"\xff"], ids=["text", "array", "binary"])
 async def test_public_client_default_passes_other_bodies_unchanged(raw: bytes) -> None:
+    inner = await _register_through(raw)
+    assert inner.body == raw
+
+
+_DEEP = 100_000
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b"[" * _DEEP + b"]" * _DEEP, b'{"x": ' + b"[" * _DEEP + b"]" * _DEEP + b"}"],
+    ids=["deep-array", "deep-in-object"],
+)
+async def test_public_client_default_passes_a_deep_body_unchanged(raw: bytes) -> None:
     inner = await _register_through(raw)
     assert inner.body == raw
 

@@ -107,6 +107,21 @@ async def test_register_refuses_six_redirect_uris(oauth_http_client: AsyncClient
     assert r.json()["error"] == "invalid_client_metadata"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [b"[" * 100_000 + b"]" * 100_000, b'{"x": ' + b"[" * 100_000 + b"]" * 100_000 + b"}"],
+    ids=["deep-array", "deep-in-object"],
+)
+async def test_register_refuses_a_deeply_nested_body(
+    oauth_http_client: AsyncClient, raw: bytes
+) -> None:
+    r = await oauth_http_client.post(
+        "/register", content=raw, headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 400
+    assert r.json()["error"] == "invalid_client_metadata"
+
+
 async def test_register_refuses_a_foreign_redirect(oauth_http_client: AsyncClient) -> None:
     r = await register(oauth_http_client, redirect_uris=("https://evil.example/cb",))
     assert r.status_code == 400
@@ -289,3 +304,33 @@ async def test_authorize_without_client_id_is_limited_per_ip(
     ]
     assert 429 not in statuses[:30]
     assert statuses[30] == 429
+
+
+async def test_authorize_post_is_limited_on_the_form_client_id(
+    oauth_http_client: AsyncClient,
+) -> None:
+    """The SDK reads only the form on POST; a query-string client_id cannot
+    move the call into another bucket."""
+    client_id = await registered_client_id(oauth_http_client)
+    _, challenge = pkce_pair()
+    form = {
+        "response_type": "code",
+        "client_id": client_id,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "redirect_uri": CLAUDE_CB,
+        "resource": MCP_URL,
+        "state": "st",
+    }
+
+    async def post() -> Response:
+        return await oauth_http_client.post(
+            "/authorize", params={"client_id": str(uuid4())}, data=form
+        )
+
+    statuses = [(await post()).status_code for _ in range(30)]
+    assert statuses == [302] * 30
+
+    r = await post()
+    assert r.status_code == 429
+    assert int(r.headers["retry-after"]) >= 1

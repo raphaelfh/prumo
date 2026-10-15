@@ -69,10 +69,13 @@ def _is_form(scope: Scope) -> bool:
 
 
 def client_id_key(scope: Scope, body: bytes) -> str:
-    """``client:<id>`` for a well-formed ``client_id`` (query string, else a form
-    body); otherwise ``ip:<host>``, so malformed ids share their caller's bucket."""
-    client_id = QueryParams(scope.get("query_string", b"")).get("client_id")
-    if client_id is None and _is_form(scope):
+    """``client:<id>`` for a well-formed ``client_id`` read where the SDK reads it
+    (GET: the query string; POST: the form body); otherwise ``ip:<host>``, so
+    malformed or misplaced ids share their caller's bucket."""
+    client_id: str | None = None
+    if scope["method"] == "GET":
+        client_id = QueryParams(scope.get("query_string", b"")).get("client_id")
+    elif scope["method"] == "POST" and _is_form(scope):
         client_id = QueryParams(body).get("client_id")
     try:
         return f"client:{UUID(client_id or '')}"
@@ -85,7 +88,9 @@ def _with_public_default(body: bytes) -> bytes | None:
     ``"none"``, re-encoded; ``None`` when ``body`` needs no change."""
     try:
         data = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # Not JSON, or nested past the parser's depth: the SDK's own parse
+        # answers 400 invalid_client_metadata.
         return None
     if not isinstance(data, dict) or data.get("token_endpoint_auth_method") is not None:
         return None

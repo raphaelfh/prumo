@@ -228,6 +228,26 @@ async def test_create_request_without_scopes_takes_the_registered_ones(
     assert row.requested_scopes == ["read"]
 
 
+@pytest.mark.parametrize(
+    ("registered", "asked", "stored"),
+    [
+        ("read write", ["write"], ["read", "write"]),
+        ("read write offline_access", ["offline_access"], ["read"]),
+        ("offline_access", None, ["read"]),
+        ("write", None, ["read", "write"]),
+    ],
+    ids=["write-only", "offline-only", "registered-offline-only", "registered-write-only"],
+)
+async def test_create_request_always_includes_read(
+    db_session: AsyncSession, registered: str, asked: list[str] | None, stored: list[str]
+) -> None:
+    client = await _registered(db_session, scope=registered)
+    request_id = await svc.create_request(db_session, client=client, params=_params(scopes=asked))
+    row = await db_session.get(McpOAuthRequest, request_id)
+    assert row is not None
+    assert row.requested_scopes == stored
+
+
 async def test_create_request_without_resource_stores_none(db_session: AsyncSession) -> None:
     client = await _registered(db_session)
     request_id = await svc.create_request(db_session, client=client, params=_params(resource=None))

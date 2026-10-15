@@ -32,6 +32,7 @@ REQUEST_TTL = timedelta(minutes=10)
 DEFAULT_CLIENT_NAME = "MCP client"
 
 _MAX_REDIRECT_URIS = 5
+_ALWAYS_GRANTED = "read"
 _MAX_CLIENT_NAME = 80
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -119,8 +120,9 @@ async def create_request(
             redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
             code_challenge=params.code_challenge,
             state=params.state,
-            # Granting scopes only, in canonical order: offline_access is never stored.
-            requested_scopes=[scope for scope in OAUTH_SCOPES if scope in asked],
+            # Granting scopes only, in canonical order: read always (the fixed
+            # consent box), write when asked; offline_access is never stored.
+            requested_scopes=[s for s in OAUTH_SCOPES if s == _ALWAYS_GRANTED or s in asked],
             resource=resource,
             expires_at=datetime.now(UTC) + REQUEST_TTL,
         )
