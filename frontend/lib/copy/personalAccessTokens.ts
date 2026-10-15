@@ -28,6 +28,7 @@ export const personalAccessTokens = {
     projectsEmpty: 'You are not a member of any project',
     projectsLoadError: "Couldn't load your projects.",
     projectsTooMany: 'Choose at most 20 projects.',
+    projectsSelectedCount: '{{n}} of 20 selected',
     projectNotAccessible: 'One of the selected projects is no longer available',
     projectsAllBadge: 'All projects',
     projectsCount: '{{n}} projects',

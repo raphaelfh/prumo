@@ -4,7 +4,7 @@
  * as its root (borderless density pass § 4.3). The reveal dialog reuses
  * `McpClientSnippetSelector` (Task 4b) with the real secret.
  */
-import {useState, type MouseEvent} from 'react';
+import {useEffect, useState, type MouseEvent} from 'react';
 import {Loader2, Plus, Trash2} from 'lucide-react';
 import {toast} from 'sonner';
 import {useForm, useWatch, type Control} from 'react-hook-form';
@@ -23,18 +23,17 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {IconButton} from '@/components/patterns/IconButton';
-import {AppDialog} from '@/components/patterns/AppDialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
-import {Form, FormField} from '@/components/ui/form';
+import {Form, FormControl, FormField, FormItem, FormMessage} from '@/components/ui/form';
 import {RadioGroup, RadioGroupItem} from '@/components/ui/radio-group';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from '@/components/ui/dialog';
 import {Input} from '@/components/ui/input';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
-import {SettingsActions, SettingsGroup, SettingsRow} from '@/components/settings';
+import {SettingsGroup, SettingsRow} from '@/components/settings';
 import {CopyBlock} from '@/components/user/CopyBlock';
 import {McpClientSnippetSelector} from '@/components/user/McpClientSnippetSelector';
 import {
@@ -184,6 +183,8 @@ function createErrorMessage(error: Error): string {
   return error.message || t('personalAccessTokens', 'createError');
 }
 
+const PROJECTS_COUNT_ID = 'pat-projects-count';
+
 /** All my projects, or a checkbox list of the caller's projects (at most 20). */
 function ProjectsField({control, projects}: {control: Control<CreateValues>; projects: ProjectsQuery}) {
   const mode = useWatch({control, name: 'projectMode'});
@@ -220,7 +221,14 @@ function ProjectsField({control, projects}: {control: Control<CreateValues>; pro
         )}
       />
       {loaded?.length === 0 && <p className="text-[13px] text-muted-foreground">{t('personalAccessTokens', 'projectsEmpty')}</p>}
-      {projects.isError && <p className="text-[13px] text-destructive">{t('personalAccessTokens', 'projectsLoadError')}</p>}
+      {projects.isError && (
+        <p className="flex items-center gap-2 text-[13px] text-destructive">
+          {t('personalAccessTokens', 'projectsLoadError')}
+          <Button type="button" size="xs" variant="ghost" onClick={() => void projects.refetch()}>
+            {t('personalAccessTokens', 'retry')}
+          </Button>
+        </p>
+      )}
       {mode === 'only' && canRestrict && (
         <FormField
           control={control}
@@ -229,24 +237,34 @@ function ProjectsField({control, projects}: {control: Control<CreateValues>; pro
             const selected = field.value ?? [];
             const toggle = (id: string, checked: boolean) =>
               field.onChange(checked ? [...selected, id] : selected.filter((x) => x !== id));
+            const outOfRange = selected.length === 0 || selected.length > MAX_PROJECTS;
             return (
-              <>
-                <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
+              <FormItem className="space-y-0">
+                <ul
+                  role="group"
+                  aria-label={t('personalAccessTokens', 'projectsOnly')}
+                  className="mt-1 max-h-48 space-y-px overflow-y-auto"
+                >
                   {loaded.map((project) => (
-                    <li key={project.id} className="flex min-w-0 items-center gap-2">
-                      <Checkbox
-                        id={`pat-project-${project.id}`}
-                        checked={selected.includes(project.id)}
-                        onCheckedChange={(checked) => toggle(project.id, checked === true)}
-                      />
-                      <label htmlFor={`pat-project-${project.id}`} className="min-w-0 truncate text-[13px]">{project.name}</label>
+                    <li key={project.id}>
+                      <label className="flex min-w-0 items-center gap-2 rounded-sm px-2 py-1 text-[13px] hover:bg-muted/50 [@media(pointer:coarse)]:min-h-11">
+                        <Checkbox
+                          checked={selected.includes(project.id)}
+                          onCheckedChange={(checked) => toggle(project.id, checked === true)}
+                        />
+                        <span className="min-w-0 truncate" title={project.name}>{project.name}</span>
+                      </label>
                     </li>
                   ))}
                 </ul>
-                {selected.length > MAX_PROJECTS && (
-                  <p className="mt-1 text-xs text-destructive">{t('personalAccessTokens', 'projectsTooMany')}</p>
-                )}
-              </>
+                <p
+                  id={PROJECTS_COUNT_ID}
+                  className={cn('mt-1 text-[12px]', outOfRange ? 'text-destructive' : 'text-muted-foreground')}
+                >
+                  {t('personalAccessTokens', 'projectsSelectedCount').replace('{{n}}', String(selected.length))}
+                </p>
+                <FormMessage className="text-[12px]" />
+              </FormItem>
             );
           }}
         />
@@ -268,12 +286,22 @@ function CreateDialog({
   create: ReturnType<typeof useCreateMyToken>;
   projects: ProjectsQuery;
 }) {
-  const form = useForm<CreateValues>({resolver: zodResolver(createSchema), defaultValues: CREATE_DEFAULTS});
+  const form = useForm<CreateValues>({mode: 'onChange', resolver: zodResolver(createSchema), defaultValues: CREATE_DEFAULTS});
   const [formError, setFormError] = useState<string | null>(null);
   const name = useWatch({control: form.control, name: 'name'});
   const mode = useWatch({control: form.control, name: 'projectMode'});
   const selectedCount = useWatch({control: form.control, name: 'project_ids'})?.length ?? 0;
   const projectsInvalid = mode === 'only' && (selectedCount === 0 || selectedCount > MAX_PROJECTS);
+
+  // A project that left the list (a refused submit refetches it) leaves the selection too.
+  const loadedProjects = projects.isSuccess ? projects.data : undefined;
+  useEffect(() => {
+    if (!loadedProjects) return;
+    const known = new Set(loadedProjects.map((project) => project.id));
+    const current = form.getValues('project_ids') ?? [];
+    const kept = current.filter((id) => known.has(id));
+    if (kept.length !== current.length) form.setValue('project_ids', kept, {shouldValidate: true});
+  }, [loadedProjects, form]);
 
   const reset = () => {
     form.reset(CREATE_DEFAULTS);
@@ -303,64 +331,82 @@ function CreateDialog({
   };
 
   return (
-    <AppDialog open={open} onOpenChange={(next) => { if (!next) cancel(); }} size="sm" title={t('personalAccessTokens', 'createTitle')} showFooter={false}>
-      <Form {...form}>
-        <form className="space-y-1" onSubmit={form.handleSubmit(submit)}>
-          <FormField
-            control={form.control}
-            name="name"
-            render={({field}) => (
-              <SettingsRow label={t('personalAccessTokens', 'nameLabel')} htmlFor="pat-name">
-                <Input id="pat-name" variant="quiet" {...field} placeholder={t('personalAccessTokens', 'namePlaceholder')} maxLength={80} />
-              </SettingsRow>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="scope"
-            render={({field}) => (
-              <SettingsRow label={t('personalAccessTokens', 'scopeLabel')} htmlFor="pat-scope">
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="pat-scope" variant="quiet">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="read">{t('personalAccessTokens', 'scopeRead')}</SelectItem>
-                    <SelectItem value="read_write">{t('personalAccessTokens', 'scopeReadWrite')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </SettingsRow>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="expires_in_days"
-            render={({field}) => (
-              <SettingsRow label={t('personalAccessTokens', 'expiryLabel')} htmlFor="pat-expiry">
-                <Select value={String(field.value)} onValueChange={(next) => field.onChange(Number(next))}>
-                  <SelectTrigger id="pat-expiry" variant="quiet">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXPIRY_OPTIONS.map((days) => (
-                      <SelectItem key={days} value={String(days)}>{t('personalAccessTokens', 'expiryDays').replace('{{n}}', String(days))}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </SettingsRow>
-            )}
-          />
-          <ProjectsField control={form.control} projects={projects} />
-          {formError && <p role="alert" className="text-[13px] text-destructive">{formError}</p>}
-          <SettingsActions>
-            <Button type="submit" size="sm" disabled={create.isPending || name.trim() === '' || projectsInvalid}>
-              {create.isPending ? t('personalAccessTokens', 'creating') : t('personalAccessTokens', 'createSubmit')}
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={cancel}>{t('personalAccessTokens', 'cancel')}</Button>
-          </SettingsActions>
-        </form>
-      </Form>
-    </AppDialog>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) cancel(); }}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>{t('personalAccessTokens', 'createTitle')}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <Form {...form}>
+            <form id="pat-create-form" className="space-y-1" onSubmit={form.handleSubmit(submit)}>
+              <FormField
+                control={form.control}
+                name="name"
+                render={({field}) => (
+                  <FormItem className="space-y-0">
+                    <SettingsRow label={t('personalAccessTokens', 'nameLabel')} htmlFor="pat-name">
+                      <FormControl>
+                        <Input id="pat-name" variant="quiet" {...field} placeholder={t('personalAccessTokens', 'namePlaceholder')} maxLength={80} />
+                      </FormControl>
+                      <FormMessage className="text-[12px]" />
+                    </SettingsRow>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="scope"
+                render={({field}) => (
+                  <SettingsRow label={t('personalAccessTokens', 'scopeLabel')} htmlFor="pat-scope">
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger id="pat-scope" variant="quiet">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="read">{t('personalAccessTokens', 'scopeRead')}</SelectItem>
+                        <SelectItem value="read_write">{t('personalAccessTokens', 'scopeReadWrite')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </SettingsRow>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="expires_in_days"
+                render={({field}) => (
+                  <SettingsRow label={t('personalAccessTokens', 'expiryLabel')} htmlFor="pat-expiry">
+                    <Select value={String(field.value)} onValueChange={(next) => field.onChange(Number(next))}>
+                      <SelectTrigger id="pat-expiry" variant="quiet">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EXPIRY_OPTIONS.map((days) => (
+                          <SelectItem key={days} value={String(days)}>{t('personalAccessTokens', 'expiryDays').replace('{{n}}', String(days))}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </SettingsRow>
+                )}
+              />
+              <ProjectsField control={form.control} projects={projects} />
+              {formError && <p role="alert" className="text-[13px] text-destructive">{formError}</p>}
+            </form>
+          </Form>
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" size="sm" variant="outline" onClick={cancel}>{t('personalAccessTokens', 'cancel')}</Button>
+          <Button
+            type="submit"
+            form="pat-create-form"
+            size="sm"
+            disabled={create.isPending || name.trim() === '' || projectsInvalid}
+            aria-describedby={projectsInvalid ? PROJECTS_COUNT_ID : undefined}
+          >
+            {create.isPending ? t('personalAccessTokens', 'creating') : t('personalAccessTokens', 'createSubmit')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

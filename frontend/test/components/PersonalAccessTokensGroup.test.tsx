@@ -21,9 +21,9 @@ type ProjectsState = {isPending: boolean; isError: boolean; isSuccess: boolean; 
 const LOADED = (data: {id: string; name: string}[]): ProjectsState => ({isPending: false, isError: false, isSuccess: true, data});
 const PROJECTS_LOADING: ProjectsState = {isPending: true, isError: false, isSuccess: false, data: undefined};
 const PROJECTS_ERROR: ProjectsState = {isPending: false, isError: true, isSuccess: false, data: undefined};
-const {projectsState} = vi.hoisted(() => ({projectsState: {current: undefined as unknown}}));
+const {projectsState, refetchProjects} = vi.hoisted(() => ({projectsState: {current: undefined as unknown}, refetchProjects: vi.fn()}));
 vi.mock('@/hooks/useProjectsQuery', () => ({
-  useProjectsQuery: () => ({refetch: vi.fn(), ...(projectsState.current as object)}),
+  useProjectsQuery: () => ({refetch: refetchProjects, ...(projectsState.current as object)}),
 }));
 
 import {toast} from 'sonner';
@@ -52,12 +52,13 @@ afterEach(() => vi.stubEnv('VITE_API_URL', ''));
 
 function renderGroup() {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
-  const view = render(
+  const tree = () => (
     <QueryClientProvider client={client}>
       <TooltipProvider><PersonalAccessTokensGroup /></TooltipProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-  return {client, ...view};
+  const view = render(tree());
+  return {client, ...view, rerenderTree: () => view.rerender(tree())};
 }
 
 async function openCreateDialog() {
@@ -260,14 +261,16 @@ describe('PersonalAccessTokensGroup', () => {
   describe('project restriction', () => {
     async function openWithName() {
       vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
-      renderGroup();
+      const view = renderGroup();
       await waitFor(() => expect(screen.getByText(t('personalAccessTokens', 'listEmpty'))).toBeInTheDocument());
       const dialog = await openCreateDialog();
       await userEvent.type(within(dialog).getByLabelText(t('personalAccessTokens', 'nameLabel')), 'cli');
-      return dialog;
+      return Object.assign(dialog, {view});
     }
     const submitButton = (dialog: HTMLElement) =>
       within(dialog).getByRole('button', {name: t('personalAccessTokens', 'createSubmit')});
+    const countLine = (n: number) =>
+      t('personalAccessTokens', 'projectsSelectedCount').replace('{{n}}', String(n));
 
     it('default: "All my projects" is selected and the request carries no project_ids', async () => {
       vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
@@ -335,7 +338,8 @@ describe('PersonalAccessTokensGroup', () => {
       await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Project 20'}));
 
       expect(submitButton(dialog)).toBeDisabled();
-      expect(within(dialog).getByText(t('personalAccessTokens', 'projectsTooMany'))).toBeInTheDocument();
+      expect(within(dialog).getByText(countLine(21))).toBeInTheDocument();
+      expect(await within(dialog).findByText(t('personalAccessTokens', 'projectsTooMany'))).toBeInTheDocument();
     }, 15_000);
 
     it('422 PROJECT_NOT_ACCESSIBLE: shows the inline refusal and keeps the dialog open', async () => {
@@ -349,6 +353,50 @@ describe('PersonalAccessTokensGroup', () => {
 
       await waitFor(() => expect(within(dialog).getByText(t('personalAccessTokens', 'projectNotAccessible'))).toBeInTheDocument());
       expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(refetchProjects).toHaveBeenCalled();
+    });
+
+    it('after the refusal, a project gone from the refreshed list is dropped from the selection', async () => {
+      vi.mocked(svc.createMyToken)
+        .mockResolvedValueOnce({ok: false, error: new ApiError('PROJECT_NOT_ACCESSIBLE', 'gone', 422)})
+        .mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
+      const dialog = await openWithName();
+      await userEvent.click(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')}));
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Alpha review'}));
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Beta review'}));
+      await userEvent.click(submitButton(dialog));
+      await waitFor(() => expect(within(dialog).getByText(t('personalAccessTokens', 'projectNotAccessible'))).toBeInTheDocument());
+
+      projectsState.current = LOADED([{id: P2, name: 'Beta review'}]);
+      dialog.view.rerenderTree();
+
+      await waitFor(() => expect(within(dialog).getByText(countLine(1))).toBeInTheDocument());
+      await userEvent.click(submitButton(dialog));
+      await waitFor(() => expect(svc.createMyToken).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(svc.createMyToken).mock.calls[1][0]).toEqual({
+        name: 'cli', scope: 'read', expires_in_days: 90, project_ids: [P2],
+      });
+    });
+
+    it('"Only these projects" with none selected: the count line explains the disabled Create', async () => {
+      const dialog = await openWithName();
+      await userEvent.click(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')}));
+      const count = within(dialog).getByText(countLine(0));
+      expect(submitButton(dialog)).toBeDisabled();
+      expect(submitButton(dialog)).toHaveAttribute('aria-describedby', count.id);
+      expect(within(dialog).getByRole('group', {name: t('personalAccessTokens', 'projectsOnly')})).toBeInTheDocument();
+
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Alpha review'}));
+      expect(within(dialog).getByText(countLine(1))).toBeInTheDocument();
+      expect(submitButton(dialog)).not.toBeDisabled();
+      expect(submitButton(dialog)).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('projects error: Retry refetches the project list', async () => {
+      projectsState.current = PROJECTS_ERROR;
+      const dialog = await openWithName();
+      await userEvent.click(within(dialog).getByRole('button', {name: t('personalAccessTokens', 'retry')}));
+      expect(refetchProjects).toHaveBeenCalled();
     });
 
     const rowWith = (project_ids: string[] | null) => ({...(ACTIVE as object), project_ids}) as never;
@@ -386,9 +434,8 @@ describe('PersonalAccessTokensGroup', () => {
       vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [rowWith([P1, GONE])]});
       renderGroup();
       const badge = await screen.findByText('2 projects');
-      await userEvent.hover(badge);
-      await new Promise((r) => setTimeout(r, 500));
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      // No tooltip trigger is rendered at all until the list has loaded.
+      expect(badge.closest('button')).toBeNull();
       expect(document.body.textContent).not.toContain(t('personalAccessTokens', 'projectUnavailable'));
     });
   });
