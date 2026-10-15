@@ -116,4 +116,23 @@ describe('safeReturnPath', () => {
     it.each(HOSTILE.map((from) => [String(from), from]))('maps %s to /', (_label, from) => {
         expect(safeReturnPath(from)).toBe('/');
     });
+
+    it.each([
+        '/.//evil.example',
+        '/%2e//evil.example',
+        '/%2E/x',
+        '/a/../..//evil',
+        '/a/%2e%2e/b',
+        '/a/.%2E/b',
+        '/a/./b',
+        '/a//b',
+        '/.\\/evil.example',
+        '/./\t/evil.example',
+    ])('maps the dot-segment or double-slash path %s to /', (from) => {
+        expect(safeReturnPath(from)).toBe('/');
+    });
+
+    it('keeps a path whose segments merely contain dots', () => {
+        expect(safeReturnPath('/projects/v1.2/..x?q=a.b')).toBe('/projects/v1.2/..x?q=a.b');
+    });
 });
