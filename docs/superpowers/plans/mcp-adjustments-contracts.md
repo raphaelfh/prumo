@@ -14,7 +14,7 @@ owner: '@raphaelfh'
 
 **Tech Stack:** FastAPI, Pydantic v2, SQLAlchemy 2 async, Alembic, Postgres 17, MCP Python SDK, React 19 + TanStack Query + react-hook-form + Zod + Vitest + MSW.
 
-**Scope:** 25 tasks, one PR. A value-envelope CHECK migration and its later VALIDATE are out of this plan (they need a recorded production audit first); this plan ships the read-only audit reporter they depend on. No spec link: the goal, the global constraints and the per-task requirements below are the contract.
+**Scope:** 24 tasks, one PR. A value-envelope CHECK migration and its later VALIDATE are out of this plan (they need a recorded production audit first); this plan ships the read-only audit reporter they depend on. No spec link: the goal, the global constraints and the per-task requirements below are the contract.
 
 ## Global Constraints
 
@@ -31,12 +31,13 @@ owner: '@raphaelfh'
 - **No app-unused symbol at any task boundary.** Vulture scans `backend/app` only, so a function, constant or property lands in the task that adds its first `backend/app` caller (tests do not count). Each backend task ends with `cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` green; the baseline never grows, and a deletion that removes a baselined name shrinks `backend/.vulture_baseline` in the same task.
 - **Fitness scripts** run from `$WT` with the backend venv first on PATH: `cd "$WT" && PATH="$WT/backend/.venv/bin:$PATH" python3 scripts/fitness/<script>.py`, and `cd "$WT" && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh` for the whole set.
 - **Frontend tooling runs from the repo root** (`$WT`): `npx vitest run <file>`, `npm run test:run`, `npm run typecheck`, `npm run lint`, `npx knip`, `npx knip --production`. Never `cd frontend && npm ...`. If `$WT/node_modules` is missing or a symlink, run `cd "$WT" && npm ci` first.
-- **REST contract change** (any edit to a schema class served by `/api/v1`, docstring included) ⇒ `cd "$WT" && npm run generate:api-types` and commit `frontend/types/api/schema.d.ts` + `frontend/types/api/openapi.json` in the same task. The backend task that changes the schema regenerates; a frontend task that then breaks on the new types is the next task in order and the PR is atomic.
+- **REST contract change** (any edit to a schema class served by `/api/v1`, docstring included) ⇒ `cd "$WT" && npm run generate:api-types` and commit `frontend/types/api/schema.d.ts` + `frontend/types/api/openapi.json` in the same task. The backend task that changes the schema regenerates; frontend breakage from the option-shape change (Tasks 2.1a-1, 2.1a-2a, 2.1a-2b) is fixed by the frontend tasks 2.2a-1…2.2b-2, and every other REST change fixes its frontend in the same task. The PR is atomic.
 - **No dead code.** A replaced path is deleted in the same task; orphans found outside the task go in a sibling `refactor(<area>): ...` commit. `npx knip` and `npx knip --production` stay at 0.
 - **Copy** goes through `t(namespace, key)` from `frontend/lib/copy/`; `scripts/fitness/check_copy_keys.py` stays green. Query keys come from factories only (`check_react_query_keys.py`).
 - **MCP result rules.** Every tool result stays ≤ 32,000 characters (`app.utils.compact_json.RESULT_CAP`; `test_mcp_result_shape.py` and the per-tool cap tests stay green). Names next to ids (`project_name`, `template_name`) appear once per result, never per row, capped with `app.utils.text_caps.cap_text`, and are listed in `untrusted_fields`. Results that carry authored or article-derived strings keep `untrusted_content: true` with accurate `untrusted_fields` paths.
 - **English only** in code, comments, commits, docs and copy keys.
 - **Public wording.** This repo is public. Commit messages, the PR title/body and docs describe the intended behavior and the tests only, cite no local-only document, path or key, and name no private project.
+- **Frontend typecheck window.** `npm run typecheck` may be red ONLY between Task 2.1a-1 (first API type regeneration) and Task 2.2b-2, and only in the frontend files those frontend tasks fix (`types/extraction.ts` and its users (`useInsertTemplateField.ts`, `TemplateConfigGridPanel.tsx`), `hooks/runs/types.ts`, `runViewAdapters.ts`, `TemplateGridFieldRow.tsx`, `TemplateInspector.tsx`, `AllowedValuesList.tsx`, `templateTree.ts`, `sectionRestore.ts`, `TemplateConfigEditor.tsx`, `TemplateConfigDiffSheet.tsx`); each frontend task in the window names the remaining ones in its commit body; Task 2.2b-2 ends with a clean typecheck, and every task after it keeps it clean.
 - **Gates per task:** backend tasks — `cd "$WT" && make lint-backend` (ruff + format + mypy ratchet), backend pytest on `tests/unit` plus the touched integration suites, the vulture command, `bash scripts/fitness/run_all.sh` (PATH as above), `uv run alembic check` on model or migration tasks; frontend tasks — `npm run test:run`, `npm run lint`, `npm run typecheck`, `npx knip`, `npx knip --production`, `check_copy_keys.py`.
 
 ## Task order
@@ -52,9 +53,8 @@ owner: '@raphaelfh'
 | 2.2a-2 | Field types, Zod rule and readers on `{value, label}` | frontend | no | 2.2a-1 |
 | 2.2b-1 | Inspector renames an option's label and keeps its code | frontend | no | 2.2a-2 |
 | 2.2b-2 | Template tree, field restore writers and the example template | frontend | no | 2.2b-1 |
-| 2.3a | Pure write-time value contract | backend | no | 2.1b |
-| 2.3b | Enforce the value contract on human decisions and consensus overrides | backend | no | 2.3a |
-| 2.3c | Show value-contract refusals in autosave and the consensus override | frontend | no | 2.3b, 2.2b-2 |
+| 2.3a+2.3b | Write-time value contract on human decisions and consensus overrides | backend | no | 2.1b |
+| 2.3c | Show value-contract refusals in autosave and the consensus override | frontend | no | 2.3a+2.3b, 2.2b-2 |
 | 2.4a | Read-only value-envelope audit reporter | backend | no | — |
 | 2.5a | One envelope peel and typed MCP values on detailed rows | backend | no | 2.1b |
 | 2.5b | Typed concise cells, evidence truncation, option parity, summaries | backend | no | 2.5a |
@@ -71,7 +71,7 @@ owner: '@raphaelfh'
 
 - Tasks run in the order of this document; every task ends in its own commit on the one branch.
 - Migrations land one at a time in this order: 2.1b (0084), 2.8a-1 (0085), 2.10 (0086). Each confirms the previous head before writing its file.
-- Sequential by shared files: 2.1a-1 → 2.1a-2a → 2.1a-2b → 2.1b edit `schemas/template_structure.py`, `llm/claim_value.py` or `template_versioning/_diff.py`; 2.5a → 2.5b → 2.6 edit `schemas/mcp_extractions.py` and `extraction_agent_read_service.py`; 2.6 → 2.7a edit `api/mcp/tools/template_draft.py`; 2.3b → 2.8a-2 edit `extraction_snapshot.py`; 2.2a-1 → 2.3c edit `FieldValueEditor.tsx`; 2.1b → 2.9a → 2.9b edit `seed.py`.
+- Sequential by shared files: 2.1a-1 → 2.1a-2a → 2.1a-2b → 2.1b edit `schemas/template_structure.py`, `llm/claim_value.py` or `template_versioning/_diff.py`; 2.5a → 2.5b → 2.6 edit `schemas/mcp_extractions.py` and `extraction_agent_read_service.py`; 2.6 → 2.7a edit `api/mcp/tools/template_draft.py`; 2.1a-2b → 2.3a+2.3b → 2.7a → 2.8a-1 → 2.8a-2 edit `extraction_snapshot.py`; 2.2a-1 → 2.3c edit `FieldValueEditor.tsx`; 2.1b → 2.9a → 2.9b edit `seed.py`.
 - Disjoint and parallelizable if needed: 2.4a (new files only) with anything.
 - Between 2.1a-1 (first API type regeneration) and 2.2b-2, `npm run typecheck` reports errors in the frontend files those frontend tasks own; each frontend task names the remaining ones in its commit body and 2.2b-2 ends with a clean typecheck. The PR is atomic.
 
@@ -95,7 +95,8 @@ owner: '@raphaelfh'
 
 **Files:**
 - Modify: `backend/app/schemas/template_structure.py` (`OptionItem`, `AllowedValues`, `TemplateFieldRead.allowed_values` + before-validator)
-- Modify: `backend/app/schemas/template_portable.py` (`PortableField.allowed_values` keeps `AllowedValues`; this task only makes sure it type-checks — the legacy-tolerant import is Task 2.1b)
+- Modify: `backend/app/schemas/template_portable.py` (`PortableField.allowed_values` keeps `AllowedValues` and gains a legacy-tolerant before-validator in THIS task: export validates live rows through `PortableField` (`template_portable_service.py:172`, a `ValidationError` becomes `TemplateExportInvalidError`), so without it every legacy row would break export until the data migration)
+- Modify: `backend/app/services/agent_template_draft_service.py` (`_add` converts `op.options` explicitly)
 - Modify: `backend/app/schemas/mcp_template_draft.py` (`OptionInput`, `AddQuestionOp.options`)
 - Modify: `backend/app/llm/claim_value.py` (`normalize_options`, `option_label_map`)
 - Modify: `backend/app/services/value_semantics.py` (`_option_values` :165-175)
@@ -121,7 +122,9 @@ owner: '@raphaelfh'
   ]  # unique by value
   ```
   `TemplateFieldRead.allowed_values: list[OptionItem] | None` with a `field_validator(mode="before")` that returns `None` for `None` and `normalize_options(raw) or None` otherwise (so a legacy `["Yes","No"]` row reads `[{value:"Yes",label:"Yes"},{value:"No",label:"No"}]`). `_reject_duplicate_items` stays for `AllowedUnits`.
-- Produces (MCP, `mcp_template_draft.py`): `class OptionInput(BaseModel)`: `extra="forbid"`, `value: str | None = Field(default=None, min_length=1, max_length=100)`, `label: str = Field(min_length=1, max_length=100)`. `AddQuestionOp.options: list[OptionInput] | None` (1..100 items) whose existing field-level `_options_match_type` validator also converts to `list[OptionItem]` (value = `value` or `label.strip()`), raising `ValueError("option values must be unique")` on a duplicate value. Keep it field-level (the module docstring requires `errors()[0]["loc"]` to name the argument), so the duplicate surfaces as the existing audited `INVALID_ARGUMENT` via `validation_failure`. `agent_template_draft_service._add` is unchanged (it passes `op.options` into `TemplateFieldCreateRequest`).
+- Produces (portable, `template_portable.py`): `PortableField` `field_validator("allowed_values", mode="before")` → `None` stays `None`; anything else → `normalize_options(raw)` (then the `AllowedValues` rules apply: 1..100, unique by value). Legacy files and legacy live rows read canonical.
+- Produces (MCP, `mcp_template_draft.py`): `class OptionInput(BaseModel)`: `extra="forbid"`, `value: str | None = Field(default=None, min_length=1, max_length=100)`, `label: str = Field(min_length=1, max_length=100)`, and `def to_option_item(self) -> OptionItem: return OptionItem(value=self.value or self.label.strip(), label=self.label)`. `AddQuestionOp.options: list[OptionInput] | None` (1..100 items; the agent-facing schema keeps `value` optional). The existing field-level `_options_match_type` validator also raises `ValueError("option values must be unique")` when two options derive the same value. Keep it field-level (the module docstring requires `errors()[0]["loc"]` to name the argument), so the duplicate surfaces as the existing audited `INVALID_ARGUMENT` via `validation_failure`. The validator returns `list[OptionInput]` unchanged (declared type = runtime type).
+- Produces (`agent_template_draft_service._add`): converts explicitly, `allowed_values=[o.to_option_item() for o in op.options] if op.options else None`, so `TemplateFieldCreateRequest` receives `list[OptionItem]` and mypy stays clean.
 - Produces (reader, `claim_value.py`): `normalize_options(allowed_values: Any) -> list[dict[str, str]]`:
   - `None`, a non-list/non-wrapper → `[]`; `{"options": [...]}` → its list.
   - Item `str` (non-empty after strip) → `{"value": s, "label": s}`.
@@ -167,11 +170,12 @@ owner: '@raphaelfh'
     (`OptionItem` imported from `app.schemas.template_structure`; the existing `TestOptionLabelMap` cases stay and must still pass.)
   - New `tests/unit/llm/test_option_readers.py`: for `LEGACY = ["development_only", "validation_only"]` vs `CANONICAL = [{"value": "development_only", "label": "development_only"}, {"value": "validation_only", "label": "validation_only"}]`, assert `entry_identification._allowed_value_names(LEGACY) == _allowed_value_names(CANONICAL) == ["development_only", "validation_only"]`, and `extraction_snapshot_reader._normalize_allowed_values(LEGACY) == _normalize_allowed_values(CANONICAL)`; also `_allowed_value_names({"options": LEGACY})` returns the same list (the wrapper is now tolerated). Same identity check for `value_semantics._option_values`, `_diff._option_codes` and `llm.schema._enum_values(SimpleNamespace(allowed_values=...))`.
   - `tests/unit/test_template_structure_schemas.py`: update the bare-string cases (~L149, 155, 277, 359) to `[{"value": ..., "label": ...}]`; add: `["Yes"]` → `ValidationError`; duplicate `value` → `ValidationError` "option values must be unique"; `{"value":"y","label":"Yes","extra":1}` → `ValidationError` (forbid); `TemplateFieldRead.model_validate({... "allowed_values": ["Yes","No"] ...})` reads canonical.
-  - `tests/unit/test_mcp_template_draft_ops.py` (~L33, 35): `options=[{"label": "Yes"}, {"value": "n", "label": "No"}]` → `op.options == [OptionItem(value="Yes", label="Yes"), OptionItem(value="n", label="No")]`; `[{"label": " Yes "}, {"value": "Yes", "label": "Again"}]` → `ValidationError` whose first error `loc` is `("options",)`; bare `["a"]` → `ValidationError`.
+  - `tests/unit/test_mcp_template_draft_ops.py` (~L33, 35): `options=[{"label": "Yes"}, {"value": "n", "label": "No"}]` → `[o.to_option_item() for o in op.options] == [OptionItem(value="Yes", label="Yes"), OptionItem(value="n", label="No")]`; `[{"label": " Yes "}, {"value": "Yes", "label": "Again"}]` → `ValidationError` whose first error `loc` is `("options",)`; bare `["a"]` → `ValidationError`.
   - `tests/integration/test_template_structure_endpoints.py` (fixtures `db_session`, `db_client`, `auth_as_profile`; setup: `project_id = SEED.secondary_project; await clean_project_clones(db_session, project_id); clone = await clone_charms(db_session, project_id, auth_as_profile); et_id = await first_entity_type_id(db_session, clone.project_template_id)`):
     - `test_select_field_rejects_bare_string_options`: POST `.../fields` with `field_type="select"`, `allowed_values=["Yes"]` → 422, `body["error"]["code"] == "VALIDATION_ERROR"`.
     - `test_select_field_accepts_canonical_options`: same with `[{"value":"y","label":"Yes"}]` → 201, `data["allowed_values"] == [{"value":"y","label":"Yes"}]`.
     - `test_patch_reads_legacy_options_canonical`: create a select field, plant `UPDATE public.extraction_fields SET allowed_values = '["Yes","No"]'::jsonb WHERE id = :id`, PATCH its `label` → 200 with `data["allowed_values"] == [{"value":"Yes","label":"Yes"},{"value":"No","label":"No"}]`.
+  - `tests/unit/test_template_portable_schema.py`: `PortableField(..., allowed_values=["Cohort", "RCT"])` and `{"options": ["X"]}` read canonical; `["a", "a"]` → `ValidationError` (duplicate value after canonicalization). `tests/integration/test_template_portable_service.py`: exporting a template whose live select row holds `["Yes","No"]` (planted with `UPDATE public.extraction_fields ...`) succeeds and the exported field reads canonical.
   - `tests/integration/mcp/test_mcp_edit_template_draft.py`:
     - `test_add_question_mapping` (~L140): send `"options": [{"label": "Yes"}, {"value": "n", "label": "No"}]`; the stored `allowed_values` is `[{"value":"Yes","label":"Yes"},{"value":"n","label":"No"}]`.
     - `test_add_question_duplicate_option_value_is_invalid_argument`: `[{"label":"Yes"},{"value":"Yes","label":"Again"}]` → `error_payload(result)["code"] == "INVALID_ARGUMENT"`, no field written, one refused audit row (`_audit_count(db_session, outcome="refused")` +1).
@@ -192,7 +196,7 @@ owner: '@raphaelfh'
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
   ```
-  Expected: PASS; gates green. If `test_template_portable_service.py` round-trip fails because a live seeded row holds a mixed list (`_PAI_SIGNALING`), that is fixed by Task 2.1b's legacy-tolerant `PortableField`; record it in the commit body and continue.
+  Expected: PASS (including `test_template_portable_service.py`: legacy and mixed live rows export through the `PortableField` before-validator); gates green.
 
 - [ ] **Step 7: Commit.** `git -C "$WT" add backend frontend/types/api && git -C "$WT" commit -m "feat(templates): one {value, label} option shape for template field writes"`
 
@@ -255,7 +259,7 @@ owner: '@raphaelfh'
 
 - [ ] **Step 6: Commit.** `git -C "$WT" add backend frontend/types/api && git -C "$WT" commit -m "feat(mcp): get_template and the run view return {value, label} options"`
 
-- [ ] **Step 7: Sibling refactor — delete the unserved schemas.** Confirm nothing outside the listed files uses them: `grep -rn "ExtractionFieldSchema\|ExtractionEntityTypeSchema\|ExtractionTemplateSchema" "$WT/backend"` → only `schemas/extraction.py`, `schemas/__init__.py`, `tests/unit/test_extraction_schemas.py`. Delete the three classes, their `__init__` imports and `__all__` entries, and their test helpers/classes; keep `Framework`. Then `cd "$WT/backend" && uv run pytest tests/unit -q && cd "$WT" && make lint-backend && npm run generate:api-types && git -C "$WT" status --short frontend/types/api` (expect no diff: the classes were never served). Commit: `git -C "$WT" add backend && git -C "$WT" commit -m "refactor(schemas): delete unserved extraction field, entity type and template schemas"`
+- [ ] **Step 7: Sibling refactor — delete the unserved schemas.** Confirm nothing outside the listed files uses them as code: `grep -rnw -E "(class|import|from .* import).*(ExtractionFieldSchema|ExtractionEntityTypeSchema|ExtractionTemplateSchema)|(ExtractionFieldSchema|ExtractionEntityTypeSchema|ExtractionTemplateSchema)\(" "$WT/backend"` → only `schemas/extraction.py`, `schemas/__init__.py`, `tests/unit/test_extraction_schemas.py` (docstring mentions of the frontend Zod `ExtractionFieldSchema`, e.g. `schemas/template_structure.py:3` and `tests/unit/test_template_structure_schemas.py:4`, are not usages and stay). Delete the three classes, their `__init__` imports and `__all__` entries, and their test helpers/classes; keep `Framework`. Then `cd "$WT/backend" && uv run pytest tests/unit -q && cd "$WT" && make lint-backend && npm run generate:api-types && git -C "$WT" status --short frontend/types/api` (expect no diff: the classes were never served). Commit: `git -C "$WT" add backend && git -C "$WT" commit -m "refactor(schemas): delete unserved extraction field, entity type and template schemas"`
 
 **Done when:** `get_template` and the run view serve canonical options for legacy and canonical rows, untrusted paths are exact, the unserved schemas are gone, gates green.
 
@@ -362,7 +366,7 @@ owner: '@raphaelfh'
 
 - [ ] **Step 5: Run green + gates.**
   ```bash
-  cd "$WT/backend" && uv run pytest tests/unit tests/integration -q -k "export or appraisal or workbook or xlsx or derived"
+  cd "$WT/backend" && uv run pytest tests/unit -q && uv run pytest tests/integration -q -k "export or appraisal or workbook or xlsx or derived"
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
   ```
@@ -389,13 +393,12 @@ owner: '@raphaelfh'
 - Create: `backend/alembic/versions/0084_canonical_field_options.py`
 - Create: `backend/tests/integration/test_migration_0084_canonical_options.py`
 - Modify: `backend/tests/integration/test_migration_roundtrip.py`
-- Modify: `backend/app/schemas/template_portable.py` (`PortableField` before-validator on `allowed_values`)
 - Modify: `backend/app/seed.py` (`_f`, `_field`: `allowed_values=normalize_options(allowed) or None`)
-- Test: `backend/tests/integration/test_template_portable_service.py`, `backend/tests/unit/test_template_portable_schema.py`, `backend/tests/integration/test_seed_convergence.py` (assertions that read seeded option shapes, if any)
+- Test: `backend/tests/integration/test_template_portable_service.py`, `backend/tests/integration/test_seed_convergence.py` (assertions that read seeded option shapes, if any)
 
 **Interfaces:**
 - Consumes: `normalize_options`, `OptionItem`, `AllowedValues`.
-- Produces: `PortableField` `field_validator("allowed_values", mode="before")` → `None` stays `None`; anything else → `normalize_options(raw)` (then the `AllowedValues` rules apply: 1..100, unique by value).
+- Consumes: `PortableField`'s legacy-tolerant `allowed_values` before-validator (added in Task 2.1a-1); this task only pins the import path with a test.
 - Produces (migration module constants, imported by the test): `UPGRADE_SQL: str` (the canonicalizing UPDATE, without the trigger toggles) and `_TRIGGER = "trg_extraction_fields_mark_draft"`. `upgrade()` = `op.execute(f"ALTER TABLE public.extraction_fields DISABLE TRIGGER {_TRIGGER}")`, `op.execute(UPGRADE_SQL)`, `op.execute(f"... ENABLE TRIGGER {_TRIGGER}")`. `downgrade()` = `pass` with a comment: data-only and forward-only; the legacy shapes are still readable, so nothing to undo.
 - `UPGRADE_SQL` semantics (one UPDATE, idempotent): for each row whose `allowed_values` is a JSON array, or an object with an array `options`, and that holds any element that is not an object with both a non-empty `value` and a non-empty `label` string: rebuild the array in element order — a non-empty string `s` → `{"value": s, "label": s}`; an object with a non-empty `value` → `{"value": value, "label": coalesce(nullif(label, ''), value)}`; an object with only a non-empty `label` → `{"value": label, "label": label}`; anything else dropped; an empty result → SQL `NULL`. Rows already canonical are not touched (`rowcount` 0 on a second run). Use `jsonb_array_elements(...) WITH ORDINALITY` and `jsonb_agg(... ORDER BY ord)`.
 
@@ -405,14 +408,14 @@ owner: '@raphaelfh'
     - `test_draft_marker_and_snapshots_untouched`: record `config_draft_since` of every `project_extraction_templates` row and `md5(schema::text)` of every `extraction_template_versions` row before; run the migration's three statements in order; both maps are identical after.
     - `test_is_idempotent`: a second `UPGRADE_SQL` run has `rowcount == 0`.
   - `tests/integration/test_migration_roundtrip.py`: set `expected_head = "0084_canonical_field_options"`; add `test_migration_0084_canonical_options_roundtrip(migration_db_url)`: `_run_alembic("downgrade", "0083_mcp_oauth", database_url=migration_db_url)` succeeds, then `_run_alembic("upgrade", "head", ...)` succeeds and `_run_alembic("current", ...)` contains `0084_canonical_field_options`.
-  - `tests/integration/test_template_portable_service.py`, `test_legacy_option_file_is_stored_canonical`: build a portable document whose one select field has `"allowed_values": ["Cohort", "RCT"]` (and one with `{"options": ["X"]}`), import it with the service's import entry point as the existing pure-parse tests (~L260-300) and round-trip tests (~L59) do; the stored rows read `[{"value":"Cohort","label":"Cohort"},{"value":"RCT","label":"RCT"}]` and `[{"value":"X","label":"X"}]`. `tests/unit/test_template_portable_schema.py`: `PortableField(... allowed_values=["a","a"])` → `ValidationError` (duplicate value after canonicalization).
+  - `tests/integration/test_template_portable_service.py`, `test_legacy_option_file_is_stored_canonical`: build a portable document whose one select field has `"allowed_values": ["Cohort", "RCT"]` (and one with `{"options": ["X"]}`), import it with the service's import entry point as the existing pure-parse tests (~L260-300) and round-trip tests (~L59) do; the stored rows read `[{"value":"Cohort","label":"Cohort"},{"value":"RCT","label":"RCT"}]` and `[{"value":"X","label":"X"}]`. (This pins the import path of the validator added in Task 2.1a-1; it may already pass — that is expected.)
   - Seeds: in `tests/integration/test_seed_convergence.py` add `test_seeded_options_are_canonical`: after `await seed_probast_ai(db_session)` every `extraction_fields.allowed_values` of the PROBAST+AI global template is a list of objects with `value` and `label` (a `jsonb_path_exists` or a Python loop over the rows).
 
-- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/integration/test_migration_0084_canonical_options.py tests/integration/test_migration_roundtrip.py tests/integration/test_template_portable_service.py tests/unit/test_template_portable_schema.py tests/integration/test_seed_convergence.py -q` → FAIL.
+- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/integration/test_migration_0084_canonical_options.py tests/integration/test_migration_roundtrip.py tests/integration/test_seed_convergence.py -q` → FAIL (the migration module and seed shapes; the portable import test may already pass).
 
 - [ ] **Step 3: Write the migration** per Interfaces (module docstring: what it converts, that snapshots are untouched, that the draft trigger is disabled so no template is stamped as a draft, that codes are unchanged so the code-based diff stays empty, and that the downgrade is a no-op). Render it offline to check the SQL: `cd "$WT/backend" && uv run alembic upgrade 0083_mcp_oauth:0084_canonical_field_options --sql | head -60`.
 
-- [ ] **Step 4: Portable and seeds.** Add the `PortableField` before-validator. In `seed.py` `_f` and `_field`, `allowed_values=normalize_options(allowed) or None` (import `normalize_options` from `app.llm.claim_value`; leave `_YES_NO*`, `_PROBAST_SIGNALING` and every literal untouched so the `is _PROBAST_SIGNALING` check keeps working). Re-seed the test DB: `cd "$WT/backend" && uv run alembic upgrade head && uv run python -m app.seed`.
+- [ ] **Step 4: Seeds.** In `seed.py` `_f` and `_field`, `allowed_values=normalize_options(allowed) or None` (import `normalize_options` from `app.llm.claim_value`; leave `_YES_NO*`, `_PROBAST_SIGNALING` and every literal untouched so the `is _PROBAST_SIGNALING` check keeps working). Re-seed the test DB: `cd "$WT/backend" && uv run alembic upgrade head && uv run python -m app.seed`.
 
 - [ ] **Step 5: Run green + gates.**
   ```bash
@@ -502,7 +505,7 @@ owner: '@raphaelfh'
   - `SelectWithOther.tsx` / `MultiSelectWithOther.tsx`: props become `options: OptionItem[]`; delete the local option types and `normalizeOption`/`normalizeMultiOption`; render `option.label`, store `option.value`.
   - `FieldValueEditor.tsx`: `const options = normalizeOptions(field.allowed_values);` for the select branches (both `SelectWithOther` and the plain `<Select>` mapping, which now reads `option.value`/`option.label` with no `any`) and `const mOptions = normalizeOptions(field.allowed_values);` for multiselect. `FieldValueEditorField.allowed_values` stays `unknown`.
 
-- [ ] **Step 5: Run green + gates.** `cd "$WT" && npx vitest run frontend/lib/extraction/options.test.ts frontend/test/components/SelectWithOther.test.tsx frontend/test/lib/judgmentFields.test.ts frontend/components/extraction && npm run test:run && npm run typecheck && npm run lint && npx knip && npx knip --production && PATH="$WT/backend/.venv/bin:$PATH" python3 scripts/fitness/check_copy_keys.py` → all PASS, knip 0 findings (no orphaned helper or type), `grep -rn "normalizeMultiOption\|function normalizeOption\|function optionLabels" "$WT/frontend"` → no output. If `npm run typecheck` reports errors only in files owned by Tasks 2.2a-2/2.2b-1/2.2b-2 (`types/extraction.ts` users, `templateTree.ts`, `TemplateInspector.tsx`, `sectionRestore.ts`, `runViewAdapters.ts`), note them in the commit body; they are fixed by those tasks. Any other typecheck error is fixed here.
+- [ ] **Step 5: Run green + gates.** `cd "$WT" && npx vitest run frontend/lib/extraction/options.test.ts frontend/test/components/SelectWithOther.test.tsx frontend/test/lib/judgmentFields.test.ts frontend/components/extraction && npm run test:run && npm run typecheck && npm run lint && npx knip && npx knip --production && PATH="$WT/backend/.venv/bin:$PATH" python3 scripts/fitness/check_copy_keys.py` → all PASS, knip 0 findings (no orphaned helper or type), `grep -rn "normalizeMultiOption\|function normalizeOption\|function optionLabels" "$WT/frontend"` → no output. `npm run typecheck` may still report errors ONLY in files that Tasks 2.2a-2/2.2b-1/2.2b-2 fix: `types/extraction.ts` and its users (`useInsertTemplateField.ts`, `TemplateConfigGridPanel.tsx`), `hooks/runs/types.ts`, `runViewAdapters.ts`, `TemplateGridFieldRow.tsx`, `TemplateInspector.tsx`, `AllowedValuesList.tsx`, `templateTree.ts`, `sectionRestore.ts`, `TemplateConfigEditor.tsx`, `TemplateConfigDiffSheet.tsx`. Name them in the commit body and do not touch those files here; any typecheck error in another file is fixed in this task.
 
 - [ ] **Step 6: Commit.** `git -C "$WT" add frontend && git -C "$WT" commit -m "refactor(extraction): one client-side reader for field options"`
 
@@ -545,7 +548,7 @@ owner: '@raphaelfh'
   ```
   `ExtractionFieldInsert`/`ExtractionFieldUpdate` follow through `z.infer`.
 - `runViewAdapters.ts` L40: `allowed_values: normalizeOptions(f.allowed_values),` with `[]` mapped to `null` (`const options = normalizeOptions(f.allowed_values); allowed_values: options.length > 0 ? options : null`).
-- `TemplateGridFieldRow.tsx` L339 renders labels: `normalizeOptions(field.allowedValues).map((o) => o.label).join(', ')` (`GridField.allowedValues` is retyped by Task 2.2b-2; reading through `normalizeOptions` works for both shapes now).
+- `TemplateGridFieldRow.tsx` L339 renders labels: `normalizeOptions(field.allowedValues).map((o) => o.label).join(', ')` for now (`GridField.allowedValues` is still `string[]`-typed here); Task 2.2b-2 retypes it to an already-normalized `OptionItem[]` and simplifies this line to `(field.allowedValues ?? []).map((o) => o.label).join(', ')`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `frontend/test/apiSchemaDrift.test.ts`: add `$ref?: string` to `OpenApiProperty`; add a resolver `refOf(prop)` that follows `items.$ref` / `anyOf[].items.$ref` to `openapi.components.schemas[<name>]`. Assert `shapeOf('allowed_values')` still `toMatchObject({minItems: 1, maxItems: 100})` and the resolved item schema is `OptionItem` with `properties.value.maxLength === 100`, `properties.label.maxLength === 100`, `required` containing both, `additionalProperties === false`. Replace the bare-string Zod cases (~L151-159): `{allowed_values: []}` → rejected; 100 × `{value: \`v${i}\`, label: \`V${i}\`}` → accepted; 101 → rejected; two items with the same `value` → rejected; `['Yes']` → rejected; `{value:'y',label:'Yes',extra:1}` → rejected.
@@ -623,13 +626,14 @@ owner: '@raphaelfh'
 **Files:**
 - Modify: `frontend/components/extraction/template-config/templateTree.ts`
 - Modify: `frontend/components/extraction/template-config/sectionRestore.ts`
+- Modify: `frontend/components/extraction/template-config/TemplateGridFieldRow.tsx` (L339: drop the second normalization)
 - Modify: `frontend/components/extraction/TemplateConfigEditor.tsx` (only if its types do not already flow from `GridField`)
 - Modify: `frontend/lib/templateImport/exampleTemplate.json`
 - Test: `frontend/components/extraction/template-config/templateTree.test.ts`, `frontend/components/extraction/template-config/sectionRestore.test.ts`, `frontend/components/extraction/template-config/useStructuralUndo.test.tsx`, `frontend/lib/templateImport/aiPrompt.test.ts` (if it pins the example text)
 
 **Interfaces:**
 - Consumes: `OptionItem`, `normalizeOptions`.
-- Produces: `TemplateFieldInput.allowed_values?: unknown` (the raw row value); `GridField.allowedValues: OptionItem[] | null` built by `toGridField` as `const options = normalizeOptions(input.allowed_values); allowedValues: options.length > 0 ? options : null, optionCount: options.length`; search haystack `['options', (field.allowedValues ?? []).map((o) => o.label).join(' ')]`.
+- Produces: `TemplateFieldInput.allowed_values?: unknown` (the raw row value); `GridField.allowedValues: OptionItem[] | null` built by `toGridField` as `const options = normalizeOptions(input.allowed_values); allowedValues: options.length > 0 ? options : null, optionCount: options.length`; search haystack `['options', (field.allowedValues ?? []).map((o) => o.label).join(' ')]`. `TemplateGridFieldRow.tsx` L339 reads the already-normalized list directly: `(field.allowedValues ?? []).map((o) => o.label).join(', ')` (no second `normalizeOptions` call).
 - Produces: `CapturedField.allowedValues: OptionItem[] | null` (`captureSection`: `normalizeOptions(field.allowed_values)`, `[]` → `null`); `ReplayDeps.insertField` payload `allowed_values: OptionItem[] | null`. `restoreFieldNow` sends `allowed_values: field.allowedValues` (now `OptionItem[] | null`).
 - `exampleTemplate.json` L19: `"allowed_values": [{"value": "Cohort", "label": "Cohort"}, {"value": "Case-control", "label": "Case-control"}, {"value": "RCT", "label": "RCT"}]`.
 
@@ -653,21 +657,34 @@ owner: '@raphaelfh'
 
 ---
 
-### Task 2.3a: Pure write-time value contract
+### Task 2.3a+2.3b: Write-time value contract on human decisions and consensus overrides
 
-**Layer:** backend · **Migration:** no · **Commit:** `feat(extraction): pure value contract for reviewer and consensus writes`
+**Layer:** backend · **Migration:** no · **Commit:** `feat(extraction): refuse off-contract reviewer and consensus values with 422`
 
-**Goal:** a pure, DB-free module `backend/app/services/value_contract.py` turns a raw decision value plus the field it is written to into the one canonical envelope, or refuses it with a typed `AppError` (`VALUE_CONTRACT_VIOLATION`, 422) naming the field and a reason from a closed set. Every shape the reviewer UI sends today is accepted.
+**Goal:** a pure, DB-free module `backend/app/services/value_contract.py` turns a raw decision value plus the field it is written to into the one canonical envelope, or refuses it with a typed `AppError` (`VALUE_CONTRACT_VIOLATION`, 422) naming the field and a reason from a closed set. Every shape the reviewer UI sends today is accepted. It is wired, in the same task, so that a reviewer decision that carries a value, and a consensus manual override sent by a person, are canonicalized against the field **as pinned in the run's template version** and refused with 422 `VALUE_CONTRACT_VIOLATION` (no row appended) when they break the contract. AI proposal landing, the system carry-overs — including QA materialization of human proposals inside the extract→consensus advance — and approve-and-finalize's publish of agreed values are not checked (the read-only value-envelope audit covers them). Both service methods enforce by default (fail-safe); each system caller opts out explicitly.
 
 **Context:** decision values travel as an envelope `{"value": X}` with optional `unit` and `absent_reason` siblings. The UI wraps once more: `frontend/hooks/runs/useRunValues.ts` `writeValue` sends `{value: normalizedValue}` (plus `absent_reason`), where `normalizedValue` is itself `{value, unit}` for a number with a unit (`useAutoSaveProposals.ts` ~L270-283) — so the wire value is often `{"value": {"value": "22", "unit": "mg"}}`. A cleared field sends `{"value": null}`. `SelectWithOther` emits `{"selected": "other", "other_text": ""}` the moment "Other" is picked (text filled in later), `MultiSelectWithOther` emits `{"selected": [codes], "other_texts": [strings, possibly ""]}` whenever `allow_other` is on and a bare list of codes otherwise; number inputs emit strings (`"22"`). Absent-reason codes are `no_information`, `not_applicable`, `not_evaluated` (`app/services/value_semantics.AbsentReason`); a field opts into each with `allows_no_information` / `allows_not_applicable` / `allows_not_evaluated`. `value_semantics.disposition_to_marker(raw, allowed_values, *, allows_no_information)` rewrites an in-band disposition string that is one of the field's options into `{"value": None, "absent_reason": code}`. Options are canonical `{value, label}` (`RunViewField.allowed_values: list[OptionItem] | None`, Task 2.1a-2a). `AppError(code, message, status_code=400, details=None)` lives in `backend/app/core/error_handler.py`; the global handler renders `{ok: false, error: {code, message, details}}`.
 
-**Vulture note (this task only):** `canonicalize_value` gets its first `backend/app` caller in Task 2.3b, the next task. At this task's boundary the vulture ratchet may report exactly `app/services/value_contract.py: unused function 'canonicalize_value'`; nothing else may be new. Do not add it to the baseline. Task 2.3b's gate must be fully green.
+The global AppError handler renders `ValueContractError`, so endpoints need no try/except for it. `backend/app/services/extraction_snapshot.py::entity_types_for_version(db, *, version_id, template_id) -> list[RunViewEntityType]` is the one provider of a run's pinned tree (pinned snapshot → live rows when the snapshot is narrow/empty/missing); `live_entity_types(db, *, template_id)` reads the live tree. Current code:
+- `ExtractionReviewService.record_decision` (`backend/app/services/extraction_review_service.py:58`; `open_run_for_write(...)` at :81 returns the run, discarded today; the live `ExtractionField` read + `disposition_to_marker` at :156-170 raise `InvalidDecisionError` (plain `Exception`, :35) for a disallowed `no_information` marker; dedupe on `latest.value == value` :173-189; insert :193). Its QA re-entry `materialize_qa_decisions` (:213-320) calls `record_decision(..., decision=EDIT, value=proposal.proposed_value, enforce_marker_optin=False)` at :279 inside `advance_stage`.
+- `ExtractionConsensusService.record_consensus` (`extraction_consensus_service.py:48-59`; `open_run_for_write(... CONSENSUS ...)` :60; `manual_override` → `published_value = value or {}` :122-123; no field read).
+- Callers: `api/v1/endpoints/extraction_runs.py` `create_decision` (:226-279, `record_decision` :242, `InvalidDecisionError` → 400 :264-274) and `create_consensus` (:311-389, `record_consensus` :332-341); `run_lifecycle_service.approve_and_finalize` (:280-290, `record_consensus(... MANUAL_OVERRIDE, value=envelope ...)`); `entry_hierarchy_service._record_key_decision` (:362-418, `record_decision(decision="edit", value={"value": value})`, `except InvalidDecisionError: return`).
+- `app/api/**` must not import `app.models` (`check_layered_arch.py`).
 
 **Files:**
 - Create: `backend/app/services/value_contract.py`
 - Create: `backend/tests/unit/test_value_contract.py`
+- Modify: `backend/app/services/extraction_snapshot.py` (new `pinned_field`)
+- Modify: `backend/app/services/extraction_review_service.py`
+- Modify: `backend/app/services/extraction_consensus_service.py`
+- Modify: `backend/app/api/v1/endpoints/extraction_runs.py` (`create_consensus` passes `enforce_contract=True`; declare `422` in both decision and consensus routes' `responses=` if the file declares responses — follow `check_response_descriptions.py`)
+- Modify: `backend/app/services/run_lifecycle_service.py` (`approve_and_finalize` passes `enforce_contract=False` explicitly, with a one-line comment: agreed values may include accepted AI proposals that were never validated; the read-only audit covers them)
+- Modify: `backend/app/services/entry_hierarchy_service.py` (catch `ValueContractError` next to `InvalidDecisionError`, and log it)
+- Create: `backend/tests/integration/test_value_contract_services.py` (direct service-level tests: lines reached only through `db_client` record no coverage)
+- Create: `backend/tests/integration/test_value_contract_writes.py`
+- Test: `backend/tests/integration/test_extraction_review_service.py`, `backend/tests/integration/test_extraction_consensus_service.py`, `backend/tests/integration/test_entry_hierarchy_service.py`, `backend/tests/unit/test_extraction_runs_endpoint_unit.py` (create if absent, pattern `tests/unit/test_personal_access_tokens_endpoint_unit.py`)
 
-**Interfaces:**
+**Interfaces (pure module):**
 - Produces:
   ```python
   ValueContractReason = Literal[
@@ -697,60 +714,20 @@ owner: '@raphaelfh'
   6. Return `{"value": <canonical>}` plus `"unit"` when kept.
 - `message` is one plain sentence naming the field label and what is accepted, e.g. `"'Study type' accepts one of its options."`; it never echoes the raw value.
 
-- [ ] **Step 1: Write the failing tests** in `tests/unit/test_value_contract.py` (pure; build fields with a helper `def _field(field_type, **over) -> RunViewField` filling `id=uuid4(), name="f", label="F", is_required=False, sort_order=0, field_type=field_type`, then `RunViewField.model_validate({...})`):
-  - one case per rule: double wrap `{"value": {"value": "22", "unit": "mg"}}` on a number field with `unit="mg"` → `{"value": 22, "unit": "mg"}`; `{"value": "22"}` → `{"value": 22}`; `{"value": 22.5}` → `{"value": 22.5}`; `{"value": "abc"}` → `NOT_A_NUMBER`; `{"value": float("inf")}` → `NOT_A_NUMBER`; `{"value": True}` on number → `NOT_A_NUMBER`; unit outside `allowed_units=["mg","g"]` → `UNIT_NOT_ALLOWED`; unit equal to `field.unit` → kept; `{"value": None, "absent_reason": "not_applicable"}` on a field with `allows_not_applicable=False` → `MARKER_NOT_ALLOWED`, with it true → the marker; `{"value": None, "absent_reason": "bogus"}` → `MARKER_NOT_ALLOWED`; an in-band `"NA"` that is one of a select's options with `allows_not_applicable=True` → the marker; select `"dev"` in options → `{"value": "dev"}`, `"Development only"` (a label, not a code) → `NOT_AN_OPTION`; select other with `allow_other=False` → `NOT_AN_OPTION`; multiselect duplicates → `NOT_AN_OPTION`; date `"2024-02-30"` → `NOT_A_DATE`; boolean `"true"` → `NOT_A_BOOLEAN`; text `5` → `NOT_TEXT`; `{"value": 1, "extra": 2}` → `MALFORMED_ENVELOPE`; `"bare"` → `MALFORMED_ENVELOPE`.
-  - error shape: `exc.code == "VALUE_CONTRACT_VIOLATION"`, `exc.status_code == 422`, `exc.details == {"field_id": str(field.id), "reason": "NOT_AN_OPTION"}`; the raw value does not appear in `exc.message`.
-  - `UI_SHAPES` vector (module constant, one comment per entry naming the emitting component), each accepted by `canonicalize_value` for its field: `{"value": "22"}` and `{"value": {"value": "22", "unit": "mg"}}` (number input, `FieldValueEditor`); `{"value": None}` (cleared field); `{"value": "Y"}` (`SelectWithOther` option); `{"value": {"selected": "other", "other_text": ""}}` and `{"value": {"selected": "other", "other_text": "Registry"}}` (`SelectWithOther` "Other"); `{"value": ["A", "B"]}` (`MultiSelectWithOther` without other); `{"value": {"selected": ["A"], "other_texts": [""]}}` and `{"value": {"selected": [], "other_texts": ["x"]}}` (`MultiSelectWithOther` with other); `{"value": True}` (boolean switch); `{"value": "2024-01-31"}` (date input); `{"value": "free text"}` (text input); `{"value": None, "absent_reason": "no_information"}` (`FieldInput` marker button).
-
-- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/unit/test_value_contract.py -q` → FAIL (module missing).
-
-- [ ] **Step 3: Implement** `value_contract.py` per Interfaces (module docstring: where it runs — human reviewer decisions and consensus manual overrides — and where it deliberately does not: AI proposal landing, the system carry-overs (QA materialization at the extract→consensus advance, the reopen carry-over) and approve-and-finalize's publish of agreed values).
-
-- [ ] **Step 4: Run green + gates.**
-  ```bash
-  cd "$WT/backend" && uv run pytest tests/unit -q
-  cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
-  cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
-  ```
-  Expected: tests PASS, lint and fitness green; vulture reports only the one finding named in the Vulture note.
-
-- [ ] **Step 5: Commit.** `git -C "$WT" add backend && git -C "$WT" commit -m "feat(extraction): pure value contract for reviewer and consensus writes"`
-
-**Done when:** every rule has a passing case, every UI shape is accepted, the error carries `field_id` and `reason`, gates green apart from the noted vulture finding.
-
----
-
-### Task 2.3b: Enforce the value contract on human decisions and consensus overrides
-
-**Layer:** backend · **Migration:** no · **Commit:** `feat(extraction): refuse off-contract reviewer and consensus values with 422`
-
-**Goal:** a reviewer decision that carries a value, and a consensus manual override sent by a person, are canonicalized against the field **as pinned in the run's template version** and refused with 422 `VALUE_CONTRACT_VIOLATION` (no row appended) when they break the contract. AI proposal landing, the system carry-overs — including QA materialization of human proposals inside the extract→consensus advance — and approve-and-finalize's publish of agreed values are not checked (the read-only value-envelope audit covers them). Both service methods enforce by default (fail-safe); each system caller opts out explicitly.
-
-**Context:** `backend/app/services/value_contract.py` (Task 2.3a) exports `canonicalize_value(raw, field: RunViewField) -> dict` and `ValueContractError(AppError)` (code `VALUE_CONTRACT_VIOLATION`, 422, `details {field_id, reason}`); the global AppError handler renders it, so endpoints need no try/except for it. `backend/app/services/extraction_snapshot.py::entity_types_for_version(db, *, version_id, template_id) -> list[RunViewEntityType]` is the one provider of a run's pinned tree (pinned snapshot → live rows when the snapshot is narrow/empty/missing); `live_entity_types(db, *, template_id)` reads the live tree. Current code:
-- `ExtractionReviewService.record_decision` (`backend/app/services/extraction_review_service.py:58`; `open_run_for_write(...)` at :81 returns the run, discarded today; the live `ExtractionField` read + `disposition_to_marker` at :156-170 raise `InvalidDecisionError` (plain `Exception`, :35) for a disallowed `no_information` marker; dedupe on `latest.value == value` :173-189; insert :193). Its QA re-entry `materialize_qa_decisions` (:213-320) calls `record_decision(..., decision=EDIT, value=proposal.proposed_value, enforce_marker_optin=False)` at :279 inside `advance_stage`.
-- `ExtractionConsensusService.record_consensus` (`extraction_consensus_service.py:48-59`; `open_run_for_write(... CONSENSUS ...)` :60; `manual_override` → `published_value = value or {}` :122-123; no field read).
-- Callers: `api/v1/endpoints/extraction_runs.py` `create_decision` (:226-279, `record_decision` :242, `InvalidDecisionError` → 400 :264-274) and `create_consensus` (:311-389, `record_consensus` :332-341); `run_lifecycle_service.approve_and_finalize` (:280-290, `record_consensus(... MANUAL_OVERRIDE, value=envelope ...)`); `entry_hierarchy_service._record_key_decision` (:362-418, `record_decision(decision="edit", value={"value": value})`, `except InvalidDecisionError: return`).
-- `app/api/**` must not import `app.models` (`check_layered_arch.py`).
-
-**Files:**
-- Modify: `backend/app/services/extraction_snapshot.py` (new `pinned_field`)
-- Modify: `backend/app/services/extraction_review_service.py`
-- Modify: `backend/app/services/extraction_consensus_service.py`
-- Modify: `backend/app/api/v1/endpoints/extraction_runs.py` (`create_consensus` passes `enforce_contract=True`; declare `422` in both decision and consensus routes' `responses=` if the file declares responses — follow `check_response_descriptions.py`)
-- Modify: `backend/app/services/run_lifecycle_service.py` (`approve_and_finalize` passes `enforce_contract=False` explicitly, with a one-line comment: agreed values may include accepted AI proposals that were never validated; the read-only audit covers them)
-- Modify: `backend/app/services/entry_hierarchy_service.py` (catch `ValueContractError` next to `InvalidDecisionError`, and log it)
-- Create: `backend/tests/integration/test_value_contract_services.py` (direct service-level tests: lines reached only through `db_client` record no coverage)
-- Create: `backend/tests/integration/test_value_contract_writes.py`
-- Test: `backend/tests/integration/test_extraction_review_service.py`, `backend/tests/integration/test_extraction_consensus_service.py`, `backend/tests/integration/test_entry_hierarchy_service.py`, `backend/tests/unit/test_extraction_runs_endpoint_unit.py` (create if absent, pattern `tests/unit/test_personal_access_tokens_endpoint_unit.py`)
-
-**Interfaces:**
+**Interfaces (wiring):**
 - Produces: `async def pinned_field(db: AsyncSession, *, version_id: UUID, template_id: UUID, field_id: UUID) -> RunViewField | None` — a lookup by id in `entity_types_for_version(...)` (which already falls back to live rows only when the pinned snapshot is narrow); `None` when the run's tree does not contain the field. No second fallback.
 - `record_decision(..., enforce_contract: bool = True)` replaces the `enforce_marker_optin` flag (its only `False` caller, `materialize_qa_decisions`, now passes `enforce_contract=False`; confirm with `grep -rn "enforce_marker_optin" "$WT/backend/app"` that no other caller exists). Keep the run returned by `open_run_for_write`; for a decision that carries a value (`value is not None`), `field = await pinned_field(self.db, version_id=run.version_id, template_id=run.template_id, field_id=field_id)`; `field is None` → `InvalidDecisionError("field is not part of this run's template version")`. With `enforce_contract=True`: `value = canonicalize_value(value, field)` before the dedupe compare. With `False` (system carry-over): only today's normalization, `value = disposition_to_marker(value, field.allowed_values, allows_no_information=field.allows_no_information)`, no refusal. Delete the live `ExtractionField` read and the old inline marker check.
 - `materialize_qa_decisions` (`extraction_review_service.py:279`) passes `enforce_contract=False` (comment: a system carry-over of human proposals, audited by the read-only value-envelope audit, never refused inside `advance_stage`).
 - `record_consensus(..., enforce_contract: bool = True)`: for `manual_override` with `enforce_contract=True`, canonicalize `value` against `pinned_field(...)` (same `None` → `InvalidConsensusError` rule) before writing. `create_consensus` relies on the default (pass `True` explicitly for readability); `approve_and_finalize` passes `False`.
 - `_record_key_decision`: `except (InvalidDecisionError, ValueContractError) as exc:` log `entry_key_prefill_skipped` with `run_id`, `instance_id`, `field_id` and `reason` (from `exc.details` when present) — never the value — then `return` (the entry is still created; no reviewer decision).
 
-- [ ] **Step 1: Write the failing tests.** New `tests/integration/test_value_contract_writes.py`. Setup helper (pattern `tests/integration/test_entry_group_extraction.py` `_group`/`_pinned_field`/`_pinned_group` ~L70-243 and `_pin_run_to_snapshot` in `tests/integration/test_pinned_prompt_structure.py:76-97`): on the SEED template add a live `select` field with `allowed_values=[{"value":"dev","label":"Development"},{"value":"val","label":"Validation"},{"value":"draft_only","label":"Draft only"}]` and a live `number` field with `unit="mg"`, `allowed_units=["mg","g"]`, `allows_not_applicable=False`; insert an inactive version whose wide (non-narrow) snapshot holds both fields but the select **without** `draft_only`; create a run in EXTRACT on the SEED article/instance (`run_in_extract(db)` from `tests/integration/helpers/engine_setup.py`) and pin it to that version. Calls go through HTTP (`db_client`, authenticated as the run's reviewer the way `tests/integration/test_template_structure_endpoints.py` authenticates) to `POST /api/v1/runs/{run_id}/decisions` and, for consensus, `/consensus` after advancing the run to CONSENSUS as `test_extraction_consensus_service.py` does. Cases:
+- [ ] **Step 1: Write the failing tests.**
+  - Unit, in `tests/unit/test_value_contract.py` (pure; build fields with a helper `def _field(field_type, **over) -> RunViewField` filling `id=uuid4(), name="f", label="F", is_required=False, sort_order=0, field_type=field_type`, then `RunViewField.model_validate({...})`):
+  - one case per rule: double wrap `{"value": {"value": "22", "unit": "mg"}}` on a number field with `unit="mg"` → `{"value": 22, "unit": "mg"}`; `{"value": "22"}` → `{"value": 22}`; `{"value": 22.5}` → `{"value": 22.5}`; `{"value": "abc"}` → `NOT_A_NUMBER`; `{"value": float("inf")}` → `NOT_A_NUMBER`; `{"value": True}` on number → `NOT_A_NUMBER`; unit outside `allowed_units=["mg","g"]` → `UNIT_NOT_ALLOWED`; unit equal to `field.unit` → kept; `{"value": None, "absent_reason": "not_applicable"}` on a field with `allows_not_applicable=False` → `MARKER_NOT_ALLOWED`, with it true → the marker; `{"value": None, "absent_reason": "bogus"}` → `MARKER_NOT_ALLOWED`; an in-band `"NA"` that is one of a select's options with `allows_not_applicable=True` → the marker; select `"dev"` in options → `{"value": "dev"}`, `"Development only"` (a label, not a code) → `NOT_AN_OPTION`; select other with `allow_other=False` → `NOT_AN_OPTION`; multiselect duplicates → `NOT_AN_OPTION`; date `"2024-02-30"` → `NOT_A_DATE`; boolean `"true"` → `NOT_A_BOOLEAN`; text `5` → `NOT_TEXT`; `{"value": 1, "extra": 2}` → `MALFORMED_ENVELOPE`; `"bare"` → `MALFORMED_ENVELOPE`.
+  - error shape: `exc.code == "VALUE_CONTRACT_VIOLATION"`, `exc.status_code == 422`, `exc.details == {"field_id": str(field.id), "reason": "NOT_AN_OPTION"}`; the raw value does not appear in `exc.message`.
+  - `UI_SHAPES` vector (module constant, one comment per entry naming the emitting component), each accepted by `canonicalize_value` for its field: `{"value": "22"}` and `{"value": {"value": "22", "unit": "mg"}}` (number input, `FieldValueEditor`); `{"value": None}` (cleared field); `{"value": "Y"}` (`SelectWithOther` option); `{"value": {"selected": "other", "other_text": ""}}` and `{"value": {"selected": "other", "other_text": "Registry"}}` (`SelectWithOther` "Other"); `{"value": ["A", "B"]}` (`MultiSelectWithOther` without other); `{"value": {"selected": ["A"], "other_texts": [""]}}` and `{"value": {"selected": [], "other_texts": ["x"]}}` (`MultiSelectWithOther` with other); `{"value": True}` (boolean switch); `{"value": "2024-01-31"}` (date input); `{"value": "free text"}` (text input); `{"value": None, "absent_reason": "no_information"}` (`FieldInput` marker button).
+
+  - Integration: New `tests/integration/test_value_contract_writes.py`. Setup helper (pattern `tests/integration/test_entry_group_extraction.py` `_group`/`_pinned_field`/`_pinned_group` ~L70-243 and `_pin_run_to_snapshot` in `tests/integration/test_pinned_prompt_structure.py:76-97`): on the SEED template add a live `select` field with `allowed_values=[{"value":"dev","label":"Development"},{"value":"val","label":"Validation"},{"value":"draft_only","label":"Draft only"}]` and a live `number` field with `unit="mg"`, `allowed_units=["mg","g"]`, `allows_not_applicable=False`; insert an inactive version whose wide (non-narrow) snapshot holds both fields but the select **without** `draft_only`; create a run in EXTRACT on the SEED article/instance (`run_in_extract(db)` from `tests/integration/helpers/engine_setup.py`) and pin it to that version. Calls go through HTTP (`db_client`, authenticated as the run's reviewer the way `tests/integration/test_template_structure_endpoints.py` authenticates) to `POST /api/v1/runs/{run_id}/decisions` and, for consensus, `/consensus` after advancing the run to CONSENSUS as `test_extraction_consensus_service.py` does. Cases:
   - `test_off_vocabulary_select_is_refused_on_decisions`: value `{"value": "nope"}` → 422, `error.code == "VALUE_CONTRACT_VIOLATION"`, `error.details.reason == "NOT_AN_OPTION"`, `error.details.field_id == <select id>`; the `extraction_reviewer_decisions` count for that coordinate is unchanged.
   - `test_off_vocabulary_select_is_refused_on_consensus_override`: `mode="manual_override"`, same value → 422 `NOT_AN_OPTION`; no `extraction_consensus_decisions` / `extraction_published_states` row added.
   - `test_numeric_string_is_stored_as_number`: `{"value": "22"}` on the number field → 201; the stored decision `value == {"value": 22}`.
@@ -764,25 +741,27 @@ owner: '@raphaelfh'
 - New `tests/integration/test_value_contract_services.py` (direct service calls on `db_session`, same setup helper): `record_consensus(..., mode="manual_override", value={"value": "nope"})` raises `ValueContractError` (`NOT_AN_OPTION`) and with `enforce_contract=False` stores it; `pinned_field` returns the pinned field (without `draft_only` in its options), returns the live field when the pinned snapshot is narrow (SEED template's empty v1), and returns `None` for a field absent from a non-narrow pinned tree; `record_decision` on that absent field raises `InvalidDecisionError`.
 - Endpoint unit test (coverage): call `create_consensus.__wrapped__` (or the plain function) with a mocked service and assert it passes `enforce_contract=True`.
 
-- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/integration/test_value_contract_writes.py -q` → FAIL.
+- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/unit/test_value_contract.py tests/integration/test_value_contract_writes.py tests/integration/test_value_contract_services.py -q` → FAIL (module missing; values not refused).
 
-- [ ] **Step 3: Implement** per Interfaces.
+- [ ] **Step 3: Implement the pure module** `value_contract.py` per Interfaces (module docstring: where it runs — human reviewer decisions and consensus manual overrides — and where it deliberately does not: AI proposal landing, the system carry-overs (QA materialization at the extract→consensus advance, the reopen carry-over) and approve-and-finalize's publish of agreed values).
 
-- [ ] **Step 4: Regenerate API types** only if a route's `responses=` changed: `cd "$WT" && npm run generate:api-types`.
+- [ ] **Step 4: Wire it** per Interfaces (wiring).
 
-- [ ] **Step 5: Run green + gates.**
+- [ ] **Step 5: Regenerate API types** only if a route's `responses=` changed: `cd "$WT" && npm run generate:api-types`.
+
+- [ ] **Step 6: Run green + gates.**
   ```bash
-  cd "$WT/backend" && uv run pytest tests/unit tests/integration/test_value_contract_writes.py \
+  cd "$WT/backend" && uv run pytest tests/unit tests/integration/test_value_contract_writes.py tests/integration/test_value_contract_services.py \
     tests/integration/test_extraction_review_service.py tests/integration/test_extraction_consensus_service.py \
     tests/integration/test_entry_hierarchy_service.py tests/integration/test_run_lifecycle_service.py -q
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
   ```
-  Expected: PASS; vulture fully green (the `canonicalize_value` finding from Task 2.3a is gone). If `test_run_lifecycle_service.py` is not the file name, run `ls "$WT/backend/tests/integration" | grep -i lifecycle` and run those.
+  Expected: PASS; vulture fully green (`canonicalize_value` lands with its callers). If `test_run_lifecycle_service.py` is not the file name, run `ls "$WT/backend/tests/integration" | grep -i lifecycle` and run those.
 
-- [ ] **Step 6: Commit.** `git -C "$WT" add backend frontend/types/api && git -C "$WT" commit -m "feat(extraction): refuse off-contract reviewer and consensus values with 422"`
+- [ ] **Step 7: Commit.** `git -C "$WT" add backend frontend/types/api && git -C "$WT" commit -m "feat(extraction): refuse off-contract reviewer and consensus values with 422"`
 
-**Done when:** every acceptance case passes, the contract reads the pinned field, approve-and-finalize, QA materialization and AI landing are never refused, entry creation survives a non-option key (logged), gates green.
+**Done when:** every contract rule has a passing unit case, every UI shape is accepted, every acceptance case passes, the contract reads the pinned field, approve-and-finalize, QA materialization and AI landing are never refused, entry creation survives a non-option key (logged), gates green.
 
 ---
 
@@ -792,7 +771,7 @@ owner: '@raphaelfh'
 
 **Goal:** when the server refuses a value with 422 `VALUE_CONTRACT_VIOLATION`: form autosave lands in its `error` state with the server's message and the input keeps what the reviewer typed; a consensus manual override shows an error toast with the server's message and the override editor stays open, with no unhandled promise rejection. The number unit picker offers only units the server accepts.
 
-**Context:** the backend (Task 2.3b) answers `{ok: false, error: {code: "VALUE_CONTRACT_VIOLATION", message, details: {field_id, reason}}}` with status 422 for a reviewer decision or a consensus manual override that breaks the field's contract. A unit is accepted only when it is in the field's `allowed_units` or equals `field.unit`. `apiClient` throws `ApiError(code, message, status, traceId?, details?)` (`frontend/integrations/api/client.ts:68`). Current code:
+**Context:** the backend (Task 2.3a+2.3b) answers `{ok: false, error: {code: "VALUE_CONTRACT_VIOLATION", message, details: {field_id, reason}}}` with status 422 for a reviewer decision or a consensus manual override that breaks the field's contract. A unit is accepted only when it is in the field's `allowed_units` or equals `field.unit`. `apiClient` throws `ApiError(code, message, status, traceId?, details?)` (`frontend/integrations/api/client.ts:68`). Current code:
 - `frontend/hooks/runs/useAutoSaveProposals.ts`: error path ~L333-352 already does `setError(err.message)`, `setSaveState('error')`, `toast.error(t('extraction','errors_autoSaveFailed'))`; its writer is `useRunValues.writeValue` (`frontend/hooks/runs/useRunValues.ts:233-245`), whose `settleFailure` (~L221-231) treats 409/400 specially and maps other statuses to `'failed'`.
 - `frontend/hooks/runs/useRunLifecycleScreen.ts`: local `errorMessage(err, fallback)` (L145), `toastFailure` (L209), `resolve` (L261-265: `await run('consensus', ...)`, `await invalidateRun()`, no catch, no toast); `onManualOverride` (~L380-395) calls `resolve`.
 - `frontend/components/runs/ConsensusOverrideEditor.tsx` L95: `onClick={() => void onPublish(value, rationale.trim())}` (a rejection is unhandled).
@@ -809,20 +788,17 @@ owner: '@raphaelfh'
 - Test: `frontend/test/hooks/useRunValues.test.tsx`, `frontend/test/useRunLifecycleScreen.test.tsx`, `frontend/test/RunReviewerComparison.resolve.test.tsx`, `frontend/components/runs/ConsensusOverrideEditor.test.tsx`, `frontend/components/extraction/FieldValueEditor.test.tsx`
 
 **Interfaces:**
-- `resolve(body)` becomes:
+- `resolve(body)` becomes (promise form: `resolve` lives inside the `useRunLifecycleScreen` hook body, where the React Compiler refuses `try`/`throw`):
   ```ts
   const resolve = async (body: Parameters<typeof runLifecycleService.createConsensus>[1]) => {
     if (!runId) return;
-    try {
-      await run('consensus', () => runLifecycleService.createConsensus(runId, body));
-    } catch (err) {
+    await run('consensus', () => runLifecycleService.createConsensus(runId, body)).catch((err: unknown) => {
       toast.error(errorMessage(err, t('consensus', 'overridePublishFailed')));
       throw err;
-    }
+    });
     await invalidateRun();
   };
   ```
-  (a plain `async` function outside the component body, so the React Compiler `try`/`throw` restriction does not apply; if the lint/compiler still refuses it, express it as `run(...).catch((err) => { toast.error(...); throw err; })`.)
 - `ConsensusOverrideEditor` L95: `onClick={() => { Promise.resolve(onPublish(value, rationale.trim())).catch(() => undefined); }}` — the parent already toasted; the catch only prevents an unhandled rejection, and the editor stays open because `RunReviewerComparison` skips `close()` on a throw.
 - `FieldValueEditor` number units: `const unitOptions = field.allowed_units?.length ? field.allowed_units : field.unit ? [field.unit] : [];` and `hasMultipleUnits = unitOptions.length > 1`; no dictionary fallback.
 
@@ -878,7 +854,7 @@ owner: '@raphaelfh'
   async def audit_value_envelopes(db: AsyncSession) -> list[TableAudit]: ...
   def format_report(audits: list[TableAudit]) -> str: ...
   ```
-  `_TABLES = (("extraction_reviewer_decisions", "value", False), ("extraction_consensus_decisions", "value", False), ("extraction_published_states", "value", False), ("extraction_proposal_records", "proposed_value", True))`. The envelope rule has ONE source: a module-level SQL `CASE` expression `_KIND_SQL` (built per table from the fixed `_TABLES` tuple, with the `verification` branch only for proposal records) that yields the violation kind or `NULL`, in the enum's order (first failing rule wins): not an object → `not_object`; no `value` key → `missing_value`; `verification` outside proposals → `verification_outside_proposal`; any other key outside the allowed set → `unknown_key`; `absent_reason` outside the vocabulary → `bad_absent_reason`. `audit_value_envelopes` runs, per table, one grouped `SELECT kind, count(*), count(*) FILTER (WHERE created_at >= now() - interval '30 days'), (array_agg(id ORDER BY created_at DESC))[1:5] FROM (SELECT id, created_at, <_KIND_SQL> AS kind FROM public.<table> WHERE <col> IS NOT NULL) x WHERE kind IS NOT NULL GROUP BY kind`. No Python re-implementation of the rule. `_report()` prints `format_report(...)` and exits 1 when any count is non-zero, else 0.
+  `_TABLES = (("extraction_reviewer_decisions", "value", False), ("extraction_consensus_decisions", "value", False), ("extraction_published_states", "value", False), ("extraction_proposal_records", "proposed_value", True))`. The envelope rule has ONE source: a module-level SQL `CASE` expression `_KIND_SQL` built per table from the fixed `_TABLES` tuple (the `verification` branch only for proposal records) whose THEN literals are rendered from the enum members (`EnvelopeViolation.NOT_OBJECT.value`, …, each member referenced in `backend/app`, so vulture sees them used), and that yields the violation kind or `NULL`, in the enum's order (first failing rule wins): not an object → `not_object`; no `value` key → `missing_value`; `verification` outside proposals → `verification_outside_proposal`; any other key outside the allowed set → `unknown_key`; `absent_reason` outside the vocabulary → `bad_absent_reason`. `audit_value_envelopes` runs, per table, one grouped `SELECT kind, count(*), count(*) FILTER (WHERE created_at >= now() - interval '30 days'), (array_agg(id ORDER BY created_at DESC))[1:5] FROM (SELECT id, created_at, <_KIND_SQL> AS kind FROM public.<table> WHERE <col> IS NOT NULL) x WHERE kind IS NOT NULL GROUP BY kind`. No Python re-implementation of the rule. `_report()` prints `format_report(...)` and exits 1 when any count is non-zero, else 0.
 
 - [ ] **Step 1: Write the failing tests.**
   - `tests/unit/test_value_envelope_audit_report.py`: `format_report` of an empty audit says the total is 0; of one finding lists the table, kind, count, sample ids and the 30-day count.
@@ -887,7 +863,7 @@ owner: '@raphaelfh'
     - `test_clean_estate_reports_zero`: `audit_value_envelopes(db_session)` → every table's counts are empty (if the seeded test database itself holds a violator, stop and report it: that is a finding, not a test to loosen).
     - `test_planted_violators_are_found`: insert directly with `text()` one reviewer decision with `value = '{"text":"x"}'::jsonb` (`UNKNOWN_KEY`), one consensus decision + published state with `'"bare"'::jsonb` (`NOT_OBJECT`), and one proposal record with `'{"value":1,"verification":{}}'::jsonb` (allowed) plus one with `'{"value":null,"absent_reason":"nope"}'::jsonb` (`BAD_ABSENT_REASON`); the audit reports exactly those kinds, their ids among `sample_ids`, and `last_30_days` equal to the planted count; an extra reviewer decision with `created_at = now() - interval '60 days'` counts in `counts` but not in `last_30_days`.
 
-- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/unit/test_value_envelope_audit_classifier.py tests/integration/test_value_envelope_audit.py -q` → FAIL (module missing).
+- [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/unit/test_value_envelope_audit_report.py tests/integration/test_value_envelope_audit.py -q` → FAIL (module missing).
 
 - [ ] **Step 3: Implement** per Interfaces (module docstring: what it checks, that it is read-only, the run command, and that its exit code is 1 when anything is found).
 
@@ -1117,6 +1093,7 @@ owner: '@raphaelfh'
 - `_assert_baseline` maps by reason:
   - `pinned_empty_version` → message "The published version of this template is empty and a run is pinned to it." and `next_step="publish the current draft in prumo so runs move to a version with questions, then retry"`.
   - `legacy_snapshot` → message "The published version of this template uses an older format." and `next_step="publish once in prumo to refresh the published version, then retry"`.
+  - Both reasons KEEP the name extras Task 2.6 added to this refusal: `project_name` and `template_name` (capped with `cap_text`), `untrusted_content=True`, and `untrusted_fields` listing both. Only the message and `next_step` change here.
 
 - [ ] **Step 1: Write the failing tests.**
   - Unit `test_extraction_snapshot_baseline.py`: `baseline_isolated_for_agent([], pinned_run_exists=False) is True`; `([], pinned_run_exists=True) is False`; a wide entity list (`[{"cardinality": "one", "fields": [{"llm_description": None, "allow_other": False}]}]`) → `True` either way; a legacy list (`[{"fields": []}]`, no `cardinality`) → `False` either way.
@@ -1124,7 +1101,7 @@ owner: '@raphaelfh'
     - `test_blank_template_accepts_agent_add_question`: on `SEED.primary_template` (empty active v1, no run), a manager-added unpublished section (`add_section`); the agent service's `add_question` op applies and the new field appears in the draft diff for that template.
     - `test_run_pinned_to_empty_version_is_refused`: same template plus a run whose `version_id` is the empty active version (create with `run_in_extract`-style helpers from `tests/integration/helpers/engine_setup.py`, or `UPDATE public.extraction_runs SET version_id = :vid` on one); the op raises `NarrowBaselineError` with `reason == "pinned_empty_version"` and zero fields are written.
     - Update `test_baseline_narrow_refused_for_seeded_primary_template` (~L40-45): use `force_narrow_baseline(...)` on a `fresh_charms` template so it still exercises the `legacy_snapshot` refusal (`reason == "legacy_snapshot"`).
-  - `tests/integration/mcp/test_mcp_edit_template_draft.py::test_narrow_baseline_refused` (~L487-522): set up a legacy snapshot with `force_narrow_baseline`; assert `payload["code"] == "NARROW_BASELINE"`, the message names the older format, `payload["next_step"]` is the `legacy_snapshot` fix; keep its no-label-change, no-lock-holder and one-refused-audit-row checks. Add a pinned-empty case asserting the `pinned_empty_version` message and `next_step`.
+  - `tests/integration/mcp/test_mcp_edit_template_draft.py::test_narrow_baseline_refused` (~L487-522): set up a legacy snapshot with `force_narrow_baseline`; assert `payload["code"] == "NARROW_BASELINE"`, the message names the older format, `payload["next_step"]` is the `legacy_snapshot` fix; keep its no-label-change, no-lock-holder and one-refused-audit-row checks. Add a pinned-empty case asserting the `pinned_empty_version` message and `next_step`. Both cases also assert `payload["project_name"]` and `payload["template_name"]` equal the DB rows and `"project_name"`, `"template_name"` are in `payload["untrusted_fields"]`.
 
 - [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/unit/test_extraction_snapshot_baseline.py tests/integration/test_agent_template_draft_service.py tests/integration/mcp/test_mcp_edit_template_draft.py -q` → FAIL.
 
@@ -1169,7 +1146,7 @@ owner: '@raphaelfh'
     - `test_instruction_put_refused_while_another_manager_holds_the_lock`: `other` claims the lock via `claim_draft_lock`; PUT `/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction` as `SEED.primary_profile` with `{"llm_template_instruction": "x"}` → 409, `error.code == "DRAFT_LOCK_HELD"`, `error.details.holder_id == str(other)`, `error.details.holder_name == other_name`; the stored instruction is unchanged.
     - `test_instruction_put_by_lock_holder_succeeds`: the primary profile claims the lock, PUT → 200, the instruction is stored.
   - Unit: call `update_template_llm_instruction` directly (or `.__wrapped__` if decorated) with mocked `claim_draft_lock`/`set_template_instruction` and assert the claim runs before the write with `user_id=user_sub`.
-  - `frontend/test/components/TemplateInstructionPane.test.tsx` (existing mocks of `@/services/templateInstructionService`, `sonner`, `@/lib/copy` as `t: (_ns, key) => key`; `Host` holds the draft): `updateTemplateInstruction` resolves to a failed result carrying `new ApiError('DRAFT_LOCK_HELD', 'Being edited by Ana', 409)`; after Save, `toast.error` was called with `'errors_saveInstruction: Being edited by Ana'`, the textarea still shows the typed draft, and the query client's `invalidateQueries` was called with `templateConfigStatusKeys.byTemplate('p1','t1')` (spy on the client the test creates).
+  - `frontend/test/components/TemplateInstructionPane.test.tsx` (existing mocks of `@/services/templateInstructionService`, `sonner`, `@/lib/copy` as `t: (_ns, key) => key`; `Host` holds the draft): the `updateTemplateInstruction` mock REJECTS with `new ApiError('DRAFT_LOCK_HELD', 'Being edited by Ana', 409)` (`mockRejectedValueOnce`; a resolved mock would fire `onSuccess`); after Save, `toast.error` was called with `'errors_saveInstruction: Being edited by Ana'`, the textarea still shows the typed draft, and the query client's `invalidateQueries` was called with `templateConfigStatusKeys.byTemplate('p1','t1')` (spy on the client the test creates).
 
 - [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/integration/test_template_draft_lock.py tests/unit/test_project_templates_instruction_endpoint_unit.py -q` and `cd "$WT" && npx vitest run frontend/test/components/TemplateInstructionPane.test.tsx` → FAIL.
 
@@ -1286,8 +1263,8 @@ A REST schema change ⇒ `npm run generate:api-types` in the same task. `HITLArt
 
 - [ ] **Step 4: Run green + gates.**
   ```bash
-  cd "$WT/backend" && uv run pytest tests/unit tests/integration/test_qa_rules_frozen.py \
-    tests/integration/test_build_run_view.py tests/integration -q -k "qa or derived or run_view or field_filter or landing or pipeline"
+  cd "$WT/backend" && uv run pytest tests/unit -q && uv run pytest tests/integration/test_qa_rules_frozen.py \
+    tests/integration/test_build_run_view.py -q && uv run pytest tests/integration -q -k "qa or derived or run_view or field_filter or landing or pipeline"
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
   ```
@@ -1310,7 +1287,7 @@ A REST schema change ⇒ `npm run generate:api-types` in the same task. `HITLArt
 **Files:**
 - Modify: `backend/app/services/exports/extraction_scope_marking.py` (`mark_out_of_scope_values` takes per-article rules)
 - Modify: `backend/app/services/extraction_export_service.py` (load rules once per export; pass per-article rules)
-- Test: `backend/tests/integration/test_qa_rules_frozen.py` (export leg), `backend/tests/unit/test_extraction_scope_marking.py` and the appraisal unit tests (`grep -rln "mark_out_of_scope_values\|_build_appraisal_model" "$WT/backend/tests"`) updated for the new parameter
+- Test: `backend/tests/integration/test_qa_rules_frozen.py` (export leg), `backend/tests/unit/test_extraction_export_scope_marking.py` and the appraisal unit tests (`grep -rln "mark_out_of_scope_values\|_build_appraisal_model" "$WT/backend/tests"`) updated for the new parameter
 
 **Interfaces:**
 - In the export: `rules_by_version = await pinned_template_rules(self.db, {a.version_id for a in articles if a.version_id})`; `rules_for(article) -> dict = rules_by_version.get(article.version_id, {}) if article.version_id else (template.schema_ or {})` (an article without a run has no values to mark; the live schema is only a harmless default there).
@@ -1327,7 +1304,7 @@ A REST schema change ⇒ `npm run generate:api-types` in the same task. `HITLArt
 
 - [ ] **Step 4: Run green + gates.**
   ```bash
-  cd "$WT/backend" && uv run pytest tests/unit tests/integration/test_qa_rules_frozen.py tests/integration -q -k "export or appraisal or scope"
+  cd "$WT/backend" && uv run pytest tests/unit -q && uv run pytest tests/integration/test_qa_rules_frozen.py -q && uv run pytest tests/integration -q -k "export or appraisal or scope"
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
   ```
@@ -1351,7 +1328,6 @@ A REST schema change ⇒ `npm run generate:api-types` in the same task. `HITLArt
 - Modify: `backend/app/services/template_versioning/_clone.py`
 - Modify: `frontend/pages/QualityAssessmentFullScreen.tsx`
 - Modify: `frontend/hooks/runs/types.ts` (`scope_rules?: Record<string, unknown> | null` on the run-view response type)
-- Modify: `frontend/services/qaTemplateService.ts` (drop `schema` from the select if `QualityAssessmentFullScreen` was its only reader — check with `grep -rn "\.schema\b" "$WT/frontend" | grep -i "qa\|template"`; keep it otherwise)
 - Test: `backend/tests/integration/test_qa_rules_frozen.py` (re-import legs), `backend/tests/integration/test_template_clone*.py` (whichever covers re-import: `ls "$WT/backend/tests/integration" | grep -i clone`), `frontend/test/QualityAssessmentFullScreen.scope.test.tsx`
 
 **Interfaces:**
@@ -1375,7 +1351,7 @@ A REST schema change ⇒ `npm run generate:api-types` in the same task. `HITLArt
 
 - [ ] **Step 4: Run green + gates.**
   ```bash
-  cd "$WT/backend" && uv run pytest tests/unit tests/integration/test_qa_rules_frozen.py tests/integration -q -k "clone or reimport or qa or template_version"
+  cd "$WT/backend" && uv run pytest tests/unit -q && uv run pytest tests/integration/test_qa_rules_frozen.py -q && uv run pytest tests/integration -q -k "clone or reimport or qa or template_version"
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
   cd "$WT" && npm run test:run && npm run typecheck && npm run lint && npx knip && npx knip --production \
@@ -1440,44 +1416,48 @@ A REST schema change ⇒ `npm run generate:api-types` in the same task. `HITLArt
 
 **Goal:** the seeded general AI instructions (CHARMS, CHARMS + Multimodal, PROBAST, QUADAS-2, PROBAST+AI) and the editor's suggested default no longer contain `[customize: ...]` slots asking for the population, index, comparator, outcome, timing or setting — the project's review question already reaches the prompt. Databases holding a retired default get the new text; a manager's customized text is never touched. On fresh clones of unedited globals the "N to customize" chip reads 0.
 
-**Context:** `backend/app/seed.py`: `_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str]` (L3131-3172; preceded by a comment L3127-3130 saying the `[customize: ...]` slots are deliberate) holds CHARMS and MM (slot "name the target condition, population, and outcome this review focuses on"), PROBAST ("describe the review's intended setting and population ...") and QUADAS-2 ("state the review question — index test, target condition, and intended-use setting — ..."); `backfill_llm_template_instructions(session)` (L3175-3207) merges a PROBAST+AI text (built locally, slot "state the review's Step-1 PICOTS — ...") and writes each with `update(ExtractionTemplateGlobal).where(id == tid, llm_template_instruction.is_(None))`. The project's review question is rendered into prompts by `backend/app/services/project_ai_context.py::build_review_context` (used by `run_prompt_context.py`). That module's docstring (L1-21) wrongly says five seeded templates ship a PICOTS slot and that the column is written "by the settings UI over PostgREST"; the `MAX_REVIEW_CONTEXT_CHARS` comment (L31-37) repeats the PostgREST claim — the writer is `PUT /api/v1/projects/{project_id}/ai-context` (`backend/app/api/v1/endpoints/ai_context.py:56`, manager-only). Frontend: `frontend/lib/copy/extraction.ts:537-538` `instructionSuggestedDefault` ends with `[customize: describe this review's scope]`; slots are counted by `/\[customize:[^\]]*\]/g` in `frontend/components/extraction/TemplateInstructionControl.tsx:14-17` and `TemplateInstructionPane.tsx:13,55`. `seed.py` sits near its file-size cap (3292; keep the net change small). Tests: `backend/tests/integration/test_seed_llm_instructions.py` (`test_backfill_fills_null_instructions`, `test_backfill_never_clobbers_customized_text`), `backend/tests/unit/test_extraction_prompt_input.py`, `backend/tests/unit/test_project_ai_context.py`, `frontend/test/components/TemplateInstructionControl.test.tsx`.
+**Context:** `backend/app/seed.py`: `_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str]` (L3131-3172; preceded by a comment L3127-3130 saying the `[customize: ...]` slots are deliberate) holds CHARMS and MM (slot "name the target condition, population, and outcome this review focuses on"), PROBAST ("describe the review's intended setting and population ...") and QUADAS-2 ("state the review question — index test, target condition, and intended-use setting — ..."); `backfill_llm_template_instructions(session)` (L3175-3207) merges a PROBAST+AI text (built locally, slot "state the review's Step-1 PICOTS — ...") and writes each with `update(ExtractionTemplateGlobal).where(id == tid, llm_template_instruction.is_(None))`. The project's review question is rendered into prompts by `backend/app/services/project_ai_context.py::build_review_context` (used by `run_prompt_context.py`). That module's docstring (L1-21) wrongly says five seeded templates ship a PICOTS slot and that the column is written "by the settings UI over PostgREST"; the `MAX_REVIEW_CONTEXT_CHARS` comment (L31-37) repeats the PostgREST claim — the writer is `PUT /api/v1/projects/{project_id}/ai-context` (`backend/app/api/v1/endpoints/ai_context.py:56`, manager-only). Frontend: `frontend/lib/copy/extraction.ts:537-538` `instructionSuggestedDefault` ends with `[customize: describe this review's scope]`; slots are counted by `/\[customize:[^\]]*\]/g` in `frontend/components/extraction/TemplateInstructionControl.tsx:14-17` and `TemplateInstructionPane.tsx:13,55`. `seed.py` sits near its file-size cap (3292 in `scripts/fitness/check_file_size.baseline`; this task must not grow it). Top-level `backend/app` modules must be classified in `scripts/fitness/check_layered_arch.py` (`ENTRYPOINTS` holds the seed modules). Tests: `backend/tests/integration/test_seed_llm_instructions.py` (`test_backfill_fills_null_instructions`, `test_backfill_never_clobbers_customized_text`), `backend/tests/unit/test_extraction_prompt_input.py`, `backend/tests/unit/test_project_ai_context.py`, `frontend/test/components/TemplateInstructionControl.test.tsx`.
 
 **Files:**
-- Modify: `backend/app/seed.py` (`_LLM_TEMPLATE_INSTRUCTIONS`, its comment, the PROBAST+AI text, new `_RETIRED_LLM_TEMPLATE_INSTRUCTIONS`, `backfill_llm_template_instructions`)
+- Create: `backend/app/seed_instruction_defaults.py` (all default instruction texts, current and retired; imports nothing from the seed modules, so no import cycle)
+- Modify: `backend/app/seed.py` (`_LLM_TEMPLATE_INSTRUCTIONS` maps ids to the new module's constants; its comment; `backfill_llm_template_instructions`) — the net `seed.py` line change must be ≤ 0 (`check_file_size.py` cap)
+- Modify: `scripts/fitness/check_layered_arch.py` (add `"seed_instruction_defaults"` to `ENTRYPOINTS`: an unclassified top-level module makes the scan exit 2)
 - Modify: `backend/app/services/project_ai_context.py` (docstring and comment only)
 - Modify: `frontend/lib/copy/extraction.ts` (`instructionSuggestedDefault`)
 - Create: `backend/tests/unit/test_seed_instruction_slots.py`
 - Test: `backend/tests/integration/test_seed_llm_instructions.py`, `backend/tests/unit/test_extraction_prompt_input.py`, `frontend/test/components/TemplateInstructionControl.test.tsx`
 
 **Interfaces:**
-- Each seeded text loses its `[customize: ...]` sentence and ends with one sentence pointing to the review question, e.g. "Judge applicability against the review question set in the project's review question settings." (appraisal templates) / "The review question set in the project's review question settings defines the target condition, population and outcome." (extraction templates). No `[customize:` remains in any seeded text.
-- `_RETIRED_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, frozenset[str]]` — for each template id, the exact previous default text(s), copied verbatim from the current code BEFORE editing (the PROBAST+AI entry is keyed in the function, like its current text, because of the import cycle).
-- `backfill_llm_template_instructions`: the WHERE becomes `or_(llm_template_instruction.is_(None), llm_template_instruction.in_(retired_texts_for_that_id))`. Customized text (anything else) is never touched.
+- `backend/app/seed_instruction_defaults.py` (module docstring: why the texts live here — `seed.py` is at its file-size cap — and that retired texts are kept verbatim so the backfill can recognize an unedited old default):
+  - `CHARMS_INSTRUCTION`, `CHARMS_MM_INSTRUCTION`, `PROBAST_INSTRUCTION`, `QUADAS2_INSTRUCTION`, `PROBAST_AI_INSTRUCTION: str` — the new defaults: each current text minus its `[customize: ...]` sentence, ending with one sentence pointing to the review question, e.g. "Judge applicability against the review question set in the project's review question settings." (appraisal templates) / "The review question set in the project's review question settings defines the target condition, population and outcome." (extraction templates). No `[customize:` anywhere.
+  - `RETIRED_CHARMS_INSTRUCTION`, `RETIRED_CHARMS_MM_INSTRUCTION`, `RETIRED_PROBAST_INSTRUCTION`, `RETIRED_QUADAS2_INSTRUCTION`, `RETIRED_PROBAST_AI_INSTRUCTION: str` — the CURRENT texts from `seed.py`, copied verbatim BEFORE any edit (compare with `git -C "$WT" show HEAD:backend/app/seed.py`).
+- `seed.py`: `_LLM_TEMPLATE_INSTRUCTIONS = {_CHARMS_TEMPLATE_ID: CHARMS_INSTRUCTION, _MM_TEMPLATE_ID: CHARMS_MM_INSTRUCTION, _PROBAST_TEMPLATE_ID: PROBAST_INSTRUCTION, _QUADAS2_TEMPLATE_ID: QUADAS2_INSTRUCTION}` and a parallel `_RETIRED_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str]` over the retired constants; `backfill_llm_template_instructions` adds `_PROBAST_AI_TEMPLATE_ID` to both (its local import stays) and writes with `where(id == tid, or_(llm_template_instruction.is_(None), llm_template_instruction == retired_text))`. Customized text (anything else) is never touched.
 - `instructionSuggestedDefault`: `"You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value."`
 
 - [ ] **Step 1: Write the failing tests.**
-  - New `tests/unit/test_seed_instruction_slots.py`: for every text in `_LLM_TEMPLATE_INSTRUCTIONS.values()` and the PROBAST+AI default (expose it as a module-level `_PROBAST_AI_LLM_INSTRUCTION` string in `seed.py` so the test can read it without a DB; the function keys it by `_PROBAST_AI_TEMPLATE_ID` at call time), no `[customize:` slot mentions any of `population`, `index`, `comparator`, `outcome`, `timing`, `setting` (case-insensitive regex over `\[customize:[^\]]*\]`); simplest strong form: `"[customize:" not in text`.
-  - `tests/unit/test_extraction_prompt_input.py`: with a project review context whose PICOTS population is "adults with sepsis" and the new CHARMS default as the template instruction, the assembled prompt input contains "adults with sepsis" exactly once (follow the file's existing builder calls).
-  - `tests/integration/test_seed_llm_instructions.py`: `test_backfill_replaces_a_retired_default` (set CHARMS's global instruction to its retired text → after backfill it equals the new text); `test_backfill_keeps_customized_text` stays (customized text untouched); `test_backfill_rerun_is_a_no_op` (two runs → same values, second run updates 0 rows).
+  - New `tests/unit/test_seed_instruction_slots.py`: for each of the five new constants in `app.seed_instruction_defaults`, `"[customize:" not in text`; for each retired constant, `"[customize:" in text` (it is the verbatim old default); `_LLM_TEMPLATE_INSTRUCTIONS` values are exactly the four new constants.
+  - `tests/unit/test_extraction_prompt_input.py`: the prompt input assembled (with the file's existing builder calls) for a run whose template instruction is the CHARMS seeded default from `app.seed._LLM_TEMPLATE_INSTRUCTIONS[_CHARMS_TEMPLATE_ID]` contains no `[customize:` (red today: the current default carries a slot).
+  - `tests/integration/test_seed_llm_instructions.py`: `test_backfill_replaces_a_retired_default` (set CHARMS's global instruction to `RETIRED_CHARMS_INSTRUCTION` → after backfill it equals `CHARMS_INSTRUCTION`); `test_backfill_never_clobbers_customized_text` stays; `test_backfill_rerun_is_a_no_op` (two runs → same values, second run updates 0 rows).
   - `frontend/test/components/TemplateInstructionControl.test.tsx`: inserting the suggested default yields a chip count of 0 (no "to customize" chip).
 
 - [ ] **Step 2: Run red.** `cd "$WT/backend" && uv run pytest tests/unit/test_seed_instruction_slots.py tests/unit/test_extraction_prompt_input.py tests/integration/test_seed_llm_instructions.py -q` and `cd "$WT" && npx vitest run frontend/test/components/TemplateInstructionControl.test.tsx` → FAIL.
 
-- [ ] **Step 3: Implement** per Interfaces; replace the L3127-3130 comment with one that says the defaults carry no slots because the review question reaches the prompt from the project's settings, and that a retired default is replaced while customized text is kept. Fix the `project_ai_context.py` docstring (no "five seeded templates ship a slot" claim; the writer is `PUT /ai-context`, manager-only) and the `MAX_REVIEW_CONTEXT_CHARS` comment (the cap lives in the renderer; the API is the column's writer).
+- [ ] **Step 3: Implement** per Interfaces (create the new module first, copying the current texts into the `RETIRED_*` constants verbatim); replace the L3127-3130 comment with one that says the defaults carry no slots because the review question reaches the prompt from the project's settings, and that a retired default is replaced while customized text is kept. Fix the `project_ai_context.py` docstring (no "five seeded templates ship a slot" claim; the writer is `PUT /ai-context`, manager-only) and the `MAX_REVIEW_CONTEXT_CHARS` comment (the cap lives in the renderer; the API is the column's writer).
 
 - [ ] **Step 4: Re-seed and run green + gates.**
   ```bash
   cd "$WT/backend" && uv run python -m app.seed && uv run pytest tests/unit tests/integration/test_seed_llm_instructions.py -q
   cd "$WT" && make lint-backend && PATH="$WT/backend/.venv/bin:$PATH" bash scripts/fitness/run_all.sh
   cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
-  cd "$WT" && npm run test:run && npm run lint && npx knip && npx knip --production \
+  cd "$WT" && npm run test:run && npm run typecheck && npm run lint && npx knip && npx knip --production \
     && PATH="$WT/backend/.venv/bin:$PATH" python3 scripts/fitness/check_copy_keys.py
+  git -C "$WT" diff --stat HEAD -- backend/app/seed.py
   ```
-  Expected: PASS; `check_file_size.py` green for `seed.py`.
+  Expected: PASS; `check_file_size.py` and `check_layered_arch.py` green; the `seed.py` diff removes at least as many lines as it adds.
 
-- [ ] **Step 5: Commit.** `git -C "$WT" add backend frontend && git -C "$WT" commit -m "fix(seed): template AI instructions point to the review question instead of placeholder slots"`
+- [ ] **Step 5: Commit.** `git -C "$WT" add backend frontend scripts && git -C "$WT" commit -m "fix(seed): template AI instructions point to the review question instead of placeholder slots"`
 
-**Done when:** no seeded or suggested default carries a review-question slot, retired defaults are replaced and customized text kept, the review question appears once in a prompt, docstrings are accurate, gates green.
+**Done when:** no seeded or suggested default carries a review-question slot, retired defaults are replaced and customized text kept, the assembled prompt carries no slot, `seed.py` did not grow, docstrings are accurate, gates green.
 
 ---
 
