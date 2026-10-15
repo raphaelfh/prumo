@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { SelectWithOther } from '@/components/ui/SelectWithOther';
 import { MultiSelectWithOther } from '@/components/ui/MultiSelectWithOther';
+import { normalizeOptions } from '@/lib/extraction/options';
 import { Switch } from '@/components/ui/switch';
 import { getRelatedUnits } from '@/lib/unitConversions';
 import { extractUnit, extractValue } from '@/lib/ai-extraction/valueParser';
@@ -258,7 +259,7 @@ export function FieldValueEditor({
       );
 
     case 'select': {
-      const options = (field.allowed_values as any[]) || [];
+      const options = normalizeOptions(field.allowed_values);
       if (field.allow_other) {
         return (
           <SelectWithOther
@@ -297,23 +298,18 @@ export function FieldValueEditor({
             />
           </SelectTrigger>
           <SelectContent>
-            {options.map((option: any, index: number) => {
-              const optionValue = typeof option === 'string' ? option : option.value;
-              const optionLabel =
-                typeof option === 'string' ? option : option.label || option.value;
-              return (
-                <SelectItem key={index} value={optionValue}>
-                  {optionLabel}
-                </SelectItem>
-              );
-            })}
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       );
     }
 
     case 'multiselect': {
-      const mOptions = (field.allowed_values as any[]) || [];
+      const mOptions = normalizeOptions(field.allowed_values);
       if (field.allow_other || (compact && mOptions.length > 0)) {
         return (
           <MultiSelectWithOther

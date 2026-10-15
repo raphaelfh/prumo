@@ -6,6 +6,7 @@
 
 import type {AISuggestion} from '@/types/ai-extraction';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
+import {optionLabelMap} from '@/lib/extraction/options';
 
 /**
  * Field context needed to resolve a select/multiselect option CODE to its human
@@ -15,44 +16,6 @@ import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 export interface SuggestionFieldContext {
   fieldType?: string | null;
   allowedValues?: unknown;
-}
-
-/**
- * Return the raw option list from an `allowed_values` payload. Tolerates both
- * shapes the template builder emits: `{options: [...]}` or a bare `[...]`;
- * anything else yields `[]`. Mirrors backend `normalize_options`
- * (backend/app/llm/claim_value.py) so a new option encoding is handled once.
- */
-function normalizeOptions(allowedValues: unknown): unknown[] {
-  if (
-    allowedValues &&
-    typeof allowedValues === 'object' &&
-    !Array.isArray(allowedValues) &&
-    'options' in allowedValues
-  ) {
-    const options = (allowedValues as {options?: unknown}).options;
-    return Array.isArray(options) ? options : [];
-  }
-  return Array.isArray(allowedValues) ? allowedValues : [];
-}
-
-/**
- * Map each select option's stored value (code) to its human label. Options are
- * `{value, label}` objects or plain strings; plain strings (and options without
- * a distinct label) map to themselves. Mirrors backend `option_label_map`.
- */
-function optionLabelMap(allowedValues: unknown): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const opt of normalizeOptions(allowedValues)) {
-    if (opt && typeof opt === 'object' && 'value' in opt) {
-      const code = String((opt as {value: unknown}).value);
-      const label = (opt as {label?: unknown}).label;
-      map.set(code, label ? String(label) : code);
-    } else if (typeof opt === 'string') {
-      map.set(opt, opt);
-    }
-  }
-  return map;
 }
 
 /**

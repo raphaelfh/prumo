@@ -71,6 +71,26 @@ describe('FieldInput disposition wiring', () => {
     },
   );
 
+  it('renders the label of a canonical {value,label} option', () => {
+    renderField(
+      makeField({
+        field_type: 'select',
+        // Cast until ExtractionField.allowed_values takes the served OptionItem[] shape.
+        allowed_values: [
+          { value: 'Y', label: 'Yes' },
+          { value: 'N', label: 'No' },
+        ] as unknown as ExtractionField['allowed_values'],
+      }),
+      'Y',
+    );
+    expect(screen.getByRole('combobox')).toHaveTextContent('Yes');
+  });
+
+  it('renders a legacy bare-string option as itself', () => {
+    renderField(makeField({ field_type: 'select', allowed_values: ['Yes', 'No'] }), 'Yes');
+    expect(screen.getByRole('combobox')).toHaveTextContent('Yes');
+  });
+
   it('threads the per-field flags through to the row', () => {
     // The gate must reach the row from FieldInput's own `field` prop — PR #729
     // wired exactly this, and the consensus copy went ungated because it had no
