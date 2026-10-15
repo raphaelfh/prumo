@@ -13,9 +13,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import event, text
 
 from app.api.mcp.tools import templates as templates_tool
+from app.models.extraction_versioning import TemplateKind
 from app.schemas.mcp_templates import McpTemplateView
+from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 from app.services.extraction_snapshot import live_entity_types
 from app.services.template_versioning import (
+    clone_template,
     get_active_version_tree,
     get_template_config_diff,
 )
@@ -364,3 +367,62 @@ async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_s
             assert section["questions"], f"section emitted with zero questions: {section}"
             covered += len(section["questions"])
     assert covered == expected_covered
+
+
+def _questions(pages: list[dict]) -> list[dict]:
+    return [q for page in pages for s in page["sections"] for q in s["questions"]]
+
+
+async def test_probast_ai_study_type_options_are_value_label(
+    mcp_client, pat_primary_read, db_session
+):
+    clone = await clone_template(
+        db_session,
+        project_id=SEED.primary_project,
+        global_template_id=_PROBAST_AI_TEMPLATE_ID,
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    await db_session.commit()
+
+    pages = await _walk_all_pages(
+        mcp_client, pat_primary_read, SEED.primary_project, clone.project_template_id
+    )
+    study_type = next(q for q in _questions(pages) if q["label"] == "Study type")
+    assert {"value": "development_only", "label": "Development only"} in study_type["options"]
+
+
+async def test_legacy_options_read_canonical(mcp_client, pat_primary_read, db_session):
+    project_id, template_id, schema = await fresh_charms(db_session)
+    fields = [f for et in schema["entity_types"] for f in et["fields"]]
+    select_field = next(f for f in fields if f["field_type"] == "select")
+    text_field = next(f for f in fields if f["field_type"] == "text")
+    await db_session.execute(
+        text(
+            """UPDATE public.extraction_fields SET allowed_values = '["Yes","No"]'::jsonb """
+            "WHERE id = :id"
+        ),
+        {"id": select_field["id"]},
+    )
+    # The live row carries the legacy shape; read the live tree so the
+    # planted row is what get_template serves.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    await db_session.flush()
+
+    questions = {
+        q["field_id"]: q
+        for q in _questions(
+            await _walk_all_pages(mcp_client, pat_primary_read, project_id, template_id)
+        )
+    }
+    assert questions[select_field["id"]]["options"] == [
+        {"value": "Yes", "label": "Yes"},
+        {"value": "No", "label": "No"},
+    ]
+    assert questions[text_field["id"]]["options"] is None

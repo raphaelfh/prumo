@@ -6180,7 +6180,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: unknown | null;
             /** Allowed Values */
-            allowed_values?: unknown | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true

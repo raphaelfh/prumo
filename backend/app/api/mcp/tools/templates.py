@@ -45,6 +45,7 @@ from app.api.mcp.server import agent_tool
 from app.llm.claim_value import normalize_options
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.schemas.mcp_templates import (
+    McpOption,
     McpTemplateQuestion,
     McpTemplateSection,
     McpTemplateView,
@@ -270,5 +271,5 @@ def _question(field: RunViewField) -> McpTemplateQuestion:
     )
 
 
-def _options(allowed_values: object) -> list[str] | None:
-    return [o["label"] for o in normalize_options(allowed_values)] or None
+def _options(allowed_values: object) -> list[McpOption] | None:
+    return [McpOption(**o) for o in normalize_options(allowed_values)] or None

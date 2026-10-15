@@ -14,6 +14,7 @@ import pytest
 from app.api.mcp.tools.templates import _options
 from app.llm.prompts.entry_identification import _allowed_value_names
 from app.llm.schema import _enum_values
+from app.schemas.mcp_templates import McpOption
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     _normalize_allowed_values,
@@ -48,13 +49,16 @@ class TestReadersAgreeAcrossShapes:
         assert _enum_values(SimpleNamespace(allowed_values=raw)) == CODES
 
     def test_mcp_template_options(self, raw: object) -> None:
-        assert _options(raw) == CODES
+        assert _options(raw) == [McpOption(value=code, label=code) for code in CODES]
 
 
 def test_readers_use_value_as_code_and_label_for_display() -> None:
     coded = [{"value": "Y", "label": "Yes"}, {"label": "No information"}]
     assert _allowed_value_names(coded) == ["Y", "No information"]
-    assert _options(coded) == ["Yes", "No information"]
+    assert _options(coded) == [
+        McpOption(value="Y", label="Yes"),
+        McpOption(value="No information", label="No information"),
+    ]
     assert _normalize_allowed_values(coded) == (
         AllowedValue(value="Y", label="Yes"),
         AllowedValue(value="No information", label="No information"),

@@ -6,6 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.llm.claim_value import normalize_options
+from app.schemas.template_structure import OptionItem
+
 # ----- Request schemas -----
 
 
@@ -212,7 +215,9 @@ class RunViewField(BaseModel):
     field_type: str
     is_required: bool
     validation_schema: Any | None = None
-    allowed_values: Any | None = None
+    # Canonical on read: a frozen snapshot keeps whatever option shape it was
+    # published with, so every stored shape is normalized here.
+    allowed_values: list[OptionItem] | None = None
     unit: str | None = None
     allowed_units: Any | None = None
     sort_order: int
@@ -233,6 +238,13 @@ class RunViewField(BaseModel):
     # with it). 0067 wrote the live flag into every earlier snapshot, so a
     # missing key here means false, not "unknown".
     is_entity_key: bool = False
+
+    @field_validator("allowed_values", mode="before")
+    @classmethod
+    def _canonical_options(cls, raw: Any) -> list[dict[str, str]] | None:
+        if raw is None:
+            return None
+        return normalize_options(raw) or None
 
 
 class RunViewEntityType(BaseModel):

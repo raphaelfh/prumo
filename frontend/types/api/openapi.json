@@ -9681,7 +9681,12 @@
           },
           "allowed_values": {
             "anyOf": [
-              {},
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OptionItem"
+                },
+                "type": "array"
+              },
               {
                 "type": "null"
               }
