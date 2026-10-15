@@ -570,13 +570,21 @@ async def revoke_connection_by_token(db: AsyncSession, token: str) -> None:
 
 
 async def prune(db: AsyncSession) -> None:
-    """Delete clients nobody connected after a day, lapsed or day-old decided
-    requests, and expired or rotated-over-an-hour tokens."""
+    """Delete clients nobody connected after a day (unless a request of theirs
+    is still pending), lapsed or day-old decided requests, and expired or
+    rotated-over-an-hour tokens."""
     now = datetime.now(UTC)
     await db.execute(
         delete(McpOAuthClient).where(
             McpOAuthClient.created_at < func.now() - _UNUSED_CLIENT_TTL,
             ~exists().where(PersonalAccessToken.oauth_client_id == McpOAuthClient.client_id),
+            # A live pending request keeps its client: the cascade would
+            # take it from under a user still on the consent page.
+            ~exists().where(
+                McpOAuthRequest.client_id == McpOAuthClient.client_id,
+                McpOAuthRequest.decided_at.is_(None),
+                McpOAuthRequest.expires_at > now,
+            ),
         )
     )
     await db.execute(

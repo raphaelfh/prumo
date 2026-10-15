@@ -27,7 +27,13 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from app.api.mcp.oauth.asgi import Limited, PublicClientDefault, client_id_key, ip_key
+from app.api.mcp.oauth.asgi import (
+    Limited,
+    PublicClientDefault,
+    PublicRevocationDefault,
+    client_id_key,
+    ip_key,
+)
 from app.api.mcp.oauth.provider import PrumoOAuthProvider
 from app.core.config import settings
 from app.services.mcp_oauth_service import OAUTH_SCOPES, OFFLINE_ACCESS
@@ -118,7 +124,7 @@ def build_oauth_routes() -> list[Route]:
         Route(
             "/revoke",
             endpoint=Limited(
-                sdk["/revoke"],
+                PublicRevocationDefault(sdk["/revoke"]),
                 limit=_PER_IP_60,
                 bucket="oauth-revoke",
                 key=ip_key,

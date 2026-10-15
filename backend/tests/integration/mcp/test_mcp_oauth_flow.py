@@ -660,3 +660,23 @@ async def test_register_prunes_stale_rows_and_keeps_live_ones(
         id=tokens.connection_id,
     )
     assert (await exchange(oauth_http_client, client_id, code, verifier)).status_code == 200
+
+
+async def test_register_keeps_an_old_client_with_a_pending_request(
+    oauth_http_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    pending_client = await insert_oauth_client(db_session, created_at_offset=timedelta(hours=25))
+    pending = await insert_oauth_request(db_session, client_id=pending_client)
+    lapsed_client = await insert_oauth_client(db_session, created_at_offset=timedelta(hours=25))
+    await insert_oauth_request(
+        db_session, client_id=lapsed_client, expires_in=-timedelta(minutes=1)
+    )
+
+    assert (await register(oauth_http_client)).status_code == 201
+
+    clients = "SELECT 1 FROM public.mcp_oauth_clients WHERE client_id = :id"
+    assert await _exists(db_session, clients, id=pending_client)
+    assert await _exists(
+        db_session, "SELECT 1 FROM public.mcp_oauth_requests WHERE id = :id", id=pending
+    )
+    assert not await _exists(db_session, clients, id=lapsed_client)

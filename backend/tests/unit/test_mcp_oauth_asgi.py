@@ -14,6 +14,7 @@ from mcp.server.transport_security import DEFAULT_MAX_REQUEST_BODY_SIZE
 from app.api.mcp.oauth.asgi import (
     Limited,
     PublicClientDefault,
+    PublicRevocationDefault,
     client_id_key,
     ip_key,
     read_body,
@@ -324,24 +325,72 @@ async def test_public_client_default_passes_a_deep_body_unchanged(raw: bytes) ->
     assert inner.body == raw
 
 
-async def test_public_client_default_oversized_body_is_413() -> None:
+@pytest.mark.parametrize("wrapper", [PublicClientDefault, PublicRevocationDefault])
+async def test_public_client_default_oversized_body_is_413(wrapper: type) -> None:
     inner = _Inner()
     sent = _Sent()
     oversized = _receiver(b"x" * DEFAULT_MAX_REQUEST_BODY_SIZE, b"y")
-    await PublicClientDefault(inner)(_scope("POST", "/register"), oversized, sent)
+    await wrapper(inner)(_scope("POST", "/register"), oversized, sent)
     assert sent.status == 413
     assert inner.calls == 0
 
 
+@pytest.mark.parametrize("wrapper", [PublicClientDefault, PublicRevocationDefault])
 @pytest.mark.parametrize(
     "scope", [_scope("OPTIONS", "/register"), {"type": "lifespan"}], ids=["options", "lifespan"]
 )
-async def test_public_client_default_passes_options_and_non_http(scope: dict) -> None:
+async def test_public_client_default_passes_options_and_non_http(
+    scope: dict, wrapper: type
+) -> None:
     inner = _Inner()
-    await PublicClientDefault(inner)(scope, _receiver(b"untouched"), _Sent())
+    await wrapper(inner)(scope, _receiver(b"untouched"), _Sent())
     assert inner.calls == 1
     if scope["type"] == "http":
         assert inner.body == b"untouched"
+
+
+_FORM_TYPE = b"application/x-www-form-urlencoded"
+
+
+async def _revoke_through(body: bytes, content_type: bytes = _FORM_TYPE) -> _BodyInner:
+    inner = _BodyInner()
+    headers = [(b"content-type", content_type), (b"content-length", str(len(body)).encode())]
+    sent = _Sent()
+    await PublicRevocationDefault(inner)(_scope("POST", "/revoke", headers), _receiver(body), sent)
+    assert sent.status == 200
+    return inner
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"token=t&client_id=c", b"token=t&client_id=c&client_secret="),
+        (b"", b"client_secret="),
+    ],
+    ids=["missing", "empty-body"],
+)
+async def test_public_revocation_default_adds_an_empty_secret(raw: bytes, expected: bytes) -> None:
+    inner = await _revoke_through(raw)
+    assert inner.body == expected
+    assert inner.scope is not None
+    lengths = [v for k, v in inner.scope["headers"] if k == b"content-length"]
+    assert lengths == [str(len(expected)).encode()]
+
+
+@pytest.mark.parametrize(
+    ("raw", "content_type"),
+    [
+        (b"token=t&client_id=c&client_secret=s", _FORM_TYPE),
+        (b"token=t&client_id=c&client_secret=", _FORM_TYPE + b"; charset=utf-8"),
+        (b'{"token": "t"}', b"application/json"),
+    ],
+    ids=["has-secret", "has-empty-secret", "not-a-form"],
+)
+async def test_public_revocation_default_leaves_other_bodies(
+    raw: bytes, content_type: bytes
+) -> None:
+    inner = await _revoke_through(raw, content_type)
+    assert inner.body == raw
 
 
 def _cors(inner: _Inner) -> PathScopedCORSMiddleware:

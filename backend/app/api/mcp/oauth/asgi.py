@@ -1,5 +1,5 @@
 """ASGI plumbing for the OAuth routes: body buffering, THE rate-limit wrapper
-and its keys, and the public-client default for registration.
+and its keys, and the public-client defaults for registration and revocation.
 
 ``Limited`` is the only rate limiter for OAuth routes (ADR 0022). It is a raw
 ASGI class, not a slowapi decorator: the SDK handlers are plain request ->
@@ -98,17 +98,16 @@ def _with_public_default(body: bytes) -> bytes | None:
     return json.dumps(data).encode()
 
 
-class PublicClientDefault:
-    """Make a registration that names no token auth method a public client.
-
-    The SDK's registration handler defaults a missing method to
-    ``client_secret_post``; this server registers public clients only, so the
-    default is rewritten to ``"none"`` before the handler parses the body.
-    An explicit method is left alone (and refused later unless ``"none"``).
-    """
+class _BodyRewrite:
+    """Buffer the body (413 over the SDK's size cap), let ``rewrite`` replace
+    it, and replay it to ``app`` with a matching ``content-length``.
+    ``OPTIONS`` and non-http scopes pass straight through."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
+
+    def rewrite(self, scope: Scope, body: bytes) -> bytes | None:  # pragma: no cover
+        raise NotImplementedError
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] == "OPTIONS":
@@ -120,13 +119,41 @@ class PublicClientDefault:
                 scope, receive, send
             )
             return
-        patched = _with_public_default(body)
+        patched = self.rewrite(scope, body)
         if patched is not None:
             body = patched
             headers = [(k, v) for k, v in scope["headers"] if k != b"content-length"]
             headers.append((b"content-length", str(len(body)).encode("ascii")))
             scope = {**scope, "headers": headers}
         await self.app(scope, replay(body, receive), send)
+
+
+class PublicClientDefault(_BodyRewrite):
+    """Make a registration that names no token auth method a public client.
+
+    The SDK's registration handler defaults a missing method to
+    ``client_secret_post``; this server registers public clients only, so the
+    default is rewritten to ``"none"`` before the handler parses the body.
+    An explicit method is left alone (and refused later unless ``"none"``).
+    """
+
+    def rewrite(self, scope: Scope, body: bytes) -> bytes | None:  # noqa: ARG002 - the hook signature
+        return _with_public_default(body)
+
+
+class PublicRevocationDefault(_BodyRewrite):
+    """Let a public client revoke without a ``client_secret`` (RFC 7009).
+
+    The SDK's revocation form requires the field even for clients registered
+    with ``token_endpoint_auth_method="none"`` -- the only kind this server
+    registers -- so an absent one is added empty; the SDK's client
+    authentication ignores it for such clients.
+    """
+
+    def rewrite(self, scope: Scope, body: bytes) -> bytes | None:
+        if not _is_form(scope) or "client_secret" in QueryParams(body):
+            return None
+        return body + (b"&" if body else b"") + b"client_secret="
 
 
 def _is_preflight(scope: Scope) -> bool:

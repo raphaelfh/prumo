@@ -112,11 +112,8 @@ async def refresh(
 
 
 async def revoke(client: AsyncClient, client_id: str, token: str) -> Response:
-    """POST /revoke as a public client. The SDK's revocation form requires a
-    ``client_secret`` field even for public clients, so an empty one is sent."""
-    return await client.post(
-        "/revoke", data={"client_id": client_id, "token": token, "client_secret": ""}
-    )
+    """POST /revoke as a public client sends it (RFC 7009): no ``client_secret``."""
+    return await client.post("/revoke", data={"client_id": client_id, "token": token})
 
 
 @dataclass(frozen=True)
