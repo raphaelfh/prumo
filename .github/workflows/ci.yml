@@ -629,7 +629,11 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
       SUPABASE_URL: http://127.0.0.1:54321
       ENCRYPTION_KEY: test_encryption_key_32_characters
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # The AI kickoff gate refuses with 409 MISSING_API_KEY when no key
+      # resolves, so the stack mirrors a configured deployment: the real key
+      # when the secret exists, else a stub (no LLM call runs without
+      # E2E_RUN_LLM_TESTS).
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-e2e-stub' }}
       CORS_ORIGINS: "http://127.0.0.1:8080"
       DEBUG: "true"
     steps:
