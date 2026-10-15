@@ -13,6 +13,9 @@ vi.mock('@/services/llmConnectionsService', () => ({
   verifyMyConnection: vi.fn(),
 }));
 vi.mock('@/hooks/useZoteroIntegration', () => ({useZoteroIntegration: vi.fn()}));
+vi.mock('@/hooks/useProjectsQuery', () => ({
+  useProjectsQuery: () => ({isPending: false, isError: false, isSuccess: true, data: [], refetch: vi.fn()}),
+}));
 vi.mock('@/services/personalAccessTokenService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/personalAccessTokenService')>()),
   fetchMyTokens: vi.fn(),

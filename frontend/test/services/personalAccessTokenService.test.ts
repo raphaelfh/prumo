@@ -10,6 +10,7 @@ vi.mock('@/integrations/api/client', async (importOriginal) => ({
 import {
   createMyToken,
   fetchMyTokens,
+  isProjectNotAccessibleError,
   isTokenLimitError,
   revokeMyToken,
 } from '@/services/personalAccessTokenService';
@@ -59,5 +60,23 @@ describe('personalAccessTokenService', () => {
     expect(isTokenLimitError(new ApiError('TOKEN_LIMIT_REACHED', 'm', 409))).toBe(true);
     expect(isTokenLimitError(new ApiError('VALIDATION_ERROR', 'm', 422))).toBe(false);
     expect(isTokenLimitError(new Error('m'))).toBe(false);
+  });
+
+  it('createMyToken forwards project_ids in the body when given', async () => {
+    apiClientMock.mockResolvedValue({token: {id: 't1'}, secret: 's'});
+    const ids = ['11111111-1111-4111-8111-111111111111'];
+
+    await createMyToken({name: 'cli', scope: 'read', expires_in_days: 90, project_ids: ids});
+
+    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/me/tokens', {
+      method: 'POST',
+      body: {name: 'cli', scope: 'read', expires_in_days: 90, project_ids: ids},
+    });
+  });
+
+  it('isProjectNotAccessibleError is true only for the PROJECT_NOT_ACCESSIBLE ApiError', () => {
+    expect(isProjectNotAccessibleError(new ApiError('PROJECT_NOT_ACCESSIBLE', 'm', 422))).toBe(true);
+    expect(isProjectNotAccessibleError(new ApiError('VALIDATION_ERROR', 'm', 422))).toBe(false);
+    expect(isProjectNotAccessibleError(new Error('m'))).toBe(false);
   });
 });

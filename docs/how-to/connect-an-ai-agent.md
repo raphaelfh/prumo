@@ -20,10 +20,13 @@ need OAuth and are not supported.
    laptop"), pick a scope (`read`, or `read_write` if the agent needs to
    make edits — use `read` unless you need edits), and an expiry of 30, 90
    or 365 days.
-3. The secret is shown once, in the reveal dialog. Copy it immediately —
+3. Projects: keep **All my projects**, or choose **Only these projects** (up
+   to 20). The token cannot see other projects; to change the list, create a
+   new token.
+4. The secret is shown once, in the reveal dialog. Copy it immediately —
    prumo never shows it again.
-4. You can hold at most 10 active tokens at a time.
-5. Revoke a token from the same list. Expired and revoked tokens stay
+5. You can hold at most 10 active tokens at a time.
+6. Revoke a token from the same list. Expired and revoked tokens stay
    listed, each with its own badge.
 
 ## Add prumo to your agent

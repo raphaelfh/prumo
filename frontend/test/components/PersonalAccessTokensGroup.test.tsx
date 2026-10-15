@@ -14,6 +14,18 @@ vi.mock('@/services/personalAccessTokenService', async (importOriginal) => ({
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
+const P1 = '11111111-1111-4111-8111-111111111111';
+const P2 = '22222222-2222-4222-8222-222222222222';
+const GONE = '99999999-9999-4999-8999-999999999999';
+type ProjectsState = {isPending: boolean; isError: boolean; isSuccess: boolean; data: {id: string; name: string}[] | undefined};
+const LOADED = (data: {id: string; name: string}[]): ProjectsState => ({isPending: false, isError: false, isSuccess: true, data});
+const PROJECTS_LOADING: ProjectsState = {isPending: true, isError: false, isSuccess: false, data: undefined};
+const PROJECTS_ERROR: ProjectsState = {isPending: false, isError: true, isSuccess: false, data: undefined};
+const {projectsState} = vi.hoisted(() => ({projectsState: {current: undefined as unknown}}));
+vi.mock('@/hooks/useProjectsQuery', () => ({
+  useProjectsQuery: () => ({refetch: vi.fn(), ...(projectsState.current as object)}),
+}));
+
 import {toast} from 'sonner';
 import * as svc from '@/services/personalAccessTokenService';
 import {PersonalAccessTokensGroup} from '@/components/user/PersonalAccessTokensGroup';
@@ -33,6 +45,7 @@ const REVOKED = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  projectsState.current = LOADED([{id: P1, name: 'Alpha review'}, {id: P2, name: 'Beta review'}]);
   vi.stubEnv('VITE_API_URL', 'https://api.test');
 });
 afterEach(() => vi.stubEnv('VITE_API_URL', ''));
@@ -242,5 +255,141 @@ describe('PersonalAccessTokensGroup', () => {
     await userEvent.click(screen.getByRole('button', {name: t('personalAccessTokens', 'revealDone')}));
     await waitFor(() => expect(screen.getByText('prumo_pat_new456…')).toBeInTheDocument());
     expect(document.body.textContent).not.toContain('SECRETTAIL');
+  });
+
+  describe('project restriction', () => {
+    async function openWithName() {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
+      renderGroup();
+      await waitFor(() => expect(screen.getByText(t('personalAccessTokens', 'listEmpty'))).toBeInTheDocument());
+      const dialog = await openCreateDialog();
+      await userEvent.type(within(dialog).getByLabelText(t('personalAccessTokens', 'nameLabel')), 'cli');
+      return dialog;
+    }
+    const submitButton = (dialog: HTMLElement) =>
+      within(dialog).getByRole('button', {name: t('personalAccessTokens', 'createSubmit')});
+
+    it('default: "All my projects" is selected and the request carries no project_ids', async () => {
+      vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
+      const dialog = await openWithName();
+      expect(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsAll')})).toBeChecked();
+
+      await userEvent.click(submitButton(dialog));
+
+      await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
+      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({name: 'cli', scope: 'read', expires_in_days: 90});
+    });
+
+    it('"Only these projects": lists the user\'s projects and posts the selected ids', async () => {
+      vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
+      const dialog = await openWithName();
+      await userEvent.click(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')}));
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Beta review'}));
+      expect(within(dialog).getByRole('checkbox', {name: 'Alpha review'})).not.toBeChecked();
+
+      await userEvent.click(submitButton(dialog));
+
+      await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
+      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({
+        name: 'cli', scope: 'read', expires_in_days: 90, project_ids: [P2],
+      });
+    });
+
+    it('loading: the "Only these projects" option is disabled with a spinner', async () => {
+      projectsState.current = PROJECTS_LOADING;
+      const dialog = await openWithName();
+      expect(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')})).toBeDisabled();
+      expect(within(dialog).getByRole('status', {name: t('personalAccessTokens', 'projectsLoading')})).toBeInTheDocument();
+      expect(submitButton(dialog)).not.toBeDisabled();
+    });
+
+    it('empty: says the user is in no project and disables the option', async () => {
+      projectsState.current = LOADED([]);
+      const dialog = await openWithName();
+      expect(within(dialog).getByText(t('personalAccessTokens', 'projectsEmpty'))).toBeInTheDocument();
+      expect(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')})).toBeDisabled();
+    });
+
+    it('error: shows an inline error and "All my projects" still creates', async () => {
+      projectsState.current = PROJECTS_ERROR;
+      vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
+      const dialog = await openWithName();
+      expect(within(dialog).getByText(t('personalAccessTokens', 'projectsLoadError'))).toBeInTheDocument();
+      expect(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')})).toBeDisabled();
+
+      await userEvent.click(submitButton(dialog));
+      await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
+    });
+
+    it('more than 20 selected: submit is disabled with a hint', async () => {
+      const many = Array.from({length: 21}, (_, i) => ({
+        id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, name: `Project ${i}`,
+      }));
+      projectsState.current = LOADED(many);
+      const dialog = await openWithName();
+      await userEvent.click(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')}));
+      for (const p of many.slice(0, 20)) await userEvent.click(within(dialog).getByRole('checkbox', {name: p.name}));
+      expect(submitButton(dialog)).not.toBeDisabled();
+      expect(within(dialog).queryByText(t('personalAccessTokens', 'projectsTooMany'))).not.toBeInTheDocument();
+
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Project 20'}));
+
+      expect(submitButton(dialog)).toBeDisabled();
+      expect(within(dialog).getByText(t('personalAccessTokens', 'projectsTooMany'))).toBeInTheDocument();
+    }, 15_000);
+
+    it('422 PROJECT_NOT_ACCESSIBLE: shows the inline refusal and keeps the dialog open', async () => {
+      vi.mocked(svc.createMyToken).mockResolvedValue({
+        ok: false, error: new ApiError('PROJECT_NOT_ACCESSIBLE', 'project not accessible', 422),
+      });
+      const dialog = await openWithName();
+      await userEvent.click(within(dialog).getByRole('radio', {name: t('personalAccessTokens', 'projectsOnly')}));
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: 'Alpha review'}));
+      await userEvent.click(submitButton(dialog));
+
+      await waitFor(() => expect(within(dialog).getByText(t('personalAccessTokens', 'projectNotAccessible'))).toBeInTheDocument());
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    const rowWith = (project_ids: string[] | null) => ({...(ACTIVE as object), project_ids}) as never;
+
+    it('row: null project_ids shows "All projects"', async () => {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [rowWith(null)]});
+      renderGroup();
+      await waitFor(() => expect(screen.getByText(t('personalAccessTokens', 'projectsAllBadge'))).toBeInTheDocument());
+    });
+
+    it('row: two ids show "2 projects" and the names in a tooltip', async () => {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [rowWith([P1, P2])]});
+      renderGroup();
+      const badge = await screen.findByText('2 projects');
+      await userEvent.hover(badge);
+      const tip = await screen.findByRole('tooltip');
+      expect(tip).toHaveTextContent('Alpha review');
+      expect(tip).toHaveTextContent('Beta review');
+    });
+
+    it('row: an id with no known name shows "Unavailable project" in the tooltip', async () => {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [rowWith([P1, GONE])]});
+      renderGroup();
+      await userEvent.hover(await screen.findByText('2 projects'));
+      const tip = await screen.findByRole('tooltip');
+      expect(tip).toHaveTextContent('Alpha review');
+      expect(tip).toHaveTextContent(t('personalAccessTokens', 'projectUnavailable'));
+    });
+
+    it.each([
+      ['loading', PROJECTS_LOADING],
+      ['errored', PROJECTS_ERROR],
+    ])('row with projects %s: "2 projects" with no tooltip and no "Unavailable project"', async (_label, state) => {
+      projectsState.current = state;
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [rowWith([P1, GONE])]});
+      renderGroup();
+      const badge = await screen.findByText('2 projects');
+      await userEvent.hover(badge);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain(t('personalAccessTokens', 'projectUnavailable'));
+    });
   });
 });
