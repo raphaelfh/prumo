@@ -320,61 +320,6 @@ class EntryCreateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-# =================== ENTITY TYPE SCHEMAS ===================
-
-
-class ExtractionFieldSchema(BaseModel):
-    """Schema de field de extraction."""
-
-    id: UUID
-    name: str
-    label: str
-    description: str | None = None
-    field_type: str = Field(..., alias="fieldType")
-    is_required: bool = Field(default=False, alias="isRequired")
-    allowed_values: list[str] | None = Field(default=None, alias="allowedValues")
-    unit: str | None = None
-    allowed_units: list[str] | None = Field(default=None, alias="allowedUnits")
-    llm_description: str | None = Field(default=None, alias="llmDescription")
-    sort_order: int = Field(default=0, alias="sortOrder")
-    # ADR-0016 disposition flags. ``allows_no_information`` (migration 0062) is
-    # deliberately absent: this schema is served by no endpoint (it is not in
-    # openapi.json), so carrying the flag here would be dead wire surface.
-    allows_not_applicable: bool = Field(default=False, alias="allowsNotApplicable")
-    allows_not_evaluated: bool = Field(default=False, alias="allowsNotEvaluated")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ExtractionEntityTypeSchema(BaseModel):
-    """Schema de tipo de entidade."""
-
-    id: UUID
-    name: str
-    label: str
-    description: str | None = None
-    cardinality: Literal["one", "many"]
-    is_required: bool = Field(default=False, alias="isRequired")
-    sort_order: int = Field(default=0, alias="sortOrder")
-    parent_entity_type_id: UUID | None = Field(default=None, alias="parentEntityTypeId")
-    fields: list[ExtractionFieldSchema] = []
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ExtractionTemplateSchema(BaseModel):
-    """Schema de template de extraction."""
-
-    id: UUID
-    name: str
-    description: str | None = None
-    framework: Framework
-    version: str
-    entity_types: list[ExtractionEntityTypeSchema] = Field(default=[], alias="entityTypes")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 # =================== INSTANCE SCHEMAS ===================
 
 
