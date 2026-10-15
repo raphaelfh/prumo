@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -17,6 +17,7 @@ from app.services.pat_service import create_token
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 from tests.integration.helpers.engine_setup import client_as
+from tests.integration.helpers.pat_rows import insert_oauth_client, insert_oauth_connection
 
 client_as_reviewer = engine_setup.client_as_reviewer
 
@@ -290,3 +291,155 @@ def test_create_422_contract_types_both_refusals() -> None:
     code_ref = error["properties"]["code"]["$ref"]
     codes = set(components[code_ref.rsplit("/", 1)[-1]]["enum"])
     assert {"TOKEN_LIMIT_REACHED", "PROJECT_NOT_ACCESSIBLE"} <= codes
+
+
+# --- OAuth connections (connected apps, ADR 0022) ------------------------------
+
+_CONNECTIONS = "/api/v1/me/oauth-connections"
+_CONNECTION_FIELDS = {
+    "id",
+    "client_name",
+    "scope",
+    "status",
+    "created_at",
+    "last_used_at",
+    "expires_at",
+}
+
+
+async def _connection_for(db_session: AsyncSession, user_id: UUID, name: str = "Claude") -> UUID:
+    client_id = await insert_oauth_client(db_session, client_name=name)
+    return await insert_oauth_connection(
+        db_session, user_id=user_id, client_id=client_id, name=name
+    )
+
+
+@pytest.mark.asyncio
+async def test_connections_list_is_owner_only_and_kind_scoped(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    mine = await _connection_for(db_session, SEED.reviewer_profile, name="Claude")
+    foreign = await _connection_for(db_session, SEED.primary_profile, name="Other")
+    pat = await client_as_reviewer.post(
+        _BASE, json={"name": "cli", "scope": "read", "expires_in_days": 30}
+    )
+    assert pat.status_code == 201, pat.text
+    pat_id = pat.json()["data"]["token"]["id"]
+
+    resp = await client_as_reviewer.get(_CONNECTIONS)
+
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()["data"]
+    ids = {r["id"] for r in rows}
+    assert str(mine) in ids
+    assert str(foreign) not in ids
+    assert pat_id not in ids
+    row = next(r for r in rows if r["id"] == str(mine))
+    assert set(row) == _CONNECTION_FIELDS
+    assert row["client_name"] == "Claude"
+    assert row["scope"] == "read_write"
+    assert row["status"] == "active"
+    assert row["last_used_at"] is None
+
+    tokens = (await client_as_reviewer.get(_BASE)).json()["data"]
+    assert str(mine) not in {t["id"] for t in tokens}
+    assert pat_id in {t["id"] for t in tokens}
+
+
+@pytest.mark.asyncio
+async def test_expired_connection_lists_as_expired(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    connection_id = await _connection_for(db_session, SEED.reviewer_profile)
+    await db_session.execute(
+        text(
+            "UPDATE public.personal_access_tokens "
+            "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day' "
+            "WHERE id = :id"
+        ),
+        {"id": str(connection_id)},
+    )
+
+    rows = (await client_as_reviewer.get(_CONNECTIONS)).json()["data"]
+
+    assert next(r for r in rows if r["id"] == str(connection_id))["status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_revoke_connection_twice_is_200_revoked(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    connection_id = await _connection_for(db_session, SEED.reviewer_profile)
+
+    for _ in range(2):
+        resp = await client_as_reviewer.delete(f"{_CONNECTIONS}/{connection_id}")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["id"] == str(connection_id)
+        assert resp.json()["data"]["status"] == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_revoke_foreign_missing_or_pat_through_connections_is_404(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    foreign = await _connection_for(db_session, SEED.primary_profile, name="Secret App")
+    pat = await client_as_reviewer.post(
+        _BASE, json={"name": "cli", "scope": "read", "expires_in_days": 30}
+    )
+    pat_id = pat.json()["data"]["token"]["id"]
+
+    responses = [
+        await client_as_reviewer.delete(f"{_CONNECTIONS}/{target}")
+        for target in (foreign, uuid4(), pat_id)
+    ]
+
+    assert [r.status_code for r in responses] == [404, 404, 404], [r.text for r in responses]
+    messages = {r.json()["error"]["message"] for r in responses}
+    assert messages == {"Connection not found"}
+    assert "Secret App" not in responses[0].text
+    still_active = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM public.personal_access_tokens "
+                "WHERE id IN (:a, :b) AND revoked_at IS NULL"
+            ),
+            {"a": str(foreign), "b": pat_id},
+        )
+    ).scalar_one()
+    assert still_active == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_connections_route_is_unchanged(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    oauth_id = await _connection_for(db_session, SEED.reviewer_profile)
+
+    resp = await client_as_reviewer.get("/api/v1/me/connections")
+
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()["data"]
+    assert isinstance(rows, list)
+    assert str(oauth_id) not in {r["id"] for r in rows}
+    spec = create_app().openapi()
+    schema = spec["paths"]["/api/v1/me/connections"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert schema["$ref"].endswith("ApiResponse_list_LlmConnectionRead__")
+
+
+@pytest.mark.asyncio
+async def test_connection_routes_rate_limited(client_as_reviewer: AsyncClient) -> None:
+    for _ in range(60):
+        resp = await client_as_reviewer.get(_CONNECTIONS)
+        assert resp.status_code == 200, resp.text
+    limited_get = await client_as_reviewer.get(_CONNECTIONS)
+    assert limited_get.status_code == 429, limited_get.text
+
+    # slowapi buckets by URL, so the budget is per connection id: one id throughout.
+    missing = f"{_CONNECTIONS}/{uuid4()}"
+    for _ in range(20):
+        resp = await client_as_reviewer.delete(missing)
+        assert resp.status_code == 404, resp.text
+    limited_delete = await client_as_reviewer.delete(missing)
+    assert limited_delete.status_code == 429, limited_delete.text

@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.mcp_oauth_service import revoke_connection
 from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
 from tests.integration.mcp.conftest import expected_challenge
@@ -221,3 +222,21 @@ async def test_ai_run_scope_never_reachable(oauth_http_client: AsyncClient) -> N
     location = r.headers.get("location", "")
     assert "/oauth/consent" not in location
     assert parse_qs(urlsplit(location).query)["error"] == ["invalid_scope"]
+
+
+async def test_revoke_connection_ends_mcp_and_refresh(
+    oauth_http_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """The service behind DELETE /api/v1/me/oauth-connections/{id} ends the
+    connection everywhere: its access token at /mcp and its refresh token."""
+    tokens = await connect(oauth_http_client, db_session, SEED.primary_profile)
+    assert (await _list_tools(oauth_http_client, tokens.access)).status_code == 200
+
+    await revoke_connection(
+        db_session, user_id=SEED.primary_profile, connection_id=tokens.connection_id
+    )
+
+    _assert_rejected(await _list_tools(oauth_http_client, tokens.access))
+    r = await refresh(oauth_http_client, tokens.client_id, tokens.refresh)
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "invalid_grant"

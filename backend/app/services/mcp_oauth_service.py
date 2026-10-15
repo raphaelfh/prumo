@@ -4,7 +4,8 @@ Functions take the caller's session and never commit; they return the SDK's
 pydantic types and raise its protocol errors (``RegistrationError``,
 ``AuthorizeError``, ``TokenError``), which its handlers turn into RFC
 6749/7591 responses. The consent functions serve the ``/api/v1/oauth`` routes
-instead and raise ``AppError`` subclasses, which the global handler maps.
+instead and raise ``AppError`` subclasses, which the global handler maps; the
+connected-apps functions serve ``/api/v1/me/oauth-connections``.
 
 Clocks: a timestamp is compared on the clock that wrote it. Request and code
 times (``expires_at``, ``decided_at``, ``code_expires_at``) are app-clock
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -32,7 +34,18 @@ from mcp.server.auth.provider import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
-from sqlalchemy import ColumnElement, and_, delete, exists, func, insert, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    insert,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,12 +55,19 @@ from app.core.integrity import violates_constraint
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
 from app.schemas.mcp_auth import McpPrincipal
-from app.schemas.mcp_oauth import OAuthConsentRefusalCode, OAuthConsentRequestRead
+from app.schemas.mcp_oauth import (
+    OAuthConnectionRead,
+    OAuthConsentRefusalCode,
+    OAuthConsentRequestRead,
+)
+from app.schemas.personal_access_token import TokenStatus
 from app.services.pat_service import (
     active_clause,
     hash_secret,
     new_secret,
     revoke_credential,
+    revoke_owned,
+    status_expr,
     user_locked_out,
 )
 
@@ -317,6 +337,48 @@ async def decide_request(
         code_expires_at=now + CODE_TTL,
     )
     return construct_redirect_uri(row.redirect_uri, code=code, state=row.state)
+
+
+# --------------------------------------------------------------------------- connected apps
+
+
+def _connection_read(row: PersonalAccessToken, status: TokenStatus) -> OAuthConnectionRead:
+    return OAuthConnectionRead(
+        id=row.id,
+        client_name=row.name,
+        scope=row.scope,
+        status=status,
+        created_at=row.created_at,
+        last_used_at=row.last_used_at,
+        expires_at=row.expires_at,
+    )
+
+
+async def list_connections(db: AsyncSession, *, user_id: UUID) -> list[OAuthConnectionRead]:
+    """The user's OAuth connections, active first, then newest (at most 50)."""
+    rows = (
+        await db.execute(
+            select(PersonalAccessToken, status_expr().label("status"))
+            .where(PersonalAccessToken.user_id == user_id, PersonalAccessToken.kind == "oauth")
+            .order_by(
+                case((active_clause(), 0), else_=1),
+                PersonalAccessToken.created_at.desc(),
+                PersonalAccessToken.id.desc(),
+            )
+            .limit(50)
+        )
+    ).all()
+    return [_connection_read(row, cast("TokenStatus", status)) for row, status in rows]
+
+
+async def revoke_connection(
+    db: AsyncSession, *, user_id: UUID, connection_id: UUID
+) -> OAuthConnectionRead:
+    """Revoke the user's own connection; idempotent. Its access and refresh
+    tokens stop working at once (both lookups require an active connection).
+    ``TokenNotFoundError`` for a missing, foreign or PAT id alike."""
+    row = await revoke_owned(db, user_id=user_id, token_id=connection_id, kind="oauth")
+    return _connection_read(row, "revoked")
 
 
 # --------------------------------------------------------------------------- tokens

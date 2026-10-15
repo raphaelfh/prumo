@@ -1,4 +1,5 @@
-"""Schemas for the ``/api/v1/oauth`` consent routes (ADR 0022).
+"""Schemas for the ``/api/v1/oauth`` consent routes and the
+``/api/v1/me/oauth-connections`` connected-apps routes (ADR 0022).
 
 Class docstrings and ``Field(description=...)`` are published in
 ``openapi.json``.
@@ -8,8 +9,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.personal_access_token import TokenScope, TokenStatus
 
 
 class OAuthConsentRefusalCode(StrEnum):
@@ -70,3 +74,17 @@ class OAuthConsentRefusalResponse(BaseModel):
     ok: bool = False
     error: OAuthConsentRefusalError
     trace_id: str | None = None
+
+
+class OAuthConnectionRead(BaseModel):
+    """An app the user connected through OAuth; never carries a token."""
+
+    id: UUID
+    client_name: str = Field(description="The name the app registered with.")
+    scope: TokenScope = Field(description="What the user granted the app.")
+    status: TokenStatus
+    created_at: datetime = Field(description="When the user approved the app.")
+    last_used_at: datetime | None = Field(description="Last time the app called `/mcp`.")
+    expires_at: datetime = Field(
+        description="When the connection ends unless the user approves the app again."
+    )

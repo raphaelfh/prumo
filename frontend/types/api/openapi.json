@@ -1414,6 +1414,54 @@
         "title": "ApiResponse[NoneType]",
         "type": "object"
       },
+      "ApiResponse_OAuthConnectionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthConnectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OAuthConnectionRead]",
+        "type": "object"
+      },
       "ApiResponse_OAuthConsentDecisionRead_": {
         "properties": {
           "data": {
@@ -3528,6 +3576,58 @@
           "ok"
         ],
         "title": "ApiResponse[list[LlmConnectionRead]]",
+        "type": "object"
+      },
+      "ApiResponse_list_OAuthConnectionRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OAuthConnectionRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[OAuthConnectionRead]]",
         "type": "object"
       },
       "ApiResponse_list_PersonalAccessTokenRead__": {
@@ -7016,6 +7116,75 @@
           }
         },
         "title": "MarkReadyRequest",
+        "type": "object"
+      },
+      "OAuthConnectionRead": {
+        "description": "An app the user connected through OAuth; never carries a token.",
+        "properties": {
+          "client_name": {
+            "description": "The name the app registered with.",
+            "title": "Client Name",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the user approved the app.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the connection ends unless the user approves the app again.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last time the app called `/mcp`.",
+            "title": "Last Used At"
+          },
+          "scope": {
+            "description": "What the user granted the app.",
+            "enum": [
+              "read",
+              "read_write"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_name",
+          "scope",
+          "status",
+          "created_at",
+          "last_used_at",
+          "expires_at"
+        ],
+        "title": "OAuthConnectionRead",
         "type": "object"
       },
       "OAuthConsentDecisionRead": {
@@ -14105,6 +14274,89 @@
           }
         ],
         "summary": "Verify My Connection",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/oauth-connections": {
+      "get": {
+        "operationId": "list_my_connections_api_v1_me_oauth_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_OAuthConnectionRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List My Connections",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/oauth-connections/{connection_id}": {
+      "delete": {
+        "operationId": "revoke_my_connection_api_v1_me_oauth_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OAuthConnectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Connection not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Revoke My Connection",
         "tags": [
           "me"
         ]

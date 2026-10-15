@@ -27,12 +27,13 @@ from app.core.config import Settings, settings
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
 from app.services import mcp_oauth_service as svc
-from app.services.pat_service import hash_secret
+from app.services.pat_service import TokenNotFoundError, hash_secret, revoke_credential
 from tests.integration.conftest import SEED
 from tests.integration.helpers.pat_rows import (
     insert_oauth_client,
     insert_oauth_connection,
     insert_oauth_request,
+    insert_pat_row,
 )
 from tests.integration.mcp.oauth_flow import approve
 
@@ -1030,3 +1031,93 @@ async def test_prune_deletes_exactly_the_stale_rows(db_session: AsyncSession) ->
     assert not await _exists(db_session, _TOKEN, h=hash_secret(expired_access))
     assert await _exists(db_session, _TOKEN, h=hash_secret(recently_rotated))
     assert not await _exists(db_session, _TOKEN, h=hash_secret(long_rotated))
+
+
+# --------------------------------------------------------------------------- connected apps
+
+
+async def _expire_connection(db: AsyncSession, connection_id: UUID) -> None:
+    await _set(
+        db,
+        "UPDATE public.personal_access_tokens "
+        "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day' "
+        "WHERE id = :id",
+        id=connection_id,
+    )
+
+
+async def test_list_connections_returns_only_the_callers_oauth_rows(
+    db_session: AsyncSession,
+) -> None:
+    me = SEED.reviewer_profile
+    active = await insert_oauth_connection(
+        db_session, user_id=me, client_id=await insert_oauth_client(db_session), name="Claude"
+    )
+    revoked = await insert_oauth_connection(
+        db_session, user_id=me, client_id=await insert_oauth_client(db_session), name="Cursor"
+    )
+    await revoke_credential(db_session, revoked)
+    expired = await insert_oauth_connection(
+        db_session, user_id=me, client_id=await insert_oauth_client(db_session), name="Zed"
+    )
+    await _expire_connection(db_session, expired)
+    foreign = await insert_oauth_connection(
+        db_session,
+        user_id=SEED.primary_profile,
+        client_id=await insert_oauth_client(db_session),
+    )
+    pat = await insert_pat_row(db_session)
+
+    rows = await svc.list_connections(db_session, user_id=me)
+
+    by_id = {row.id: row for row in rows}
+    assert set(by_id) == {active, revoked, expired}
+    assert foreign not in by_id and pat not in by_id
+    assert rows[0].id == active  # active first
+    assert by_id[active].status == "active"
+    assert by_id[active].client_name == "Claude"
+    assert by_id[active].scope == "read_write"
+    assert by_id[revoked].status == "revoked"
+    assert by_id[expired].status == "expired"
+
+
+async def test_revoke_connection_revokes_an_owned_row_idempotently(
+    db_session: AsyncSession,
+) -> None:
+    connection_id = await insert_oauth_connection(
+        db_session,
+        user_id=SEED.reviewer_profile,
+        client_id=await insert_oauth_client(db_session),
+    )
+
+    first = await svc.revoke_connection(
+        db_session, user_id=SEED.reviewer_profile, connection_id=connection_id
+    )
+    second = await svc.revoke_connection(
+        db_session, user_id=SEED.reviewer_profile, connection_id=connection_id
+    )
+
+    assert first.id == second.id == connection_id
+    assert first.status == second.status == "revoked"
+    assert (await _connection(db_session, connection_id)).revoked_at is not None
+
+
+async def test_revoke_connection_refuses_a_foreign_row_and_a_pat(
+    db_session: AsyncSession,
+) -> None:
+    foreign = await insert_oauth_connection(
+        db_session,
+        user_id=SEED.primary_profile,
+        client_id=await insert_oauth_client(db_session),
+    )
+    pat = await insert_pat_row(db_session)  # the primary profile's own PAT
+
+    with pytest.raises(TokenNotFoundError):
+        await svc.revoke_connection(
+            db_session, user_id=SEED.reviewer_profile, connection_id=foreign
+        )
+    with pytest.raises(TokenNotFoundError):
+        await svc.revoke_connection(db_session, user_id=SEED.primary_profile, connection_id=pat)
+
+    assert (await _connection(db_session, foreign)).revoked_at is None
+    assert (await _connection(db_session, pat)).revoked_at is None

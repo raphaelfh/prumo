@@ -573,6 +573,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/oauth-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Connections */
+        get: operations["list_my_connections_api_v1_me_oauth_connections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/oauth-connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke My Connection */
+        delete: operations["revoke_my_connection_api_v1_me_oauth_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/providers": {
         parameters: {
             query?: never;
@@ -2470,6 +2504,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[OAuthConnectionRead] */
+        ApiResponse_OAuthConnectionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["OAuthConnectionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[OAuthConsentDecisionRead] */
         ApiResponse_OAuthConsentDecisionRead_: {
             /** @description Dados da resposta */
@@ -3209,6 +3260,26 @@ export interface components {
              * @description Dados da resposta
              */
             data?: components["schemas"]["LlmConnectionRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[OAuthConnectionRead]] */
+        ApiResponse_list_OAuthConnectionRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["OAuthConnectionRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4861,6 +4932,50 @@ export interface components {
              * @default true
              */
             ready: boolean;
+        };
+        /**
+         * OAuthConnectionRead
+         * @description An app the user connected through OAuth; never carries a token.
+         */
+        OAuthConnectionRead: {
+            /**
+             * Client Name
+             * @description The name the app registered with.
+             */
+            client_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the user approved the app.
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description When the connection ends unless the user approves the app again.
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description Last time the app called `/mcp`.
+             */
+            last_used_at: string | null;
+            /**
+             * Scope
+             * @description What the user granted the app.
+             * @enum {string}
+             */
+            scope: "read" | "read_write";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "revoked";
         };
         /**
          * OAuthConsentDecisionRead
@@ -8407,6 +8522,78 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_LlmConnectionVerifyResult_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_connections_api_v1_me_oauth_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_OAuthConnectionRead__"];
+                };
+            };
+            /** @description Missing or invalid Supabase session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_my_connection_api_v1_me_oauth_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_OAuthConnectionRead_"];
+                };
+            };
+            /** @description Missing or invalid Supabase session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
