@@ -36,7 +36,11 @@ const JUDGMENT: ExtractionField = {
   field_type: 'select',
   is_required: false,
   validation_schema: null,
-  allowed_values: ['Low', 'High', 'Unclear'],
+  allowed_values: [
+    { value: 'Low', label: 'Low' },
+    { value: 'High', label: 'High' },
+    { value: 'Unclear', label: 'Unclear' },
+  ],
   unit: null,
   allowed_units: null,
   llm_description: null,

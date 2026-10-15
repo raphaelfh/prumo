@@ -4,6 +4,8 @@
  * These mirror the FastAPI schemas in backend/app/schemas/extraction_run.py.
  */
 
+import type {OptionItem} from '@/lib/extraction/options';
+
 export interface CreateConsensusRequest {
   instance_id: string;
   field_id: string;
@@ -131,7 +133,7 @@ export interface RunViewFieldResponse {
   field_type: string;
   is_required: boolean;
   validation_schema: unknown | null;
-  allowed_values: unknown | null;
+  allowed_values: OptionItem[] | null;
   unit: string | null;
   allowed_units: unknown | null;
   sort_order: number;

@@ -9,6 +9,8 @@
 
 import {z} from 'zod';
 
+import type {OptionItem} from '@/lib/extraction/options';
+
 // =================== ENUMS ===================
 
 export type ExtractionFieldType = 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
@@ -65,7 +67,7 @@ export interface ExtractionField {
   field_type: ExtractionFieldType;
   is_required: boolean;
   validation_schema: any;
-  allowed_values: string[] | null;
+  allowed_values: OptionItem[] | null;
   unit: string | null;
     allowed_units: string[] | null; // Configurable alternative units for number fields
     llm_description: string | null; // Specific instruction for AI extraction
@@ -105,6 +107,12 @@ export interface ExtractionInstance {
 
 
 // =================== ZOD SCHEMAS (Runtime validation) ===================
+
+/** Mirrors backend `OptionItem`: `value` is the stored code, `label` what a person reads. */
+const OptionItemSchema = z.object({
+  value: z.string().min(1).max(100),
+  label: z.string().min(1).max(100),
+}).strict();
 
 /**
  * Zod schema for extraction field validation
@@ -155,17 +163,13 @@ export const ExtractionFieldSchema = z.object({
     .optional()
     .nullable(),
   
-  allowed_values: z.array(z.string())
+  allowed_values: z.array(OptionItemSchema)
       .min(1, 'Must have at least one allowed value')
       .max(100, 'Maximum of 100 allowed values')
     .optional()
     .nullable()
     .refine(
-      (values) => {
-        if (!values) return true;
-        const unique = new Set(values);
-        return unique.size === values.length;
-      },
+      (values) => !values || new Set(values.map((o) => o.value)).size === values.length,
         {message: 'Allowed values cannot have duplicates'}
     ),
 

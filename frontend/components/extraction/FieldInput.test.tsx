@@ -63,7 +63,7 @@ describe('FieldInput disposition wiring', () => {
     async (fieldType) => {
       const user = userEvent.setup();
       const onChange = renderField(
-        makeField({ field_type: fieldType, allowed_values: fieldType === 'select' ? ['Yes', 'No'] : null }),
+        makeField({ field_type: fieldType, allowed_values: fieldType === 'select' ? [{ value: 'Yes', label: 'Yes' }] : null }),
         '',
       );
       await user.click(screen.getByRole('button', { name: 'dispositionNoInformation' }));
@@ -75,11 +75,10 @@ describe('FieldInput disposition wiring', () => {
     renderField(
       makeField({
         field_type: 'select',
-        // Cast until ExtractionField.allowed_values takes the served OptionItem[] shape.
         allowed_values: [
           { value: 'Y', label: 'Yes' },
           { value: 'N', label: 'No' },
-        ] as unknown as ExtractionField['allowed_values'],
+        ],
       }),
       'Y',
     );
@@ -87,7 +86,9 @@ describe('FieldInput disposition wiring', () => {
   });
 
   it('renders a legacy bare-string option as itself', () => {
-    renderField(makeField({ field_type: 'select', allowed_values: ['Yes', 'No'] }), 'Yes');
+    // A PostgREST read of an unmigrated row may still carry string[].
+    const legacy = ['Yes', 'No'] as unknown as ExtractionField['allowed_values'];
+    renderField(makeField({ field_type: 'select', allowed_values: legacy }), 'Yes');
     expect(screen.getByRole('combobox')).toHaveTextContent('Yes');
   });
 

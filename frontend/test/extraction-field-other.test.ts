@@ -26,7 +26,10 @@ describe('ExtractionField - allow_other flags', () => {
       label: 'Origem dos Dados',
       field_type: 'select',
       is_required: false,
-      allowed_values: ['Registro A', 'Registro B'],
+      allowed_values: [
+        {value: 'Registro A', label: 'Registro A'},
+        {value: 'Registro B', label: 'Registro B'},
+      ],
       allow_other: true,
       other_label: 'Outro (especificar)',
       other_placeholder: 'Digite a origem',
@@ -41,7 +44,10 @@ describe('ExtractionField - allow_other flags', () => {
       label: 'Origem dos Dados (Multi)',
       field_type: 'multiselect',
       is_required: false,
-      allowed_values: ['Registro A', 'Registro B'],
+      allowed_values: [
+        {value: 'Registro A', label: 'Registro A'},
+        {value: 'Registro B', label: 'Registro B'},
+      ],
       allow_other: true,
       sort_order: 0,
     });
