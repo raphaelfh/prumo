@@ -54,7 +54,7 @@ class ValueContractError(AppError):
         )
 
 
-_ENVELOPE_KEYS = frozenset({"value", "unit", "absent_reason"})
+ENVELOPE_KEYS = frozenset({"value", "unit", "absent_reason"})
 
 _MARKER_FLAG: dict[str, str] = {
     AbsentReason.NO_INFORMATION.value: "allows_no_information",
@@ -70,7 +70,7 @@ def _refuse(field: RunViewField, reason: ValueContractReason, accepts: str) -> V
 
 
 def _is_envelope(raw: Any) -> bool:
-    return isinstance(raw, dict) and "value" in raw and set(raw) <= _ENVELOPE_KEYS
+    return isinstance(raw, dict) and "value" in raw and set(raw) <= ENVELOPE_KEYS
 
 
 def _envelope(raw: Any, field: RunViewField) -> dict[str, Any]:
