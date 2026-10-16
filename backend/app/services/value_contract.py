@@ -69,19 +69,20 @@ def _refuse(field: RunViewField, reason: ValueContractReason, accepts: str) -> V
     )
 
 
-def _is_envelope(raw: Any) -> bool:
+def is_envelope(raw: Any) -> bool:
+    """A ``{"value": ...}`` dict whose keys stay within ``ENVELOPE_KEYS``."""
     return isinstance(raw, dict) and "value" in raw and set(raw) <= ENVELOPE_KEYS
 
 
 def _envelope(raw: Any, field: RunViewField) -> dict[str, Any]:
     """Rule 1: a strict envelope, with one UI double wrap merged up."""
     malformed = _refuse(field, "MALFORMED_ENVELOPE", 'a {"value": ...} envelope')
-    if not _is_envelope(raw):
+    if not is_envelope(raw):
         raise malformed
     inner = raw["value"]
     if not (isinstance(inner, dict) and "value" in inner):
         return dict(raw)
-    if not _is_envelope(inner) or (isinstance(inner["value"], dict) and "value" in inner["value"]):
+    if not is_envelope(inner) or (isinstance(inner["value"], dict) and "value" in inner["value"]):
         raise malformed
     # The inner envelope's siblings fill in only what the outer one lacks.
     outer = {k: v for k, v in raw.items() if k != "value" and v is not None}

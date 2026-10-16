@@ -128,3 +128,59 @@ def test_peel_keeps_the_outermost_unit() -> None:
 
 def test_peel_none() -> None:
     assert peel_envelope(None) == PeeledValue(value=None, unit=None, absent_reason=None)
+
+
+_LONG_SELECT = _field("select", options={"c" * 50: "L" * 120})
+
+
+@pytest.mark.parametrize(
+    ("raw", "field", "expected"),
+    [
+        (
+            {"value": "c" * 50},
+            _LONG_SELECT,
+            {"value": "c" * 50, "label": "L" * 80, "truncated": True},
+        ),
+        (
+            {"value": "z" * 120},
+            _SELECT,
+            {"value": "z" * 80, "truncated": True},
+        ),
+        (
+            {"value": ["x" * 30, "y" * 30, "w" * 30]},
+            _field("text"),
+            {"value": ["x" * 30, "y" * 30, "w" * 20], "truncated": True},
+        ),
+        (
+            {"value": ["a", "b"]},
+            _field("multiselect", options={"a": "A" * 50, "b": "B" * 50}),
+            {"value": ["a", "b"], "label": ["A" * 50, "B" * 30], "truncated": True},
+        ),
+        (
+            {"value": {"selected": ["c" * 50], "other_texts": []}},
+            _LONG_SELECT,
+            {"value": ["c" * 50], "label": ["L" * 80], "truncated": True},
+        ),
+        (
+            {"value": {"selected": "other", "other_text": "t" * 120}},
+            _SELECT,
+            {"value": "other", "other_text": "t" * 80, "truncated": True},
+        ),
+        (
+            {"value": {"selected": ["a"], "other_texts": ["t" * 120]}},
+            _MULTI,
+            {"value": ["a"], "label": ["Alpha"], "other_text": "t" * 80, "truncated": True},
+        ),
+    ],
+    ids=[
+        "select-label",
+        "select-code",
+        "text-list",
+        "multiselect-labels",
+        "multiselect-other-labels",
+        "select-other-text",
+        "multiselect-other-text",
+    ],
+)
+def test_every_string_branch_is_capped(raw: Any, field: McpFieldInfo, expected: dict) -> None:
+    assert _render(raw, field, text_cap=80) == expected

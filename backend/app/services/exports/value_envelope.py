@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from app.models.extraction import ExtractionFieldType
-from app.services.value_contract import ENVELOPE_KEYS
+from app.services.value_contract import is_envelope
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
     strip_verification,
@@ -53,10 +53,6 @@ class PeeledValue:
     absent_reason: str | None
 
 
-def _is_envelope(raw: Any) -> bool:
-    return isinstance(raw, dict) and "value" in raw and set(raw) <= ENVELOPE_KEYS
-
-
 def peel_envelope(raw: Any) -> PeeledValue:
     """The one envelope peel shared by the export resolver and the MCP renderer.
 
@@ -73,7 +69,7 @@ def peel_envelope(raw: Any) -> PeeledValue:
         reason = value_absent_reason(raw)
         if reason is not None:
             return PeeledValue(value=None, unit=None, absent_reason=reason)
-        if not _is_envelope(raw):
+        if not is_envelope(raw):
             return PeeledValue(value=raw, unit=unit, absent_reason=None)
         if unit is None and isinstance(raw.get("unit"), str) and raw["unit"]:
             unit = raw["unit"]
@@ -97,7 +93,7 @@ def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScala
     rendered = _render_payload(peeled.value, field)
     # A unit decorates only a value that came in an envelope: a bare number
     # (an AI-metadata column, say) is already final.
-    if not _is_envelope(bare):
+    if not is_envelope(bare):
         return rendered
     return _apply_unit(rendered, peeled.unit, field)
 

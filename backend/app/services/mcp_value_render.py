@@ -55,9 +55,31 @@ def _as_number(value: Any) -> int | float | None:
     return None
 
 
-def _labels(codes: list[str], options: dict[str, str]) -> list[str] | None:
+def _capped_list(items: list[str], cap: int) -> tuple[list[str], bool]:
+    """Keep items while their total length stays within `cap`; the item that
+    crosses it is cut to the remainder (dropped when nothing remains)."""
+    kept: list[str] = []
+    room = cap
+    for item in items:
+        if len(item) > room:
+            if room:
+                kept.append(item[:room])
+            return kept, True
+        kept.append(item)
+        room -= len(item)
+    return kept, False
+
+
+def _codes_with_labels(
+    codes: list[str], options: dict[str, str], cap: int
+) -> tuple[list[str], list[str] | None, bool]:
+    """Codes and (when any differs) their labels, each list capped to `cap`."""
+    codes, codes_cut = _capped_list(codes, cap)
     labels = [options.get(code, code) for code in codes]
-    return labels if labels != codes else None
+    if labels == codes:
+        return codes, None, codes_cut
+    labels, labels_cut = _capped_list(labels, cap)
+    return codes, labels, codes_cut or labels_cut
 
 
 def mcp_value(raw: Any, field: McpFieldInfo, *, text_cap: int) -> McpValue:
@@ -82,19 +104,23 @@ def mcp_value(raw: Any, field: McpFieldInfo, *, text_cap: int) -> McpValue:
         return McpValue(value="other", other_text=other or None, truncated=truncated or None)
 
     if isinstance(value, dict) and isinstance(value.get("selected"), list):
-        codes = [str(c) for c in value["selected"] if c is not None]
+        codes, labels, codes_cut = _codes_with_labels(
+            [str(c) for c in value["selected"] if c is not None], field.options, text_cap
+        )
         texts = [str(t) for t in value.get("other_texts") or [] if t]
-        other, truncated = _capped("; ".join(texts), text_cap)
+        other, other_cut = _capped("; ".join(texts), text_cap)
         return McpValue(
             value=codes,
-            label=_labels(codes, field.options),
+            label=labels,
             other_text=other or None,
-            truncated=truncated or None,
+            truncated=(codes_cut or other_cut) or None,
         )
 
     if isinstance(value, list):
-        codes = [str(c) for c in value if c is not None]
-        return McpValue(value=codes, label=_labels(codes, field.options))
+        codes, labels, truncated = _codes_with_labels(
+            [str(c) for c in value if c is not None], field.options, text_cap
+        )
+        return McpValue(value=codes, label=labels, truncated=truncated or None)
 
     if isinstance(value, bool | int | float):
         return McpValue(value=value)
@@ -102,7 +128,9 @@ def mcp_value(raw: Any, field: McpFieldInfo, *, text_cap: int) -> McpValue:
     if isinstance(value, str):
         label = field.options.get(value)
         if label is not None and label != value:
-            return McpValue(value=value, label=label)
+            code, code_cut = _capped(value, text_cap)
+            label, label_cut = _capped(label, text_cap)
+            return McpValue(value=code, label=label, truncated=(code_cut or label_cut) or None)
 
     text, truncated = _capped(str(value), text_cap)
     return McpValue(value=text, truncated=truncated or None)
