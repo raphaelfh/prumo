@@ -423,8 +423,9 @@ async def test_each_child_section_reads_what_the_previous_ones_found(
     db_session: AsyncSession,
 ) -> None:
     """Summarized memory: a later section's prompt carries the earlier
-    sections' first three values (``...`` when there are more), never the
-    first section's own prompt."""
+    sections' first three populated values (``...`` when there are more;
+    unanswered fields are skipped, never printed as "None"), never the first
+    section's own prompt."""
     parent, _children = await _entry_with_children(
         db_session, ("first_child", ("a", "b", "c", "d")), ("second_child", ("e",))
     )
@@ -439,7 +440,8 @@ async def test_each_child_section_reads_what_the_previous_ones_found(
     assert result.successful_sections == 2
     first, second = (c.user_prompt for c in fake.field_calls())
     assert "CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS" not in first
-    assert "1. first_child: first_child: a: alpha, b: beta, c: None..." in second
+    assert "1. first_child: first_child: a: alpha, b: beta\n" in second
+    assert "None" not in second
 
 
 async def test_an_entry_without_child_sections_is_an_empty_batch(
