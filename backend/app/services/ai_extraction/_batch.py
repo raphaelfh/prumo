@@ -21,6 +21,7 @@ from app.services.ai_extraction._sections import extract_into_instances
 from app.services.current_run import CurrentRunResolver
 from app.services.extraction_run_write import open_run_for_write
 from app.services.run_prompt_context import resolve_run_prompt_context
+from app.services.value_semantics import unwrap_value_envelope, value_absent_reason
 
 #: Summary length a section contributes to the memory of the next ones.
 _MAX_SUMMARY_LENGTH = 200
@@ -211,15 +212,18 @@ async def _section_with_memory(
 
 def _summary(entity_type: Any, extracted: dict[str, Any]) -> str:
     """The first three populated fields, at most 200 characters — what the
-    next sections' prompts read about this one."""
+    next sections' prompts read about this one. An empty answer or an
+    absence marker is not data: it is skipped, never printed as "None"."""
     name = entity_type.label or entity_type.name
-    if not extracted:
-        return f"{name}: No data extracted"
-    key_fields = [
-        f"{field_name}: {str(answer.get('value'))[:50]}"
-        for field_name, answer in list(extracted.items())[:3]
+    populated = [
+        (field_name, unwrap_value_envelope(answer))
+        for field_name, answer in extracted.items()
+        if value_absent_reason(answer) is None and unwrap_value_envelope(answer) is not None
     ]
-    more = "..." if len(extracted) > 3 else ""
+    if not populated:
+        return f"{name}: No data extracted"
+    key_fields = [f"{field_name}: {str(value)[:50]}" for field_name, value in populated[:3]]
+    more = "..." if len(populated) > 3 else ""
     summary = f"{name}: {', '.join(key_fields)}{more}"
     if len(summary) > _MAX_SUMMARY_LENGTH:
         return summary[: _MAX_SUMMARY_LENGTH - 3] + "..."

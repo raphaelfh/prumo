@@ -62,7 +62,7 @@ from app.services.extraction_run_read_service import (
     is_run_arbitrator,
 )
 from app.services.extraction_snapshot import live_entity_types
-from app.services.mcp_value_render import McpFieldInfo, mcp_value
+from app.services.mcp_value_render import McpFieldInfo, capped_values, mcp_value
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
@@ -75,14 +75,14 @@ from app.utils.opaque_cursor import (
     decode_cursor,
     encode_cursor,
 )
-from app.utils.text_caps import cap_text, join_capped
+from app.utils.text_caps import cap_text
 
 _PAGE_BUDGET = 28_000
 _CONCISE_VALUE_CAP = 80
 _DETAILED_VALUE_CAP = 1_000
 _EVIDENCE_QUOTE_CAP = 300
 _EVIDENCE_PER_ROW_CAP = 3
-_CONCISE_JOIN_CAP = 1_000  # one value per instance: the join is bounded too (F4)
+_CONCISE_CELL_CAP = 1_000  # one value per instance: the cell is bounded too (F4)
 #: Reserved for `next_cursor` itself, same reasoning as `templates.py`: the
 #: envelope is measured with it `None`, but a non-last page replaces that
 #: with an opaque base64 cursor string a few chars longer.
@@ -198,19 +198,6 @@ class _Resolved:
     created_at: Any
     proposal_id: UUID | None
     decision_id: UUID | None
-
-
-def _short(value: Any, *, limit: int) -> str:
-    """`_short(value)` (spec §5.1): an absent-reason marker reads as "no
-    information"; otherwise the value envelope's own `value` key (or the raw
-    value, e.g. a legacy/AI shape with no envelope) -- lists joined with
-    ", ", everything else stringified and capped."""
-    if isinstance(value, dict) and value.get("absent_reason") is not None:
-        return "no information"
-    v = value.get("value", value) if isinstance(value, dict) else value
-    if isinstance(v, list):
-        v = ", ".join(str(x) for x in v)
-    return str(v)[:limit]
 
 
 def _coord_dicts(
@@ -385,6 +372,7 @@ def _evidence_for(
         out.append(
             McpEvidence(
                 quote=ev.text_content[:_EVIDENCE_QUOTE_CAP],
+                quote_truncated=len(ev.text_content) > _EVIDENCE_QUOTE_CAP,
                 locator=f"p{ev.page_number}" if ev.page_number is not None else None,
             )
         )
@@ -679,10 +667,11 @@ async def list_agent_extractions(
                 if not resolved_lists:
                     continue
                 cells = [_concise_cell(group) for group in resolved_lists]
-                value_str = join_capped(
-                    [_short(c.value, limit=_CONCISE_VALUE_CAP) for c in cells],
-                    sep=" | ",
-                    cap=_CONCISE_JOIN_CAP,
+                cell_values, values_truncated = capped_values(
+                    [c.value for c in cells],
+                    info,
+                    text_cap=_CONCISE_VALUE_CAP,
+                    total_cap=_CONCISE_CELL_CAP,
                 )
                 human_groups = [group for group in resolved_lists if group[0].decider == "human"]
                 disagreement = None
@@ -695,7 +684,8 @@ async def list_agent_extractions(
                     _ConcisePackItem(
                         field_id=field_id,
                         cell=McpConciseCell(
-                            value=value_str,
+                            values=cell_values,
+                            values_truncated=values_truncated,
                             ai_only=all(c.ai_only for c in cells),
                             disagreement=disagreement,
                         ),

@@ -22,14 +22,9 @@ class McpRunRef(BaseModel):
     stage: str
 
 
-class McpConciseCell(BaseModel):
-    value: str | None
-    ai_only: bool
-    disagreement: bool | None
-
-
 class McpEvidence(BaseModel):
     quote: str
+    quote_truncated: bool
     locator: str | None
 
 
@@ -51,6 +46,16 @@ class McpValue(BaseModel):
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data = handler(self)
         return {k: v for k, v in data.items() if k == "value" or v is not None}
+
+
+class McpConciseCell(BaseModel):
+    """One question for one article: a typed value per instance, in instance
+    order; `values_truncated` when the cell stopped before the last one."""
+
+    values: list[McpValue]
+    values_truncated: bool
+    ai_only: bool
+    disagreement: bool | None
 
 
 class McpDetailedRow(BaseModel):
@@ -88,7 +93,12 @@ class McpExtractionsPage(BaseModel):
         "questions[].section_label",
         "questions[].label",
         "articles[].title",
-        "articles[].values{}.value",
+        "articles[].values{}.values[].value",
+        "articles[].values{}.values[].value[]",
+        "articles[].values{}.values[].label",
+        "articles[].values{}.values[].label[]",
+        "articles[].values{}.values[].unit",
+        "articles[].values{}.values[].other_text",
         "articles[].rows[].value.value",
         "articles[].rows[].value.value[]",
         "articles[].rows[].value.label",

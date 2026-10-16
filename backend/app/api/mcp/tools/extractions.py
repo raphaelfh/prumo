@@ -32,7 +32,11 @@ from app.utils.opaque_cursor import InvalidCursorError
         "Review data extractions for a template: one current run per article, values keyed by "
         "field_id. concise = article x question matrix; detailed = per-field value, decider and "
         "evidence. Blind review applies: peer_values_hidden=true means other reviewers' values "
-        "are withheld from you, not that none exist. Paged by next_cursor."
+        "are withheld from you, not that none exist. Paged by next_cursor. Each value is "
+        "{value, label?, unit?, absent_reason?, other_text?, truncated?}: value is the stored "
+        "code or number (null when empty or marked absent); label is the option's display text "
+        "when it differs from the code; absent_reason is no_information, not_applicable or "
+        "not_evaluated."
     ),
 )
 async def get_extractions(

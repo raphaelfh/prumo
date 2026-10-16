@@ -1,5 +1,5 @@
-"""Typed rendering of one stored extraction value for the researcher MCP
-`get_extractions` detailed rows.
+"""Typed rendering of stored extraction values for the researcher MCP
+`get_extractions`: one per detailed row, one per instance in a concise cell.
 
 It peels the envelope with the export resolver's own `peel_envelope`, so the
 two readers can never disagree on what a stored value holds, then types the
@@ -19,6 +19,7 @@ from uuid import UUID
 from app.schemas.mcp_extractions import McpValue
 from app.services.exports.value_envelope import peel_envelope
 from app.services.value_semantics import ABSENT_REASON_LABELS
+from app.utils.compact_json import compact_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,3 +135,19 @@ def mcp_value(raw: Any, field: McpFieldInfo, *, text_cap: int) -> McpValue:
 
     text, truncated = _capped(str(value), text_cap)
     return McpValue(value=text, truncated=truncated or None)
+
+
+def capped_values(
+    raws: list[Any], field: McpFieldInfo, *, text_cap: int, total_cap: int
+) -> tuple[list[McpValue], bool]:
+    """Each raw value typed, in order, while their total compact JSON stays
+    within `total_cap`; and whether any was left out."""
+    values: list[McpValue] = []
+    used = 0
+    for raw in raws:
+        value = mcp_value(raw, field, text_cap=text_cap)
+        used += len(compact_json(value.model_dump(mode="json")))
+        if used > total_cap:
+            return values, True
+        values.append(value)
+    return values, False

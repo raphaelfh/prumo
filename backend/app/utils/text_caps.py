@@ -36,9 +36,3 @@ def cap_json_weight(value: str, budget: int) -> tuple[str, bool]:
         if remaining < 0:
             return value[:index], True
     return value, False
-
-
-def join_capped(values: list[str], *, sep: str, cap: int) -> str:
-    """`values` joined by `sep`, cut to `cap` chars plus a visible "…" mark."""
-    joined = sep.join(values)
-    return joined if len(joined) <= cap else joined[:cap] + "…"
