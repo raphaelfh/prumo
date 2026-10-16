@@ -199,10 +199,14 @@ async def _apply(
     """Steps 2-5 and the applied row; every audited refusal surfaces as McpToolError."""
     try:
         parsed = _parse_ops(ops)  # 2, 3
-        await _assert_baseline(db, template_id)  # 4
+        # Claim before the baseline check: the claim's UPDATE row-locks the
+        # template, and create_run takes that row FOR SHARE, so no run can pin
+        # the (empty) active version between the pinned-run check and commit.
+        # A refusal below rolls the claim back.
         await claim_draft_lock(
             db, project_id=project_id, template_id=template_id, user_id=current_principal().user_sub
-        )  # 5
+        )  # 4
+        await _assert_baseline(db, template_id)  # 5
         applied = await agent_template_draft_service.apply_draft_ops(
             db, project_id=project_id, template_id=template_id, ops=parsed
         )

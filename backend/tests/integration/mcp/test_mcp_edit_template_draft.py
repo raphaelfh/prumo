@@ -315,6 +315,54 @@ async def test_draft_lock_held(mcp_client, pat_primary_rw, db_session: AsyncSess
     assert await _audit_count(db_session, outcome="refused") == 1
 
 
+async def _deactivate_version(db: AsyncSession, template_id: UUID, _section_id: str) -> None:
+    await db.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :t"
+        ),
+        {"t": str(template_id)},
+    )
+    await db.flush()
+
+
+async def _legacy_baseline(db: AsyncSession, template_id: UUID, section_id: str) -> None:
+    await force_narrow_baseline(db, template_id, UUID(section_id))
+
+
+@pytest.mark.parametrize(
+    "break_baseline",
+    [_legacy_baseline, _deactivate_version],
+    ids=["narrow_baseline", "no_published_version"],
+)
+async def test_draft_lock_held_precedes_baseline_refusals(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, break_baseline: Any
+) -> None:
+    # The claim runs before the baseline check, so a held lock answers first.
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    await break_baseline(db_session, template_id, section_id)
+    await db_session.execute(
+        text("UPDATE public.project_extraction_templates SET config_draft_by = :r WHERE id = :t"),
+        {"r": str(SEED.reviewer_profile), "t": str(template_id)},
+    )
+    await db_session.flush()
+
+    ops = [{"op": "add_question", "section_id": section_id, "label": "Q", "type": "text"}]
+    payload = error_payload(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "edit_template_draft",
+            {"project_id": str(project_id), "template_id": str(template_id), "ops": ops},
+        )
+    )
+    assert payload["code"] == "DRAFT_LOCK_HELD"
+    _assert_named(payload, await _names(db_session, project_id, template_id))
+    assert await draft_lock_holder(db_session, template_id) == SEED.reviewer_profile
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
 @pytest.mark.parametrize(
     "extra_op",
     [
