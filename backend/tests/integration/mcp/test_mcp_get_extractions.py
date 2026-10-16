@@ -8,8 +8,11 @@ import json
 import pytest
 from sqlalchemy import text
 
+from app.models.extraction_workflow import ExtractionReviewerDecisionType
 from app.schemas.mcp_extractions import McpExtractionsPage
+from app.services.extraction_review_service import ExtractionReviewService
 from tests.integration.conftest import SEED
+from tests.integration.helpers.value_contract_setup import as_text_field, contract_run
 from tests.integration.mcp.article_seed import insert_article
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 from tests.integration.test_blind_review_isolation import _build_two_reviewer_review_run
@@ -145,3 +148,55 @@ async def test_get_extractions_metadata(mcp_client, pat_primary_rw):
         True,
         False,
     )
+
+
+async def test_detailed_values_are_typed(mcp_client, pat_reviewer_rw, db_session):
+    """Detailed rows carry typed values: a null stays null, a numeric string
+    on a number field reads as a number with its unit, and a select code
+    carries its option label."""
+    contract = await contract_run(db_session)
+    await as_text_field(db_session, SEED.primary_field)
+    review = ExtractionReviewService(db_session)
+    planted = {
+        SEED.primary_field: {"value": None},
+        contract.number_id: {"value": "22", "unit": "mg"},
+        contract.select_id: {"value": "dev"},
+    }
+    for field_id, value in planted.items():
+        # The stored shapes predate the write-time contract; plant them as is.
+        await review.record_decision(
+            run_id=contract.run_id,
+            instance_id=contract.instance_id,
+            field_id=field_id,
+            reviewer_id=SEED.reviewer_profile,
+            decision=ExtractionReviewerDecisionType.EDIT,
+            value=value,
+            enforce_contract=False,
+        )
+    await db_session.flush()
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_reviewer_rw,
+            "get_extractions",
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(contract.template_id),
+                "article_id": str(SEED.primary_article),
+                "response_format": "detailed",
+            },
+        )
+    )
+    McpExtractionsPage.model_validate(body)
+    rows = {
+        row["field_id"]: row["value"]
+        for row in body["articles"][0]["rows"]
+        if row["reviewer"] == "self"
+    }
+    assert rows[str(SEED.primary_field)] == {"value": None}
+    assert rows[str(contract.number_id)] == {"value": 22, "unit": "mg"}
+    assert rows[str(contract.select_id)] == {"value": "dev", "label": "Development"}
+    dumped = json.dumps(body)
+    assert "None" not in dumped
+    assert "22.0" not in dumped

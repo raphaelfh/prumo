@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer
 
 
 class McpExtractionQuestion(BaseModel):
@@ -33,10 +33,30 @@ class McpEvidence(BaseModel):
     locator: str | None
 
 
+class McpValue(BaseModel):
+    """One stored value, typed: `value` is always present (`null` when empty or
+    absent); `label` is the option label (or the absent reason's label) when it
+    differs from the code; `unit` comes from the envelope or the field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str | int | float | bool | list[str] | None
+    label: str | list[str] | None = None
+    unit: str | None = None
+    absent_reason: Literal["no_information", "not_applicable", "not_evaluated"] | None = None
+    other_text: str | None = None
+    truncated: Literal[True] | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = handler(self)
+        return {k: v for k, v in data.items() if k == "value" or v is not None}
+
+
 class McpDetailedRow(BaseModel):
     instance_id: UUID
     field_id: UUID
-    value: Any
+    value: McpValue
     decider: Literal["human", "ai", "consensus"]
     reviewer: Literal["self", "peer"] | None
     evidence: list[McpEvidence]
@@ -69,6 +89,11 @@ class McpExtractionsPage(BaseModel):
         "questions[].label",
         "articles[].title",
         "articles[].values{}.value",
-        "articles[].rows[].value",
+        "articles[].rows[].value.value",
+        "articles[].rows[].value.value[]",
+        "articles[].rows[].value.label",
+        "articles[].rows[].value.label[]",
+        "articles[].rows[].value.unit",
+        "articles[].rows[].value.other_text",
         "articles[].rows[].evidence[].quote",
     ]

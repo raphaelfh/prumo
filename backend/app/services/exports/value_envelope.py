@@ -15,9 +15,11 @@ returns a raw ``list`` — every envelope shape collapses to a scalar or
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from app.models.extraction import ExtractionFieldType
+from app.services.value_contract import ENVELOPE_KEYS
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
     strip_verification,
@@ -41,99 +43,100 @@ class _FieldLike(Protocol):
     unit: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class PeeledValue:
+    """A stored value envelope with every wrap removed: the inner payload,
+    the envelope's unit (if any) and its coded absent reason (if a marker)."""
+
+    value: Any
+    unit: str | None
+    absent_reason: str | None
+
+
+def _is_envelope(raw: Any) -> bool:
+    return isinstance(raw, dict) and "value" in raw and set(raw) <= ENVELOPE_KEYS
+
+
+def peel_envelope(raw: Any) -> PeeledValue:
+    """The one envelope peel shared by the export resolver and the MCP renderer.
+
+    Strips the ``verification`` annotation, then unwraps ``{"value": ...}``
+    envelopes (legacy rows may be double-wrapped) while each level's keys stay
+    within ``ENVELOPE_KEYS``. The outermost non-empty ``unit`` wins, as the
+    write-time contract merges a double wrap. A closed-vocabulary marker at any
+    level ends the peel with ``value=None``; an out-of-vocabulary reason is not
+    a marker and peels like any other sibling.
+    """
+    unit: str | None = None
+    while True:
+        raw = strip_verification(raw)
+        reason = value_absent_reason(raw)
+        if reason is not None:
+            return PeeledValue(value=None, unit=None, absent_reason=reason)
+        if not _is_envelope(raw):
+            return PeeledValue(value=raw, unit=unit, absent_reason=None)
+        if unit is None and isinstance(raw.get("unit"), str) and raw["unit"]:
+            unit = raw["unit"]
+        raw = raw["value"]
+
+
 def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScalar:
     """Resolve a persisted value envelope to one openpyxl-writable scalar.
 
     See the redesign spec §6 / §6.2-A1 for the exhaustive shape contract.
     Never returns a dict or a list.
     """
-    if raw is None:
-        return None
+    bare = strip_verification(raw)
+    peeled = peel_envelope(bare)
+    # ADR-0016: a coded disposition renders its stable per-code label from the
+    # single source in value_semantics (the export legend and the appraisal
+    # roll-up read the same map, so a cell, its legend row and the roll-up can
+    # never drift). Never "value: None; absent_reason: ..." in a cell.
+    if peeled.absent_reason is not None:
+        return ABSENT_REASON_LABELS[peeled.absent_reason]
+    rendered = _render_payload(peeled.value, field)
+    # A unit decorates only a value that came in an envelope: a bare number
+    # (an AI-metadata column, say) is already final.
+    if not _is_envelope(bare):
+        return rendered
+    return _apply_unit(rendered, peeled.unit, field)
 
-    # --- verification annotation (§5 Verified mode) -----------------------
-    # ``verification`` is a server-written ANNOTATION sibling on AI proposal
-    # envelopes — never part of the value. Strip it (shared helper) before
-    # the key-set branches so an annotated row resolves exactly like a bare
-    # one (and never reaches the catch-all dict-stringify below).
-    raw = strip_verification(raw)
 
-    # --- coded absent_reason marker (ADR-0016) ---------------------------
-    # A resolved disposition ({"value": null, "absent_reason": <code>}) is a
-    # first-class answer, not a value. Emit its stable label BEFORE the
-    # {"value"} / {"value", "unit"} key-set branches below, so a marker never
-    # reaches the catch-all dict-stringify (which would leak
-    # "value: None; absent_reason: no_information" into a cell). Only a
-    # closed-vocabulary code counts — value_absent_reason validates it, so a
-    # garbage reason falls through and never fabricates a disposition label.
-    reason = value_absent_reason(raw)
-    if reason is not None:
-        # ADR-0016: emit the stable per-code label from the single source in
-        # value_semantics (the export legend + appraisal roll-up read the same
-        # map, so a cell, its legend row, and the roll-up can never drift).
-        return ABSENT_REASON_LABELS[reason]
-
-    # --- Recursive single-wrap {"value": inner} ---------------------------
-    # Handles {"value": x}, double-wrapped {"value": {"value": x}}, and
-    # {"value": {"value": n, "unit": u}} from the decisions/proposals write
-    # path (``ai_extraction`` wraps {"value": inner}). The single
-    # wrap carries no unit of its own. When the inner is itself an envelope
-    # (a {"value"} or {"value", "unit"} dict) it has already resolved any
-    # unit, so we must NOT re-decorate it. Only a bare scalar inner takes
-    # the field's unit as a fallback.
-    if isinstance(raw, dict) and set(raw.keys()) == {"value"}:
-        inner_raw = raw["value"]
-        resolved = resolve_value(inner_raw, field=field)
-        if _is_value_envelope(inner_raw):
-            return resolved
-        return _apply_unit(resolved, None, field)
-
-    # --- number+unit {"value": n, "unit": u} ------------------------------
-    if isinstance(raw, dict) and set(raw.keys()) == {"value", "unit"}:
-        inner = resolve_value(raw["value"], field=field)
-        unit = raw.get("unit")
-        return _apply_unit(inner, unit, field)
-
+def _render_payload(inner: Any, field: _FieldLike | None) -> ResolvedScalar:
+    """Collapse an already-peeled payload to one scalar (never a dict or list)."""
     # --- single "other" {"selected": "other", "other_text": t} ------------
-    if isinstance(raw, dict) and raw.get("selected") == "other" and "other_text" in raw:
-        text = raw.get("other_text")
+    if isinstance(inner, dict) and inner.get("selected") == "other" and "other_text" in inner:
+        text = inner.get("other_text")
         return str(text) if text is not None else None
 
     # --- multi "other" {"selected": [...], "other_texts": [...]} ----------
     if (
-        isinstance(raw, dict)
-        and isinstance(raw.get("selected"), list)
-        and isinstance(raw.get("other_texts"), list)
+        isinstance(inner, dict)
+        and isinstance(inner.get("selected"), list)
+        and isinstance(inner.get("other_texts"), list)
     ):
-        parts = [str(item) for item in [*raw["selected"], *raw["other_texts"]] if item is not None]
+        parts = [
+            str(item) for item in [*inner["selected"], *inner["other_texts"]] if item is not None
+        ]
         return "; ".join(parts)
 
     # --- any other dict shape — collapse deterministically, never leak ----
-    if isinstance(raw, dict):
-        return "; ".join(f"{k}: {v}" for k, v in raw.items())
+    if isinstance(inner, dict):
+        return "; ".join(f"{k}: {v}" for k, v in inner.items())
 
     # --- list (multiselect) ----------------------------------------------
-    if isinstance(raw, list):
-        return "; ".join(str(item) for item in raw if item is not None)
+    if isinstance(inner, list):
+        return "; ".join(str(item) for item in inner if item is not None)
 
     # --- scalar ----------------------------------------------------------
     if (
         field is not None
         and getattr(field, "type", None) is ExtractionFieldType.BOOLEAN
-        and isinstance(raw, bool)
+        and isinstance(inner, bool)
     ):
-        return "Yes" if raw else "No"
+        return "Yes" if inner else "No"
 
-    return raw
-
-
-def _is_value_envelope(raw: Any) -> bool:
-    """True iff ``raw`` is itself a ``{"value"}`` / ``{"value", "unit"}`` dict.
-
-    These nested envelopes have already resolved (and unit-decorated)
-    themselves, so the enclosing single-wrap branch must not re-apply a
-    field-unit fallback on top of their result.
-    """
-    return isinstance(raw, dict) and set(raw.keys()) in ({"value"}, {"value", "unit"})
+    return inner  # type: ignore[no-any-return]  # a scalar payload is already final
 
 
 def _apply_unit(

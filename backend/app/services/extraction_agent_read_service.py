@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.claim_value import option_label_map
 from app.models.article import Article
 from app.models.extraction import ExtractionEvidence, ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalSource, ExtractionReviewerDecisionType
@@ -61,6 +62,7 @@ from app.services.extraction_run_read_service import (
     is_run_arbitrator,
 )
 from app.services.extraction_snapshot import live_entity_types
+from app.services.mcp_value_render import McpFieldInfo, mcp_value
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
@@ -391,22 +393,28 @@ def _evidence_for(
 
 def _flatten_tree(
     tree: list[RunViewEntityType],
-) -> tuple[
-    dict[UUID, int], list[tuple[UUID, UUID, str, str]], dict[UUID, list[tuple[UUID, str, str]]]
-]:
+) -> tuple[dict[UUID, int], list[McpFieldInfo], dict[UUID, list[McpFieldInfo]]]:
     """Tree-order flattening shared by the question list, the concise
     per-field loop and the detailed per-instance loop: entity-type position
-    (for ordering an article's instances), the flat `(field_id, entity_type_id,
-    label, type)` rows in tree order, and those rows grouped back by
-    entity_type_id for the detailed per-instance walk."""
+    (for ordering an article's instances), the flat field infos in tree order,
+    and those infos grouped back by entity_type_id for the detailed
+    per-instance walk."""
     et_order: dict[UUID, int] = {}
-    rows: list[tuple[UUID, UUID, str, str]] = []
-    fields_by_et: dict[UUID, list[tuple[UUID, str, str]]] = defaultdict(list)
+    rows: list[McpFieldInfo] = []
+    fields_by_et: dict[UUID, list[McpFieldInfo]] = defaultdict(list)
     for et_pos, et in enumerate(tree):
         et_order[et.id] = et_pos
         for field in et.fields:
-            rows.append((field.id, et.id, field.label, field.field_type))
-            fields_by_et[et.id].append((field.id, field.label, field.field_type))
+            info = McpFieldInfo(
+                field_id=field.id,
+                et_id=et.id,
+                label=field.label,
+                field_type=field.field_type,
+                options=option_label_map(field.allowed_values),
+                unit=field.unit,
+            )
+            rows.append(info)
+            fields_by_et[et.id].append(info)
     return et_order, rows, fields_by_et
 
 
@@ -517,9 +525,12 @@ async def list_agent_extractions(
         label_by_et = {et.id: et.label for et in tree}
         all_questions = [
             McpExtractionQuestion(
-                field_id=field_id, section_label=label_by_et[et_id], label=label, type=field_type
+                field_id=info.field_id,
+                section_label=label_by_et[info.et_id],
+                label=info.label,
+                type=info.field_type,
             )
-            for field_id, et_id, label, field_type in field_rows
+            for info in field_rows
         ]
         questions, questions_cost, questions_truncated = _bounded_questions(all_questions)
 
@@ -648,7 +659,8 @@ async def list_agent_extractions(
 
         if response_format == "concise":
             c_items: list[_ConcisePackItem] = []
-            for field_id, et_id, _label, _ftype in field_rows:
+            for info in field_rows:
+                field_id, et_id = info.field_id, info.et_id
                 resolved_lists = [
                     _resolve_reviewer_values(
                         inst.id,
@@ -697,10 +709,10 @@ async def list_agent_extractions(
                 key=lambda i: (et_order.get(i.entity_type_id, 0), i.sort_order, str(i.id)),
             )
             for inst in sorted_instances:
-                for field_id, _label, _ftype in fields_by_et.get(inst.entity_type_id, []):
+                for info in fields_by_et.get(inst.entity_type_id, []):
                     for resolved in _resolve_reviewer_values(
                         inst.id,
-                        field_id,
+                        info.field_id,
                         published_by_coord=published_by_coord,
                         decisions_by_coord=decisions_by_coord,
                         human_by_coord=human_by_coord,
@@ -711,8 +723,8 @@ async def list_agent_extractions(
                         d_items.append(
                             McpDetailedRow(
                                 instance_id=inst.id,
-                                field_id=field_id,
-                                value=_short(resolved.value, limit=_DETAILED_VALUE_CAP),
+                                field_id=info.field_id,
+                                value=mcp_value(resolved.value, info, text_cap=_DETAILED_VALUE_CAP),
                                 decider=resolved.decider,
                                 reviewer=resolved.reviewer,
                                 evidence=_evidence_for(
