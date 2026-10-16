@@ -9,8 +9,9 @@ from uuid import uuid4
 import pytest
 
 from app.services.exports.value_envelope import PeeledValue, peel_envelope
-from app.services.mcp_value_render import McpFieldInfo, mcp_value
+from app.services.mcp_value_render import McpFieldInfo, capped_values, mcp_value
 from app.services.value_semantics import ABSENT_REASON_LABELS
+from app.utils.compact_json import compact_json
 
 
 def _field(field_type: str, *, options: dict[str, str] | None = None, unit: str | None = None):
@@ -149,17 +150,17 @@ _LONG_SELECT = _field("select", options={"c" * 50: "L" * 120})
         (
             {"value": ["x" * 30, "y" * 30, "w" * 30]},
             _field("text"),
-            {"value": ["x" * 30, "y" * 30, "w" * 20], "truncated": True},
+            {"value": ["x" * 30, "y" * 30, "w" * 10], "truncated": True},
         ),
         (
             {"value": ["a", "b"]},
             _field("multiselect", options={"a": "A" * 50, "b": "B" * 50}),
-            {"value": ["a", "b"], "label": ["A" * 50, "B" * 30], "truncated": True},
+            {"value": ["a", "b"], "label": ["A" * 50, "B" * 24], "truncated": True},
         ),
         (
             {"value": {"selected": ["c" * 50], "other_texts": []}},
             _LONG_SELECT,
-            {"value": ["c" * 50], "label": ["L" * 80], "truncated": True},
+            {"value": ["c" * 50], "label": ["L" * 78], "truncated": True},
         ),
         (
             {"value": {"selected": "other", "other_text": "t" * 120}},
@@ -184,3 +185,24 @@ _LONG_SELECT = _field("select", options={"c" * 50: "L" * 120})
 )
 def test_every_string_branch_is_capped(raw: Any, field: McpFieldInfo, expected: dict) -> None:
     assert _render(raw, field, text_cap=80) == expected
+
+
+_EMPTIES = {"value": [""] * 20_000}
+
+
+def test_list_cap_counts_each_items_serialized_size() -> None:
+    """A list item costs its JSON rendering (quotes and escapes included), so
+    a list of empty strings cannot slip past the cap."""
+    rendered = _render(_EMPTIES, _field("text"), text_cap=1_000)
+    assert rendered["truncated"] is True
+    assert len(compact_json(rendered["value"])) <= 1_000 + len("[]")
+    assert len(compact_json(rendered)) < 2_000
+
+
+def test_concise_cell_with_many_empty_items_stays_in_budget() -> None:
+    values, truncated = capped_values(
+        [_EMPTIES, _EMPTIES], _field("text"), text_cap=80, total_cap=1_000
+    )
+    assert values and all(v.truncated for v in values)
+    assert truncated is False
+    assert len(compact_json([v.model_dump(mode="json") for v in values])) <= 1_000

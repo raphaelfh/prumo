@@ -20,6 +20,7 @@ from app.schemas.mcp_extractions import McpValue
 from app.services.exports.value_envelope import peel_envelope
 from app.services.value_semantics import ABSENT_REASON_LABELS
 from app.utils.compact_json import compact_json
+from app.utils.text_caps import cap_json_weight
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,18 +57,26 @@ def _as_number(value: Any) -> int | float | None:
     return None
 
 
+#: What `compact_json` writes between two list items.
+_ITEM_SEP = len(compact_json(["", ""])) - 2 * len(compact_json("")) - 2
+
+
 def _capped_list(items: list[str], cap: int) -> tuple[list[str], bool]:
-    """Keep items while their total length stays within `cap`; the item that
-    crosses it is cut to the remainder (dropped when nothing remains)."""
+    """Keep items while their JSON rendering (quotes, escapes and separators
+    included, so even an empty string costs) stays within `cap`; the item that crosses
+    it is cut to the remainder (dropped when nothing of it fits)."""
     kept: list[str] = []
     room = cap
     for item in items:
-        if len(item) > room:
-            if room:
-                kept.append(item[:room])
+        sep = _ITEM_SEP if kept else 0
+        cost = sep + len(compact_json(item))
+        if cost > room:
+            head, _cut = cap_json_weight(item, room - sep)
+            if head:
+                kept.append(head)
             return kept, True
         kept.append(item)
-        room -= len(item)
+        room -= cost
     return kept, False
 
 
