@@ -759,6 +759,40 @@ async def test_a_legacy_disposition_string_lands_as_the_coded_marker(
     assert row.proposed_value == {"value": None, "absent_reason": "no_information"}
 
 
+@pytest.mark.parametrize(
+    ("marker_on", "expected"),
+    [
+        (False, {"value": "Not applicable"}),
+        (True, {"value": None, "absent_reason": "not_applicable"}),
+    ],
+    ids=["marker-off", "marker-on"],
+)
+async def test_a_listed_not_applicable_option_follows_the_field_flag(
+    db_session: AsyncSession, marker_on: bool, expected: dict
+) -> None:
+    """The AI path translates a listed "Not applicable" exactly as a reviewer's
+    write does: the marker only where the field offers it, else the option."""
+    run = await run_in_extract(db_session)
+    section_id = await add_section(db_session, SEED.primary_template, f"na_{uuid4().hex[:6]}")
+    field_id = await add_field(db_session, section_id, "status")
+    await db_session.execute(
+        text(
+            "UPDATE extraction_fields SET field_type='select', allowed_values=CAST(:av AS jsonb), "
+            "allows_not_applicable=:na WHERE id=:id"
+        ),
+        {"id": field_id, "av": json.dumps(["Yes", "Not applicable"]), "na": marker_on},
+    )
+    await _landing(db_session).land(
+        run,
+        await _section(db_session, section_id),
+        SingletonSlot(None),
+        [ProposalCandidate(field_id, "status", {"value": "Not applicable"})],
+        Generation(ENGINE, None, None),
+    )
+    (row,) = await _rows(db_session, run.id)
+    assert row.proposed_value == expected
+
+
 # --------------------------------------------------------------------------
 # Attempts: replay-safe, immutable call facts
 # --------------------------------------------------------------------------

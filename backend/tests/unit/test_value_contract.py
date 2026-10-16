@@ -126,6 +126,37 @@ def test_in_band_na_option_becomes_the_marker() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("code", "flag"),
+    [
+        ("Not applicable", "allows_not_applicable"),
+        ("NA", "allows_not_applicable"),
+        ("Not evaluated", "allows_not_evaluated"),
+    ],
+    ids=["not-applicable", "na", "not-evaluated"],
+)
+def test_listed_disposition_option_is_a_value_when_its_marker_is_off(code: str, flag: str) -> None:
+    """A field without the matching marker offers no marker button, so its own
+    listed "Not applicable" option is the reviewer's answer, never a refusal."""
+    field = _field("select", allowed_values=[{"value": "Y", "label": "Yes"}, code], **{flag: False})
+    assert canonicalize_value({"value": code}, field) == {"value": code}
+
+
+@pytest.mark.parametrize(
+    ("code", "flag", "reason"),
+    [
+        ("Not applicable", "allows_not_applicable", "not_applicable"),
+        ("Not evaluated", "allows_not_evaluated", "not_evaluated"),
+    ],
+    ids=["not-applicable", "not-evaluated"],
+)
+def test_listed_disposition_option_is_the_marker_when_its_marker_is_on(
+    code: str, flag: str, reason: str
+) -> None:
+    field = _field("select", allowed_values=[{"value": "Y", "label": "Yes"}, code], **{flag: True})
+    assert canonicalize_value({"value": code}, field) == {"value": None, "absent_reason": reason}
+
+
 # --- Rule 4: cleared ----------------------------------------------------------
 
 

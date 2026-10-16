@@ -203,7 +203,11 @@ def canonicalize_value(raw: Any, field: RunViewField) -> dict[str, Any]:
     """The canonical envelope for *raw* on *field*, or a :class:`ValueContractError`."""
     envelope = _envelope(raw, field)
     envelope = disposition_to_marker(
-        envelope, field.allowed_values, allows_no_information=field.allows_no_information
+        envelope,
+        field.allowed_values,
+        allows_no_information=field.allows_no_information,
+        allows_not_applicable=field.allows_not_applicable,
+        allows_not_evaluated=field.allows_not_evaluated,
     )
     if envelope.get("absent_reason") is not None:
         return _marker(envelope, field)

@@ -398,6 +398,8 @@ class ProposalLanding:
                         ExtractionField.id,
                         ExtractionField.allowed_values,
                         ExtractionField.allows_no_information,
+                        ExtractionField.allows_not_applicable,
+                        ExtractionField.allows_not_evaluated,
                     ).where(ExtractionField.id.in_(asked))
                 )
             }
@@ -414,6 +416,8 @@ class ProposalLanding:
                     candidate.proposed_value,
                     domain.allowed_values,
                     allows_no_information=domain.allows_no_information,
+                    allows_not_applicable=domain.allows_not_applicable,
+                    allows_not_evaluated=domain.allows_not_evaluated,
                 )
             )
         return values

@@ -139,7 +139,11 @@ class ExtractionReviewService:
                 # the pinned tree lacks); only the retired in-band disposition
                 # string is translated (ADR-0016).
                 value = disposition_to_marker(
-                    value, field.allowed_values, allows_no_information=field.allows_no_information
+                    value,
+                    field.allowed_values,
+                    allows_no_information=field.allows_no_information,
+                    allows_not_applicable=field.allows_not_applicable,
+                    allows_not_evaluated=field.allows_not_evaluated,
                 )
 
         # Idempotent re-record: an unchanged decision replay (form remount,

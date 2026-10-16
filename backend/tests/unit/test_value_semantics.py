@@ -238,6 +238,22 @@ def test_opting_out_does_not_spare_the_other_dispositions():
     }
 
 
+@pytest.mark.parametrize(
+    ("raw", "allowed", "flags"),
+    [
+        ({"value": "NA"}, ["Y", "N", "NA"], {"allows_not_applicable": False}),
+        ({"value": "Not applicable"}, ["Yes", "Not applicable"], {"allows_not_applicable": False}),
+        ({"value": "Not evaluated"}, ["Yes", "Not evaluated"], {"allows_not_evaluated": False}),
+    ],
+    ids=["na", "not-applicable", "not-evaluated"],
+)
+def test_disposition_is_a_value_when_its_marker_is_off(raw, allowed, flags):
+    """Every disposition follows its own flag: a field that offers no marker
+    button owns the listed string as a substantive answer."""
+    assert disposition_to_marker(raw, allowed) != raw
+    assert disposition_to_marker(raw, allowed, **flags) == raw
+
+
 def test_default_keeps_the_pre_0062_rewrite():
     """Every caller that has not looked the flag up gets today's behaviour, so
     classic PROBAST clones whose frozen domain still carries "NI" keep

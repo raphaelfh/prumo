@@ -379,3 +379,67 @@ async def test_materialize_carries_a_stored_marker_on_an_opted_out_field(
     assert inserted == 1
     assert await _decision_value(db_session, run.id) == _NO_INFO
     await db_session.rollback()
+
+
+_LISTED_NA = ["Yes", "No", "Not applicable"]
+
+
+@pytest.mark.asyncio
+async def test_record_decision_keeps_a_listed_not_applicable_option_when_the_marker_is_off(
+    db_session: AsyncSession,
+) -> None:
+    """A field that lists its own "Not applicable" option without the NA marker
+    offers no marker button: the pick is the answer, stored as the option."""
+    if not await _seed_ok(db_session):
+        pytest.skip("seed not present")
+    await _set_field_domain(db_session, _LISTED_NA)
+    run = await _fresh_run(db_session)
+
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=SEED.primary_profile,
+        decision="edit",
+        value={"value": "Not applicable"},
+    )
+    assert await _decision_value(db_session, run.id) == {"value": "Not applicable"}
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("marker_on", "expected"),
+    [(False, {"value": "Not applicable"}), (True, _NOT_APPLICABLE)],
+    ids=["marker-off", "marker-on"],
+)
+async def test_materialize_treats_a_listed_not_applicable_like_the_reviewer_write(
+    db_session: AsyncSession, marker_on: bool, expected: dict
+) -> None:
+    """QA carry-over translates the in-band string exactly as a reviewer's own
+    write does, so the two never diverge on the same pick."""
+    if not await _seed_ok(db_session):
+        pytest.skip("seed not present")
+    await _set_field_domain(db_session, _LISTED_NA)
+    if marker_on:
+        await _allow_not_applicable(db_session)
+    run = await _fresh_run(db_session)
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_proposal_records "
+            "(id, run_id, instance_id, field_id, source, source_user_id, proposed_value) "
+            "VALUES (:id, :r, :i, :f, 'human', :u, CAST(:v AS jsonb))"
+        ),
+        {
+            "id": str(uuid4()),
+            "r": str(run.id),
+            "i": str(SEED.primary_instance),
+            "f": str(SEED.primary_field),
+            "u": str(SEED.primary_profile),
+            "v": json.dumps({"value": "Not applicable"}),
+        },
+    )
+
+    assert await ExtractionReviewService(db_session).materialize_qa_decisions(run) == 1
+    assert await _decision_value(db_session, run.id) == expected
+    await db_session.rollback()
