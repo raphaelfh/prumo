@@ -9,43 +9,19 @@ create lands a row (201) and a foreign-project URL 404s (BOLA).
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
 from uuid import UUID
 
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import TokenPayload, get_current_user
-from app.main import app
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,
     clone_charms,
     first_entity_type_id,
 )
-
-
-@pytest_asyncio.fixture
-async def auth_as_profile(
-    db_session: AsyncSession,
-) -> AsyncGenerator[UUID, None]:
-    """JWT sub must be a real profile id (manager on the seeded projects)."""
-    del db_session  # kept for fixture-dependency ordering; the seed runs first
-    profile_id = SEED.primary_profile
-
-    async def override_get_current_user() -> TokenPayload:
-        return TokenPayload(
-            sub=str(profile_id),
-            email="test@example.com",
-            role="authenticated",
-            aal="aal1",
-        )
-
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    yield profile_id
 
 
 @pytest.mark.asyncio

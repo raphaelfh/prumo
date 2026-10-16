@@ -77,7 +77,7 @@ from app.services.project_template_active_service import (
 )
 from app.services.template_create_service import create_blank_template
 from app.services.template_delete_service import delete_template
-from app.services.template_draft_lock_service import take_over_draft_lock
+from app.services.template_draft_lock_service import claim_draft_lock, take_over_draft_lock
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
@@ -360,6 +360,12 @@ async def get_template_llm_instruction(
 
 @router.put(
     "/{project_id}/templates/{template_id}/llm-instruction",
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": TemplateDraftLockRefusalResponse,
+            "description": "Refused: draft lock conflict",
+        }
+    },
 )
 async def update_template_llm_instruction(
     project_id: UUID,
@@ -367,16 +373,18 @@ async def update_template_llm_instruction(
     body: UpdateTemplateInstructionRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[UpdateTemplateInstructionResponse]:
     """Stage the instruction as a draft edit (slice B-4).
 
     Whitespace-only normalizes to NULL (nothing injected). Nothing
     republishes here — the text reaches snapshots, prompts and
     editable-stage runs when the manager presses Publish
-    (``republish-version``).
+    (``republish-version``). Like every draft edit it claims the draft
+    lock first: another manager's lock refuses with 409 ``DRAFT_LOCK_HELD``.
     """
     try:
+        await claim_draft_lock(db, project_id=project_id, template_id=template_id, user_id=user_sub)
         result = await set_template_instruction(
             db,
             project_id=project_id,

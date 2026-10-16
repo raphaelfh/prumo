@@ -19,6 +19,7 @@ from app.schemas.hitl_session import (
     UpdateTemplateInstructionResponse,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
+from app.services.template_draft_lock_service import DraftLockHeldError
 
 
 def _request() -> MagicMock:
@@ -75,6 +76,7 @@ async def test_put_llm_instruction_commits_and_wraps(monkeypatch) -> None:
         project_template_id=template_id,
         llm_template_instruction="X",
     )
+    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock())
     monkeypatch.setattr(endpoint_module, "set_template_instruction", AsyncMock(return_value=result))
     db = AsyncMock()
     response = await endpoint_module.update_template_llm_instruction(
@@ -83,7 +85,7 @@ async def test_put_llm_instruction_commits_and_wraps(monkeypatch) -> None:
         body=UpdateTemplateInstructionRequest(llm_template_instruction="X"),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is result
@@ -101,6 +103,7 @@ def test_put_response_schema_has_no_version_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_put_llm_instruction_maps_not_found_to_404(monkeypatch) -> None:
+    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock())
     monkeypatch.setattr(
         endpoint_module,
         "set_template_instruction",
@@ -114,9 +117,64 @@ async def test_put_llm_instruction_maps_not_found_to_404(monkeypatch) -> None:
             body=UpdateTemplateInstructionRequest(llm_template_instruction="X"),
             request=_request(),
             db=db,
-            _user_sub=uuid.uuid4(),
+            user_sub=uuid.uuid4(),
         )
     assert exc.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_put_llm_instruction_claims_the_lock_as_the_caller_before_writing(
+    monkeypatch,
+) -> None:
+    """The instruction is a draft edit like any structural one: same lock."""
+    project_id, template_id, caller = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    calls: list[tuple[str, dict]] = []
+
+    async def _claim(_db: object, **kwargs: object) -> None:
+        calls.append(("claim", kwargs))
+
+    async def _write(_db: object, **kwargs: object) -> UpdateTemplateInstructionResponse:
+        calls.append(("write", kwargs))
+        return UpdateTemplateInstructionResponse(
+            project_template_id=template_id, llm_template_instruction="X"
+        )
+
+    monkeypatch.setattr(endpoint_module, "claim_draft_lock", _claim)
+    monkeypatch.setattr(endpoint_module, "set_template_instruction", _write)
+    await endpoint_module.update_template_llm_instruction(
+        project_id=project_id,
+        template_id=template_id,
+        body=UpdateTemplateInstructionRequest(llm_template_instruction="X"),
+        request=_request(),
+        db=AsyncMock(),
+        user_sub=caller,
+    )
+    assert [name for name, _ in calls] == ["claim", "write"]
+    assert calls[0][1] == {"project_id": project_id, "template_id": template_id, "user_id": caller}
+
+
+@pytest.mark.asyncio
+async def test_put_llm_instruction_held_lock_propagates_without_write_or_commit(
+    monkeypatch,
+) -> None:
+    held = DraftLockHeldError(
+        "held", details={"holder_id": str(uuid.uuid4()), "holder_name": "Ana"}
+    )
+    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock(side_effect=held))
+    write = AsyncMock()
+    monkeypatch.setattr(endpoint_module, "set_template_instruction", write)
+    db = AsyncMock()
+    with pytest.raises(DraftLockHeldError):
+        await endpoint_module.update_template_llm_instruction(
+            project_id=uuid.uuid4(),
+            template_id=uuid.uuid4(),
+            body=UpdateTemplateInstructionRequest(llm_template_instruction="X"),
+            request=_request(),
+            db=db,
+            user_sub=uuid.uuid4(),
+        )
+    write.assert_not_awaited()
     db.commit.assert_not_awaited()
 
 

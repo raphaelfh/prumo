@@ -46,6 +46,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.core.security import TokenPayload, get_current_user
+from app.main import app
 from app.utils.rate_limiter import limiter
 
 # =================== AUTO MARKER ===================
@@ -772,3 +774,27 @@ async def land_ai_proposal(
         source.value,  # type: ignore[attr-defined]
     )
     return latest.get(field_id)
+
+
+@pytest_asyncio.fixture
+async def auth_as_profile(
+    db_session: AsyncSession,
+) -> AsyncGenerator[UUID, None]:
+    """JWT sub must be a real profile id (manager on the seeded projects).
+
+    Files that need a different profile define their own fixture of this
+    name, which shadows this one.
+    """
+    del db_session  # kept for fixture-dependency ordering; the seed runs first
+    profile_id = SEED.primary_profile
+
+    async def override_get_current_user() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    yield profile_id

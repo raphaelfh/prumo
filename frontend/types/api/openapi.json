@@ -17470,7 +17470,7 @@
         ]
       },
       "put": {
-        "description": "Stage the instruction as a draft edit (slice B-4).\n\nWhitespace-only normalizes to NULL (nothing injected). Nothing\nrepublishes here \u2014 the text reaches snapshots, prompts and\neditable-stage runs when the manager presses Publish\n(``republish-version``).",
+        "description": "Stage the instruction as a draft edit (slice B-4).\n\nWhitespace-only normalizes to NULL (nothing injected). Nothing\nrepublishes here \u2014 the text reaches snapshots, prompts and\neditable-stage runs when the manager presses Publish\n(``republish-version``). Like every draft edit it claims the draft\nlock first: another manager's lock refuses with 409 ``DRAFT_LOCK_HELD``.",
         "operationId": "update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put",
         "parameters": [
           {
@@ -17514,6 +17514,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDraftLockRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: draft lock conflict"
           },
           "422": {
             "content": {

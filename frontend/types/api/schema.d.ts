@@ -1495,7 +1495,8 @@ export interface paths {
          *     Whitespace-only normalizes to NULL (nothing injected). Nothing
          *     republishes here — the text reaches snapshots, prompts and
          *     editable-stage runs when the manager presses Publish
-         *     (``republish-version``).
+         *     (``republish-version``). Like every draft edit it claims the draft
+         *     lock first: another manager's lock refuses with 409 ``DRAFT_LOCK_HELD``.
          */
         put: operations["update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put"];
         post?: never;
@@ -10511,6 +10512,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_UpdateTemplateInstructionResponse_"];
+                };
+            };
+            /** @description Refused: draft lock conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDraftLockRefusalResponse"];
                 };
             };
             /** @description Validation Error */
