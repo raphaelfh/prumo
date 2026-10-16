@@ -171,6 +171,14 @@ async def test_convergence_leaves_project_clones_untouched(db_session: AsyncSess
     )
     before = (await db_session.execute(clone_sql, {"cid": str(clone.project_template_id)})).all()
     assert before, "clone produced no structure"
+    versions_sql = text(
+        "SELECT id, version, is_active FROM public.extraction_template_versions "
+        "WHERE project_template_id = :cid ORDER BY version"
+    )
+    versions_before = (
+        await db_session.execute(versions_sql, {"cid": str(clone.project_template_id)})
+    ).all()
+    assert versions_before, "clone published no version"
 
     await seed_probast_ai(db_session)
     await db_session.commit()
@@ -178,6 +186,10 @@ async def test_convergence_leaves_project_clones_untouched(db_session: AsyncSess
     assert (
         await db_session.execute(clone_sql, {"cid": str(clone.project_template_id)})
     ).all() == before
+    # A changed global prompt never publishes a new version of the clone.
+    assert (
+        await db_session.execute(versions_sql, {"cid": str(clone.project_template_id)})
+    ).all() == versions_before
     # The clone row itself still points at the global template: converging must
     # never delete the catalogue ROW, which would SET NULL this FK and break
     # clone dedupe on the next import.

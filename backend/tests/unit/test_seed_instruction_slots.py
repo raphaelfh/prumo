@@ -37,7 +37,8 @@ def test_current_default_has_no_customize_slot(name: str) -> None:
     text = _CURRENT[name]
     assert text.strip()
     assert "[customize:" not in text
-    assert "review question" in text
+    assert "review question and scope" in text
+    assert "settings" not in text
 
 
 @pytest.mark.parametrize("name", list(_RETIRED), ids=list(_RETIRED))

@@ -36,9 +36,9 @@ their rationales and the Step-4 summaries are assessor-owned: they carry no
 ``llm_description`` and their spec pointers exclude them from every LLM call.
 
 NA is restricted to the instrument's four conditional (asterisked) items —
-six field rows after triplication. Step 1 (the review's PICOTS) lives in the
-project template's ✨ instruction, which reaches every AI call as general
-instructions and is the reference for the applicability judgments.
+six field rows after triplication. Step 1 (the review's PICOTS) is the
+project's review question, which reaches every AI call as the "Review question
+and scope" block and is the reference for the applicability judgments.
 
 2.1.0 (spec 2026-08-26) makes the Step-2 classification load-bearing and puts
 the instrument's own scale back on one control:
@@ -230,7 +230,7 @@ def _rationale(
 
 def _applicability(eid: UUID, official_text: str, aspect: str, sort: int) -> ExtractionField:
     """Applicability: a direct Low/High/Unclear judgment against the Step-1
-    PICOTS (the project template's ✨ instruction) — AI-proposable."""
+    PICOTS (the "Review question and scope" block) — AI-proposable."""
     return _field(
         eid,
         _F_APPLICABILITY,
@@ -243,7 +243,7 @@ def _applicability(eid: UUID, official_text: str, aspect: str, sort: int) -> Ext
             "Applicability judgment (not aggregated from signaling questions): "
             f"judge whether {aspect} match the review question and the "
             "assessor's intended use of the prediction model, as stated in the "
-            "review's general instructions (the Step-1 PICOTS). Answer Low or "
+            "review question and scope (the Step-1 PICOTS). Answer Low or "
             "High, and Unclear when the article gives too little to judge."
         ),
     )
@@ -258,7 +258,7 @@ def _applicability_rationale(eid: UUID, aspect: str, sort: int) -> ExtractionFie
         llm=(
             "Rationale for the applicability judgment: summarise, citing the "
             f"article, how {aspect} match or diverge from the review question "
-            "in the general instructions."
+            "and scope."
         ),
     )
 

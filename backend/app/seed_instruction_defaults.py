@@ -11,13 +11,12 @@ verbatim so the backfill can recognize an unedited old default and replace
 it; any other text is a manager's customization and is never touched.
 """
 
+# The AI receives the project's review question under a "Review question and
+# scope:" heading, so the defaults name it the way the prompt does.
 _REVIEW_QUESTION_DEFINES_SCOPE = (
-    "The review question set in the project's review question settings "
-    "defines the target condition, population and outcome."
+    "The review question and scope defines the target condition, population and outcome."
 )
-_JUDGE_AGAINST_REVIEW_QUESTION = (
-    "Judge applicability against the review question set in the project's review question settings."
-)
+_JUDGE_AGAINST_REVIEW_QUESTION = "Judge applicability against the review question and scope."
 
 CHARMS_INSTRUCTION = (
     "This review extracts data from studies that develop or validate "

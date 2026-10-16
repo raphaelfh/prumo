@@ -342,8 +342,13 @@ async def test_applicability_is_ai_proposable_with_first_order_prompt() -> None:
     for sec in ("dev_d1_participants", "eval_d3_outcome"):
         rows = {f.name: f for f in _fields_by_section(session)[sec]}
         assert rows["applicability_concerns"].llm_description
-        assert "review question" in rows["applicability_concerns"].llm_description
-        assert rows["applicability_concerns_rationale"].llm_description
+        # The PICOTS reaches the AI under the "Review question and scope:"
+        # block, never inside the general instructions.
+        for name in ("applicability_concerns", "applicability_concerns_rationale"):
+            prompt = rows[name].llm_description
+            assert prompt, (sec, name)
+            assert "review question and scope" in prompt, (sec, name)
+            assert "general instructions" not in prompt, (sec, name)
 
 
 @pytest.mark.asyncio
