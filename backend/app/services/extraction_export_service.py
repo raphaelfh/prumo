@@ -18,6 +18,7 @@ Architectural notes:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -77,6 +78,7 @@ from app.services.exports.extraction_snapshot_reader import (
     load_export_sections,
 )
 from app.services.exports.value_envelope import resolve_value
+from app.services.extraction_snapshot import pinned_template_rules
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -506,10 +508,16 @@ class ExtractionExportService(LoggerMixin):
         else:  # pragma: no cover — exhaustive over ExportMode
             raise AssertionError(f"unhandled export mode: {mode!r}")
 
+        # QA rules are each article's own: those frozen in its run's pinned
+        # version, so articles reviewed under different versions export apart.
+        version_ids = {a.version_id for a in articles if a.version_id is not None}
+        rules_by_version = await pinned_template_rules(self.db, version_ids) if version_ids else {}
+        rules_by_article = {a.article_id: rules_by_version.get(a.version_id, {}) for a in articles}
+
         # §5 scope fidelity, applied BEFORE the tidy tables, the AI rows and
         # the appraisal read the map, so all three inherit it for free.
         mark_out_of_scope_values(
-            template_schema=template.schema_,
+            rules_by_article=rules_by_article,
             sections=sections,
             articles=tuple(articles),
             reviewers=reviewers,
@@ -566,7 +574,7 @@ class ExtractionExportService(LoggerMixin):
         appraisal: AppraisalModel | None = None
         if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
             appraisal = self._build_appraisal_model(
-                template_schema=template.schema_,
+                rules_by_article=rules_by_article,
                 sections=sections,
                 articles=tuple(articles),
                 reviewers=reviewers,
@@ -605,7 +613,7 @@ class ExtractionExportService(LoggerMixin):
         reviewers: tuple[ReviewerDescriptor, ...],
         value_map: dict[tuple[Any, ...], Any],
         mode: ExportMode,
-        template_schema: Any = None,
+        rules_by_article: Mapping[UUID, Mapping[str, Any]] | None = None,
     ) -> AppraisalModel | None:
         """Compute the appraisal roll-up for a quality-assessment template (§7).
 
@@ -668,17 +676,28 @@ class ExtractionExportService(LoggerMixin):
         # entries (a derived default for a stored judgment, discriminated by
         # the rule module) are advice, not record — the stored judgments they
         # target already print as domain columns, so only the overalls become
-        # derived columns.
-        spec_entries = derived_spec(template_schema)
-        spec = [d for d in spec_entries if not is_recommendation(d)]
-        derived_labels = tuple(str(d.get("label", "")) for d in spec)
-
-        # §9: the run view already warns on spec coordinates the frozen tree
-        # no longer carries; the export used to blank the column in silence.
-        # Same event, same emitter, so the two surfaces cannot drift.
-        if spec_entries:
-            known = {(s.name, f.name) for s in sections for f in s.fields}
-            warn_dangling_spec_refs(spec_entries, known)
+        # derived columns. Each article's spec is its pinned version's; the
+        # columns are every version's overalls, first seen first.
+        rules_of = rules_by_article or {}
+        spec_by_article: dict[UUID, list[dict[str, Any]]] = {}
+        label_by_id: dict[str, str] = {}
+        known = {(s.name, f.name) for s in sections for f in s.fields}
+        warned: set[int] = set()
+        for article in articles:
+            rules = rules_of.get(article.article_id, {})
+            spec_entries = derived_spec(rules)
+            spec_by_article[article.article_id] = [
+                d for d in spec_entries if not is_recommendation(d)
+            ]
+            for d in spec_by_article[article.article_id]:
+                label_by_id.setdefault(str(d.get("id", "")), str(d.get("label", "")))
+            # §9: the run view already warns on spec coordinates the frozen
+            # tree no longer carries; the export used to blank the column in
+            # silence. Same event, same emitter, once per rule set.
+            if spec_entries and id(rules) not in warned:
+                warned.add(id(rules))
+                warn_dangling_spec_refs(spec_entries, known)
+        derived_labels = tuple(label_by_id.values())
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)
@@ -719,7 +738,9 @@ class ExtractionExportService(LoggerMixin):
                 if is_all_users
                 else {}
             )
-            derived_values: tuple[str | None, ...] = ()
+            # Blank under an overall this article's own version does not define.
+            derived_values: tuple[str | None, ...] = tuple(None for _ in label_by_id)
+            spec = spec_by_article[article.article_id]
             if spec:
                 # Resolve the spec's (section, field) coordinates against the
                 # SAME value_map the domain verdicts came from, so a derived
@@ -733,15 +754,18 @@ class ExtractionExportService(LoggerMixin):
                 # §2a parity: the same filter the run view applies, from the
                 # same helper, so the workbook cannot show a verdict the
                 # banner calls "Not applicable" (or vice versa).
-                out_of_scope = out_of_scope_sections(template_schema, values_by_coord)
-                derived_values = tuple(
-                    NOT_APPLICABLE
+                out_of_scope = out_of_scope_sections(
+                    rules_of.get(article.article_id, {}), values_by_coord
+                )
+                by_id = {
+                    d.id: NOT_APPLICABLE
                     if d.inputs and all(is_out_of_scope(i, out_of_scope) for i in d.inputs)
                     else d.value
                     for d in compute_derived_judgments(
                         spec, scope_filtered_values(values_by_coord, out_of_scope)
                     )
-                )
+                }
+                derived_values = tuple(by_id.get(entry_id) for entry_id in label_by_id)
 
             rows.append(
                 AppraisalRow(

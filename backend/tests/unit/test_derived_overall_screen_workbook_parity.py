@@ -167,7 +167,7 @@ def _workbook_overall(
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
-        template_schema=spec if spec is not None else _SPEC,
+        rules_by_article={article.article_id: spec if spec is not None else _SPEC},
     )
     assert model is not None
     return model.rows[0].derived_values[0]

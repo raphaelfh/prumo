@@ -5,7 +5,8 @@ to export as a BLANK cell while the run view showed a "Not applicable" badge.
 This module stamps that label onto the resolved ``value_map`` ONCE, in
 ``resolve_layout``, before any sheet builder reads it — so the matrix, the
 per-section tidy tables and the appraisal summary all inherit the correction
-without receiving the template schema and without a signature change.
+without receiving the rules and without a signature change. The rules are
+each article's own: those frozen in its run's pinned template version.
 
 Lives beside ``extraction_snapshot_reader`` rather than in
 ``exports/extraction/`` on purpose: that package's ``__init__`` imports
@@ -16,6 +17,7 @@ descriptor types are annotations only, and the mode arrives as a bool.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -86,7 +88,7 @@ def reader_instance_ids(
 
 def mark_out_of_scope_values(
     *,
-    template_schema: Any,
+    rules_by_article: Mapping[UUID, Mapping[str, Any]],
     sections: tuple[SectionDescriptor, ...],
     articles: tuple[ArticleDescriptor, ...],
     reviewers: tuple[ReviewerDescriptor, ...],
@@ -108,14 +110,10 @@ def mark_out_of_scope_values(
     "which sections are out of scope?" and the exclusion would silently vanish
     from the appraisal while the matrix still showed it. A schema is not
     required to be sane about this; the skip makes it structural.
-    """
-    # Every template without scope rules exits here, before any projection is
-    # built — an extraction export does exactly the work it did before.
-    classifier = scope_classifier_coordinate(template_schema)
-    if classifier is None:
-        return
-    classifier_section = classifier[0]
 
+    *rules_by_article* maps ``article_id`` to the rules frozen in that
+    article's pinned version; an article missing from it has no rules.
+    """
     reviewer_slots: tuple[UUID | None, ...] = (
         (None, *(r.reviewer_id for r in reviewers)) if is_all_users else ()
     )
@@ -124,8 +122,14 @@ def mark_out_of_scope_values(
         run_id = article.run_id
         if run_id is None:
             continue
+        rules = rules_by_article.get(article.article_id, {})
+        # A version without scope rules skips the article before any
+        # projection is built — an extraction export does the work it did before.
+        classifier = scope_classifier_coordinate(rules)
+        if classifier is None:
+            continue
         out_of_scope = out_of_scope_sections(
-            template_schema,
+            rules,
             article_values_by_coord(
                 article=article,
                 sections=sections,
@@ -136,7 +140,7 @@ def mark_out_of_scope_values(
         if not out_of_scope:
             continue
         for section in sections:
-            if section.name not in out_of_scope or section.name == classifier_section:
+            if section.name not in out_of_scope or section.name == classifier[0]:
                 continue
             for instance_id in reader_instance_ids(section, article):
                 for section_field in section.fields:
