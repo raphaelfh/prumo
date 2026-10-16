@@ -14,6 +14,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
+    ExtractionConsensusMode,
+    ExtractionReviewerDecision,
+    ExtractionReviewerDecisionType,
+)
 from app.services.value_envelope_audit import (
     EnvelopeViolation,
     TableAudit,
@@ -215,3 +221,45 @@ async def test_planted_violators_are_found(db_session: AsyncSession) -> None:
     assert audits[PROPOSAL].counts == {EnvelopeViolation.BAD_ABSENT_REASON: 1}
     assert audits[PROPOSAL].sample_ids == {EnvelopeViolation.BAD_ABSENT_REASON: [proposal_id]}
     assert audits[PROPOSAL].last_30_days == 1
+
+
+async def test_orm_written_no_value_rows_are_not_reported(db_session: AsyncSession) -> None:
+    """The ORM stores ``value=None`` as jsonb ``'null'``, the app's "no value"."""
+    run_id, instance_id, field_id = await _coordinate(db_session)
+    reject = ExtractionReviewerDecision(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        reviewer_id=SEED.primary_profile,
+        decision=ExtractionReviewerDecisionType.REJECT.value,
+        value=None,
+    )
+    db_session.add(reject)
+    await db_session.flush()
+    db_session.add(
+        ExtractionConsensusDecision(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            consensus_user_id=SEED.primary_profile,
+            mode=ExtractionConsensusMode.SELECT_EXISTING.value,
+            selected_decision_id=reject.id,
+            value=None,
+        )
+    )
+    await db_session.flush()
+    stored = (
+        await db_session.execute(
+            text(
+                "SELECT jsonb_typeof(value) FROM public.extraction_reviewer_decisions "
+                "WHERE id = :id"
+            ),
+            {"id": str(reject.id)},
+        )
+    ).scalar_one()
+    assert stored == "null"  # precondition: the row really holds a JSON null
+
+    audits = _by_table(await audit_value_envelopes(db_session))
+
+    assert audits[REVIEWER].counts == {}
+    assert audits[CONSENSUS].counts == {}

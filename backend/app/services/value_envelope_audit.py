@@ -1,6 +1,7 @@
 """Which stored extraction values break the value envelope, per table.
 
-A stored value must be ``NULL`` or a JSON object with a ``value`` key, whose
+A stored value must be ``NULL`` (SQL ``NULL`` or the JSON ``null`` an ORM
+write of ``None`` stores) or a JSON object with a ``value`` key, whose
 keys are only ``value``, ``unit`` and ``absent_reason`` (plus
 ``verification`` on proposal records), and whose ``absent_reason``, when set,
 is one of the coded dispositions. A legacy double wrap
@@ -41,7 +42,11 @@ __all__ = [
 
 
 class EnvelopeViolation(StrEnum):
-    """Why a stored value is off the envelope, in rule order (first wins)."""
+    """Why a stored value is off the envelope.
+
+    The CASE checks these in rule order (first wins): not an object, no
+    ``value``, ``verification`` outside proposals, unknown key, bad reason.
+    """
 
     NOT_OBJECT = "not_object"
     MISSING_VALUE = "missing_value"
@@ -85,6 +90,8 @@ def _kind_case(column: str, carries_verification: bool) -> str:
     )
     return (
         "CASE "
+        # The app's "no value": an ORM write of None stores jsonb 'null'.
+        f"WHEN jsonb_typeof({column}) = 'null' THEN NULL "
         f"WHEN jsonb_typeof({column}) <> 'object' THEN '{EnvelopeViolation.NOT_OBJECT.value}' "
         f"WHEN NOT ({column} ? 'value') THEN '{EnvelopeViolation.MISSING_VALUE.value}' "
         f"{verification_rule}"
@@ -115,10 +122,13 @@ async def audit_value_envelopes(db: "AsyncSession") -> list[TableAudit]:
                 text(
                     "SELECT kind, count(*), "
                     "count(*) FILTER (WHERE created_at >= now() - interval '30 days'), "
-                    "(array_agg(id ORDER BY created_at DESC, id))[1:5] "
+                    # Only the newest five ids per kind are ever aggregated.
+                    "array_agg(id ORDER BY rn) FILTER (WHERE rn <= 5) "
+                    "FROM (SELECT id, created_at, kind, row_number() OVER "
+                    "(PARTITION BY kind ORDER BY created_at DESC, id) AS rn "
                     f"FROM (SELECT id, created_at, {_KIND_SQL[table]} AS kind "
                     f"FROM public.{table} WHERE {column} IS NOT NULL) AS x "
-                    "WHERE kind IS NOT NULL GROUP BY kind"
+                    "WHERE kind IS NOT NULL) AS ranked GROUP BY kind"
                 )
             )
         ).all()
@@ -154,6 +164,8 @@ async def _report() -> int:  # pragma: no cover - operator entry point
     from app.core.deps import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
+        # Server-enforced: any write in this transaction would fail.
+        await db.execute(text("SET TRANSACTION READ ONLY"))
         audits = await audit_value_envelopes(db)
     print(format_report(audits))
     return sum(sum(audit.counts.values()) for audit in audits)
