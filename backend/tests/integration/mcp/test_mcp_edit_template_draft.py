@@ -27,11 +27,13 @@ from app.services import template_field_naming, template_field_service
 from app.services.pat_service import create_token, resolve_principal
 from app.utils.compact_json import RESULT_CAP, compact_json
 from tests.integration.conftest import SEED, clean_project_clones
+from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
     add_field,
     add_section,
     draft_lock_holder,
+    force_narrow_baseline,
     fresh_charms,
 )
 from tests.integration.mcp.conftest import SeededPat
@@ -554,43 +556,101 @@ async def test_no_published_version_refused(
     assert await _audit_count(db_session, outcome="refused") == 1
 
 
-async def test_narrow_baseline_refused(
-    mcp_client, pat_primary_rw, db_session: AsyncSession
-) -> None:
-    before = await _label_set(db_session, SEED.primary_template)
-    ops = [
-        {
-            "op": "add_question",
-            "section_id": str(SEED.primary_entity_type),
-            "label": "Q",
-            "type": "text",
-        },
-        {"op": "update_question", "field_id": str(SEED.primary_field), "label": "New label"},
+async def _legacy_snapshot(db: AsyncSession) -> tuple[UUID, UUID, list[dict[str, Any]]]:
+    project_id, template_id, schema = await fresh_charms(db)
+    section_id, field_id = _section_and_field(schema)
+    await force_narrow_baseline(db, template_id, UUID(section_id))
+    return project_id, template_id, _baseline_ops(section_id, field_id)
+
+
+async def _pinned_empty_version(db: AsyncSession) -> tuple[UUID, UUID, list[dict[str, Any]]]:
+    # The seeded template publishes an empty v1; a run now pins it.
+    await run_in_extract(db)
+    return (
+        SEED.primary_project,
+        SEED.primary_template,
+        _baseline_ops(str(SEED.primary_entity_type), str(SEED.primary_field)),
+    )
+
+
+def _baseline_ops(section_id: str, field_id: str) -> list[dict[str, Any]]:
+    return [
+        {"op": "add_question", "section_id": section_id, "label": "Q", "type": "text"},
+        {"op": "update_question", "field_id": field_id, "label": "New label"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("setup", "message", "next_step"),
+    [
+        (
+            _legacy_snapshot,
+            "The published version of this template uses an older format.",
+            "publish once in prumo to refresh the published version, then retry",
+        ),
+        (
+            _pinned_empty_version,
+            "The published version of this template is empty and a run is pinned to it.",
+            "publish the current draft in prumo so runs move to a version with questions, "
+            "then retry",
+        ),
+    ],
+    ids=["legacy_snapshot", "pinned_empty_version"],
+)
+async def test_narrow_baseline_refused(
+    mcp_client,
+    pat_primary_rw,
+    db_session: AsyncSession,
+    setup: Any,
+    message: str,
+    next_step: str,
+) -> None:
+    project_id, template_id, ops = await setup(db_session)
+    before = await _label_set(db_session, template_id)
     result = await call_tool(
         mcp_client,
         pat_primary_rw,
         "edit_template_draft",
-        {
-            "project_id": str(SEED.primary_project),
-            "template_id": str(SEED.primary_template),
-            "ops": ops,
-        },
+        {"project_id": str(project_id), "template_id": str(template_id), "ops": ops},
     )
     payload = error_payload(result)
     assert payload["code"] == "NARROW_BASELINE"
-    _assert_named(payload, await _names(db_session, SEED.primary_project, SEED.primary_template))
-    assert await _label_set(db_session, SEED.primary_template) == before
-    assert await draft_lock_holder(db_session, SEED.primary_template) is None
+    assert payload["message"] == message
+    assert payload["next_step"] == next_step
+    _assert_named(payload, await _names(db_session, project_id, template_id))
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
     assert (
         await db_session.execute(
             text(
                 "SELECT count(*) FROM public.agent_actions WHERE outcome = 'refused' "
                 "AND tool = 'edit_template_draft' AND template_id = :t"
             ),
-            {"t": str(SEED.primary_template)},
+            {"t": str(template_id)},
         )
     ).scalar_one() == 1
+
+
+async def test_blank_template_edit_applies(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    # The seeded template publishes an empty v1 and no run is pinned to it.
+    section_id = await add_section(db_session, SEED.primary_template, "blank_section")
+    ops = [{"op": "add_question", "section_id": str(section_id), "label": "Q", "type": "text"}]
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "edit_template_draft",
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(SEED.primary_template),
+                "ops": ops,
+            },
+        )
+    )
+    assert body["status"] == "draft_saved_unpublished"
+    assert [a["section_id"] for a in body["applied"]] == [str(section_id)]
 
 
 async def test_row_guard_not_found_has_op_index_and_no_row(

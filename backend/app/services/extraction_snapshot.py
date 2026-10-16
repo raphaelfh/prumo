@@ -227,6 +227,21 @@ def baseline_is_restorable(schema_: dict[str, Any] | None) -> bool:
     return not (entity_types and snapshot_is_narrow(entity_types))
 
 
+def baseline_isolated_for_agent(
+    entity_types: list[dict[str, Any]], *, pinned_run_exists: bool
+) -> bool:
+    """May the MCP agent edit the draft over this published snapshot?
+
+    A wide snapshot isolates every run pinned to it from the live rows. An
+    EMPTY one is narrow (runs fall back to live rows), so it isolates only
+    while no run is pinned to it: a blank template a manager is still
+    building. A legacy (pre-wide) snapshot with content never isolates.
+    """
+    if not entity_types:
+        return not pinned_run_exists
+    return not snapshot_is_narrow(entity_types)
+
+
 async def entity_types_for_version(
     db: AsyncSession, *, version_id: UUID, template_id: UUID
 ) -> list[RunViewEntityType]:

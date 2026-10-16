@@ -97,6 +97,17 @@ _LOCKED_KEY_NEXT_STEP = (
     "resend update_question with only the editable_fields listed here; "
     "change type or options in the prumo UI"
 )
+# NarrowBaselineError.reason -> (message, next_step): each names its own fix.
+_NARROW_BASELINE = {
+    "pinned_empty_version": (
+        "The published version of this template is empty and a run is pinned to it.",
+        "publish the current draft in prumo so runs move to a version with questions, then retry",
+    ),
+    "legacy_snapshot": (
+        "The published version of this template uses an older format.",
+        "publish once in prumo to refresh the published version, then retry",
+    ),
+}
 _NEXT_STEP = (
     "Saved as an unpublished draft. A manager must click Publish in prumo before "
     "reviewers or AI extraction see it."
@@ -270,9 +281,8 @@ async def _assert_baseline(db: AsyncSession, template_id: UUID) -> None:
             McpErrorCode.NO_PUBLISHED_VERSION, "A manager must publish this template first."
         ) from exc
     except NarrowBaselineError as exc:
-        raise McpToolError(
-            McpErrorCode.NARROW_BASELINE, "Publish this template once in prumo, then retry."
-        ) from exc
+        message, next_step = _NARROW_BASELINE[exc.reason]
+        raise McpToolError(McpErrorCode.NARROW_BASELINE, message, next_step=next_step) from exc
 
 
 def _op_failure(exc: DraftOpError) -> McpToolError | None:

@@ -5,10 +5,15 @@ op -> column mapping, name derivation, sort_order and baseline isolation, not
 the create/update mechanics already covered by the field-service suites.
 """
 
+from uuid import UUID
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repositories.extraction_template_version_repository import (
+    ExtractionTemplateVersionRepository,
+)
 from app.schemas.mcp_template_draft import AddQuestionOp, UpdateQuestionOp
 from app.services.agent_template_draft_service import (
     AppliedDraftOp,
@@ -21,8 +26,10 @@ from app.services.template_field_service import FieldNotFoundError
 from app.services.template_section_service import SectionNotFoundError
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
+    get_template_config_diff,
 )
 from tests.integration.conftest import SEED
+from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import (
     add_field,
     add_section,
@@ -38,11 +45,64 @@ async def test_baseline_wide_passes(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_baseline_narrow_refused_for_seeded_primary_template(
-    db_session: AsyncSession,
-) -> None:
-    with pytest.raises(NarrowBaselineError):
+async def test_baseline_legacy_snapshot_refused(db_session: AsyncSession) -> None:
+    _project_id, template_id, schema = await fresh_charms(db_session)
+    await force_narrow_baseline(db_session, template_id, schema["entity_types"][0]["id"])
+    with pytest.raises(NarrowBaselineError) as caught:
+        await assert_isolated_baseline(db_session, template_id=template_id)
+    assert caught.value.reason == "legacy_snapshot"
+    assert "legacy_snapshot" in str(caught.value)
+
+
+async def _field_count(db: AsyncSession, template_id: UUID) -> int:
+    return (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_fields f "
+                "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+                "WHERE et.project_template_id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_blank_template_accepts_agent_add_question(db_session: AsyncSession) -> None:
+    # The seeded template publishes an empty v1 and no run is pinned to it.
+    section_id = await add_section(db_session, SEED.primary_template, "blank_section")
+    await assert_isolated_baseline(db_session, template_id=SEED.primary_template)
+
+    op = AddQuestionOp(op="add_question", section_id=section_id, label="Sample size", type="text")
+    applied = await apply_draft_ops(
+        db_session, project_id=SEED.primary_project, template_id=SEED.primary_template, ops=[op]
+    )
+
+    assert applied[0].field.entity_type_id == section_id
+    # Against an empty baseline every section is new, and the diff folds a new
+    # section's fields into its one "added" row.
+    diff = await get_template_config_diff(
+        db_session, project_id=SEED.primary_project, template_id=SEED.primary_template
+    )
+    assert diff.status == "available"
+    assert f"added:entity_type:{section_id}:-:-" in {row.id for row in diff.changes.additive}
+
+
+@pytest.mark.asyncio
+async def test_run_pinned_to_empty_version_is_refused(db_session: AsyncSession) -> None:
+    await add_section(db_session, SEED.primary_template, "blank_section")
+    run = await run_in_extract(db_session)
+    active = await ExtractionTemplateVersionRepository(db_session).get_active(SEED.primary_template)
+    assert active is not None and active.schema_ == {"entity_types": []}
+    assert run.version_id == active.id  # pinned to the empty published version
+    before = await _field_count(db_session, SEED.primary_template)
+
+    with pytest.raises(NarrowBaselineError) as caught:
         await assert_isolated_baseline(db_session, template_id=SEED.primary_template)
+
+    assert caught.value.reason == "pinned_empty_version"
+    assert "pinned_empty_version" in str(caught.value)
+    assert await _field_count(db_session, SEED.primary_template) == before
 
 
 @pytest.mark.asyncio

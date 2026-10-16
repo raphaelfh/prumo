@@ -8,11 +8,11 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionField
+from app.models.extraction import ExtractionField, ExtractionRun
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
@@ -23,7 +23,7 @@ from app.schemas.template_structure import (
     TemplateFieldUpdateRequest,
 )
 from app.services import template_field_naming, template_field_service
-from app.services.extraction_snapshot import snapshot_is_narrow
+from app.services.extraction_snapshot import baseline_isolated_for_agent
 from app.services.template_field_service import (
     DuplicateFieldNameError,
     EntityTypeNotFoundError,
@@ -49,8 +49,18 @@ _OP_ERRORS = (
 _UPDATE_COLUMN = {"label": "label", "description": "description", "instructions": "llm_description"}
 
 
+NarrowBaselineReason = Literal["pinned_empty_version", "legacy_snapshot"]
+
+
 class NarrowBaselineError(Exception):
-    """The active version is narrow: runs chain to live rows, so a draft edit would leak."""
+    """The active version is narrow: runs chain to live rows, so a draft edit would leak.
+
+    ``reason`` names which case: an empty version a run is pinned to, or a
+    snapshot older than the wide format."""
+
+    def __init__(self, reason: NarrowBaselineReason) -> None:
+        super().__init__(f"The active version is not isolated: {reason}.")
+        self.reason: NarrowBaselineReason = reason
 
 
 class DraftOpError(Exception):
@@ -74,18 +84,23 @@ class AppliedDraftOp:
 
 
 async def assert_isolated_baseline(db: AsyncSession, *, template_id: UUID) -> None:
-    """Refuse a draft edit unless the active version is a wide, isolated snapshot.
+    """Refuse a draft edit unless the active version isolates runs from the live rows.
 
     A narrow snapshot chains a run to the LIVE rows (spec §2), so editing the
-    live structure would leak the draft to any run still pinned to it before a
-    manager publishes.
+    live structure would leak the draft to any run pinned to it before a
+    manager publishes. An empty version (a blank template) passes while no
+    run is pinned to it.
     """
     active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
     if active is None:
         raise NoActiveTemplateVersionError(f"Project template {template_id} has no active version.")
-    # Hand snapshot_is_narrow the entity_types LIST: the whole dict reads narrow for every template.
-    if snapshot_is_narrow((active.schema_ or {}).get("entity_types") or []):
-        raise NarrowBaselineError(f"Project template {template_id} has a narrow active version.")
+    # The entity_types LIST, never the whole dict: the dict reads narrow for every template.
+    entity_types = (active.schema_ or {}).get("entity_types") or []
+    pinned = (
+        await db.execute(select(exists().where(ExtractionRun.version_id == active.id)))
+    ).scalar_one()
+    if not baseline_isolated_for_agent(entity_types, pinned_run_exists=pinned):
+        raise NarrowBaselineError("pinned_empty_version" if not entity_types else "legacy_snapshot")
 
 
 async def _add(

@@ -21,6 +21,7 @@ from app.services.pat_service import create_token, revoke_token
 from app.services.template_field_service import DuplicateFieldNameError
 from app.utils.rate_limiter import limiter
 from tests.integration.conftest import SEED, get_config_draft_marker, set_config_draft_marker
+from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.rpc import rpc
 from tests.integration.mcp.tool_calls import call_tool, error_payload
@@ -238,6 +239,7 @@ async def _build_drivers(
         )
 
     async def narrow_baseline() -> CallToolResult:
+        await run_in_extract(db_session)  # pins the seeded template's empty version
         return await call_tool(
             mcp_client,
             pat_primary_rw,
