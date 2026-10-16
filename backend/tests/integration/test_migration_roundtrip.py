@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0084_canonical_field_options"
+    expected_head = "0085_freeze_qa_rules"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2097,4 +2097,18 @@ async def test_migration_0084_canonical_options_roundtrip(migration_db_url: str)
         assert "0083_mcp_oauth" in _run_alembic("current", database_url=migration_db_url)
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
-    assert "0084_canonical_field_options" in _run_alembic("current", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+
+
+@pytest.mark.asyncio
+async def test_migration_0085_freeze_qa_rules_roundtrip(migration_db_url: str) -> None:
+    """Data-only: the downgrade strips the rules keys, the re-upgrade
+    backfills them again from the templates' current rules."""
+    try:
+        _run_alembic("downgrade", "0084_canonical_field_options", database_url=migration_db_url)
+        assert "0084_canonical_field_options" in _run_alembic(
+            "current", database_url=migration_db_url
+        )
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "0085_freeze_qa_rules" in _run_alembic("current", database_url=migration_db_url)

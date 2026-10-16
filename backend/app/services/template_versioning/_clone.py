@@ -201,6 +201,11 @@ async def _refuse_if_instruction_draft_pending(
     loaded before the locks) so the check is authoritative rather than
     TOCTOU-racy. The pinned side needs no such read: version rows are
     append-only, so ``active_snapshot`` cannot have gone stale.
+
+    The instruction is the only draft-editable template-level key in the
+    snapshot. The QA rules keys (``derived_judgments``, ``scope_rules``)
+    change only by re-import from the global catalogue, which refreshes and
+    republishes them, so no draft of theirs can be pending here.
     """
     marker, live = (
         await db.execute(

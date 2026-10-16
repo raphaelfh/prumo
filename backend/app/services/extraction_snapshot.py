@@ -19,6 +19,14 @@ NULL — a legacy template's next republish stays byte-identical, no phantom
 v+1). It is deliberately NOT backfilled into old snapshots and needs no
 migration-0026-style copy: 0026 only rewrites snapshots lacking ``role``,
 which all pre-date this key.
+
+The template's quality-assessment rules, ``derived_judgments`` and
+``scope_rules`` (from ``project_extraction_templates.schema``), are
+conditional top-level keys under the same absent ≡ empty rule: appended only
+when the template declares a non-empty value, so a template without rules
+republishes byte-identically. Freezing them means a re-import that changes
+the rules cannot change what runs pinned to an older version compute.
+Migration 0085 backfilled them into the versions that existed before.
 """
 
 from __future__ import annotations
@@ -102,19 +110,25 @@ SNAPSHOT_SQL = text(
 )
 
 
-# WARNING: this is the ONLY template-level live column the snapshot carries,
-# and ``template_versioning._clone._refuse_if_instruction_draft_pending`` depends on
-# that being true — its zero-state guard compares exactly this key, because
-# everything else in the snapshot is rebuilt from the global template. Adding
-# a second template-level key here without extending that guard silently
-# re-opens the hole where a project MEMBER publishes a manager's draft.
-_LIVE_INSTRUCTION_SQL = text(
+# WARNING: the instruction is the ONLY draft-editable template-level key the
+# snapshot carries, and ``template_versioning._clone._refuse_if_instruction_draft_pending``
+# depends on that being true — its zero-state guard compares exactly this key,
+# because everything else in the snapshot is rebuilt from the global template.
+# The QA rules keys (``_RULES_KEYS``) are template-level too but not
+# draft-editable: they change only by re-import from the global catalogue,
+# which refreshes and republishes them. Adding a draft-editable template-level
+# key here without extending that guard silently re-opens the hole where a
+# project MEMBER publishes a manager's draft.
+_LIVE_TEMPLATE_SQL = text(
     """
-    SELECT llm_template_instruction
+    SELECT llm_template_instruction, schema
     FROM public.project_extraction_templates
     WHERE id = :tid
     """
 )
+
+#: Template-level QA rules frozen into a snapshot when the template declares them.
+_RULES_KEYS = ("derived_judgments", "scope_rules")
 
 _PINNED_INSTRUCTION_SQL = text(
     """
@@ -142,14 +156,18 @@ async def general_instructions_for_version(db: AsyncSession, version_id: UUID) -
 async def build_template_version_snapshot(
     db: AsyncSession, project_template_id: UUID
 ) -> dict[str, Any]:
-    """Build the frozen ``{entity_types: [...]}`` snapshot for a project template."""
+    """Build the frozen ``{entity_types: [...]}`` snapshot for a project template,
+    plus the template-level keys it declares (instruction, QA rules)."""
     row = await db.execute(SNAPSHOT_SQL, {"tid": str(project_template_id)})
     snapshot: dict[str, Any] = row.scalar_one()
-    instruction = (
-        await db.execute(_LIVE_INSTRUCTION_SQL, {"tid": str(project_template_id)})
-    ).scalar_one_or_none()
+    live = (await db.execute(_LIVE_TEMPLATE_SQL, {"tid": str(project_template_id)})).one_or_none()
+    instruction, template_schema = live if live is not None else (None, None)
     if instruction:
         snapshot["llm_template_instruction"] = instruction
+    for key in _RULES_KEYS:
+        value = (template_schema or {}).get(key)
+        if value:
+            snapshot[key] = value
     return snapshot
 
 

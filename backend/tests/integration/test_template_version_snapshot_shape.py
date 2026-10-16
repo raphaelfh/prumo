@@ -13,7 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_snapshot import build_template_version_snapshot
+from app.services.template_versioning import TemplateVersionService
 from tests.integration.conftest import SEED, clean_project_clones, clone_charms
+from tests.integration.helpers.template_fixtures import fresh_charms
 
 _ENTITY_KEYS = {
     "id",
@@ -222,3 +224,72 @@ async def test_snapshot_carries_the_entry_key(db_session: AsyncSession) -> None:
     }
     assert frozen == live
     assert any(frozen.values()), "the seeded clone must declare at least one entry key"
+
+
+_RULES_KEYS = ("derived_judgments", "scope_rules")
+
+
+async def _set_template_schema(db: AsyncSession, template_id: uuid.UUID, schema: str) -> None:
+    await db.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET schema = CAST(:schema AS jsonb) WHERE id = :tid"
+        ),
+        {"schema": schema, "tid": str(template_id)},
+    )
+
+
+@pytest.mark.asyncio
+async def test_rules_keys_absent_when_template_declares_none(db_session: AsyncSession) -> None:
+    """Absent ≡ empty: a template without QA rules republishes byte-identically."""
+    snapshot = await build_template_version_snapshot(db_session, SEED.primary_template)
+    for key in _RULES_KEYS:
+        assert key not in snapshot
+
+
+@pytest.mark.asyncio
+async def test_rules_keys_present_when_declared(db_session: AsyncSession) -> None:
+    """The template's QA rules are frozen into the version a run pins, so a
+    later re-import that changes them cannot change what that run computes."""
+    await _set_template_schema(
+        db_session,
+        SEED.primary_template,
+        '{"derived_judgments":[{"x":1}],"scope_rules":{"a":1}}',
+    )
+    snapshot = await build_template_version_snapshot(db_session, SEED.primary_template)
+    assert snapshot["derived_judgments"] == [{"x": 1}]
+    assert snapshot["scope_rules"] == {"a": 1}
+
+    await _set_template_schema(
+        db_session, SEED.primary_template, '{"derived_judgments":[],"scope_rules":{}}'
+    )
+    snapshot = await build_template_version_snapshot(db_session, SEED.primary_template)
+    for key in _RULES_KEYS:
+        assert key not in snapshot
+    # No commit: the fixture transaction rolls the UPDATEs back.
+
+
+@pytest.mark.asyncio
+async def test_template_without_rules_gets_no_new_version(db_session: AsyncSession) -> None:
+    """A template that declares no rules gets no phantom version from the
+    rules keys: republishing an unchanged template keeps the version count."""
+    project_id, template_id, schema = await fresh_charms(db_session)
+    for key in _RULES_KEYS:
+        assert key not in schema
+
+    async def version_count() -> int:
+        return (
+            await db_session.execute(
+                text(
+                    "SELECT count(*) FROM public.extraction_template_versions "
+                    "WHERE project_template_id = :tid"
+                ),
+                {"tid": str(template_id)},
+            )
+        ).scalar_one()
+
+    before = await version_count()
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    assert await version_count() == before
