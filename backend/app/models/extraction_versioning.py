@@ -84,7 +84,8 @@ class ExtractionTemplateVersion(BaseModel):
     Version METADATA, deliberately not part of ``schema_``: the snapshot is
     the frozen structure runs are pinned to, and a prose edit must never
     make two structurally identical versions compare unequal (``republish``
-    short-circuits on ``current.schema_ == snapshot``).
+    short-circuits when the canonical forms of ``current.schema_`` and the new
+    snapshot are equal).
 
     Nullable because it is optional at publish time, and because every row
     that existed before this column did has no answer. History renders it
