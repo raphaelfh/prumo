@@ -1,21 +1,19 @@
 """The project's review question, rendered for the AI.
 
 ``projects.picots_config_ai_review`` is a JSONB column whose name promises it
-feeds the model. Until this module it fed nothing: the only text reaching the
-prompts was ``llm_template_instruction``, so PICOT arrived only as hand-typed
-prose in a template's ✨ instruction — five seeded templates ship a
-``[customize: ... state the review's Step-1 PICOTS ...]`` slot asking the
-manager to retype it.
+feeds the model; this module is what makes it do so. Because the review
+question reaches every prompt from here, the seeded template instructions
+carry no slot asking the manager to retype it.
 
 Two halves, split so the rendering is testable without a database:
 
 * ``render_picots_block`` — pure, and where every shape decision lives.
 * ``build_review_context`` — reads the project + the one toggle.
 
-The column is written by the settings UI over PostgREST (RLS ``project_update``,
-manager-only) and has no server default, so it can hold anything a manager's
-browser sent: absent, ``{}``, per-slot dicts, per-slot strings, a ``timing``
-nested one level deeper than its five siblings, or junk. Every branch below
+The column's writer is ``PUT /api/v1/projects/{project_id}/ai-context``
+(manager-only). It has no server default, and rows written before that endpoint
+existed can hold anything: absent, ``{}``, per-slot dicts, per-slot strings, a
+``timing`` nested one level deeper than its five siblings, or junk. Every branch below
 exists because one of those shapes is reachable, not defensively.
 """
 
@@ -30,10 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.project_repository import ProjectRepository
 
 #: Ceiling on the rendered block. Mirrors ``llm_template_instruction``'s
-#: ``max_length=4000`` (``schemas/hitl_session.py``) — the surface this
-#: replaces. The cap lives in the RENDERER, not on a write schema, because
-#: PostgREST is the column's writer: a cap on an API body would be decorative
-#: while the browser can still PATCH the row directly.
+#: ``max_length=4000`` (``schemas/hitl_session.py``). The cap lives in the
+#: RENDERER: the API is the column's writer, but stored rows predate it, so
+#: only a cap at render time bounds what reaches the prompt.
 MAX_REVIEW_CONTEXT_CHARS = 4000
 
 #: Storage keys in the instrument's P-I-C-O-T-S order. This tuple IS the

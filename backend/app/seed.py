@@ -55,7 +55,7 @@ from collections.abc import Sequence
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
@@ -67,6 +67,18 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
 )
 from app.models.extraction_versioning import TemplateKind
+from app.seed_instruction_defaults import (
+    CHARMS_INSTRUCTION,
+    CHARMS_MM_INSTRUCTION,
+    PROBAST_AI_INSTRUCTION,
+    PROBAST_INSTRUCTION,
+    QUADAS2_INSTRUCTION,
+    RETIRED_CHARMS_INSTRUCTION,
+    RETIRED_CHARMS_MM_INSTRUCTION,
+    RETIRED_PROBAST_AI_INSTRUCTION,
+    RETIRED_PROBAST_INSTRUCTION,
+    RETIRED_QUADAS2_INSTRUCTION,
+)
 from app.services.advisory_locks import take_advisory_xact_lock
 
 
@@ -3158,56 +3170,25 @@ async def seed_charms_mm(session: AsyncSession) -> None:
 # Template-level general AI instructions (spec Phase A §4)
 # ---------------------------------------------------------------------------
 
-# Delivered by ``backfill_llm_template_instructions`` — fill-if-null, so
-# re-running the seed never clobbers text a manager customized.
-# ``[customize: ...]`` slots are deliberate: the UI surfaces them until the
-# manager resolves them (they are sent verbatim to the AI until then).
+# Delivered by ``backfill_llm_template_instructions``. No ``[customize: ...]``
+# slot: the review question reaches the prompt from the project's settings. A
+# retired default is replaced; any other (customized) text is kept.
 _LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
-    _CHARMS_TEMPLATE_ID: (
-        "This review extracts data from studies that develop or validate "
-        "clinical prediction models, following the CHARMS checklist. "
-        "Report values exactly as the article states them — do not convert "
-        "units, pool cohorts, or infer unreported values. When a study "
-        "reports several models or cohorts, extract each one separately "
-        "rather than averaging. Prefer precise numbers from tables over "
-        "rounded prose values, and quote the passage that supports each "
-        "value. [customize: name the target condition, population, and "
-        "outcome this review focuses on]"
-    ),
-    _MM_TEMPLATE_ID: (
-        "This review extracts data from studies of multimodal "
-        "machine-learning prediction models, following an extended CHARMS "
-        "checklist. Keep each data modality (imaging, text, structured "
-        "data, signals) distinct as the authors describe them, and record "
-        "the fusion approach without collapsing modalities. Report "
-        "performance exactly as stated, per model and per validation "
-        "split, and quote the passage that supports each value. "
-        "[customize: name the target condition, population, and outcome "
-        "this review focuses on]"
-    ),
-    _PROBAST_TEMPLATE_ID: (
-        "This appraisal judges the risk of bias of prediction-model "
-        "studies using PROBAST. Judge strictly from what the article "
-        "reports: absence of information is a reason for concern, never "
-        "reassurance. Answer each signaling question conservatively and "
-        "quote the passage that grounds the judgment. [customize: "
-        "describe the review's intended setting and population so "
-        "applicability judgments have a reference point]"
-    ),
-    _QUADAS2_TEMPLATE_ID: (
-        "This appraisal judges the risk of bias and applicability of "
-        "diagnostic accuracy studies using QUADAS-2. Judge each domain "
-        "strictly from the reported conduct of the study — do not assume "
-        "unreported safeguards were in place. Quote the passage that "
-        "grounds each judgment. [customize: state the review question — "
-        "index test, target condition, and intended-use setting — that "
-        "applicability is judged against]"
-    ),
+    _CHARMS_TEMPLATE_ID: CHARMS_INSTRUCTION,
+    _MM_TEMPLATE_ID: CHARMS_MM_INSTRUCTION,
+    _PROBAST_TEMPLATE_ID: PROBAST_INSTRUCTION,
+    _QUADAS2_TEMPLATE_ID: QUADAS2_INSTRUCTION,
+}
+_RETIRED_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
+    _CHARMS_TEMPLATE_ID: RETIRED_CHARMS_INSTRUCTION,
+    _MM_TEMPLATE_ID: RETIRED_CHARMS_MM_INSTRUCTION,
+    _PROBAST_TEMPLATE_ID: RETIRED_PROBAST_INSTRUCTION,
+    _QUADAS2_TEMPLATE_ID: RETIRED_QUADAS2_INSTRUCTION,
 }
 
 
 async def backfill_llm_template_instructions(session: AsyncSession) -> None:
-    """Fill-if-null: seed the framework default on globals that have none.
+    """Seed the framework default where a global has none or a retired default.
 
     Separate from the per-template seeders, which never write this column —
     whether they early-return or converge — so existing databases receive new
@@ -3216,27 +3197,18 @@ async def backfill_llm_template_instructions(session: AsyncSession) -> None:
     # Function-local for the same circularity reason as ``main``'s import.
     from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 
-    instructions = {
-        **_LLM_TEMPLATE_INSTRUCTIONS,
-        _PROBAST_AI_TEMPLATE_ID: (
-            "This appraisal judges the risk of bias of AI and "
-            "machine-learning prediction-model studies using PROBAST+AI. "
-            "Judge strictly from what the article reports, with particular "
-            "attention to data leakage, train/test split hygiene, and "
-            "evaluation practices specific to machine learning. Absence of "
-            "information is a reason for concern, never reassurance. Quote "
-            "the passage that grounds each judgment. [customize: state the "
-            "review's Step-1 PICOTS — Population, Index model(s), "
-            "Comparator model(s), Outcome(s), Timing, Setting/intended use "
-            "— which every applicability judgment is made against]"
-        ),
+    instructions = {**_LLM_TEMPLATE_INSTRUCTIONS, _PROBAST_AI_TEMPLATE_ID: PROBAST_AI_INSTRUCTION}
+    retired = {
+        **_RETIRED_LLM_TEMPLATE_INSTRUCTIONS,
+        _PROBAST_AI_TEMPLATE_ID: RETIRED_PROBAST_AI_INSTRUCTION,
     }
+    column = ExtractionTemplateGlobal.llm_template_instruction
     for template_id, instruction_text in instructions.items():
         await session.execute(
             update(ExtractionTemplateGlobal)
             .where(
                 ExtractionTemplateGlobal.id == template_id,
-                ExtractionTemplateGlobal.llm_template_instruction.is_(None),
+                or_(column.is_(None), column == retired[template_id]),
             )
             .values(llm_template_instruction=instruction_text)
         )

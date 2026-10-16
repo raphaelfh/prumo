@@ -158,3 +158,21 @@ async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) ->
     assert info.file_name == "big.pdf"
     assert info.truncated is True
     assert info.est_tokens == 50
+
+
+def test_assembled_charms_prompt_carries_no_customize_slot() -> None:
+    """The seeded CHARMS default reaches the prompt as the general instruction;
+    the review question comes from the project's settings, so no slot asks for it."""
+    from app.llm.prompts import section_extraction
+    from app.seed import _CHARMS_TEMPLATE_ID, _LLM_TEMPLATE_INSTRUCTIONS
+
+    instruction = _LLM_TEMPLATE_INSTRUCTIONS[_CHARMS_TEMPLATE_ID]
+    prompt = section_extraction.render(
+        entity_name="Participants",
+        entity_description="Who was studied",
+        article_text="Effect size 0.81.",
+        general_instructions=instruction,
+        review_context="Adults with sepsis; 28-day mortality.",
+    )
+    assert instruction in prompt
+    assert "[customize:" not in prompt

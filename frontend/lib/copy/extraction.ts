@@ -535,7 +535,7 @@ export const extraction = {
     instructionResetDefault: 'Reset to template default',
     instructionInsertDefault: 'Insert suggested default',
     instructionSuggestedDefault:
-      "You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value. [customize: describe this review's scope]",
+      'You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value.',
     instructionSavedToast: 'General AI instruction saved',
     errors_saveInstruction: 'Could not save the general AI instruction',
     instructionScopeHint:
