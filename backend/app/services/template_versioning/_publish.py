@@ -61,10 +61,12 @@ __all__ = [
 class PendingConfigDraftError(Exception):
     """Publish-adjacent operation refused: unpublished config edits.
 
-    Raised by ``republish(fail_if_pending_draft=True)`` and by both clone
-    heals that would publish a draft: the DRIFT heal on any marker, and the
-    ZERO-STATE heal on a staged instruction (see ``_clone`` for why the two
-    conditions differ). The aligned path publishes nothing and never raises.
+    Raised by ``republish(fail_if_pending_draft=True)`` and by every clone
+    path that would publish a draft: the DRIFT heal and an aligned
+    re-import that refreshes the QA rules on any marker, and the
+    ZERO-STATE heal on a staged instruction (see ``_clone`` for why the
+    conditions differ). An aligned re-import with unchanged rules
+    publishes nothing and never raises.
     """
 
     def __init__(

@@ -207,12 +207,14 @@ export default function QualityAssessmentFullScreen() {
     refetchSession,
   });
 
-  // Step-2 scope (PROBAST+AI v2): the template's own `scope_rules` name the
-  // sections the classified study type takes out of play — the same declared
-  // data the derivation reads, so screen and payload agree. It badges those
-  // domains and takes them out of the rail's counts; it never gates input.
+  // Step-2 scope (PROBAST+AI v2): the `scope_rules` frozen in the run's
+  // pinned template version name the sections the classified study type takes
+  // out of play — the rules the finalize gate and the derivation read, so
+  // screen and payload agree even after a re-import changed the live ones. It
+  // badges those domains and takes them out of the rail's counts; it never
+  // gates input.
   const outOfScope = outOfScopeSectionsOnForm(
-    template?.schema,
+    runDetail ? { scope_rules: runDetail.scope_rules ?? null } : null,
     domains,
     session?.instancesByEntityType,
     values,

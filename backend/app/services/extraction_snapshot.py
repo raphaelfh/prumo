@@ -31,7 +31,7 @@ Migration 0085 backfilled them into the versions that existed before.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from typing import Any
 from uuid import UUID
@@ -198,11 +198,16 @@ async def build_template_version_snapshot(
     instruction, template_schema = live if live is not None else (None, None)
     if instruction:
         snapshot["llm_template_instruction"] = instruction
-    for key in _RULES_KEYS:
-        value = (template_schema or {}).get(key)
-        if value:
-            snapshot[key] = value
+    snapshot.update(qa_rules_of(template_schema))
     return snapshot
+
+
+def qa_rules_of(template_schema: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The QA rules a snapshot freezes from *template_schema*: each declared,
+    non-empty ``_RULES_KEYS`` entry. Also reads a version snapshot, so a
+    re-import compares the catalogue's rules to the pinned ones by the same
+    rule that froze them."""
+    return {key: value for key in _RULES_KEYS if (value := (template_schema or {}).get(key))}
 
 
 def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:

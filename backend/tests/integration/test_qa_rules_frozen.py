@@ -14,14 +14,20 @@ import copy
 import json
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKind
+from app.models.extraction import (
+    ExtractionRun,
+    ExtractionRunStage,
+    ExtractionTemplateGlobal,
+    ProjectExtractionTemplate,
+    TemplateKind,
+)
 from app.models.extraction_workflow import ExtractionConsensusMode
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 from app.services.ai_extraction import ProposalLanding
@@ -37,8 +43,12 @@ from app.services.extraction_snapshot import pinned_template_rules
 from app.services.llm_field_filter import build_llm_field_filter, llm_field_filter_of
 from app.services.qa_divergence_gate import divergence_rationale_failure
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.services.template_versioning import TemplateVersionService, clone_template
-from tests.integration.conftest import SEED
+from app.services.template_versioning import (
+    PendingConfigDraftError,
+    TemplateVersionService,
+    clone_template,
+)
+from tests.integration.conftest import SEED, set_config_draft_marker
 from tests.integration.helpers.batch_fixtures import make_article
 from tests.integration.helpers.engine_setup import run_in_extract_at
 
@@ -68,14 +78,19 @@ def _rules_new(rules_old: dict[str, Any]) -> dict[str, Any]:
     return new
 
 
-async def _pinned_qa_run(db: AsyncSession) -> _Pinned:
-    clone = await clone_template(
+async def _reimport(db: AsyncSession) -> Any:
+    return await clone_template(
         db,
         project_id=SEED.primary_project,
         global_template_id=_PROBAST_AI_TEMPLATE_ID,
         user_id=SEED.primary_profile,
         kind=TemplateKind.QUALITY_ASSESSMENT,
     )
+
+
+async def _run_on_v1(db: AsyncSession) -> tuple[_Pinned, dict[str, Any]]:
+    """A run pinned to a version holding the seeded rules; live schema untouched."""
+    clone = await _reimport(db)
     tid = clone.project_template_id
     live = (
         await db.execute(
@@ -92,7 +107,12 @@ async def _pinned_qa_run(db: AsyncSession) -> _Pinned:
     # Precondition: the pinned version froze RULES_OLD.
     assert (await pinned_template_rules(db, [run.version_id]))[run.version_id] == rules_old
 
-    rules_new = _rules_new(rules_old)
+    return _Pinned(run, tid, rules_old, _rules_new(rules_old)), live
+
+
+async def _pinned_qa_run(db: AsyncSession) -> _Pinned:
+    pinned, live = await _run_on_v1(db)
+    tid, rules_new = pinned.template_id, pinned.rules_new
     await db.execute(
         text(
             "UPDATE public.project_extraction_templates SET schema = CAST(:r2 AS jsonb) "
@@ -101,7 +121,7 @@ async def _pinned_qa_run(db: AsyncSession) -> _Pinned:
         {"r2": json.dumps({**live, **rules_new}), "tid": str(tid)},
     )
     await db.flush()
-    return _Pinned(run, tid, rules_old, rules_new)
+    return pinned
 
 
 async def test_run_view_uses_pinned_rules(db_session: AsyncSession) -> None:
@@ -362,3 +382,196 @@ async def test_export_groups_rules_by_article_version(db_session: AsyncSession) 
 
     _assert_scoped_by_old_rules(layout, SEED.primary_article)
     _assert_scoped_by_new_rules(layout, article_b)
+
+
+# --- Re-import: the catalogue's rules change, the clone publishes them ---
+
+
+async def _catalogue_ships(db: AsyncSession, rules: dict[str, Any]) -> None:
+    """The global PROBAST+AI template now declares *rules*."""
+    global_tpl = await db.get(ExtractionTemplateGlobal, _PROBAST_AI_TEMPLATE_ID)
+    assert global_tpl is not None
+    global_tpl.schema_ = {**(global_tpl.schema_ or {}), **rules}
+    await db.flush()
+
+
+async def _versions(db: AsyncSession, template_id: UUID) -> list[tuple[UUID, bool]]:
+    rows = await db.execute(
+        text(
+            "SELECT id, is_active FROM public.extraction_template_versions "
+            "WHERE project_template_id = :tid ORDER BY version"
+        ),
+        {"tid": str(template_id)},
+    )
+    return [(r.id, r.is_active) for r in rows]
+
+
+async def _live_rules(db: AsyncSession, template_id: UUID) -> dict[str, Any]:
+    live = (
+        await db.execute(
+            text("SELECT schema FROM public.project_extraction_templates WHERE id = :tid"),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+    return {k: live[k] for k in ("derived_judgments", "scope_rules")}
+
+
+async def test_reimport_publishes_new_rules_and_old_run_keeps_old_rules(
+    db_session: AsyncSession,
+) -> None:
+    pinned, _ = await _run_on_v1(db_session)
+    # The old run leaves the editable stages, so a publish keeps it on v1.
+    old_run = await _to_consensus_with_answers(db_session, pinned.run, pinned.template_id)
+    instance_id = await _section_instance(db_session, old_run)
+    for field in (
+        "q1_appropriate_data_sources",
+        "q2_appropriate_study_design",
+        "q3_representative_dataset",
+    ):
+        await ExtractionConsensusService(db_session).record_consensus(
+            run_id=old_run.id,
+            instance_id=instance_id,
+            field_id=await _field_id(db_session, pinned.template_id, field),
+            consensus_user_id=SEED.primary_profile,
+            mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            value={"value": "PY"},
+            rationale="test",
+        )
+    before = await _versions(db_session, pinned.template_id)
+    await _catalogue_ships(db_session, pinned.rules_new)
+
+    reimported = await _reimport(db_session)
+
+    after = await _versions(db_session, pinned.template_id)
+    assert len(after) == len(before) + 1
+    v2 = after[-1][0]
+    assert after[-1][1] is True
+    assert reimported.version_id == v2
+    assert (await pinned_template_rules(db_session, [v2]))[v2] == pinned.rules_new
+    assert await _live_rules(db_session, pinned.template_id) == pinned.rules_new
+    # The pinned run keeps RULES_OLD in every consumer.
+    assert old_run.version_id != v2
+    view = await build_run_view(
+        db_session, old_run.id, caller_id=SEED.primary_profile, can_see_peers=True
+    )
+    assert view.scope_rules == pinned.rules_old["scope_rules"]
+    assert await build_llm_field_filter(db_session, old_run) == llm_field_filter_of(
+        pinned.rules_old
+    )
+    failure = await divergence_rationale_failure(db_session, old_run)
+    assert failure is not None and "Resolve divergence" in failure
+    _assert_scoped_by_old_rules(
+        await _export(db_session, pinned.template_id, [SEED.primary_article]),
+        SEED.primary_article,
+    )
+    # A run created after the re-import reads RULES_NEW.
+    article_b = await make_article(db_session, SEED.primary_project, "after re-import")
+    new_run = await run_in_extract_at(
+        db_session,
+        project_id=SEED.primary_project,
+        article_id=article_b,
+        template_id=pinned.template_id,
+    )
+    assert new_run.version_id == v2
+    new_view = await build_run_view(
+        db_session, new_run.id, caller_id=SEED.primary_profile, can_see_peers=True
+    )
+    assert new_view.scope_rules == pinned.rules_new["scope_rules"]
+
+
+async def test_reimport_with_pending_draft_and_changed_rules_is_refused(
+    db_session: AsyncSession,
+) -> None:
+    pinned, _ = await _run_on_v1(db_session)
+    await db_session.execute(
+        text("UPDATE public.extraction_fields SET label = 'Edited label' WHERE id = :fid"),
+        {"fid": str(await _field_id(db_session, pinned.template_id, "quality_concern"))},
+    )
+    stamped = (
+        await db_session.execute(
+            text(
+                "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(pinned.template_id)},
+        )
+    ).scalar_one()
+    assert stamped is not None
+    before = await _versions(db_session, pinned.template_id)
+    await _catalogue_ships(db_session, pinned.rules_new)
+
+    # The endpoint rolls its transaction back on the refusal; a savepoint
+    # stands in for it here.
+    with pytest.raises(PendingConfigDraftError):
+        async with db_session.begin_nested():
+            await _reimport(db_session)
+
+    assert await _versions(db_session, pinned.template_id) == before
+    assert await _live_rules(db_session, pinned.template_id) == pinned.rules_old
+
+
+async def test_reimport_with_unchanged_rules_publishes_nothing(db_session: AsyncSession) -> None:
+    pinned, _ = await _run_on_v1(db_session)
+    before = await _versions(db_session, pinned.template_id)
+
+    reimported = await _reimport(db_session)
+
+    assert await _versions(db_session, pinned.template_id) == before
+    assert reimported.version_id == pinned.run.version_id
+
+
+async def _add_orphan_field(db: AsyncSession, template_id: UUID) -> None:
+    """Live structure drift with no pending draft (a lost republish)."""
+    et_id = (
+        await db.execute(
+            text(
+                "SELECT id FROM public.extraction_entity_types "
+                "WHERE project_template_id = :tid AND name = :s"
+            ),
+            {"tid": str(template_id), "s": _SECTION},
+        )
+    ).scalar_one()
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required, sort_order) "
+            "VALUES (:id, :et, 'orphan_edit', 'Orphan edit', 'text', false, 999)"
+        ),
+        {"id": str(uuid4()), "et": str(et_id)},
+    )
+    await set_config_draft_marker(db, template_id, None)
+
+
+@pytest.mark.parametrize("drift", [False, True], ids=["aligned", "structure_drift"])
+async def test_reimport_takes_publish_locks_before_writing_rules(
+    db_session: AsyncSession, drift: bool
+) -> None:
+    pinned, _ = await _run_on_v1(db_session)
+    if drift:
+        await _add_orphan_field(db_session, pinned.template_id)
+    await _catalogue_ships(db_session, pinned.rules_new)
+    events: list[str] = []
+    real_lock = TemplateVersionService.acquire_publish_locks
+    real_flush = AsyncSession.flush
+
+    async def lock(self: TemplateVersionService, template_id: UUID) -> Any:
+        events.append("lock")
+        return await real_lock(self, template_id)
+
+    async def flush(self: AsyncSession, *args: Any, **kwargs: Any) -> None:
+        writes_rules = any(
+            isinstance(obj, ProjectExtractionTemplate)
+            and (obj.schema_ or {}).get("scope_rules") == pinned.rules_new["scope_rules"]
+            for obj in self.sync_session.dirty
+        )
+        events.append("flush_rules" if writes_rules else "flush")
+        await real_flush(self, *args, **kwargs)
+
+    with (
+        patch.object(TemplateVersionService, "acquire_publish_locks", lock),
+        patch.object(AsyncSession, "flush", flush),
+    ):
+        await _reimport(db_session)
+
+    assert "flush_rules" in events
+    assert "lock" in events
+    assert events.index("lock") < events.index("flush_rules")
