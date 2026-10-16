@@ -3,15 +3,15 @@
  *
  * - Add: the trimmed input becomes both the label and the stored value.
  * - Rename: click a label to edit it inline; Enter or blur commits, Escape
- *   cancels. Only the label changes, so recorded answers (which store the
- *   value) stay attached.
+ *   cancels, and Enter or Escape hands focus back to the label. Only the label
+ *   changes, so recorded answers (which store the value) stay attached.
  * - Remove, and reorder with drag-and-drop (@dnd-kit) when `showReorder`.
  *
  * A label equal to any option's value or label is refused, so a code and a
  * label can never be confused.
  */
 
-import {useRef, useState, type CSSProperties, type HTMLAttributes, type Ref} from 'react';
+import {useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref} from 'react';
 import {Input} from '@/components/ui/input';
 import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
@@ -64,7 +64,8 @@ interface OptionRowProps {
   edit: LabelEdit | null;
   onStartEdit: () => void;
   onEditChange: (draft: string) => void;
-  onCommitEdit: () => void;
+  /** Commits the draft; false when it was refused and the edit stays open. */
+  onCommitEdit: () => boolean;
   onCancelEdit: () => void;
   onRemove: () => void;
   /** Drag wiring, present only in the sortable list. */
@@ -88,6 +89,16 @@ function OptionRow({
   onRemove,
   sortable,
 }: OptionRowProps) {
+  const labelButtonRef = useRef<HTMLButtonElement>(null);
+  // Set by a keyboard close (Enter, Escape) so focus returns to the label; a
+  // blur commit leaves focus wherever the user moved it.
+  const refocusLabel = useRef(false);
+  useEffect(() => {
+    if (edit || !refocusLabel.current) return;
+    refocusLabel.current = false;
+    labelButtonRef.current?.focus();
+  }, [edit]);
+
   return (
     <div
       ref={sortable?.setNodeRef}
@@ -115,10 +126,11 @@ function OptionRow({
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                onCommitEdit();
+                refocusLabel.current = onCommitEdit();
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
+                refocusLabel.current = true;
                 onCancelEdit();
               }
             }}
@@ -130,10 +142,11 @@ function OptionRow({
         </div>
       ) : (
         <button
+          ref={labelButtonRef}
           type="button"
           onClick={onStartEdit}
           disabled={disabled}
-          aria-label={t('templateConfig', 'optionLabelEdit')}
+          aria-label={t('templateConfig', 'optionLabelEditNamed').replace('{{label}}', option.label)}
           className="flex-1 min-w-0 truncate text-left text-sm rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden"
         >
           {option.label}
@@ -228,20 +241,22 @@ export function AllowedValuesList({
 
   const commitEdit = () => {
     const edit = editRef.current;
-    if (!edit) return;
+    if (!edit) return false;
     const label = edit.draft.trim();
     if (!label) {
       setEdit({...edit, error: t('extraction', 'enterValue')});
-      return;
+      return false;
     }
     if (collides(options, label, edit.value)) {
       setEdit({...edit, error: t('extraction', 'valueAlreadyAdded')});
-      return;
+      return false;
     }
     setEdit(null);
     const current = options.find((o) => o.value === edit.value);
-    if (!current || current.label === label) return;
-    onChange(options.map((o) => (o.value === edit.value ? {...o, label} : o)));
+    if (current && current.label !== label) {
+      onChange(options.map((o) => (o.value === edit.value ? {...o, label} : o)));
+    }
+    return true;
   };
 
   const handleRemove = (index: number) => {

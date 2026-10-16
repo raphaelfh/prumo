@@ -301,6 +301,7 @@ export const templateConfig = {
   moveDialogTitle: 'Move field to a section',
   newPerGroupSection: 'New per-{{noun}} section',
   optionLabelEdit: 'Edit option label',
+  optionLabelEditNamed: 'Edit option label: {{label}}',
   perGroupDialogDesc:
     'Lives inside {{group}} — reviewers fill it once for each {{noun}}.',
   // Capitalized inspector variants — the extraction-namespace meta keys

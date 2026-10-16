@@ -2,7 +2,9 @@ import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
-vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
+vi.mock('@/lib/copy', () => ({
+  t: (_ns: string, key: string) => (key === 'optionLabelEditNamed' ? 'Edit {{label}}' : key),
+}));
 
 import type {OptionItem} from '@/lib/extraction/options';
 
@@ -23,13 +25,14 @@ function renderList(options: OptionItem[], showReorder = true) {
 
 const addInput = () => screen.getByPlaceholderText('placeholderOptions');
 const editInput = () => screen.getByRole('textbox', {name: 'optionLabelEdit'});
+const labelButton = (label: string) => screen.getByRole('button', {name: `Edit ${label}`});
 
 describe('AllowedValuesList', () => {
   it('renames an option inline and keeps its stored value', async () => {
     const user = userEvent.setup();
     const {onChange} = renderList([{value: 'coh', label: 'Cohort'}]);
 
-    await user.click(screen.getByRole('button', {name: 'optionLabelEdit'}));
+    await user.click(labelButton('Cohort'));
     await user.clear(editInput());
     await user.type(editInput(), 'Cohort study{Enter}');
 
@@ -40,12 +43,40 @@ describe('AllowedValuesList', () => {
     const user = userEvent.setup();
     const {onChange} = renderList([{value: 'coh', label: 'Cohort'}], false);
 
-    await user.click(screen.getByRole('button', {name: 'optionLabelEdit'}));
+    await user.click(labelButton('Cohort'));
     await user.clear(editInput());
     await user.type(editInput(), 'Cohort study');
     await user.tab();
 
     expect(onChange).toHaveBeenLastCalledWith([{value: 'coh', label: 'Cohort study'}]);
+  });
+
+  it('names each label button after its own option', () => {
+    renderList(COHORT_RCT);
+
+    expect(labelButton('Cohort')).toBeInTheDocument();
+    expect(labelButton('RCT')).toBeInTheDocument();
+  });
+
+  it('returns focus to the label button after Enter commits', async () => {
+    const user = userEvent.setup();
+    renderList([{value: 'coh', label: 'Cohort'}]);
+
+    await user.click(labelButton('Cohort'));
+    await user.clear(editInput());
+    await user.type(editInput(), 'Cohort study{Enter}');
+
+    expect(labelButton('Cohort')).toHaveFocus();
+  });
+
+  it('returns focus to the label button after Escape cancels', async () => {
+    const user = userEvent.setup();
+    renderList(COHORT_RCT);
+
+    await user.click(labelButton('RCT'));
+    await user.keyboard('{Escape}');
+
+    expect(labelButton('RCT')).toHaveFocus();
   });
 
   it('gives a new option its trimmed label as the value', async () => {
