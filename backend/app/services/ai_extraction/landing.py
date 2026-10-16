@@ -6,8 +6,9 @@ call:
 
 1. ``open_run_for_write`` locks the run and gates its stage — once;
 2. authorization (an attempt's owner is still a project member) and the
-   template's assessor-owned exclusions are re-read AFTER the external work,
-   so a candidate the template stopped handing to the model is dropped;
+   assessor-owned exclusions frozen in the run's pinned version are re-read
+   AFTER the external work, under the lock — a republish that re-pinned the
+   run while the model ran is honoured, a live-only rules change is not;
 3. the section's singleton instance is resolved (created when missing);
 4. ``assert_on_coordinate`` binds every candidate field to the instance's
    coordinate — once, for all of them;
@@ -44,7 +45,6 @@ from app.models.extraction import (
     ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
-    ProjectExtractionTemplate,
 )
 from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.repositories import ExtractionInstanceRepository, ExtractionRunRepository
@@ -52,6 +52,7 @@ from app.repositories.extraction_proposal_repository import ExtractionProposalRe
 from app.schemas.llm_target import LlmTarget
 from app.services.entity_key import resolve_instance
 from app.services.extraction_run_write import assert_on_coordinate, open_run_for_write
+from app.services.extraction_snapshot import pinned_template_rules
 from app.services.llm_field_filter import LlmFieldFilter, llm_field_filter_of
 from app.services.run_engine_freeze import build_proposal_engine
 from app.services.value_semantics import (
@@ -278,7 +279,7 @@ class ProposalLanding:
         self, run_id: UUID, attempt_id: UUID | None
     ) -> tuple[ExtractionRun, LlmFieldFilter]:
         """Lock + stage gate, then the post-external-work authorization and
-        exclusion re-read."""
+        the exclusions of the LOCKED run's pinned version."""
         run = await open_run_for_write(self._db, run_id, expect=ExtractionRunStage.EXTRACT.only())
         if attempt_id is not None:
             member = await self._db.scalar(
@@ -287,10 +288,8 @@ class ProposalLanding:
             )
             if not member:
                 raise AuthorizationError("Project membership is required for extraction")
-        template = await self._db.get(
-            ProjectExtractionTemplate, run.template_id, populate_existing=True
-        )
-        return run, llm_field_filter_of(template)
+        rules = (await pinned_template_rules(self._db, [run.version_id])).get(run.version_id, {})
+        return run, llm_field_filter_of(rules)
 
     async def _singleton(
         self, run: ExtractionRun, section: Any, parent_instance_id: UUID | None

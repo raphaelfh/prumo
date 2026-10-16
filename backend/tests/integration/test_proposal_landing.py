@@ -47,6 +47,7 @@ from tests.integration.helpers.template_fixtures import (
     add_instance,
     add_section,
     fresh_charms,
+    publish_rules,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -413,26 +414,25 @@ async def test_human_source_is_refused_on_a_qa_run(db_session: AsyncSession) -> 
 
 
 async def test_assessor_exclusions_are_reread_at_landing(db_session: AsyncSession) -> None:
-    """A field the template made assessor-owned WHILE the model ran is dropped:
-    the landing re-reads the live schema under the run lock."""
+    """A field a republish made assessor-owned WHILE the model ran is dropped:
+    the republish re-pins the run, and the landing reads the LOCKED run's
+    pinned rules."""
     run = await run_in_extract(db_session)
     section = await _section(db_session)
-    await db_session.execute(
-        text("UPDATE project_extraction_templates SET schema = CAST(:s AS jsonb) WHERE id = :id"),
-        {
-            "id": SEED.primary_template,
-            "s": json.dumps(
+    await publish_rules(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+        rules={
+            "derived_judgments": [
                 {
-                    "derived_judgments": [
-                        {
-                            "id": "j",
-                            "rule": "signaling_worst",
-                            "target": {"section": section.name, "field": "sample_size"},
-                            "inputs": [],
-                        }
-                    ]
+                    "id": "j",
+                    "rule": "signaling_worst",
+                    "target": {"section": section.name, "field": "sample_size"},
+                    "inputs": [],
                 }
-            ),
+            ]
         },
     )
     written = await _landing(db_session).land(
@@ -442,30 +442,28 @@ async def test_assessor_exclusions_are_reread_at_landing(db_session: AsyncSessio
     assert await _rows(db_session, run.id) == []
 
 
-async def test_the_gate_rereads_the_template_once_and_never_walks_the_tree(
+async def test_the_gate_reads_the_pinned_rules_once_and_never_walks_the_tree(
     db_session: AsyncSession,
 ) -> None:
-    """The landing gate re-reads the live schema in ONE statement and leaves
+    """The landing gate reads the pinned rules in ONE statement and leaves
     the orphaned-exclusion warning (a whole-tree join) to the pipeline, which
     asks it once per run — not on every landing of an extract-all."""
     run = await run_in_extract(db_session)
     section = await _section(db_session)
-    await db_session.execute(
-        text("UPDATE project_extraction_templates SET schema = CAST(:s AS jsonb) WHERE id = :id"),
-        {
-            "id": SEED.primary_template,
-            "s": json.dumps(
+    await publish_rules(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+        rules={
+            "derived_judgments": [
                 {
-                    "derived_judgments": [
-                        {
-                            "id": "j",
-                            "rule": "signaling_worst",
-                            "target": {"section": section.name, "field": "renamed_away"},
-                            "inputs": [],
-                        }
-                    ]
+                    "id": "j",
+                    "rule": "signaling_worst",
+                    "target": {"section": section.name, "field": "renamed_away"},
+                    "inputs": [],
                 }
-            ),
+            ]
         },
     )
     with (
@@ -481,7 +479,7 @@ async def test_the_gate_rereads_the_template_once_and_never_walks_the_tree(
         )
     assert written == 1
     assert not log.warning.called
-    assert len([s for s in sent if "FROM public.project_extraction_templates" in s]) == 1
+    assert len([s for s in sent if "FROM public.extraction_template_versions" in s]) == 1
     assert not [s for s in sent if "project_template_id" in s]
 
 

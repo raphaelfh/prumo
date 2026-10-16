@@ -10014,6 +10014,19 @@
           },
           "run": {
             "$ref": "#/components/schemas/RunSummaryResponse"
+          },
+          "scope_rules": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope rules frozen in the run's pinned template version (QA runs only).",
+            "title": "Scope Rules"
           }
         },
         "required": [

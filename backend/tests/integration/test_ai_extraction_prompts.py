@@ -26,7 +26,7 @@ from tests.integration.helpers.ai_extraction import (
     run_in_extract,
     seed_article_text,
 )
-from tests.integration.helpers.template_fixtures import add_field, add_section
+from tests.integration.helpers.template_fixtures import add_field, add_section, publish_rules
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,14 +44,22 @@ async def _section(db: AsyncSession, name: str, *fields: str, publish: bool = Tr
     return section
 
 
-async def _template(db: AsyncSession, *, schema: Any = None, **columns: Any) -> None:
-    sets = {**columns, **({"schema": json.dumps(schema)} if schema is not None else {})}
-    assignments = ", ".join(
-        f"{c} = CAST(:{c} AS jsonb)" if c == "schema" else f"{c} = :{c}" for c in sets
-    )
+async def _template(db: AsyncSession, **columns: Any) -> None:
+    assignments = ", ".join(f"{c} = :{c}" for c in columns)
     await db.execute(
         text(f"UPDATE project_extraction_templates SET {assignments} WHERE id = :id"),  # noqa: S608
-        {**sets, "id": SEED.primary_template},
+        {**columns, "id": SEED.primary_template},
+    )
+
+
+async def _rules(db: AsyncSession, rules: dict[str, Any]) -> None:
+    """Freeze *rules* into the template's active version: the AI reads the pin."""
+    await publish_rules(
+        db,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+        rules=rules,
     )
 
 
@@ -201,7 +209,7 @@ async def test_the_spec_named_judgments_are_subtracted_on_every_path(
         "quality_concern_rationale",
     )
     await _section(db_session, "overall_judgement", "summary_quality")
-    await _template(db_session, schema=_SPEC)
+    await _rules(db_session, _SPEC)
     run = await run_in_extract(db_session)
 
     fake = await _ask(db_session, run)
@@ -217,7 +225,7 @@ async def test_the_spec_named_judgments_are_subtracted_on_every_path(
 async def test_the_live_fallback_path_is_filtered_too(db_session: AsyncSession) -> None:
     """A section outside the run's pin (the re-pin race) is read live and sent
     without a pinned field list — the leak a call-site filter cannot cover."""
-    await _template(db_session, schema=_SPEC)
+    await _rules(db_session, _SPEC)
     run = await run_in_extract(db_session)
     section = await _section(
         db_session, "dev_d1_participants", "q1", "quality_concern", publish=False
@@ -232,7 +240,7 @@ async def test_a_stale_exclusion_filters_nothing(db_session: AsyncSession) -> No
     """A spec pointer no live field answers to (a rename) fails OPEN: nothing
     is dropped, and the dangling reference is logged, never silently honoured."""
     section = await _section(db_session, "dev_d1_participants", "q1", "quality_score")
-    await _template(db_session, schema=_SPEC)
+    await _rules(db_session, _SPEC)
     run = await run_in_extract(db_session)
 
     fake = await _ask(db_session, run, entity_type_id=section)
@@ -250,9 +258,9 @@ async def test_a_study_type_classification_never_narrows_the_ask(
     the stored study type is still asked in full."""
     classifier = await _section(db_session, "assessment_scope", "study_type")
     evaluation = await _section(db_session, "eval_d1_participants", "risk_of_bias")
-    await _template(
+    await _rules(
         db_session,
-        schema={
+        {
             "scope_rules": {
                 "classifier": {"section": "assessment_scope", "field": "study_type"},
                 "excludes": {"development_only": ["eval_d1_participants"]},

@@ -235,7 +235,7 @@ class Pipeline:
 
     async def field_filter(self, run: ExtractionRun) -> LlmFieldFilter:
         """What the model may see for *run*, memoised: building it reads the
-        live template, and extract-all walks ~16 sections."""
+        pinned rules and walks the live tree, and extract-all walks ~16 sections."""
         if self._filter_run_id != run.id:
             self._field_filter = await build_llm_field_filter(self.db, run)
             self._filter_run_id = run.id

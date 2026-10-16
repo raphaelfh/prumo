@@ -395,6 +395,13 @@ class RunViewResponse(RunDetailResponse):
     # templates that declare no derivation spec — i.e. everything except
     # PROBAST+AI today.
     derived_judgments: list[RunViewDerivedJudgment] = Field(default_factory=list)
+    # A plain dict on purpose: the rules shape is declared seed data with no
+    # Pydantic model yet (backend readers go through derived_judgment_service,
+    # the frontend through lib/qa/studyTypeScope.ts); modelling it is its own change.
+    scope_rules: dict[str, Any] | None = Field(
+        default=None,
+        description="Scope rules frozen in the run's pinned template version (QA runs only).",
+    )
     # The template-level instruction this run is PINNED to — read through the
     # same helper the AI prompts call, so the screen can never show a text the
     # model did not get. Kind-neutral (extraction runs carry the pin too);

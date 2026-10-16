@@ -5,10 +5,10 @@ What only a real run can prove is the ASSEMBLY: that the gate resolves the
 target's instance and sees the PUBLISHED states — inputs the unit tests hand
 it ready-made.
 
-It does NOT prove the tree is read frozen rather than live: the factory's
-version carries an empty snapshot, so ``entity_types_for_version`` takes its
-live fallback and the two are the same rows here. That split is covered in
-``test_pinned_entity_types_provider.py``.
+It does NOT prove the tree or the rules are read frozen rather than live: the
+rules are published before the run opens, so pinned and live agree here. Those
+splits are covered in ``test_pinned_entity_types_provider.py`` and
+``test_qa_rules_frozen.py``.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from app.services.run_lifecycle_service import (
 )
 from tests.factories.template_factory import TemplateFactory
 from tests.integration.conftest import SEED
+from tests.integration.helpers.template_fixtures import publish_rules
 
 _SECTION = "dev_d1_participants"
 _LABEL = "Development D1: quality"
@@ -116,13 +117,13 @@ async def _qa_run_with_derived_spec(db: AsyncSession) -> _Built | None:
                 "av": json.dumps(options) if options is not None else None,
             },
         )
-    # The scope/derivation consumers all read the LIVE schema column.
-    await db.execute(
-        text(
-            "UPDATE public.project_extraction_templates SET schema = CAST(:s AS jsonb) "
-            "WHERE id = :tid"
-        ),
-        {"s": json.dumps(_SPEC), "tid": str(template_id)},
+    # A run evaluates the rules frozen in its pinned version: publish them.
+    await publish_rules(
+        db,
+        project_id=UUID(str(project_id)),
+        template_id=template_id,
+        user_id=UUID(str(user_id)),
+        rules=_SPEC,
     )
 
     instance_id = uuid4()

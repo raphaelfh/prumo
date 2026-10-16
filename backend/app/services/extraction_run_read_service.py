@@ -23,7 +23,6 @@ from app.models.extraction import (
     ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
-    ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import (
@@ -68,6 +67,7 @@ from app.services.extraction_reviewer_ready_service import ExtractionReviewerRea
 from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
+    pinned_template_rules,
 )
 from app.services.proposal_generation_read import (
     proposal_reveal_context,
@@ -423,12 +423,17 @@ async def build_run_view(
     instances = await _instances_for_run(db, detail.run)
 
     derived_judgments: list[RunViewDerivedJudgment] = []
+    scope_rules: dict[str, Any] | None = None
     if detail.run.kind == TemplateKind.QUALITY_ASSESSMENT.value:
-        template = await db.get(ProjectExtractionTemplate, detail.run.template_id)
+        # The rules frozen in the run's pinned version, never the live schema.
+        rules = (await pinned_template_rules(db, [detail.run.version_id])).get(
+            detail.run.version_id, {}
+        )
+        scope_rules = rules.get("scope_rules")
         # Both value sets are already loaded on `detail` and already returned to
         # every caller, so the choice adds no query and no new blind surface.
         derived_judgments = build_derived_judgments_payload(
-            template_schema=template.schema_ if template is not None else None,
+            template_schema=rules,
             entity_types=entity_types,
             instances=instances,
             values=values_for_derivation(
@@ -470,6 +475,7 @@ async def build_run_view(
         reviewer_count=ready["reviewer_count"],
         reviewers_ready=ready["reviewers_ready"],
         derived_judgments=derived_judgments,
+        scope_rules=scope_rules,
         general_instructions=general_instructions,
         review_context=review_pin.text if review_pin else None,
         peers_revealed=detail.peers_revealed,

@@ -31,6 +31,7 @@ Migration 0085 backfilled them into the versions that existed before.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
 from typing import Any
 from uuid import UUID
@@ -151,6 +152,39 @@ async def general_instructions_for_version(db: AsyncSession, version_id: UUID) -
         await db.execute(_PINNED_INSTRUCTION_SQL, {"vid": str(version_id)})
     ).scalar_one_or_none()
     return value or None
+
+
+_PINNED_RULES_SQL = text(
+    """
+    SELECT id, schema -> 'derived_judgments', schema -> 'scope_rules'
+    FROM public.extraction_template_versions
+    WHERE id = ANY(CAST(:ids AS uuid[]))
+    """
+)
+
+
+async def pinned_template_rules(
+    db: AsyncSession, version_ids: Iterable[UUID]
+) -> dict[UUID, dict[str, Any]]:
+    """The QA rules frozen in each version snapshot, keyed by version id.
+
+    Every rules reader for a run (run view, finalize gate, AI field filter)
+    evaluates the rules of the version the run is PINNED to, never the
+    template's live ``schema`` — a re-import that changes the rules must not
+    change what an open run computes. Each value is template-schema shaped
+    (``derived_judgment_service.derived_spec`` / ``_scope_rules`` read it) and
+    holds only the keys present; a version without rules maps to ``{}`` and
+    an unknown id is absent, so callers use ``.get(vid, {})``.
+    """
+    rows = await db.execute(_PINNED_RULES_SQL, {"ids": [str(v) for v in version_ids]})
+    return {
+        vid: {
+            key: value
+            for key, value in zip(_RULES_KEYS, (derived, scope), strict=True)
+            if value is not None
+        }
+        for vid, derived, scope in rows.all()
+    }
 
 
 async def build_template_version_snapshot(

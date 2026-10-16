@@ -171,6 +171,32 @@ async def force_narrow_baseline(db: AsyncSession, template_id: UUID, section: UU
     await db.flush()
 
 
+async def publish_rules(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    template_id: UUID,
+    user_id: UUID,
+    rules: dict[str, Any],
+) -> None:
+    """Declare QA *rules* on the template's live ``schema`` and republish, so
+    the new active version freezes them and editable-stage runs re-pin to it.
+
+    Every run-level rules reader evaluates the PINNED version, so a test that
+    only writes the live column never reaches the code under test.
+    """
+    await db.execute(
+        text(
+            "UPDATE public.project_extraction_templates SET schema = CAST(:s AS jsonb) "
+            "WHERE id = :tid"
+        ),
+        {"s": _json.dumps(rules), "tid": str(template_id)},
+    )
+    await TemplateVersionService(db).republish(
+        project_id=project_id, project_template_id=template_id, user_id=user_id
+    )
+
+
 async def active_schema(db: AsyncSession, template_id: UUID) -> dict[str, Any]:
     schema: dict[str, Any] = (
         await db.execute(

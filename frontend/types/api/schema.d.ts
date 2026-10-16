@@ -6333,6 +6333,13 @@ export interface components {
             /** Reviewers Ready */
             reviewers_ready?: string[];
             run: components["schemas"]["RunSummaryResponse"];
+            /**
+             * Scope Rules
+             * @description Scope rules frozen in the run's pinned template version (QA runs only).
+             */
+            scope_rules?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * SaveCredentialsResponse
