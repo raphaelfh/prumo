@@ -186,9 +186,8 @@ async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -
     A fixture may drop what the product protects, so clear the guarded rows
     first, in FK order: runs before instances, because
     ``extraction_published_states`` hangs off both (CASCADE from the run, NO
-    ACTION from the instance). ``extraction_hitl_configs.scope_id`` has no FK
-    at all and would just be orphaned, so template-scoped overrides go too —
-    mirroring ``template_delete_service``.
+    ACTION from the instance). Template-scoped HITL overrides go with the
+    template through their CASCADE foreign key (migration 0086).
     """
     ids = [str(i) for i in template_ids]
     if not ids:
@@ -196,8 +195,6 @@ async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -
     for statement in (
         "DELETE FROM public.extraction_runs WHERE template_id = ANY(CAST(:ids AS uuid[]))",
         "DELETE FROM public.extraction_instances WHERE template_id = ANY(CAST(:ids AS uuid[]))",
-        "DELETE FROM public.extraction_hitl_configs "
-        "WHERE scope_kind = 'template' AND scope_id = ANY(CAST(:ids AS uuid[]))",
         "DELETE FROM public.project_extraction_templates WHERE id = ANY(CAST(:ids AS uuid[]))",
     ):
         await session.execute(text(statement), {"ids": ids})

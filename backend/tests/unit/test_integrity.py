@@ -110,10 +110,6 @@ async def test_delete_concurrent_switch_after_the_read_is_template_active(monkey
     monkeypatch.setattr(
         "app.services.template_delete_service.owned_template", AsyncMock(return_value=stale)
     )
-    monkeypatch.setattr(
-        "app.services.template_delete_service.HitlConfigRepository",
-        lambda _db: SimpleNamespace(delete_by_scope=AsyncMock(return_value=False)),
-    )
     db = _db_for_delete(delete_result=None)
     with pytest.raises(TemplateActiveError):
         await delete_template(db, project_id=project_id, template_id=stale.id)
@@ -127,10 +123,6 @@ async def test_delete_fk_violation_after_the_read_is_template_in_use(monkeypatch
     stale = _stale_inactive_template(project_id)
     monkeypatch.setattr(
         "app.services.template_delete_service.owned_template", AsyncMock(return_value=stale)
-    )
-    monkeypatch.setattr(
-        "app.services.template_delete_service.HitlConfigRepository",
-        lambda _db: SimpleNamespace(delete_by_scope=AsyncMock(return_value=False)),
     )
     db = _db_for_delete(
         delete_raises=_integrity_error(
@@ -152,10 +144,6 @@ async def test_delete_unrelated_integrity_error_reraises(monkeypatch) -> None:
     stale = _stale_inactive_template(project_id)
     monkeypatch.setattr(
         "app.services.template_delete_service.owned_template", AsyncMock(return_value=stale)
-    )
-    monkeypatch.setattr(
-        "app.services.template_delete_service.HitlConfigRepository",
-        lambda _db: SimpleNamespace(delete_by_scope=AsyncMock(return_value=False)),
     )
     db = _db_for_delete(
         delete_raises=_integrity_error(SimpleNamespace(constraint_name="something_else"))

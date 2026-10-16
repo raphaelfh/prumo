@@ -136,7 +136,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0085_freeze_qa_rules` (post-squash numbering; run
+`0086_evidence_idx_hitl_fk` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -202,7 +202,7 @@ migration `0039_absent_reason_backfill`. Decision record:
 | Table | Append-only? | Purpose |
 | --- | --- | --- |
 | `extraction_template_versions` | No (mutable `is_active`) | Immutable schema snapshot of a project template. Unique `(project_template_id, version)`; partial unique index keeps exactly one `is_active` per template. Run references via `version_id`. Besides the `entity_types` tree, the snapshot carries the template-level `llm_template_instruction` and the QA rules `derived_judgments` / `scope_rules` only when the template declares them non-empty (0085 backfilled the rules into earlier versions). |
-| `extraction_hitl_configs` | No | HITL config (reviewer count, consensus rule, arbitrator) scoped to `project` or `template`. Resolution: template > project > system default. |
+| `extraction_hitl_configs` | No | HITL config (reviewer count, consensus rule, arbitrator) scoped to `project` or `template`. Resolution: template > project > system default. Generated `scope_project_id` / `scope_template_id` carry `ON DELETE CASCADE` FKs, so a config goes with its project or template (0086). |
 | `extraction_proposal_records` | **Yes** | One row per proposed value for a `(run, instance, field)` triplet. Source: `ai` / `human` / `system`. CHECK: `human` requires `source_user_id`. Append-only of *changes*: `ProposalLanding` (the one writer, `app/services/ai_extraction/landing.py`) re-uses the latest row when an AI value without an attempt is identical to it (an in-place verdict heal aside), so a replayed unchanged value doesn't grow a duplicate. **Attempt-owned AI proposals (0075) follow a different rule**: they carry `extraction_attempt_id` + `generation_snapshot`, a fresh attempt appends even when the value equals an earlier one, and a replay of the same attempt and coordinate returns the existing row without appending evidence (see [Extraction attempts](#extraction-attempts-and-per-call-generation-0075)). |
 | `extraction_reviewer_decisions` | **Yes** | One row per reviewer decision: `accept_proposal` / `reject` / `edit`. CHECKs enforce that `accept_proposal` carries a `proposal_record_id` and `edit` carries a `value`. Same idempotent-re-record rule as proposals: an unchanged decision replay (same decision+value+proposal) is a no-op. A reversal or undo appends a new row; earlier rows are never rewritten. `CreateDecisionRequest.expected_current_decision_id` (optional) makes a write conditional: under the run lock, `ExtractionReviewService` compares it with the coordinate's latest decision and refuses a mismatch with `DecisionConflictError` (409 `DECISION_CONFLICT`). Omitted or `null` keeps the unconditional write. |
 | `extraction_reviewer_states` | Materialized | Current `decision_id` per `(run, reviewer, instance, field)`. Upserted alongside each decision so reads are O(1). Unique `(run_id, reviewer_id, instance_id, field_id)`. |
@@ -645,7 +645,7 @@ also lists the project's own templates — active and inactive — with *Switch
 to* (`PATCH …/templates/{id}`, which since this slice deactivates the
 extraction sibling first) and *Delete* (`DELETE …/templates/{id}`: guards run
 under `SELECT … FOR UPDATE` — 409 `TEMPLATE_ACTIVE` / `TEMPLATE_IN_USE`, else
-DB cascade plus the template-scoped `extraction_hitl_configs` row; the locked
+DB cascade, which since 0086 includes the template-scoped `extraction_hitl_configs` row; the locked
 pre-check is load-bearing because `extraction_runs` also carries a composite
 CASCADE FK to the template). `GET …/templates/{id}/export` serializes the
 **live** structure as a `prumo-template@1` document (`app/schemas/

@@ -34,8 +34,6 @@ from app.models.extraction import (
     ExtractionRun,
     ProjectExtractionTemplate,
 )
-from app.models.extraction_versioning import HitlConfigScopeKind
-from app.repositories.hitl_config_repository import HitlConfigRepository
 from app.schemas.hitl_session import (
     TemplateDeleteRefusalCode,
     TemplateDeleteRefusalDetails,
@@ -102,9 +100,6 @@ async def delete_template(
     if runs or instances:
         raise TemplateInUseError(runs=runs, instances=instances)
 
-    # ``scope_id`` has no FK — the template-scoped HITL override would be
-    # orphaned by the cascade, so it goes in the same transaction.
-    await HitlConfigRepository(db).delete_by_scope(HitlConfigScopeKind.TEMPLATE, template_id)
     try:
         deleted_id = (
             await db.execute(

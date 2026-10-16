@@ -567,7 +567,7 @@ class ExtractionEvidence(BaseModel):
     Evidencias que suportam valores extraidos or instances.
 
     Indices:
-    - project_id, article_id: FKs indexadas
+    - project_id, article_id and each workflow link: btree
     - position: GIN for busca em JSONB
     """
 
@@ -634,6 +634,12 @@ class ExtractionEvidence(BaseModel):
     __table_args__ = (
         # Indice GIN for position JSONB
         Index("idx_extraction_evidence_position_gin", "position", postgresql_using="gin"),
+        # One btree per workflow link: the CASCADE from each target and the
+        # per-target reads would otherwise scan the table (migration 0086).
+        Index("idx_extraction_evidence_run_id", "run_id"),
+        Index("idx_extraction_evidence_proposal_record_id", "proposal_record_id"),
+        Index("idx_extraction_evidence_reviewer_decision_id", "reviewer_decision_id"),
+        Index("idx_extraction_evidence_consensus_decision_id", "consensus_decision_id"),
         CheckConstraint(
             """
             run_id IS NOT NULL
