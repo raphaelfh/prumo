@@ -19,6 +19,7 @@
 
 import { expect, test } from "@playwright/test";
 
+import { contractValue, FIELD_SHAPE_COLUMNS, type FieldShape } from "../_fixtures/field-values";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
@@ -93,16 +94,16 @@ test.describe("HITL run lifecycle invariants", () => {
     test.skip(instances.length === 0, "No extraction_instances available");
 
     let inst0: string | null = null;
-    let f0: string | null = null;
+    let f0: FieldShape | null = null;
     let inst0EntityTypeId: string | null = null;
     for (const inst of instances) {
-      const fields = await adminSelect<{ id: string }>(
+      const fields = await adminSelect<FieldShape>(
         "extraction_fields",
-        `select=id&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
+        `select=${FIELD_SHAPE_COLUMNS}&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
       );
       if (fields.length > 0) {
         inst0 = inst.id;
-        f0 = fields[0].id;
+        f0 = fields[0];
         inst0EntityTypeId = inst.entity_type_id;
         break;
       }
@@ -111,6 +112,7 @@ test.describe("HITL run lifecycle invariants", () => {
       !inst0 || !f0,
       "No (instance, field) coordinate available under the template",
     );
+    if (!inst0 || !f0) throw new Error("unreachable: test.skip guards above");
 
     // For coordinate-mismatch, fetch any field NOT under inst0's entity_type.
     const fieldsOther = await adminSelect<{ id: string; entity_type_id: string }>(
@@ -163,7 +165,7 @@ test.describe("HITL run lifecycle invariants", () => {
         headers: authHeaders(token, traceId),
         data: {
           instance_id: inst0,
-          field_id: f0,
+          field_id: f0.id,
           source: "human",
           proposed_value: { value: "should-fail" },
         },
@@ -181,9 +183,9 @@ test.describe("HITL run lifecycle invariants", () => {
         headers: authHeaders(token, traceId),
         data: {
           instance_id: inst0,
-          field_id: f0,
+          field_id: f0.id,
           decision: "edit",
-          value: { value: "human-says" },
+          value: { value: contractValue(f0, "human-says") },
         },
         timeout: 15000,
       },

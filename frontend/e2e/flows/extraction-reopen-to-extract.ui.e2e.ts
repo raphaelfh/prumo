@@ -18,6 +18,7 @@
 
 import { expect, test } from "@playwright/test";
 
+import { contractValue, FIELD_SHAPE_COLUMNS, type FieldShape } from "../_fixtures/field-values";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
@@ -79,11 +80,11 @@ test.describe("Extraction reopen-to-extract UI flow", () => {
     test.skip(instances.length === 0, "No extraction_instances seeded");
 
     let instance: { id: string; entity_type_id: string } | null = null;
-    let field: { id: string; name: string } | null = null;
+    let field: FieldShape | null = null;
     for (const inst of instances) {
-      const fs = await adminSelect<{ id: string; name: string }>(
+      const fs = await adminSelect<FieldShape>(
         "extraction_fields",
-        `select=id,name&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
+        `select=${FIELD_SHAPE_COLUMNS}&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
       );
       if (fs.length > 0) {
         instance = inst;
@@ -123,7 +124,7 @@ test.describe("Extraction reopen-to-extract UI flow", () => {
         instance_id: instance.id,
         field_id: field.id,
         mode: "manual_override",
-        value: { value: "reopen-to-extract-seed" },
+        value: { value: contractValue(field, "reopen-to-extract-seed") },
         rationale: "E2E reopen-to-extract seed",
       },
       timeout: 15000,

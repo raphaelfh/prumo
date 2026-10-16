@@ -23,6 +23,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { FIELD_SHAPE_COLUMNS, pickOptionCode, type FieldShape } from "../_fixtures/field-values";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, loginViaUiAs } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
@@ -586,6 +587,14 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     );
     expect(untouchedField, "PROBAST section has an unanswered field").toBeTruthy();
 
+    // Diverge with another of the field's own option codes: a decision is held
+    // to the field's contract, so a free-text answer would be refused.
+    const [conflictField] = await adminSelect<FieldShape>(
+      "extraction_fields",
+      `select=${FIELD_SHAPE_COLUMNS}&id=eq.${conflictCoord.field_id}`,
+    );
+    const ownerAnswer = conflictCoord.value?.value;
+    const divergentAnswer = pickOptionCode(conflictField, [ownerAnswer]);
     const divergent = await request.post(
       `${env.apiUrl}/api/v1/runs/${runId}/decisions`,
       {
@@ -594,7 +603,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
           instance_id: conflictCoord.instance_id,
           field_id: conflictCoord.field_id,
           decision: "edit",
-          value: { value: "e2e-divergent-answer" },
+          value: { value: divergentAnswer },
         },
         timeout: 15_000,
       },
