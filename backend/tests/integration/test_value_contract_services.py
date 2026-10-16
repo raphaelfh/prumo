@@ -191,3 +191,100 @@ async def test_override_on_a_field_outside_the_pinned_tree_is_refused(
     await _to_consensus(db_session, cr)
     with pytest.raises(InvalidConsensusError, match="not part of this run's template version"):
         await _override(db_session, cr, {"value": 5}, field_id=SEED.primary_field)
+
+
+async def test_qa_advance_carries_a_proposal_on_a_field_outside_the_pinned_tree(
+    db_session: AsyncSession,
+) -> None:
+    """A legacy human proposal on a field the run's (wide) pinned snapshot does
+    not hold is a system carry-over: the extract->consensus advance must not be
+    refused, and the value is copied unchanged."""
+    import json
+    from uuid import uuid4
+
+    from tests.integration.test_proposal_landing import _setup_qa_run_with_instance_field
+    from tests.integration.test_run_lifecycle_service import _insert_legacy_human_proposal
+
+    built = await _setup_qa_run_with_instance_field(db_session)
+    assert built is not None, "PRECONDITION: the seed graph builds a QA run"
+    run_id, instance_id, field_id, profile_id = built
+    template_id = (
+        await db_session.execute(
+            text("SELECT template_id FROM public.extraction_runs WHERE id = :r"), {"r": run_id}
+        )
+    ).scalar_one()
+    wide_without_field = {
+        "entity_types": [
+            {
+                "id": str(uuid4()),
+                "name": "other",
+                "label": "Other",
+                "description": None,
+                "entry_label": None,
+                "parent_entity_type_id": None,
+                "cardinality": "one",
+                "sort_order": 0,
+                "is_required": False,
+                "fields": [],
+            }
+        ]
+    }
+    version_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_template_versions "
+            "(id, project_template_id, version, schema, published_by, is_active) "
+            "VALUES (:id, :tid, 971, CAST(:schema AS jsonb), :pub, false)"
+        ),
+        {
+            "id": version_id,
+            "tid": template_id,
+            "schema": json.dumps(wide_without_field),
+            "pub": profile_id,
+        },
+    )
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET version_id = :v WHERE id = :r"),
+        {"v": version_id, "r": run_id},
+    )
+    assert (
+        await pinned_field(
+            db_session, version_id=version_id, template_id=template_id, field_id=field_id
+        )
+        is None
+    ), "PRECONDITION: the pinned tree does not hold the proposal's field"
+    await _insert_legacy_human_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        profile_id=profile_id,
+        value="legacy text",
+    )
+
+    advanced = await RunLifecycleService(db_session).advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+
+    assert advanced.stage == ExtractionRunStage.CONSENSUS.value
+    value = (
+        await db_session.execute(
+            text(
+                "SELECT value FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :r AND field_id = :f"
+            ),
+            {"r": run_id, "f": field_id},
+        )
+    ).scalar_one()
+    assert value == {"value": "legacy text"}
+
+
+async def test_system_override_on_a_field_outside_the_pinned_tree_is_published(
+    db_session: AsyncSession,
+) -> None:
+    cr = await contract_run(db_session)
+    await _to_consensus(db_session, cr)
+    _, published = await _override(
+        db_session, cr, {"value": "5"}, field_id=SEED.primary_field, enforce_contract=False
+    )
+    assert published.value == {"value": "5"}

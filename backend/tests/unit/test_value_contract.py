@@ -155,6 +155,13 @@ def test_whole_float_is_stored_as_int() -> None:
     assert isinstance(result["value"], int)
 
 
+@pytest.mark.parametrize("raw", [2**53 + 1, str(2**53 + 1)], ids=["int", "integer-string"])
+def test_large_integers_are_stored_exactly(raw: Any) -> None:
+    result = canonicalize_value({"value": raw}, _field("number"))
+    assert result == {"value": 9007199254740993}
+    assert isinstance(result["value"], int)
+
+
 @pytest.mark.parametrize(
     "raw",
     ["abc", float("inf"), True, "nan", [1]],

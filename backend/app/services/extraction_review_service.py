@@ -130,13 +130,14 @@ class ExtractionReviewService:
             field = await pinned_field(
                 self.db, version_id=run.version_id, template_id=run.template_id, field_id=field_id
             )
-            if field is None:
-                raise InvalidDecisionError("field is not part of this run's template version")
             if enforce_contract:
+                if field is None:
+                    raise InvalidDecisionError("field is not part of this run's template version")
                 value = canonicalize_value(value, field)
-            else:
-                # A system carry-over keeps the stored value; only the retired
-                # in-band disposition string is translated (ADR-0016).
+            elif field is not None:
+                # A system carry-over keeps the stored value (even for a field
+                # the pinned tree lacks); only the retired in-band disposition
+                # string is translated (ADR-0016).
                 value = disposition_to_marker(
                     value, field.allowed_values, allows_no_information=field.allows_no_information
                 )

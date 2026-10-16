@@ -142,9 +142,18 @@ def _multiselect(value: Any, field: RunViewField) -> Any:
 
 
 def _number(value: Any, field: RunViewField) -> int | float:
+    """An integer stays an exact ``int`` (no float round-trip above 2**53);
+    a finite non-integral number is a ``float``."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            pass
     number: float | None = None
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        number = float(value)
+    if isinstance(value, float):
+        number = value
     elif isinstance(value, str):
         try:
             number = float(value)
