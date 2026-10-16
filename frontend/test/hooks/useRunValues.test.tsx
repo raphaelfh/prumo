@@ -644,3 +644,19 @@ describe('decision save failures that are not conflicts', () => {
   });
 });
 
+
+describe('a value-contract refusal on autosave', () => {
+  it('lands in error with the server message and keeps the typed value', async () => {
+    const message = "'Study type' accepts one of its options.";
+    server.use(http.post('*/api/v1/runs/:run/decisions', () => HttpResponse.json(
+      {ok: false, error: {code: 'VALUE_CONTRACT_VIOLATION', message, details: {field_id: 'f1', reason: 'NOT_AN_OPTION'}}},
+      {status: 422},
+    )));
+    const view = renderValues(makeRunView({run: {id: 'run'}, current_values: [current('f1', 'saved')]}));
+    act(() => view.result.current.updateValue('i', 'f1', 'typed'));
+    await act(async () => {await view.result.current.saveNow().catch(() => undefined);});
+    expect(view.result.current.saveState).toBe('error');
+    expect(view.result.current.error).toBe(message);
+    expect(view.result.current.values.i_f1).toBe('typed');
+  });
+});

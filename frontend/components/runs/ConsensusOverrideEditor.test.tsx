@@ -33,6 +33,33 @@ describe('ConsensusOverrideEditor', () => {
     expect(onPublish).toHaveBeenCalledWith('Low', '');
   });
 
+  it('a rejected publish does not escape the click handler', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    // A plain async function: a vi.fn promise carries vitest's own handler.
+    const published: unknown[][] = [];
+    const onPublish = async (...args: unknown[]) => {
+      published.push(args);
+      throw new Error('Refused by contract');
+    };
+    render(
+      <ConsensusOverrideEditor
+        coordKey="i1_f1"
+        field={field}
+        disabled={false}
+        onCancel={() => {}}
+        onPublish={onPublish}
+      />,
+    );
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Low' } });
+    fireEvent.click(screen.getByTestId('consensus-override-submit-i1_f1'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off('unhandledRejection', record);
+    expect(published).toEqual([['Low', '']]);
+    expect(unhandled).toEqual([]);
+  });
+
   it('rationale is optional and passed through when provided', () => {
     const onPublish = vi.fn();
     render(

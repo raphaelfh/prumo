@@ -92,7 +92,11 @@ export function ConsensusOverrideEditor({
         <Button
           size="sm"
           disabled={disabled || !isValueFilled(value)}
-          onClick={() => void onPublish(value, rationale.trim())}
+          onClick={() => {
+            // The caller toasts a refusal and keeps the editor open; only
+            // the unhandled rejection is swallowed here.
+            Promise.resolve(onPublish(value, rationale.trim())).catch(() => undefined);
+          }}
           data-testid={`consensus-override-submit-${coordKey}`}
         >
           {t('consensus', 'panelPublishOverride')}

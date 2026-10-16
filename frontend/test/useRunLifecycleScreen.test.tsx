@@ -23,6 +23,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {} }));
 
 import { toast } from "sonner";
 import { apiClient } from "@/integrations/api";
+import { ApiError } from "@/integrations/api/client";
 import { setManagerReviewVisibility } from "@/services/hitlConfigService";
 import {
   useRunLifecycleScreen,
@@ -248,6 +249,15 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
       await expect(
         result.current.consensus.onSelectExisting({ instanceId: "i1", fieldId: "f1", decisionId: "dec-a" }),
       ).rejects.toThrow("Forbidden");
+    });
+
+    it("a value-contract refusal of an override toasts the server message and rejects", async () => {
+      routeApi({ consensus: new ApiError("VALUE_CONTRACT_VIOLATION", "Refused by contract", 422) });
+      const { result } = renderLifecycle(kind, { view: consensusView(), permissions: ARBITRATOR });
+      await expect(
+        result.current.consensus.onManualOverride({ instanceId: "i1", fieldId: "f1", value: "Maybe", rationale: "why" }),
+      ).rejects.toThrow("Refused by contract");
+      expect(toast.error).toHaveBeenCalledWith("Refused by contract");
     });
 
     it("Reopen to extract sends the same run back, closes the confirm and re-reads", async () => {

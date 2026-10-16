@@ -92,6 +92,7 @@ export const consensus = {
     panelRationalePlaceholder:
         'Why publish a value none of the reviewers picked?',
     panelPublishOverride: 'Publish override',
+    overridePublishFailed: 'Could not publish the consensus value',
 
     // Per-cell AI trace (spec 2026-07-04 D1/D4)
     traceTitle: 'AI used by {{name}}',

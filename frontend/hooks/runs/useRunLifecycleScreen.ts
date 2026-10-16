@@ -257,10 +257,14 @@ export function useRunLifecycleScreen(args: UseRunLifecycleScreenArgs) {
     goToNextArticle();
   };
 
-  // Consensus resolution rejects on failure: the panel keeps its editor open.
+  // Consensus resolution toasts the refusal (e.g. a value-contract 422) and
+  // rejects, so the panel keeps its editor open.
   const resolve = async (body: Parameters<typeof runLifecycleService.createConsensus>[1]) => {
     if (!runId) return;
-    await run('consensus', () => runLifecycleService.createConsensus(runId, body));
+    await run('consensus', () => runLifecycleService.createConsensus(runId, body)).catch((err: unknown) => {
+      toast.error(errorMessage(err, t('consensus', 'overridePublishFailed')));
+      throw err;
+    });
     await invalidateRun();
   };
 
