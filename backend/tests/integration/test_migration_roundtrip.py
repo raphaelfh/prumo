@@ -2128,10 +2128,11 @@ async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     """Downgrade drops the evidence indexes, the scope FKs and columns; the
-    re-upgrade deletes orphan configs planted while downgraded and ties the
-    surviving rows to their project or template."""
+    re-upgrade deletes orphan configs of both scope kinds planted while
+    downgraded and ties the surviving rows to their project or template."""
     user_id, project_id, template_id = uuid4(), uuid4(), uuid4()
-    live_project_cfg, live_template_cfg, orphan_cfg = uuid4(), uuid4(), uuid4()
+    live_project_cfg, live_template_cfg = uuid4(), uuid4()
+    orphan_project_cfg, orphan_template_cfg = uuid4(), uuid4()
     session = migration_session
 
     async def names(sql: str, values: tuple[str, ...]) -> set[str]:
@@ -2160,7 +2161,8 @@ async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
         "t": str(template_id),
         "cp": str(live_project_cfg),
         "ct": str(live_template_cfg),
-        "co": str(orphan_cfg),
+        "op": str(orphan_project_cfg),
+        "ot": str(orphan_template_cfg),
     }
     try:
         _run_alembic("downgrade", "0085_freeze_qa_rules", database_url=migration_db_url)
@@ -2182,7 +2184,8 @@ async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
                 " '{\"entity_types\": []}'::jsonb, :u, true)",
                 "INSERT INTO public.extraction_hitl_configs (id, scope_kind, scope_id,"
                 " reviewer_count, consensus_rule) VALUES (:cp, 'project', :p, 2, 'majority'),"
-                " (:ct, 'template', :t, 1, 'unanimous'), (:co, 'project', :co, 1, 'unanimous')",
+                " (:ct, 'template', :t, 1, 'unanimous'), (:op, 'project', :op, 1, 'unanimous'),"
+                " (:ot, 'template', :ot, 1, 'unanimous')",
             ):
                 await session.execute(text(sql), ids)
             await session.commit()
@@ -2196,7 +2199,7 @@ async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
                 await session.execute(
                     text(
                         "SELECT id, scope_project_id, scope_template_id"
-                        " FROM public.extraction_hitl_configs WHERE id IN (:cp, :ct, :co)"
+                        " FROM public.extraction_hitl_configs WHERE id IN (:cp, :ct, :op, :ot)"
                     ),
                     ids,
                 )
@@ -2210,7 +2213,7 @@ async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
     finally:
         await session.rollback()
         for sql in (
-            "DELETE FROM public.extraction_hitl_configs WHERE id IN (:cp, :ct, :co)",
+            "DELETE FROM public.extraction_hitl_configs WHERE id IN (:cp, :ct, :op, :ot)",
             "DELETE FROM public.project_extraction_templates WHERE id = :t",
             "DELETE FROM public.projects WHERE id = :p",
             "DELETE FROM public.profiles WHERE id = :u",
