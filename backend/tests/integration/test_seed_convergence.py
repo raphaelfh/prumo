@@ -22,9 +22,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import TemplateKind
+from app.seed import (
+    _CHARMS_CONDITIONAL_FIELDS,
+    _CHARMS_RETIRED_FIELDS,
+    _ET_PARTICIPANTS,
+    converge_charms_global,
+)
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
 from app.services.template_versioning import clone_template
-from tests.integration.conftest import SEED, clean_project_clones
+from tests.integration.conftest import (
+    CHARMS_GLOBAL_ID,
+    SEED,
+    clean_project_clones,
+    clone_charms,
+)
 
 # NOTE: the COLUMN is `schema`; `schema_` is only the Python attribute name
 # (``mapped_column("schema", ...)``). Getting this wrong makes every test in
@@ -208,3 +219,160 @@ async def test_seeded_options_are_canonical(db_session: AsyncSession) -> None:
         for item in allowed:
             assert isinstance(item, dict) and set(item) == {"value", "label"}
             assert item["value"] and item["label"]
+
+
+# ---------------------------------------------------------------------------
+# CHARMS: placeholder cleanup and optional conditional fields
+# ---------------------------------------------------------------------------
+
+_CHARMS_GLOBAL_FIELDS_SQL = text(
+    "SELECT f.name, f.is_required FROM public.extraction_fields f "
+    "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+    "WHERE et.template_id = :tid"
+)
+_CHARMS_CLONE_FIELDS_SQL = text(
+    "SELECT f.name, f.is_required FROM public.extraction_fields f "
+    "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+    "WHERE et.project_template_id = :cid ORDER BY et.sort_order, f.sort_order"
+)
+_RETIRED = {"native_valve_endocarditis", "valve_affected", "characteristic_4", "characteristic_5"}
+_CONDITIONAL = {
+    "calibration_slope_value",
+    "calibration_slope_ci",
+    "calibration_in_large_value",
+    "calibration_in_large_ci",
+    "hosmer_lemeshow_p_value",
+    "c_statistic_value",
+    "c_statistic_ci",
+    "d_statistic_value",
+    "d_statistic_ci",
+    "log_rank_test_p_value",
+}
+
+
+async def _charms_global_fields(db: AsyncSession) -> dict[str, bool]:
+    rows = (await db.execute(_CHARMS_GLOBAL_FIELDS_SQL, {"tid": str(CHARMS_GLOBAL_ID)})).all()
+    return dict(rows)
+
+
+async def _plant_old_charms_catalogue(db: AsyncSession) -> None:
+    """The catalogue an existing database carries from before the cleanup."""
+    await db.execute(
+        text(
+            "DELETE FROM public.extraction_fields "
+            "WHERE entity_type_id = :et AND name = 'participant_characteristics'"
+        ),
+        {"et": str(_ET_PARTICIPANTS)},
+    )
+    for sort, name in enumerate(sorted(_RETIRED), start=9):
+        await db.execute(
+            text(
+                "INSERT INTO public.extraction_fields "
+                "(id, entity_type_id, name, label, field_type, sort_order, is_required) "
+                "VALUES (gen_random_uuid(), :et, :name, :name, 'text', :sort, true) "
+                "ON CONFLICT (entity_type_id, name) DO NOTHING"
+            ),
+            {"et": str(_ET_PARTICIPANTS), "name": name, "sort": sort},
+        )
+    await db.execute(
+        text(
+            "UPDATE public.extraction_fields f SET is_required = true "
+            "FROM public.extraction_entity_types et "
+            "WHERE et.id = f.entity_type_id AND et.template_id = :tid AND f.name = ANY(:names)"
+        ),
+        {"tid": str(CHARMS_GLOBAL_ID), "names": sorted(_CONDITIONAL)},
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_charms_global_has_no_placeholder_fields(db_session: AsyncSession) -> None:
+    await converge_charms_global(db_session)
+    await db_session.commit()
+
+    fields = await _charms_global_fields(db_session)
+    assert fields, "CHARMS global template is not seeded"
+    assert not _RETIRED & set(fields)
+    assert fields["participant_characteristics"] is False
+    assert _CHARMS_RETIRED_FIELDS == _RETIRED
+
+
+@pytest.mark.asyncio
+async def test_charms_conditional_fields_are_optional(db_session: AsyncSession) -> None:
+    await converge_charms_global(db_session)
+    await db_session.commit()
+
+    fields = await _charms_global_fields(db_session)
+    assert _CHARMS_CONDITIONAL_FIELDS == _CONDITIONAL
+    for name in _CONDITIONAL:
+        assert fields[name] is False, name
+
+
+@pytest.mark.asyncio
+async def test_converge_charms_on_an_old_catalogue_and_clones_untouched(
+    db_session: AsyncSession,
+) -> None:
+    await _plant_old_charms_catalogue(db_session)
+    await clean_project_clones(db_session, SEED.secondary_project)
+    clone = await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
+    await db_session.commit()
+    cid = {"cid": str(clone.project_template_id)}
+    clone_before = (await db_session.execute(_CHARMS_CLONE_FIELDS_SQL, cid)).all()
+    assert {name for name, _ in clone_before} >= _RETIRED
+
+    await converge_charms_global(db_session)
+    await db_session.commit()
+
+    fields = await _charms_global_fields(db_session)
+    assert not _RETIRED & set(fields)
+    assert fields["participant_characteristics"] is False
+    assert not any(fields[name] for name in _CONDITIONAL)
+    assert (await db_session.execute(_CHARMS_CLONE_FIELDS_SQL, cid)).all() == clone_before
+
+
+@pytest.mark.asyncio
+async def test_converge_charms_twice_is_a_no_op(db_session: AsyncSession) -> None:
+    await _plant_old_charms_catalogue(db_session)
+    await converge_charms_global(db_session)
+    await db_session.commit()
+    before = set((await _charms_global_fields(db_session)).items())
+
+    await converge_charms_global(db_session)
+    await db_session.commit()
+
+    assert set((await _charms_global_fields(db_session)).items()) == before
+
+
+@pytest.mark.asyncio
+async def test_fresh_clone_is_clean(db_session: AsyncSession) -> None:
+    await _plant_old_charms_catalogue(db_session)
+    await converge_charms_global(db_session)
+    await clean_project_clones(db_session, SEED.secondary_project)
+    clone = await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
+    await db_session.commit()
+
+    names = {
+        name
+        for name, _ in (
+            await db_session.execute(
+                _CHARMS_CLONE_FIELDS_SQL, {"cid": str(clone.project_template_id)}
+            )
+        ).all()
+    }
+    assert not _RETIRED & names
+    assert "participant_characteristics" in names
+
+
+@pytest.mark.asyncio
+async def test_converge_charms_skips_a_referenced_catalogue(db_session: AsyncSession) -> None:
+    """An instance on a global entity type downgrades the cleanup to a loud skip."""
+    await _plant_old_charms_catalogue(db_session)
+    await db_session.execute(
+        text("UPDATE public.extraction_instances SET entity_type_id = :et WHERE id = :iid"),
+        {"et": str(_ET_PARTICIPANTS), "iid": str(SEED.primary_instance)},
+    )
+
+    await converge_charms_global(db_session)
+    await db_session.commit()
+
+    assert set(await _charms_global_fields(db_session)) >= _RETIRED
