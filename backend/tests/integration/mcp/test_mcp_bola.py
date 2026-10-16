@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
 from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.article_seed import insert_article, insert_pdf
@@ -584,3 +585,49 @@ async def test_token_restricted_to_a_still_reaches_a(mcp_client, pat_primary_rw_
         mcp_client, pat_primary_rw_only_a, "get_article", {"article_id": str(SEED.primary_article)}
     )
     assert not article.is_error
+
+
+async def test_foreign_not_found_is_byte_identical_to_missing(
+    mcp_client, pat_outsider_rw, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    """No name (or anything else) tells a foreign project or template apart
+    from one that does not exist."""
+    _secondary_project_id, foreign_template, _schema = await fresh_charms(db_session)
+    ops = [{"op": "add_question", "section_id": str(uuid4()), "label": "Q", "type": "text"}]
+    details = {"fields": {"description": "x"}, "expected": {"description": None}}
+
+    async def _payload(pat, tool: str, arguments: dict) -> str:
+        payload = error_payload(await call_tool(mcp_client, pat, tool, arguments))
+        assert payload["code"] == "NOT_FOUND"
+        return compact_json(payload)
+
+    pairs = [
+        (
+            pat_outsider_rw,
+            "update_project_details",
+            {"project_id": str(SEED.primary_project), **details},
+            {"project_id": str(uuid4()), **details},
+        ),
+        (
+            pat_outsider_rw,
+            "edit_template_draft",
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(SEED.primary_template),
+                "ops": ops,
+            },
+            {"project_id": str(uuid4()), "template_id": str(uuid4()), "ops": ops},
+        ),
+        (
+            pat_primary_rw,
+            "edit_template_draft",
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(foreign_template),
+                "ops": ops,
+            },
+            {"project_id": str(SEED.primary_project), "template_id": str(uuid4()), "ops": ops},
+        ),
+    ]
+    for pat, tool, foreign, missing in pairs:
+        assert await _payload(pat, tool, foreign) == await _payload(pat, tool, missing), tool

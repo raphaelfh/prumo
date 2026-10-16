@@ -68,6 +68,7 @@ class McpArticleTemplateStatus(BaseModel):
 class McpArticleDetail(BaseModel):
     article_id: UUID
     project_id: UUID
+    project_name: str
     title: str
     title_truncated: bool
     authors: list[str]
@@ -84,6 +85,7 @@ class McpArticleDetail(BaseModel):
     extraction_status: list[McpArticleTemplateStatus]
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
+        "project_name",
         "title",
         "authors[]",
         "journal_title",

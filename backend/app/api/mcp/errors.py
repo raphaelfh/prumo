@@ -129,6 +129,25 @@ class McpToolError(Exception):
         self.extras = extras
 
 
+def with_names(
+    error: McpToolError, *, project_name: str, template_name: str | None = None
+) -> McpToolError:
+    """``error`` naming the project (and template) it refused on, so the agent
+    can tell the user without another call. Only for refusals raised AFTER the
+    choke point proved membership; ``NOT_FOUND`` comes back untouched, so a
+    foreign resource stays byte-identical to a missing one. The names are
+    user-entered text: capped and declared in ``untrusted_fields``."""
+    if error.code is McpErrorCode.NOT_FOUND:
+        return error
+    names = {"project_name": project_name}
+    if template_name is not None:
+        names["template_name"] = template_name
+    error.extras.update({key: cap_text(value)[0] for key, value in names.items()})
+    error.extras["untrusted_content"] = True
+    error.extras["untrusted_fields"] = [*error.extras.get("untrusted_fields", []), *names]
+    return error
+
+
 def _safe_field(field: str) -> str:
     """`field` names a caller-supplied key path: echo it with NUL spelled
     out (the payload must not carry the character it may be refusing) and

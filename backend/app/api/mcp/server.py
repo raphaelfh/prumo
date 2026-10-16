@@ -45,10 +45,12 @@ from app.api.mcp.errors import (
     reject_nul,
     to_tool_error,
     validation_failure,
+    with_names,
 )
 from app.core.config import API_VERSION, settings
 from app.core.logging import get_logger
 from app.services.article_read_service import get_article_project_id
+from app.services.project_read_service import project_name
 from app.utils.compact_json import compact_json
 from app.utils.rate_limiter import hit_shared, retry_after
 
@@ -273,8 +275,12 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                     raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
 
                 if write and not await is_project_manager(db, project_id, principal.user_sub):
-                    raise McpToolError(
-                        McpErrorCode.MANAGER_REQUIRED, "Only a project manager can do this."
+                    # A member: naming the project leaks nothing past this point.
+                    raise with_names(
+                        McpToolError(
+                            McpErrorCode.MANAGER_REQUIRED, "Only a project manager can do this."
+                        ),
+                        project_name=await project_name(db, project_id),
                     )
 
             if not write:  # a write tool rejects NUL inside its own audited try

@@ -82,6 +82,7 @@ class McpExtractionArticle(BaseModel):
 
 class McpExtractionsPage(BaseModel):
     template_id: UUID
+    template_name: str
     response_format: str
     questions: list[McpExtractionQuestion] | None
     questions_truncated: bool
@@ -90,6 +91,7 @@ class McpExtractionsPage(BaseModel):
     next_cursor: str | None
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
+        "template_name",
         "questions[].section_label",
         "questions[].label",
         "articles[].title",

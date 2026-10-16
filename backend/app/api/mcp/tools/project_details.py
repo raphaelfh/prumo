@@ -17,13 +17,21 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.errors import McpErrorCode, McpToolError, reject_nul, validation_failure
+from app.api.mcp.errors import (
+    McpErrorCode,
+    McpToolError,
+    reject_nul,
+    validation_failure,
+    with_names,
+)
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_project_details import UpdateProjectDetailsResult
 from app.schemas.project_details import ProjectDetailsFields
 from app.services import project_details_service
+from app.services.project_read_service import project_name
 from app.utils.json_schema import inline_json_schema
+from app.utils.text_caps import cap_text
 
 _TOOL = "update_project_details"
 _REVIEW_TYPE_NOTE = (
@@ -59,41 +67,47 @@ async def update_project_details(
         template_id=None,
         input={"project_id": str(project_id), "fields": fields, "expected": expected},
     )
+    # The choke point proved membership; read before any refusal rolls back.
+    name = await project_name(db, project_id)
     try:
-        parsed_fields, parsed_expected = _parse(fields, expected)
-        change = await project_details_service.update_details(
-            db, project_id=project_id, fields=parsed_fields, expected=parsed_expected
-        )
-        await record_applied_write(db, scope, before=change.before, after=change.after)
-        await db.commit()  # inside the try: a deadlock here is an audited RETRY too
+        change = await _apply(db, scope, fields, expected)
     except McpToolError as error:
-        await refuse(db, scope, error)
-    except project_details_service.StaleProjectValueError as exc:
-        await refuse(
-            db,
-            scope,
-            McpToolError(
-                McpErrorCode.STALE_VALUE,
-                "A field changed since it was read.",
-                current=(exc.details or {})["current"],
-                untrusted_content=True,
-                untrusted_fields=["current{}"],
-            ),
-        )
-    except DBAPIError as exc:
-        if not is_deadlock(exc):
-            raise  # INTERNAL_ERROR via the dispatcher: logged, no row
-        await refuse(
-            db,
-            scope,
-            McpToolError(McpErrorCode.RETRY, "A concurrent write won; nothing was changed."),
-        )
+        await refuse(db, scope, with_names(error, project_name=name))
     return UpdateProjectDetailsResult(
         project_id=project_id,
+        project_name=cap_text(change.after.get("name", name))[0],
         before=change.before,
         after=change.after,
         note=_REVIEW_TYPE_NOTE if "review_type" in fields else None,
     )
+
+
+async def _apply(
+    db: AsyncSession, scope: AuditScope, fields: dict[str, Any], expected: dict[str, Any]
+) -> project_details_service.ProjectDetailsChange:
+    """The write and its applied row; every audited refusal surfaces as McpToolError."""
+    try:
+        parsed_fields, parsed_expected = _parse(fields, expected)
+        change = await project_details_service.update_details(
+            db, project_id=scope.project_id, fields=parsed_fields, expected=parsed_expected
+        )
+        await record_applied_write(db, scope, before=change.before, after=change.after)
+        await db.commit()  # inside the try: a deadlock here is an audited RETRY too
+    except project_details_service.StaleProjectValueError as exc:
+        raise McpToolError(
+            McpErrorCode.STALE_VALUE,
+            "A field changed since it was read.",
+            current=(exc.details or {})["current"],
+            untrusted_content=True,
+            untrusted_fields=["current{}"],
+        ) from exc
+    except DBAPIError as exc:
+        if not is_deadlock(exc):
+            raise  # INTERNAL_ERROR via the dispatcher: logged, no row
+        raise McpToolError(
+            McpErrorCode.RETRY, "A concurrent write won; nothing was changed."
+        ) from exc
+    return change
 
 
 def _parse(

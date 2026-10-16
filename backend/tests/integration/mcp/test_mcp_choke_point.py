@@ -104,12 +104,23 @@ async def test_reviewer_is_manager_required_for_write(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_reviewer_rw: SeededPat,
     pat_primary_rw: SeededPat,
+    db_session: AsyncSession,
     probe_tools: None,  # noqa: ARG001
 ) -> None:
+    name = (
+        await db_session.execute(
+            text("SELECT name FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
     async with mcp_client(pat_reviewer_rw) as client:
         r = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
         assert r.structured_content is not None
         assert r.structured_content["code"] == "MANAGER_REQUIRED"
+        # Membership is proven before this refusal, so naming the project leaks nothing.
+        assert r.structured_content["project_name"] == name
+        assert r.structured_content["untrusted_content"] is True
+        assert r.structured_content["untrusted_fields"] == ["project_name"]
 
         r_read = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
         assert r_read.is_error is False

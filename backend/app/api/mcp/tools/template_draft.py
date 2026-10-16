@@ -29,10 +29,12 @@ from app.api.mcp.errors import (
     McpToolError,
     reject_nul,
     validation_failure,
+    with_names,
 )
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.core.config import settings
+from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
     AppliedQuestion,
@@ -46,6 +48,7 @@ from app.services.agent_template_draft_service import (
     DraftOpError,
     NarrowBaselineError,
 )
+from app.services.project_read_service import project_name
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
@@ -63,6 +66,7 @@ from app.services.template_versioning import (
 )
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.json_schema import inline_json_schema
+from app.utils.text_caps import cap_text
 
 _TOOL = "edit_template_draft"
 MAX_OPS = 25
@@ -134,7 +138,54 @@ async def edit_template_draft(
     except ProjectTemplateNotFoundError:
         await refuse(db, scope, McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE))
 
-    applied: list[AppliedDraftOp] = []
+    # Membership and ownership are proven: refusals from here on name both,
+    # read now because a refusal's rollback expires every loaded row.
+    names = {"project_name": await project_name(db, project_id), "template_name": template.name}
+    editor_tab = _EDITOR_TAB[template.kind]
+    try:
+        applied, diff = await _apply(db, scope, project_id, template_id, ops)
+    except McpToolError as error:
+        await refuse(db, scope, with_names(error, **names))
+
+    result = EditTemplateDraftResult(
+        status="draft_saved_unpublished",
+        visible_to_reviewers_and_ai=False,
+        project_name=cap_text(names["project_name"])[0],
+        template_name=cap_text(names["template_name"])[0],
+        applied=[
+            AppliedQuestion(
+                op_index=a.op_index,
+                op=a.op,
+                field_id=a.field.id,
+                section_id=a.field.entity_type_id,
+                section_label=cap_text(a.section_label)[0],
+                name=a.field.name,
+                label=a.field.label,
+            )
+            for a in applied
+        ],
+        diff=capped_diff(diff, budget=0),  # placeholder: measures the rest of the result
+        draft_fingerprint=diff.fingerprint,
+        editor_url=f"{settings.PUBLIC_APP_URL.rstrip('/')}/projects/{project_id}?{editor_tab}",
+        next_step=_NEXT_STEP,
+    )
+    # The diff gets whatever the result cap leaves after everything else
+    # (measured with the row-less diff above, whose own fixed part the
+    # budget then re-counts).
+    rest = len(compact_json(result.model_dump(mode="json"))) - len(
+        compact_json(result.diff.model_dump(mode="json"))
+    )
+    return result.model_copy(update={"diff": capped_diff(diff, budget=RESULT_CAP - rest)})
+
+
+async def _apply(
+    db: AsyncSession,
+    scope: AuditScope,
+    project_id: UUID,
+    template_id: UUID,
+    ops: list[dict[str, Any]],
+) -> tuple[list[AppliedDraftOp], TemplateConfigDiffRead]:
+    """Steps 2-5 and the applied row; every audited refusal surfaces as McpToolError."""
     try:
         parsed = _parse_ops(ops)  # 2, 3
         await _assert_baseline(db, template_id)  # 4
@@ -152,61 +203,26 @@ async def edit_template_draft(
             after={"ops": [_applied_json(a) for a in applied]},
         )
         await db.commit()  # inside the try: a commit-time deadlock is an audited RETRY
-    except McpToolError as error:
-        await refuse(db, scope, error)
     except DraftLockHeldError as exc:
-        await refuse(
-            db,
-            scope,
-            McpToolError(
-                McpErrorCode.DRAFT_LOCK_HELD,
-                "Another manager is editing this draft.",
-                holder_name=(exc.details or {}).get("holder_name"),
-                untrusted_content=True,
-                untrusted_fields=["holder_name"],
-            ),
-        )
+        raise McpToolError(
+            McpErrorCode.DRAFT_LOCK_HELD,
+            "Another manager is editing this draft.",
+            holder_name=(exc.details or {}).get("holder_name"),
+            untrusted_content=True,
+            untrusted_fields=["holder_name"],
+        ) from exc
     except DraftOpError as exc:
         mapped_error = _op_failure(exc)
         if mapped_error is None:
             raise exc.cause from exc  # unmapped: INTERNAL_ERROR via the choke point, no row
-        await refuse(db, scope, mapped_error)
+        raise mapped_error from exc
     except DBAPIError as exc:  # the lock claim's UPDATE or the commit can lose a deadlock too
         if not is_deadlock(exc):
             raise
-        await refuse(
-            db,
-            scope,
-            McpToolError(McpErrorCode.RETRY, "A concurrent edit won; nothing was changed."),
-        )
-
-    result = EditTemplateDraftResult(
-        status="draft_saved_unpublished",
-        visible_to_reviewers_and_ai=False,
-        applied=[
-            AppliedQuestion(
-                op_index=a.op_index,
-                op=a.op,
-                field_id=a.field.id,
-                section_id=a.field.entity_type_id,
-                name=a.field.name,
-                label=a.field.label,
-            )
-            for a in applied
-        ],
-        diff=capped_diff(diff, budget=0),  # placeholder: measures the rest of the result
-        draft_fingerprint=diff.fingerprint,
-        editor_url=f"{settings.PUBLIC_APP_URL.rstrip('/')}/projects/{project_id}?"
-        f"{_EDITOR_TAB[template.kind]}",
-        next_step=_NEXT_STEP,
-    )
-    # The diff gets whatever the result cap leaves after everything else
-    # (measured with the row-less diff above, whose own fixed part the
-    # budget then re-counts).
-    rest = len(compact_json(result.model_dump(mode="json"))) - len(
-        compact_json(result.diff.model_dump(mode="json"))
-    )
-    return result.model_copy(update={"diff": capped_diff(diff, budget=RESULT_CAP - rest)})
+        raise McpToolError(
+            McpErrorCode.RETRY, "A concurrent edit won; nothing was changed."
+        ) from exc
+    return applied, diff
 
 
 def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:

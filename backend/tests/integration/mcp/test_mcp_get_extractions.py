@@ -60,6 +60,15 @@ async def test_get_extractions_concise_shape(mcp_client, pat_reviewer_rw, db_ses
     McpExtractionsPage.model_validate(body)
     assert body["response_format"] == "concise"
     assert body["questions"]
+    assert (
+        body["template_name"]
+        == (
+            await db_session.execute(
+                text("SELECT name FROM public.project_extraction_templates WHERE id = :id"),
+                {"id": str(template_id)},
+            )
+        ).scalar_one()
+    )
 
     article = next(a for a in body["articles"] if a["article_id"] == str(SEED.primary_article))
     assert article["peer_values_hidden"] is True

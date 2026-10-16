@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.tools import project_details as project_details_tool
 from app.services import project_details_service
+from app.utils.text_caps import TITLE_CAP
 from tests.integration.conftest import SEED
 from tests.integration.mcp.test_mcp_audit import _audit_count
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
@@ -71,11 +72,12 @@ async def test_applied_edit_returns_before_after_and_writes_one_row(
     body = structured(result)
     assert body == {
         "project_id": str(P),
+        "project_name": (await _current(db_session, "name"))["name"],
         "before": {"description": current["description"]},
         "after": {"description": "New"},
         "note": None,
         "untrusted_content": True,
-        "untrusted_fields": ["before{}", "after{}"],
+        "untrusted_fields": ["before{}", "after{}", "project_name"],
     }
 
     after = await _current(db_session, "description")
@@ -228,8 +230,9 @@ async def test_stale_value_returns_current_and_writes_nothing(
     error = error_payload(result)
     assert error["code"] == "STALE_VALUE"
     assert error["current"] == {"name": current["name"]}
+    assert error["project_name"] == current["name"]
     assert error["untrusted_content"] is True
-    assert error["untrusted_fields"] == ["current{}"]
+    assert error["untrusted_fields"] == ["current{}", "project_name"]
 
     after = await _current(db_session, "name")
     assert after["name"] == current["name"]
@@ -333,6 +336,7 @@ async def test_update_project_details_is_a_non_destructive_write(mcp_client, pat
     assert t.output_schema is not None
     assert set(t.output_schema["properties"]) == {
         "project_id",
+        "project_name",
         "before",
         "after",
         "note",
@@ -381,3 +385,69 @@ async def test_null_name_message_has_no_pydantic_prefix(
     assert error["code"] == "INVALID_ARGUMENT"
     assert error["field"] == "name"
     assert not error["message"].startswith("Value error,")
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected", "code"),
+    [
+        ({"settings": {}}, {"settings": None}, "FIELD_NOT_EDITABLE"),
+        ({"description": "x"}, {}, "INVALID_ARGUMENT"),
+        ({"description": "x"}, {"description": "not the current one"}, "STALE_VALUE"),
+    ],
+    ids=["field_not_editable", "invalid_argument", "stale_value"],
+)
+async def test_post_membership_refusals_carry_the_project_name(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, fields: dict, expected: dict, code: str
+):
+    name = (await _current(db_session, "name"))["name"]
+
+    error = error_payload(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {"project_id": str(P), "fields": fields, "expected": expected},
+        )
+    )
+    assert error["code"] == code
+    assert error["project_name"] == name
+    assert error["untrusted_content"] is True
+    assert "project_name" in error["untrusted_fields"]
+
+
+async def test_renaming_reports_the_new_project_name(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    current = await _current(db_session, "name")
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {"project_id": str(P), "fields": {"name": "Renamed"}, "expected": current},
+        )
+    )
+    assert body["project_name"] == "Renamed"
+
+
+async def test_a_long_project_name_is_capped(mcp_client, pat_primary_rw, db_session: AsyncSession):
+    long_name = "N" * (TITLE_CAP + 50)
+    await db_session.execute(
+        text("UPDATE public.projects SET name = :n WHERE id = :id"), {"n": long_name, "id": str(P)}
+    )
+    current = await _current(db_session, "description")
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {
+                "project_id": str(P),
+                "fields": {"description": "New"},
+                "expected": {"description": current["description"]},
+            },
+        )
+    )
+    assert body["project_name"] == long_name[:TITLE_CAP]

@@ -479,6 +479,7 @@ async def list_agent_extractions(
     *,
     project_id: UUID,
     template_id: UUID,
+    template_name: str,
     template_kind: str,
     caller_id: UUID,
     article_id: UUID | None,
@@ -779,6 +780,7 @@ async def list_agent_extractions(
 
     return McpExtractionsPage(
         template_id=template_id,
+        template_name=cap_text(template_name)[0],
         response_format=response_format,
         questions=questions,
         questions_truncated=questions_truncated,

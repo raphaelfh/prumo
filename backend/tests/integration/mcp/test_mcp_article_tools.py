@@ -121,6 +121,15 @@ async def test_get_article_tool(mcp_client, pat_primary_rw, db_session):
     )
     McpArticleDetail.model_validate(body)
     assert body["abstract"] == "The abstract body."
+    assert (
+        body["project_name"]
+        == (
+            await db_session.execute(
+                text("SELECT name FROM public.projects WHERE id = :id"),
+                {"id": str(SEED.primary_project)},
+            )
+        ).scalar_one()
+    )
     assert body["untrusted_content"] is True
     assert body["outline"]["article_file_id"] == str(new_pdf)
 

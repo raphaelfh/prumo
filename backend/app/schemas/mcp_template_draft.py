@@ -88,6 +88,7 @@ class AppliedQuestion(BaseModel):
     op: Literal["add_question", "update_question"]
     field_id: UUID
     section_id: UUID
+    section_label: str
     name: str
     label: str
 
@@ -97,6 +98,8 @@ class EditTemplateDraftResult(BaseModel):
 
     status: Literal["draft_saved_unpublished"]
     visible_to_reviewers_and_ai: Literal[False]
+    project_name: str
+    template_name: str
     applied: list[AppliedQuestion]
     diff: McpDraftDiff
     draft_fingerprint: str | None
@@ -104,6 +107,9 @@ class EditTemplateDraftResult(BaseModel):
     next_step: str
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
+        "project_name",
+        "template_name",
+        "applied[].section_label",
         "applied[].name",
         "applied[].label",
         "diff.changes[].label_path[]",

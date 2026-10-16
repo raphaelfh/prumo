@@ -62,6 +62,7 @@ async def get_extractions(
             db,
             project_id=project_id,
             template_id=template_id,
+            template_name=template.name,
             template_kind=template.kind,
             caller_id=current_principal().user_sub,
             article_id=article_id,

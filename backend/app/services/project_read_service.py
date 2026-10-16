@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import and_, exists, func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import NotFoundError
 from app.models.article import Article, ArticleFile
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
@@ -33,7 +34,7 @@ from app.schemas.mcp_projects import (
 from app.schemas.project_details import ProjectDetailsValues
 from app.services.extraction_snapshot import snapshot_is_narrow
 
-__all__ = ["get_project_overview", "list_projects_for_user", "template_summaries"]
+__all__ = ["get_project_overview", "list_projects_for_user", "project_name", "template_summaries"]
 
 
 async def list_projects_for_user(
@@ -49,6 +50,21 @@ async def list_projects_for_user(
         )
         for m in members
     ]
+
+
+async def project_name(db: AsyncSession, project_id: UUID) -> str:
+    """The project's display name, for MCP results and post-membership refusals.
+
+    Callers MUST have proven membership first (the MCP dispatch choke point
+    does); this is not an ownership guard and must never answer an
+    unauthenticated or non-member request. A project deleted mid-call raises
+    `NotFoundError` (NOT_FOUND at the MCP layer)."""
+    name = (
+        await db.execute(select(Project.name).where(Project.id == project_id))
+    ).scalar_one_or_none()
+    if name is None:
+        raise NotFoundError("Project", str(project_id))
+    return name
 
 
 async def get_project_overview(

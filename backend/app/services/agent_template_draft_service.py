@@ -69,6 +69,7 @@ class AppliedDraftOp:
     op_index: int
     op: Literal["add_question", "update_question"]
     field: TemplateFieldRead
+    section_label: str
     before: dict[str, Any] | None
 
 
@@ -90,7 +91,8 @@ async def assert_isolated_baseline(db: AsyncSession, *, template_id: UUID) -> No
 async def _add(
     db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: AddQuestionOp
 ) -> AppliedDraftOp:
-    await owned_section(db, template_id=template_id, section_id=op.section_id)
+    section = await owned_section(db, template_id=template_id, section_id=op.section_id)
+    section_label = section.label
     taken = set(
         (
             await db.execute(
@@ -117,7 +119,9 @@ async def _add(
     field = await template_field_service.create_field(
         db, project_id=project_id, template_id=template_id, payload=payload
     )
-    return AppliedDraftOp(op_index=index, op="add_question", field=field, before=None)
+    return AppliedDraftOp(
+        op_index=index, op="add_question", field=field, section_label=section_label, before=None
+    )
 
 
 async def _update(
@@ -128,13 +132,21 @@ async def _update(
         db, template_id=template_id, field_id=op.field_id
     )
     before = {key: getattr(row, _UPDATE_COLUMN[key]) for key in sent}
+    section = await owned_section(db, template_id=template_id, section_id=row.entity_type_id)
+    section_label = section.label
     payload = TemplateFieldUpdateRequest(
         **{_UPDATE_COLUMN[key]: value for key, value in sent.items()}
     )
     field = await template_field_service.update_field(
         db, project_id=project_id, template_id=template_id, field_id=op.field_id, payload=payload
     )
-    return AppliedDraftOp(op_index=index, op="update_question", field=field, before=before)
+    return AppliedDraftOp(
+        op_index=index,
+        op="update_question",
+        field=field,
+        section_label=section_label,
+        before=before,
+    )
 
 
 async def apply_draft_ops(

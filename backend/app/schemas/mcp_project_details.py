@@ -12,6 +12,7 @@ class UpdateProjectDetailsResult(BaseModel):
     """What ``update_project_details`` changed. ``before``/``after`` carry only the keys in ``fields``."""
 
     project_id: UUID
+    project_name: str
     before: dict[str, Any]
     after: dict[str, Any]
     note: str | None = None
@@ -19,4 +20,5 @@ class UpdateProjectDetailsResult(BaseModel):
     untrusted_fields: list[str] = [
         "before{}",
         "after{}",
+        "project_name",
     ]

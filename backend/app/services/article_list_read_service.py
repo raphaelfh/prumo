@@ -15,6 +15,7 @@ from sqlalchemy import exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article, ArticleFile
+from app.models.project import Project
 from app.repositories.article_repository import ArticleFileRepository
 from app.schemas.mcp_articles import (
     McpArticleDetail,
@@ -172,9 +173,16 @@ def _capped(value: str | None) -> str | None:
 
 
 async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticleDetail:
-    row = (await db.execute(select(Article).where(Article.id == article_id))).scalar_one_or_none()
-    if row is None:  # removed between the choke point's check and this read
+    found = (
+        await db.execute(
+            select(Article, Project.name)
+            .join(Project, Project.id == Article.project_id)
+            .where(Article.id == article_id)
+        )
+    ).one_or_none()
+    if found is None:  # removed between the choke point's check and this read
         raise ArticleNotFoundError(f"Article {article_id} not found")
+    row, project_name = found
 
     files = await ArticleFileRepository(db).list_for_article_ordered(article_id)
 
@@ -189,6 +197,7 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
     return McpArticleDetail(
         article_id=row.id,
         project_id=row.project_id,
+        project_name=cap_text(project_name)[0],
         title=title,
         title_truncated=title_truncated,
         authors=[
