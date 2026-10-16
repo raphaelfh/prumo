@@ -108,6 +108,9 @@ async def test_ai_proposed_value_resolves_number_unit(
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
         value={"value": {"value": 5, "unit": "mg"}},
         rationale="AI-metadata resolution fixture",
+        # Plants a stored legacy envelope verbatim (the shape exports must
+        # read), as a system write: a person's override would be canonicalized.
+        enforce_contract=False,
     )
     assert published.value == {"value": {"value": 5, "unit": "mg"}}
 

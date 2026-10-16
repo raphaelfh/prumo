@@ -310,7 +310,7 @@ async def _decide(db: AsyncSession, run: ExtractionRun, field_id: UUID, decision
         field_id=field_id,
         reviewer_id=SEED.primary_profile,
         decision=decision,
-        value={"value": "settled"} if decision is ExtractionReviewerDecisionType.EDIT else None,
+        value={"value": 12} if decision is ExtractionReviewerDecisionType.EDIT else None,
     )
 
 

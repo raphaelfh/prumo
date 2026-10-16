@@ -522,13 +522,19 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
     # Pick any instance from the QA template; we just need one (instance, field)
     # pair to write a consensus decision so the run can finalize.
     et_id, instance_id = next(iter(instances_by_et.items()))
-    field_id = (
+    field_row = (
         await db_session.execute(
-            text("SELECT id FROM public.extraction_fields WHERE entity_type_id = :et LIMIT 1"),
+            text(
+                "SELECT id, allowed_values FROM public.extraction_fields "
+                "WHERE entity_type_id = :et LIMIT 1"
+            ),
             {"et": et_id},
         )
-    ).scalar()
-    assert field_id is not None, "QA entity type has no fields"
+    ).first()
+    assert field_row is not None, "QA entity type has no fields"
+    field_id, allowed = field_row
+    # The override is held to the field's options: answer with its first one.
+    answer = allowed[0]["value"]
 
     # Collapsed lifecycle: session-open parks the run in extract; a single
     # extract -> consensus advance reaches the adjudication stage.
@@ -543,7 +549,7 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
             "instance_id": str(instance_id),
             "field_id": str(field_id),
             "mode": "manual_override",
-            "value": {"value": "Y"},
+            "value": {"value": answer},
             "rationale": "test fixture",
         },
     )

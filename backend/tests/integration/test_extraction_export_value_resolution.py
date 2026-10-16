@@ -53,6 +53,9 @@ async def _publish_field(
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
         value=value,
         rationale="value-resolution regression fixture",
+        # Plants a stored legacy envelope verbatim (the shape exports must
+        # read), as a system write: a person's override would be canonicalized.
+        enforce_contract=False,
     )
     assert consensus_record.run_id == run_id
     assert published.value == value

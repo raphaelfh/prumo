@@ -338,6 +338,7 @@ async def create_consensus(
             selected_decision_id=body.selected_decision_id,
             value=body.value,
             rationale=body.rationale,
+            enforce_contract=True,
         )
     except RunWriteError as e:
         logger.warning(

@@ -162,7 +162,7 @@ async def test_reviewers_collects_proposer_decision_consensus(
             "instance_id": instance_id,
             "field_id": field_id,
             "decision": "edit",
-            "value": {"value": "X"},
+            "value": {"value": 9},
         },
     )
     assert decision.status_code == 201, decision.text
@@ -178,7 +178,7 @@ async def test_reviewers_collects_proposer_decision_consensus(
             "instance_id": instance_id,
             "field_id": field_id,
             "mode": "manual_override",
-            "value": {"value": "Y"},
+            "value": {"value": 9},
             "rationale": "ok",
         },
     )

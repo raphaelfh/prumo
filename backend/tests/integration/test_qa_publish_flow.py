@@ -33,6 +33,9 @@ from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from tests.integration.conftest import SEED
 
+_NO_INFO = {"value": None, "absent_reason": "no_information"}
+_NOT_APPLICABLE = {"value": None, "absent_reason": "not_applicable"}
+
 _SESSION_URL = "/api/v1/hitl/sessions"
 
 
@@ -177,13 +180,15 @@ async def _write_manual_consensus(
     value: Any,
     rationale: str,
 ) -> None:
+    """A bare answer is wrapped as ``{"value": ...}``; a dict is sent as the
+    whole envelope (an absent-reason marker)."""
     res = await client.post(
         f"/api/v1/runs/{run_id}/consensus",
         json={
             "instance_id": instance_id,
             "field_id": field_id,
             "mode": "manual_override",
-            "value": {"value": value},
+            "value": value if isinstance(value, dict) else {"value": value},
             "rationale": rationale,
         },
     )
@@ -252,12 +257,12 @@ async def test_finalize_rejected_from_consensus_stage_when_empty(
 @pytest.mark.parametrize(
     ("value", "expected_published"),
     [
-        ("Y", "Y"),
-        ("PY", "PY"),
-        ("PN", "PN"),
-        ("N", "N"),
-        ("NI", "NI"),
-        ("NA", "NA"),
+        ("Y", {"value": "Y"}),
+        ("PY", {"value": "PY"}),
+        ("PN", {"value": "PN"}),
+        ("N", {"value": "N"}),
+        (_NO_INFO, _NO_INFO),
+        (_NOT_APPLICABLE, _NOT_APPLICABLE),
     ],
     ids=["yes", "probably-yes", "probably-no", "no", "no-info", "not-applicable"],
 )
@@ -265,13 +270,13 @@ async def test_single_field_publish_for_each_probast_value(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
-    value: str,
-    expected_published: str,
+    value: Any,
+    expected_published: dict[str, Any],
 ) -> None:
     """A QA publish writes one ConsensusDecision per field and the matching
     PublishedState row. Parameterized over each PROBAST signaling-question
-    value (Y/PY/PN/N/NI/NA) so the typed select round-trips through the
-    consensus and publish path."""
+    answer (Y/PY/PN/N) and the two coded markers that replaced the retired
+    NI/NA options, so each round-trips through the consensus and publish path."""
     article = await _pick_article(db_session)
     global_template_id = await _pick_qa_global_template(db_session)
     if article is None or global_template_id is None:
@@ -322,7 +327,7 @@ async def test_single_field_publish_for_each_probast_value(
         )
     ).first()
     assert row is not None, "PublishedState row must exist after finalize"
-    assert row[0] == {"value": expected_published}
+    assert row[0] == expected_published
     assert row[1] == 1
 
 
@@ -923,24 +928,21 @@ async def test_multi_field_publish_records_all_consensus_and_published_rows(
     )
     run_id = session["run_id"]
 
-    # Collect (instance_id, field_id) pairs from across domains.
-    pairs: list[tuple[str, str]] = []
+    # Collect (instance_id, field_id, answer) from across domains; each field
+    # is answered with its own first option (signaling and judgment sets differ).
+    pairs: list[tuple[str, str, str]] = []
     for et_id_str, instance_id in session["instances_by_entity_type"].items():
         fields = (
-            (
-                await db_session.execute(
-                    text(
-                        "SELECT id FROM public.extraction_fields "
-                        "WHERE entity_type_id = :et ORDER BY sort_order"
-                    ),
-                    {"et": et_id_str},
-                )
+            await db_session.execute(
+                text(
+                    "SELECT id, allowed_values FROM public.extraction_fields "
+                    "WHERE entity_type_id = :et ORDER BY sort_order"
+                ),
+                {"et": et_id_str},
             )
-            .scalars()
-            .all()
-        )
-        for f in fields:
-            pairs.append((str(instance_id), str(f)))
+        ).all()
+        for f, allowed in fields:
+            pairs.append((str(instance_id), str(f), allowed[0]["value"]))
             if len(pairs) == field_count:
                 break
         if len(pairs) == field_count:
@@ -948,14 +950,13 @@ async def test_multi_field_publish_records_all_consensus_and_published_rows(
     assert len(pairs) == field_count, "Not enough fields in the seeded template"
 
     await _advance(db_client, run_id, "consensus")
-    values = ["Y", "PY", "PN", "N", "NI", "NA"]
-    for i, (iid, fid) in enumerate(pairs):
+    for i, (iid, fid, answer) in enumerate(pairs):
         await _write_manual_consensus(
             db_client,
             run_id=run_id,
             instance_id=iid,
             field_id=fid,
-            value=values[i % len(values)],
+            value=answer,
             rationale=f"field {i + 1}/{field_count}",
         )
     await _advance(db_client, run_id, "finalized")
@@ -1166,26 +1167,18 @@ async def test_reopen_rejects_non_finalized_runs(
 
 
 # ===================== Select field value validation =====================
-# These tests document a current gap: the backend does NOT validate that
-# proposed/consensus values fall inside the field's `allowed_values`. The
-# UI uses the dropdown to constrain user input, but API misuse bypasses it.
-# The asserts in this test capture the current behaviour so a future tightening
-# is a deliberate, reviewable change rather than an accidental break.
+# A person's consensus override is held to the field's value contract.
 
 
 @pytest.mark.asyncio
-async def test_consensus_currently_accepts_value_outside_allowed_values(
+async def test_consensus_refuses_value_outside_allowed_values(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    """Documents current behaviour: an arbitrary string can be published
-    for a select field with allowed_values=[Y,PY,PN,N,NI,NA]. The UI
-    constrains via the dropdown so this matters only for direct API use.
-
-    Tightening this requires a coordinated migration of existing data
-    plus a frontend Zod schema sync; tracking as a hardening item.
-    """
+    """A manual override is held to the field's options: an arbitrary string
+    on a PROBAST select is refused with 422 ``VALUE_CONTRACT_VIOLATION`` and
+    nothing is published."""
     article = await _pick_article(db_session)
     global_template_id = await _pick_qa_global_template(db_session)
     if article is None or global_template_id is None:
@@ -1222,11 +1215,17 @@ async def test_consensus_currently_accepts_value_outside_allowed_values(
             "field_id": str(field_id),
             "mode": "manual_override",
             "value": {"value": bogus},
-            "rationale": "documenting current behaviour",
+            "rationale": "an off-vocabulary override",
         },
     )
-    # Current behaviour: 201. Once we tighten validation, switch this to 422
-    # and add the corresponding error message check.
-    assert res.status_code == 201
-    body = res.json()["data"]
-    assert body["published"]["value"] == {"value": bogus}
+    assert res.status_code == 422, res.text
+    error = res.json()["error"]
+    assert error["code"] == "VALUE_CONTRACT_VIOLATION"
+    assert error["details"]["reason"] == "NOT_AN_OPTION"
+    published = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_published_states WHERE run_id = :rid"),
+            {"rid": run_id},
+        )
+    ).scalar()
+    assert published == 0

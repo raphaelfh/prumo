@@ -228,6 +228,28 @@ async def test_consensus_quality_assessment_requires_arbitrator() -> None:
     rev.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_consensus_endpoint_enforces_the_value_contract() -> None:
+    """A person's consensus write is always held to the value contract; only
+    the system publish in approve-and-finalize opts out."""
+    db = AsyncMock()
+    with (
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()),
+        patch(f"{_EP}.ExtractionConsensusService") as svc,
+    ):
+        svc.return_value.record_consensus = AsyncMock(side_effect=InvalidConsensusError("stop"))
+        with pytest.raises(HTTPException):
+            await create_consensus(
+                run_id=uuid4(),
+                body=_consensus_body(),
+                request=_request(),
+                db=db,
+                current_user_sub=uuid4(),
+            )
+    assert svc.return_value.record_consensus.await_args.kwargs["enforce_contract"] is True
+
+
 # --------------------------------------------------------------------------
 # POST /runs/{id}/advance — finalize is arbitrator-gated (both kinds)
 # --------------------------------------------------------------------------

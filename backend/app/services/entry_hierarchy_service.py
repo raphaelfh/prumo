@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
@@ -42,6 +43,9 @@ from app.services.project_template_active_service import (
     owned_template,
 )
 from app.services.template_section_service import SectionNotFoundError, owned_section
+from app.services.value_contract import ValueContractError
+
+logger = get_logger(__name__)
 
 
 class EntryTargetNotFoundError(Exception):
@@ -411,8 +415,18 @@ class EntryHierarchyService:
                 decision="edit",
                 value={"value": value},
             )
-        except InvalidDecisionError:
+        except (InvalidDecisionError, ValueContractError) as exc:
             # The run advanced out of extract between the lookup and the
-            # write. The entry was created fine; losing the prefill must not
-            # 500 the whole creation.
+            # write, or the key text is not a valid value of the key field
+            # (a select key typed as its label). The entry was created fine;
+            # losing the prefill must not fail the whole creation. Ids and
+            # reason only: the key text is reviewer data.
+            details = exc.details if isinstance(exc, ValueContractError) else None
+            logger.info(
+                "entry_key_prefill_skipped",
+                run_id=str(run.id),
+                instance_id=str(instance_id),
+                field_id=str(key_field_id),
+                reason=(details or {}).get("reason", type(exc).__name__),
+            )
             return

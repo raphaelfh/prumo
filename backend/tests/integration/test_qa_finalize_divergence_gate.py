@@ -89,17 +89,32 @@ async def _qa_run_with_derived_spec(db: AsyncSession) -> _Built | None:
     et_id = await factory.add_study_section(template_id, name=_SECTION)
 
     field_ids: dict[str, UUID] = {}
-    for order, (name, ftype) in enumerate(
-        (("q1", "select"), ("quality_concern", "select"), ("quality_concern_rationale", "text"))
+    # Consensus overrides are held to each field's options.
+    signaling = [{"value": c, "label": c} for c in ("Y", "PY", "PN", "N")]
+    judgment = [{"value": c, "label": c} for c in ("Low", "High", "Unclear")]
+    for order, (name, ftype, options) in enumerate(
+        (
+            ("q1", "select", signaling),
+            ("quality_concern", "select", judgment),
+            ("quality_concern_rationale", "text", None),
+        )
     ):
         field_ids[name] = uuid4()
         await db.execute(
             text(
                 "INSERT INTO public.extraction_fields "
-                "(id, entity_type_id, name, label, field_type, is_required, sort_order) "
-                "VALUES (:id, :etid, :n, :n, :ft, false, :so)"
+                "(id, entity_type_id, name, label, field_type, is_required, sort_order, "
+                " allowed_values) "
+                "VALUES (:id, :etid, :n, :n, :ft, false, :so, CAST(:av AS jsonb))"
             ),
-            {"id": str(field_ids[name]), "etid": str(et_id), "n": name, "ft": ftype, "so": order},
+            {
+                "id": str(field_ids[name]),
+                "etid": str(et_id),
+                "n": name,
+                "ft": ftype,
+                "so": order,
+                "av": json.dumps(options) if options is not None else None,
+            },
         )
     # The scope/derivation consumers all read the LIVE schema column.
     await db.execute(

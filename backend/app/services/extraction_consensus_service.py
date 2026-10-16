@@ -25,6 +25,8 @@ from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
 from app.services.extraction_run_write import open_run_for_write
+from app.services.extraction_snapshot import pinned_field
+from app.services.value_contract import canonicalize_value
 from app.services.value_semantics import strip_verification
 
 
@@ -56,8 +58,16 @@ class ExtractionConsensusService:
         selected_decision_id: UUID | None = None,
         value: dict[str, Any] | None = None,
         rationale: str | None = None,
+        enforce_contract: bool = True,
     ) -> tuple[ExtractionConsensusDecision, ExtractionPublishedState]:
-        await open_run_for_write(
+        """Append one consensus decision and publish its value.
+
+        ``enforce_contract`` canonicalizes a ``manual_override`` value against
+        the field as the run's template version pins it and refuses an
+        off-contract one (``ValueContractError``, 422). Only a system publish
+        of values already agreed turns it off.
+        """
+        run = await open_run_for_write(
             self.db,
             run_id,
             expect=ExtractionRunStage.CONSENSUS.only(),
@@ -120,6 +130,16 @@ class ExtractionConsensusService:
                     "value; use mode='manual_override' to publish an explicit value."
                 )
         else:  # manual_override
+            if enforce_contract:
+                field = await pinned_field(
+                    self.db,
+                    version_id=run.version_id,
+                    template_id=run.template_id,
+                    field_id=field_id,
+                )
+                if field is None:
+                    raise InvalidConsensusError("field is not part of this run's template version")
+                value = canonicalize_value(value, field)
             published_value = value or {}
 
         consensus_record = ExtractionConsensusDecision(

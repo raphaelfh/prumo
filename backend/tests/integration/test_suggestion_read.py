@@ -43,6 +43,7 @@ from app.services.extraction_suggestion_read_service import (
 )
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED, land_ai_proposal
+from tests.integration.helpers.value_contract_setup import as_text_field
 
 _ARTICLES_URL = "/api/v1/articles"
 
@@ -113,6 +114,7 @@ async def _build_suggestion_review_run(
         {"pid": str(project_id), "uid": str(SECOND_REVIEWER_ID)},
     )
 
+    await as_text_field(db, field_id)
     manager_id = SEED.primary_profile
     lifecycle = RunLifecycleService(db)
     run = await lifecycle.create_run(

@@ -287,6 +287,9 @@ class RunLifecycleService:
                 mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
                 value=envelope,
                 rationale="Approved: reviewers agree (Phase 2 approve-all).",
+                # Agreed values may include accepted AI proposals that were never
+                # validated; the read-only value-envelope audit covers them.
+                enforce_contract=False,
             )
         finalized = await self.advance_stage(
             run_id=run_id, target_stage=ExtractionRunStage.FINALIZED, user_id=user_id

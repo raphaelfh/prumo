@@ -9,8 +9,9 @@ Three properties are load-bearing and pinned here:
    so the consensus agreement key distinguishes two different codes (same code
    agrees + publishes; different codes diverge) — the precondition the spec
    calls out for "distinct answers fall out for free".
-3. An ALREADY-CODED ``no_information`` marker sent by a client is REFUSED on a
-   field that opts out of it (``allows_no_information``, migration 0062), while
+3. An ALREADY-CODED ``no_information`` marker sent by a client is REFUSED
+   (``VALUE_CONTRACT_VIOLATION`` / ``MARKER_NOT_ALLOWED``, 422) on a field that
+   opts out of it (``allows_no_information``, migration 0062), while
    a server carry-over of an already-stored marker still passes — the
    ``/decisions`` door is the one a client controls, and history must survive a
    template that later flipped the flag.
@@ -31,14 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.extraction import ExtractionRunStage
-from app.services.extraction_review_service import (
-    ExtractionReviewService,
-    InvalidDecisionError,
-)
+from app.services.extraction_review_service import ExtractionReviewService
 from app.services.run_lifecycle_service import (
     InvalidStageTransitionError,
     RunLifecycleService,
 )
+from app.services.value_contract import ValueContractError
 from tests.integration.conftest import SEED
 
 _NO_INFO = {"value": None, "absent_reason": "no_information"}
@@ -78,9 +77,24 @@ async def _fresh_run(db: AsyncSession) -> object:
 
 
 async def _set_field_domain(db: AsyncSession, allowed: list[str] | None) -> None:
+    """Options make the seed field a ``select``; none make it free ``text``."""
     await db.execute(
-        text("UPDATE public.extraction_fields SET allowed_values = :v WHERE id = :id"),
-        {"v": json.dumps(allowed) if allowed is not None else None, "id": str(SEED.primary_field)},
+        text(
+            "UPDATE public.extraction_fields SET allowed_values = CAST(:v AS jsonb), "
+            "field_type = :t WHERE id = :id"
+        ),
+        {
+            "v": json.dumps(allowed) if allowed is not None else None,
+            "t": "select" if allowed is not None else "text",
+            "id": str(SEED.primary_field),
+        },
+    )
+
+
+async def _allow_not_applicable(db: AsyncSession) -> None:
+    await db.execute(
+        text("UPDATE public.extraction_fields SET allows_not_applicable = true WHERE id = :id"),
+        {"id": str(SEED.primary_field)},
     )
 
 
@@ -190,6 +204,7 @@ async def test_two_reviewers_different_disposition_codes_diverge(
     if not await _seed_ok(db_session):
         pytest.skip("seed not present")
     run = await _fresh_run(db_session)
+    await _allow_not_applicable(db_session)
     review = ExtractionReviewService(db_session)
     await review.record_decision(
         run_id=run.id,
@@ -255,7 +270,7 @@ async def test_record_decision_rejects_coded_marker_when_field_opts_out(
     run = await _fresh_run(db_session)
     await _set_no_information_optin(db_session, False)
 
-    with pytest.raises(InvalidDecisionError, match="no_information"):
+    with pytest.raises(ValueContractError) as raised:
         await ExtractionReviewService(db_session).record_decision(
             run_id=run.id,
             instance_id=SEED.primary_instance,
@@ -264,6 +279,8 @@ async def test_record_decision_rejects_coded_marker_when_field_opts_out(
             decision="edit",
             value=dict(_NO_INFO),
         )
+    assert raised.value.details is not None
+    assert raised.value.details["reason"] == "MARKER_NOT_ALLOWED"
     assert await _decision_value(db_session, run.id) is None, "nothing may be persisted"
     await db_session.rollback()
 
@@ -278,6 +295,7 @@ async def test_record_decision_keeps_sibling_markers_on_a_no_information_optout(
         pytest.skip("seed not present")
     run = await _fresh_run(db_session)
     await _set_no_information_optin(db_session, False)
+    await _allow_not_applicable(db_session)
 
     await ExtractionReviewService(db_session).record_decision(
         run_id=run.id,
@@ -313,10 +331,11 @@ async def test_create_decision_endpoint_refuses_the_marker_with_the_error_envelo
             "value": dict(_NO_INFO),
         },
     )
-    assert response.status_code == 400, response.text
+    assert response.status_code == 422, response.text
     payload = response.json()
     assert payload["ok"] is False
-    assert "no_information" in payload["error"]["message"]
+    assert payload["error"]["code"] == "VALUE_CONTRACT_VIOLATION"
+    assert payload["error"]["details"]["reason"] == "MARKER_NOT_ALLOWED"
     assert "detail" not in payload
     assert await _decision_value(db_session, run.id) is None
     await db_session.rollback()

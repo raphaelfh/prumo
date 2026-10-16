@@ -34,7 +34,7 @@ from sqlalchemy.orm import selectinload
 from app.llm.claim_value import normalize_options
 from app.models.extraction import ExtractionEntityType
 from app.models.extraction_versioning import ExtractionTemplateVersion
-from app.schemas.extraction_run import RunViewEntityType
+from app.schemas.extraction_run import RunViewEntityType, RunViewField
 
 # WARNING: migration 0026_widen_template_snapshot embeds a copy of this
 # key set for its one-time backfill. If you add a key here for a column that
@@ -249,6 +249,21 @@ async def entity_types_for_version(
         return [RunViewEntityType.model_validate(et) for et in snapshot_types]
 
     return await live_entity_types(db, template_id=template_id)
+
+
+async def pinned_field(
+    db: AsyncSession, *, version_id: UUID, template_id: UUID, field_id: UUID
+) -> RunViewField | None:
+    """The field as the run's template version pins it, or ``None`` when the
+    run's tree does not hold it. A plain lookup in
+    :func:`entity_types_for_version`, whose live fallback for a narrow
+    snapshot is the only one: there is no second fallback here.
+    """
+    for et in await entity_types_for_version(db, version_id=version_id, template_id=template_id):
+        for field in et.fields:
+            if field.id == field_id:
+                return field
+    return None
 
 
 async def live_entity_types(db: AsyncSession, *, template_id: UUID) -> list[RunViewEntityType]:
