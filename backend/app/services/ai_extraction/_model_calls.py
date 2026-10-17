@@ -256,6 +256,7 @@ def _section_snapshot(
             file_name=info.file_name if info else None,
             truncated=info.truncated if info else False,
             est_tokens=info.est_tokens if info else None,
+            content_version=info.anchor_content_version if info else None,
         ),
         fields_requested=[str(f.name) for f in inputs.fields],
         llm_calls=inputs.llm_calls,

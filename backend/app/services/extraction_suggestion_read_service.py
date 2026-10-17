@@ -16,12 +16,14 @@ A test in test_suggestion_read.py pins this invariant explicitly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.article import ArticleFile
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionInstance,
@@ -33,7 +35,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
-from app.schemas.extraction import parse_position
+from app.schemas.extraction import anchor_is_stale, parse_position
 from app.schemas.extraction_suggestion import (
     AISuggestionHistoryItem,
     AISuggestionItem,
@@ -58,6 +60,47 @@ def _extract_block_ids(ev: ExtractionEvidence) -> list[int]:
     if pos is None:
         return []
     return list(pos.anchor.block_ids)
+
+
+async def _current_content_versions(
+    db: AsyncSession, evidence_rows: Sequence[ExtractionEvidence]
+) -> dict[UUID, int]:
+    """Current ``content_version`` per article_file referenced by *evidence_rows*.
+
+    One batched query feeding the per-evidence staleness flag, so surfacing it
+    never costs a query per row. Files that vanished (or were never recorded)
+    are simply absent — their evidence reports ``stale=False`` (unknown, not
+    proven stale).
+    """
+    file_ids = {ev.article_file_id for ev in evidence_rows if ev.article_file_id}
+    if not file_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ArticleFile.id, ArticleFile.content_version).where(ArticleFile.id.in_(file_ids))
+        )
+    ).all()
+    return {row.id: row.content_version for row in rows}
+
+
+def _extract_stale(ev: ExtractionEvidence, current_versions: dict[UUID, int]) -> bool:
+    """Whether the anchor drifted because its file was re-parsed after it was built.
+
+    ``True`` only when the anchor records a ``content_version`` AND that file's
+    current version differs. Unanchored evidence, invalid position payloads and
+    legacy anchors with no recorded version all report ``False`` (not proven
+    stale) rather than raising a false alarm.
+    """
+    if not ev.position or not ev.article_file_id:
+        return False
+    current = current_versions.get(ev.article_file_id)
+    if current is None:
+        return False
+    try:
+        pos = parse_position(ev.position)
+    except (ValidationError, ValueError):
+        return False
+    return anchor_is_stale(pos, current_content_version=current)
 
 
 async def get_article_instance_ids(db: AsyncSession, article_id: UUID) -> list[UUID]:
@@ -179,6 +222,8 @@ async def load_suggestions(
             evidence_by_proposal.setdefault(ev.proposal_record_id, []).append(ev)
     for rows in evidence_by_proposal.values():
         rows.sort(key=lambda e: (e.rank, str(e.id)))
+    #: Current content_version per referenced file — the staleness flag's input.
+    current_versions = await _current_content_versions(db, evidence_rows)
 
     # --- Step 4: load CALLER's reviewer_states → decisions (blind boundary) ---
     # NOTE: this query is intentionally NOT filtered by article — article scope is
@@ -223,6 +268,7 @@ async def load_suggestions(
                 blockIds=_extract_block_ids(ev),
                 rank=ev.rank,
                 attributionLabel=ev.attribution_label,
+                stale=_extract_stale(ev, current_versions),
             )
             for ev in evidence_by_proposal.get(p.id, [])
         ]
@@ -316,6 +362,8 @@ async def get_suggestion_history(
             evidence_by_proposal.setdefault(ev.proposal_record_id, []).append(ev)
     for rows in evidence_by_proposal.values():
         rows.sort(key=lambda e: (e.rank, str(e.id)))
+    #: Current content_version per referenced file — the staleness flag's input.
+    current_versions = await _current_content_versions(db, evidence_rows)
 
     items: list[AISuggestionHistoryItem] = []
     context = await suggestion_reveal_context(db, proposals, caller_id=caller_id)
@@ -328,6 +376,7 @@ async def get_suggestion_history(
                 blockIds=_extract_block_ids(ev),
                 rank=ev.rank,
                 attributionLabel=ev.attribution_label,
+                stale=_extract_stale(ev, current_versions),
             )
             for ev in evidence_by_proposal.get(p.id, [])
         ]

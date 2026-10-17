@@ -22,6 +22,10 @@ class EvidenceResponse(BaseModel):
     )
     rank: int = 0
     attribution_label: str | None = Field(default=None, alias="attributionLabel")
+    #: True when the anchor's recorded ``content_version`` no longer matches the
+    #: article file's current version (the file was re-parsed after the anchor
+    #: was built), so its block_ids/char range may point at different text.
+    stale: bool = False
 
 
 class AISuggestionItem(BaseModel):
