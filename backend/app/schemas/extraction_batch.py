@@ -1,7 +1,7 @@
 """AI batch runs over many articles (spec 2026-09-15 §7). snake_case on the wire."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
@@ -12,6 +12,12 @@ MAX_ARTICLES_PER_BATCH = 100
 #: An attempt failing with one of these stops the whole batch (G12).
 ENGINE_STOP_CODES = frozenset({"MISSING_API_KEY", "ENGINE_RETIRED", "LLM_ENDPOINT_UNAVAILABLE"})
 ATTEMPT_LIVE = frozenset({"pending", "running"})
+#: How long a ``pending``/``running`` attempt still counts as in flight. An
+#: attempt untouched this long holds no slot (G9), and no longer makes its
+#: batch active for G5b either; Resume re-enqueues it (Redis visibility
+#: timeout is 1h too). It lives here, next to :data:`ATTEMPT_LIVE`, because
+#: "in flight" has to mean the same thing to every reader of the pair.
+ATTEMPT_LIVE_WINDOW = timedelta(hours=1)
 
 BatchState = Literal["active", "finished", "stopped", "cancelled"]
 ItemOutcome = Literal[

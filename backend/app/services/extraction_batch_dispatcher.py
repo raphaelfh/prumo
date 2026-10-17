@@ -41,7 +41,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import select, text
@@ -57,7 +57,7 @@ from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.repositories.extraction_batch_repository import ExtractionBatchRepository
 from app.schemas.extraction import SectionExtractionRequest
-from app.schemas.extraction_batch import ATTEMPT_LIVE
+from app.schemas.extraction_batch import ATTEMPT_LIVE, ATTEMPT_LIVE_WINDOW
 from app.services.article_read_service import ArticleNotFoundError, owned_articles
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_run_write import RunWriteError, open_run_for_write
@@ -98,9 +98,10 @@ class _BatchContext:
 
 class ExtractionBatchDispatcher:
     MAX_IN_FLIGHT = 2
-    #: An in-flight attempt untouched this long no longer holds a slot or blocks
-    #: G9, and Resume re-enqueues it (Redis visibility timeout is 1h too).
-    LIVE_WINDOW = timedelta(hours=1)
+    #: An in-flight attempt untouched this long no longer holds a slot, blocks
+    #: G9, or keeps its batch active for G5b; Resume re-enqueues it. Defined
+    #: beside ``ATTEMPT_LIVE`` so every in-flight reader shares one window.
+    LIVE_WINDOW = ATTEMPT_LIVE_WINDOW
     #: How long to wait for the per-batch lock before giving up. The task shares
     #: the ``extractions`` queue with the LLM jobs whose completion releases the
     #: lock, so an unbounded wait can occupy the very worker slots needed to

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.models.extraction_batch import ExtractionBatch
 from app.repositories.extraction_batch_repository import ExtractionBatchRepository
 from app.schemas.common import ApiErrorCode
 from app.schemas.extraction_batch import (
+    ATTEMPT_LIVE_WINDOW,
     CreateExtractionBatchRequest,
     ExtractionBatchDetail,
     ExtractionBatchSummary,
@@ -130,7 +131,12 @@ class ExtractionBatchService:
             raise BatchScopeError("template_id or article_ids do not belong to project_id") from exc
 
         await take_advisory_xact_lock(self.db, owner_id, request.template_id)
-        active = await self.batches.active_batch_id(owner_id, request.template_id)
+        # G5b reads the same bounded "in flight" the dispatcher counts slots
+        # with: an abandoned attempt must stop blocking the next batch once
+        # its window lapses, or the tool is locked for good.
+        active = await self.batches.active_batch_id(
+            owner_id, request.template_id, since=datetime.now(UTC) - ATTEMPT_LIVE_WINDOW
+        )
         if active is not None:
             raise BatchAlreadyActiveError(active)
 

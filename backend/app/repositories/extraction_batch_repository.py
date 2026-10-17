@@ -20,11 +20,19 @@ def _member(owner_id: UUID) -> ColumnElement[bool]:
     return func.public.is_project_member(ExtractionBatch.project_id, owner_id)
 
 
-def _live_dispatched() -> tuple[ColumnElement[bool], ...]:
-    """One spelling of "in flight": dispatched, with an attempt still live."""
+def _live_dispatched(since: datetime) -> tuple[ColumnElement[bool], ...]:
+    """One spelling of "in flight": dispatched, with an attempt still live AND fresh.
+
+    ``since`` is the ``ATTEMPT_LIVE_WINDOW`` cutoff. It belongs in the
+    predicate, not in each caller: an attempt whose worker died stays
+    ``pending`` forever, so a liveness test without the cutoff keeps its
+    batch in flight for good — which is how G5b used to lock a reviewer out
+    of ever starting another batch for that tool.
+    """
     return (
         ExtractionBatchItem.status == "dispatched",
         ExtractionAttempt.status.in_(ATTEMPT_LIVE),
+        ExtractionAttempt.updated_at >= since,
     )
 
 
@@ -107,7 +115,9 @@ class ExtractionBatchRepository:
         )
         await self.db.flush()
 
-    async def active_batch_id(self, owner_id: UUID, template_id: UUID) -> UUID | None:
+    async def active_batch_id(
+        self, owner_id: UUID, template_id: UUID, *, since: datetime
+    ) -> UUID | None:
         queued = (
             select(ExtractionBatchItem.id)
             .where(
@@ -121,7 +131,7 @@ class ExtractionBatchRepository:
             .join(ExtractionAttempt, ExtractionAttempt.id == ExtractionBatchItem.attempt_id)
             .where(
                 ExtractionBatchItem.batch_id == ExtractionBatch.id,
-                *_live_dispatched(),
+                *_live_dispatched(since),
             )
             .exists()
         )
@@ -154,8 +164,7 @@ class ExtractionBatchRepository:
                 .join(ExtractionAttempt, ExtractionAttempt.id == ExtractionBatchItem.attempt_id)
                 .where(
                     ExtractionBatchItem.batch_id == batch_id,
-                    *_live_dispatched(),
-                    ExtractionAttempt.updated_at >= since,
+                    *_live_dispatched(since),
                 )
             )
         ).scalar_one()
