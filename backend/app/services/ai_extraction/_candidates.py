@@ -154,7 +154,11 @@ def _evidence(
 ) -> tuple[ExtractionEvidence, Any]:
     """The evidence row for one quote, anchored to the run's parsed blocks
     (``position={}`` and the model's page when no anchor resolves)."""
-    pos = build_anchor(quote["text"], p.anchor_blocks) if p.anchor_blocks else None
+    pos = (
+        build_anchor(quote["text"], p.anchor_blocks, content_version=p.anchor_content_version)
+        if p.anchor_blocks
+        else None
+    )
     if pos is not None:
         position: dict[str, Any] = pos.model_dump(by_alias=True, mode="json")
         page: int | None = pos.anchor.page if pos.anchor.kind == "region" else pos.anchor.range.page

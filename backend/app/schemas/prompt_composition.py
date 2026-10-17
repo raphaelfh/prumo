@@ -15,12 +15,17 @@ from pydantic import BaseModel
 
 class PromptCompositionArticleRef(BaseModel):
     """Where the article text in the prompt came from, and whether the token
-    budget dropped any of it (the marker stands in for the full text)."""
+    budget dropped any of it (the marker stands in for the full text).
+
+    ``content_version`` records the file's ``content_version`` at snapshot time,
+    so a later re-parse can be detected against the prompt that produced a
+    proposal (issue #1000)."""
 
     file_id: str | None = None
     file_name: str | None = None
     truncated: bool = False
     est_tokens: int | None = None
+    content_version: int | None = None
 
 
 class PromptComposition(BaseModel):

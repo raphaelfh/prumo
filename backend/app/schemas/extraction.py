@@ -592,10 +592,20 @@ class PositionV1(BaseModel):
     Discriminated on ``anchor.kind``; service-layer writers must populate
     ``extraction_evidence.text_content`` and ``page_number`` to match the
     anchor (see spec §2).
+
+    ``content_version`` records the ``article_files.content_version`` the
+    anchor was matched against. The anchor's ``block_index`` values and char
+    offsets are only meaningful against the exact ``article_text_blocks`` set
+    they were computed from; a re-parse rewrites every block and bumps the
+    file's ``content_version``, so without this stamp the stored anchor silently
+    drifts to point at different text. ``None`` means "unknown" (legacy rows or
+    a caller with no file version to hand) — such an anchor is never reported
+    stale by :func:`anchor_is_stale`.
     """
 
     version: Literal[1]
     anchor: CitationAnchor
+    content_version: int | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -613,3 +623,35 @@ def parse_position(
     if raw is None:
         return None
     return PositionV1.model_validate(raw)
+
+
+def anchor_is_stale(
+    position: PositionV1 | None,
+    *,
+    current_content_version: int,
+) -> bool:
+    """Whether *position* no longer matches its article file's current content.
+
+    A stored evidence anchor records the ``content_version`` it was matched
+    against (see :class:`PositionV1`). A re-parse rewrites
+    ``article_text_blocks`` and bumps the file's ``content_version``, so an
+    anchor whose recorded version differs from *current_content_version* now
+    points at different text — it is **stale** and must be re-anchored or
+    flagged before its ``block_index``/char range is trusted.
+
+    Conservative on purpose: an anchor with no recorded version (``None`` —
+    legacy rows or an unanchored payload) cannot be proven stale, so it is
+    reported **not** stale rather than raising a false alarm.
+
+    Args:
+        position: The stored anchor, or ``None`` for unanchored evidence.
+        current_content_version: The file's ``content_version`` as it stands
+            now (after any re-parse).
+
+    Returns:
+        ``True`` only when the anchor records a version and it differs from
+        the current one.
+    """
+    if position is None or position.content_version is None:
+        return False
+    return position.content_version != current_content_version

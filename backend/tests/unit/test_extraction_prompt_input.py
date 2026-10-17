@@ -25,6 +25,7 @@ async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
         id=fid,
         content_markdown="# Results\n\nEffect size 0.81.",
         original_filename="teste3.pdf",
+        content_version=1,
     )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
@@ -56,7 +57,9 @@ async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
 async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
     """When no blocks exist, DocumentParsingService is called once, blocks reloaded."""
     aid, fid = uuid4(), uuid4()
-    main_file = SimpleNamespace(id=fid, content_markdown=None, original_filename=None)
+    main_file = SimpleNamespace(
+        id=fid, content_markdown=None, original_filename=None, content_version=1
+    )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
 
@@ -125,7 +128,9 @@ async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) ->
     truncation flag + token estimate surface on the returned info."""
     aid, fid = uuid4(), uuid4()
     large_md = "x" * 10_000
-    main_file = SimpleNamespace(id=fid, content_markdown=large_md, original_filename="big.pdf")
+    main_file = SimpleNamespace(
+        id=fid, content_markdown=large_md, original_filename="big.pdf", content_version=1
+    )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
     repo = MagicMock()

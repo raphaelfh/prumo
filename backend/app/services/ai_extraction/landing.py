@@ -100,7 +100,7 @@ _NESTED_SNAPSHOT_KEYS = {
         "llm_calls",
     },
 }
-_ARTICLE_REF_KEYS = {"file_id", "file_name", "truncated", "est_tokens"}
+_ARTICLE_REF_KEYS = {"file_id", "file_name", "truncated", "est_tokens", "content_version"}
 
 #: The execution facts a verdict heal must carry with it; engine identity
 #: (provider/model/connection_id/key_scope/mode_requested) is never rewritten.

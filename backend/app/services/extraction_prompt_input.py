@@ -38,6 +38,10 @@ class PromptInputInfo:
     file_name: str | None
     truncated: bool
     est_tokens: int
+    #: ``article_files.content_version`` the anchor blocks were read at —
+    #: stamped onto every evidence anchor so a re-parse can be detected
+    #: (issue #1000).  ``None`` only when no file version was available.
+    anchor_content_version: int | None = None
 
 
 async def build_prompt_input(
@@ -106,4 +110,5 @@ async def build_prompt_input(
         file_name=main_file.original_filename,
         truncated=info_truncated,
         est_tokens=est,
+        anchor_content_version=main_file.content_version,
     )

@@ -702,6 +702,7 @@ def build_anchor(
     blocks: Sequence[_Block],
     *,
     fuzz_threshold: float = DEFAULT_FUZZ_THRESHOLD,
+    content_version: int | None = None,
 ) -> PositionV1 | None:
     """Build a :class:`PositionV1` anchor for *quote* against *blocks*.
 
@@ -726,6 +727,11 @@ def build_anchor(
             Must cover the full document; typically obtained from
             ``ArticleTextBlockRepository.list_ordered_for_file``.
         fuzz_threshold: Passed through to :func:`match`.  ``1.0`` = exact only.
+        content_version: The ``article_files.content_version`` *blocks* were
+            read at.  Stamped onto the anchor so a later re-parse (which bumps
+            the file's version) can be detected — see
+            :func:`app.schemas.extraction.anchor_is_stale`.  ``None`` when
+            unknown.
 
     Returns:
         A :class:`PositionV1` whose ``anchor`` is set to the appropriate
@@ -761,4 +767,4 @@ def build_anchor(
             block_ids=m.block_ids,
         )
 
-    return PositionV1(version=1, anchor=anchor)
+    return PositionV1(version=1, anchor=anchor, content_version=content_version)

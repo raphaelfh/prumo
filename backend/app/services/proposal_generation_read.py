@@ -77,7 +77,10 @@ def _snapshot(raw: object) -> dict[str, Any] | None:
             ]
         ref = pc.get("article_ref")
         if isinstance(ref, dict):
-            article = _scalars(ref, {"file_name": str, "truncated": bool, "est_tokens": int})
+            article = _scalars(
+                ref,
+                {"file_name": str, "truncated": bool, "est_tokens": int, "content_version": int},
+            )
             # A mutable file id proves no retained revision. Never hand it to
             # historical-input consumers as the original document.
             article.update(file_id=None, historical_input_available=False)
