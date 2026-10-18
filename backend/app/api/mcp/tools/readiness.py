@@ -36,5 +36,8 @@ from app.services.project_setup_readiness import build_setup_readiness
     ),
 )
 async def get_setup_readiness(db: AsyncSession, project_id: UUID) -> McpSetupReadiness:
-    is_manager = await is_project_manager(db, project_id, current_principal().user_sub)
-    return await build_setup_readiness(db, project_id=project_id, is_manager=is_manager)
+    user_id = current_principal().user_sub
+    is_manager = await is_project_manager(db, project_id, user_id)
+    return await build_setup_readiness(
+        db, project_id=project_id, user_id=user_id, is_manager=is_manager
+    )

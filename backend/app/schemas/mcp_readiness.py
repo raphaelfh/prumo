@@ -23,6 +23,12 @@ ReadinessCode = Literal[
     "EMPTY_SECTION",
     "QUESTION_WITHOUT_AI_GUIDANCE",
     "UNRESOLVED_CUSTOMIZE_SLOT",
+    # the AI engine and project setup
+    "ENGINE_RETIRED",
+    "ENGINE_NO_CREDENTIAL",
+    "HITL_REVIEWERS_SHORT",
+    "ARTICLES_WITHOUT_TEXT",
+    "PARSER_KEY_MISSING",
 ]
 ReadinessStatus = Literal["block", "warn"]
 
@@ -54,6 +60,9 @@ class McpSetupReadiness(BaseModel):
     protocol_revision: int
     summary: McpReadinessSummary
     items: list[McpReadinessItem]
+    # True when per-template items were dropped to fit the result cap;
+    # `summary` still counts every item.
+    items_truncated: bool
     draft_detail_hidden: bool
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = ["project_name", "items[].subject.name", "items[].message"]

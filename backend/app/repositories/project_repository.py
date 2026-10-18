@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
@@ -69,6 +69,18 @@ class ProjectMemberRepository(BaseRepository[ProjectMember]):
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectMember)
+
+    async def count_reviewer_capable(self, project_id: UUID) -> int:
+        """Members the same SQL predicate the RLS policies use counts as reviewers."""
+        stmt = (
+            select(func.count())
+            .select_from(ProjectMember)
+            .where(
+                ProjectMember.project_id == project_id,
+                func.public.is_project_reviewer(ProjectMember.project_id, ProjectMember.user_id),
+            )
+        )
+        return int((await self.db.execute(stmt)).scalar_one())
 
     async def list_for_user(
         self, user_id: UUID | str, *, project_ids: frozenset[UUID] | None = None

@@ -18,3 +18,8 @@ _EDITOR_TAB = {
 def editor_url(project_id: UUID, kind: str) -> str:
     """The project page opened on the template editor of ``kind``."""
     return f"{settings.PUBLIC_APP_URL.rstrip('/')}/projects/{project_id}?{_EDITOR_TAB[kind]}"
+
+
+def settings_url(project_id: UUID) -> str:
+    """The project page opened on its settings tab (AI engine, parser, HITL)."""
+    return f"{settings.PUBLIC_APP_URL.rstrip('/')}/projects/{project_id}?tab=settings"
