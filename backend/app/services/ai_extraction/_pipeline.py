@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.domain.evidence_block_refs import BlockRefIndex
 from app.infrastructure.parsing.base import ParsedBlock
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import StructuredCall
@@ -93,6 +94,9 @@ class Pipeline:
         #: Assembly of the run's article text (anchor blocks, truncation,
         #: source file) — set once per run by :meth:`assemble_prompt_text`.
         self.prompt_input: PromptInputInfo | None = None
+        #: The prompt's blocks by citation ref — what an evidence ``block_ref``
+        #: resolves against; empty until :meth:`assemble_prompt_text`.
+        self.block_ref_index = BlockRefIndex([])
         #: Enclosing-entry chains per ``(run, instance)`` — ``_ancestry``.
         self.ancestry: dict[tuple[UUID, UUID], tuple[Ancestor, ...]] = {}
         self._field_filter = LlmFieldFilter()
@@ -187,6 +191,7 @@ class Pipeline:
             trace_id=self.trace_id,
         )
         self.prompt_input = info
+        self.block_ref_index = BlockRefIndex(info.anchor_blocks)
         return text
 
     async def pinned_entity_types(self, run: ExtractionRun) -> list[Any]:

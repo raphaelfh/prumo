@@ -14,12 +14,14 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import capture_logs
 
 from app.core.config import settings
 from app.llm import entailment, verify
 from app.models.extraction import ExtractionEvidence, ExtractionRun, ExtractionRunStage
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.schemas.llm_target import LlmTarget
+from app.services.ai_extraction._candidates import build_candidates
 from tests.fakes.recorded_llm import RecordedLlm
 from tests.integration.conftest import SEED
 from tests.integration.helpers.ai_extraction import (
@@ -39,8 +41,8 @@ QUOTE_E = "Sample: 142 subjects total."
 QUOTES = (QUOTE_A, QUOTE_B, QUOTE_C, QUOTE_D, QUOTE_E)
 
 
-def _cite(*quotes: str) -> list[dict[str, Any]]:
-    return [{"text": q, "page_number": 1} for q in quotes]
+def _cite(*quotes: str, block_ref: str = "p1·b0") -> list[dict[str, Any]]:
+    return [{"block_ref": block_ref, "quote": q} for q in quotes]
 
 
 async def _extract(
@@ -115,22 +117,98 @@ async def test_evidence_is_capped_at_three_rows(db_session: AsyncSession) -> Non
     assert [e.text_content for e in await _evidence(db_session, run.id)] == list(QUOTES[:3])
 
 
-async def test_an_unanchored_quote_is_ungroundable_and_never_judged(
+async def test_unanchored_quote_never_persists_a_page(db_session: AsyncSession) -> None:
+    """A quote the article lacks (e.g. a value only a figure states) cannot be
+    grounded: no page — the model never supplies one — no position, the
+    model's words kept, flagged for a human and never judged."""
+    await seed_article_text(db_session, QUOTE_A)
+    absent = "a quote absent from the text"
+    fake = RecordedLlm(
+        fields={"sample_size": {"value": 999, "evidence": _cite(absent, block_ref="p2·b0")}}
+    )
+
+    run, _ = await _extract(db_session, fake)
+
+    (row,) = await _evidence(db_session, run.id)
+    assert row.page_number is None
+    assert row.position == {}
+    assert row.attribution_label == "ungroundable"
+    assert row.text_content == absent
+    assert fake.prompts(entailment.NAME) == []
+
+
+async def test_grounded_quote_stores_source_slice_and_derived_page(
     db_session: AsyncSession,
 ) -> None:
-    """A value that only a figure states cannot be grounded in the text: the
-    row is flagged for a human instead of judging a quote the document lacks."""
+    """The model's words differ from the source in case and whitespace and
+    cite a page the article does not have: the row stores the exact source
+    slice and the anchor's page; the anchor keeps the model's words."""
+    await seed_article_text(db_session, "Opening paragraph.", QUOTE_A)
+    model_words = "the mean  sample size was 142 participants across all studies."
+    fake = RecordedLlm(
+        fields={"sample_size": {"value": 142, "evidence": _cite(model_words, block_ref="p4·b1")}}
+    )
+
+    run, _ = await _extract(db_session, fake)
+
+    (row,) = await _evidence(db_session, run.id)
+    assert row.page_number == 1
+    assert row.text_content == QUOTE_A
+    assert row.position["anchor"]["quote"] == model_words
+    assert row.attribution_label == "entailed"
+    # The judge read the source, not the model's words.
+    (judge_prompt,) = fake.prompts(entailment.NAME)
+    assert QUOTE_A in judge_prompt
+    assert model_words not in judge_prompt
+
+
+async def test_ungroundable_flag_for_ambiguous_quote(db_session: AsyncSession) -> None:
     await seed_article_text(db_session, QUOTE_A)
     fake = RecordedLlm(
-        fields={"sample_size": {"value": 999, "evidence": _cite("a quote absent from the text")}}
+        fields={
+            "sample_size": {
+                "status": "ambiguous",
+                "value": 142,
+                "evidence": _cite("a quote absent from the text"),
+            }
+        }
     )
 
     run, _ = await _extract(db_session, fake)
 
     (row,) = await _evidence(db_session, run.id)
     assert row.attribution_label == "ungroundable"
-    assert row.position == {}
-    assert fake.prompts(entailment.NAME) == []
+    assert (row.page_number, row.position) == (None, {})
+
+
+async def test_evidence_grounding_log_carries_retries(db_session: AsyncSession) -> None:
+    await seed_article_text(db_session, QUOTE_A)
+    run = await run_in_extract(db_session)
+    extracted = {
+        "sample_size": {
+            "value": 142,
+            "confidence": 0.9,
+            "reasoning": None,
+            "status": "found",
+            "evidence": _cite(QUOTE_A, "a quote absent from the text"),
+        }
+    }
+    with capture_logs() as entries:
+        p = extraction(db_session, RecordedLlm())._p
+        await p.assemble_prompt_text(SEED.primary_article, settings.LLM_DEFAULT_MODEL)
+        await build_candidates(
+            p,
+            run=run,
+            entity_type_id=SEED.primary_entity_type,
+            extracted=extracted,
+            verdicts=None,
+            grounding_retries=2,
+        )
+
+    logs = [e for e in entries if e["event"] == "evidence_grounding"]
+    assert len(logs) == 1
+    assert (logs[0]["grounded"], logs[0]["ungrounded"], logs[0]["retried"]) == (1, 1, 2)
+    assert logs[0]["entity_type_id"] == str(SEED.primary_entity_type)
 
 
 async def test_a_failing_judge_degrades_to_an_unlabelled_row(db_session: AsyncSession) -> None:

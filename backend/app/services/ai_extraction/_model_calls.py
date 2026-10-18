@@ -18,7 +18,7 @@ from app.llm.extractor import LlmUsage
 from app.llm.prompts import Scope
 from app.llm.prompts.section import render_section_prompt
 from app.llm.schema import build_output_models, dump_extraction
-from app.llm.validators import evidence_is_plausible
+from app.llm.validators import GroundingStats, evidence_grounding_validator
 from app.llm.verify import VerifyVerdict, run_verify_pass
 from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
 from app.schemas.run_prompt_context import RunPromptContext
@@ -61,6 +61,8 @@ class FieldCall:
     extracted: dict[str, Any] = field(default_factory=dict)
     usage: LlmUsage = field(default_factory=LlmUsage)
     inputs: _SnapshotInputs | None = None
+    #: Times the grounding validator sent this section's calls back.
+    grounding_retries: int = 0
 
 
 async def extract_fields(
@@ -112,6 +114,7 @@ async def extract_fields(
     model = p.wire_model()
     extracted: dict[str, Any] = {}
     usage = LlmUsage()
+    stats = GroundingStats()
     for output_model in output_models:
         output, call_usage = await p.llm(
             output_model=output_model,
@@ -120,7 +123,7 @@ async def extract_fields(
             model=model,
             prompt_name=prompt.name,
             prompt_version=prompt.version,
-            validators=[evidence_is_plausible],
+            validators=[evidence_grounding_validator(p.block_ref_index, stats)],
         )
         extracted.update(dump_extraction(output))
         usage = usage + call_usage
@@ -134,7 +137,7 @@ async def extract_fields(
         fields=effective,
         llm_calls=len(output_models),
     )
-    return FieldCall(extracted, usage, inputs)
+    return FieldCall(extracted, usage, inputs, grounding_retries=stats.retried)
 
 
 async def verify_and_snapshot(

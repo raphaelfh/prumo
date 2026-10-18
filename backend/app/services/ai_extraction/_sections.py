@@ -204,7 +204,12 @@ async def _verify_and_land(
         call=call,
     )
     section, candidates = await build_candidates(
-        p, run=a.run, entity_type_id=a.entity_type.id, extracted=call.extracted, verdicts=verdicts
+        p,
+        run=a.run,
+        entity_type_id=a.entity_type.id,
+        extracted=call.extracted,
+        verdicts=verdicts,
+        grounding_retries=call.grounding_retries,
     )
     if not candidates:
         return 0, usage

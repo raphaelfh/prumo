@@ -45,7 +45,7 @@ from tests.integration.test_extraction_attempt_repository import graph as attemp
 graph = attempt_graph
 
 #: The graph template's one field answers this, with a cited quote.
-LATE = {"value": {"value": "late", "evidence": [{"text": "late citation", "page_number": 1}]}}
+LATE = {"value": {"value": "late", "evidence": [{"block_ref": "p1·b0", "quote": "late citation"}]}}
 
 
 def _section_request(scope: Any, entity_type_id: Any) -> SectionExtractionRequest:

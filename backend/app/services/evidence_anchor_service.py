@@ -16,7 +16,8 @@ by the canonical ``concat_page_text`` (imported from
 page text and the quote are normalised before comparison.
 
 **Normalisation (both sides).**  Unicode **NFKC** + whitespace folding (runs of
-whitespace collapse to a single space; leading/trailing whitespace stripped).
+whitespace collapse to a single space; leading/trailing whitespace stripped),
+from ``app.domain.evidence_block_refs`` (shared with the block-ref window check).
 This makes a quote that differs only by ligatures (``ﬁ`` → ``fi``), smart
 quotes (``'`` → ``'``), or collapsed whitespace still match.
 
@@ -77,12 +78,17 @@ session).
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Protocol, runtime_checkable
 
+from app.domain.evidence_block_refs import (
+    WHITESPACE,
+    BlockRefWindow,
+    normalize_text,
+    normalize_with_index_map,
+)
 from app.infrastructure.parsing.base import (
     ParsedBlock,
     assign_char_offsets_to_blocks,
@@ -195,95 +201,6 @@ class _Block(Protocol):
     char_end: int
     bbox: dict[str, float]
     block_type: str
-
-
-# ---------------------------------------------------------------------------
-# Normalisation + index map
-# ---------------------------------------------------------------------------
-
-_WHITESPACE = frozenset(" \t\n\r\f\v\xa0  ")
-#: Typographic punctuation that NFKC does NOT fold but which routinely differs
-#: between an LLM's quote and the source PDF.  Each mapping is a 1:1 character
-#: replacement so the normalised → original index map stays exact (length is
-#: preserved).  Curly single/double quotes and primes fold to their ASCII
-#: equivalents; the various dashes fold to a hyphen-minus.
-_PUNCT_FOLD: dict[str, str] = {
-    "‘": "'",  # left single quote
-    "’": "'",  # right single quote / apostrophe
-    "‚": "'",  # single low-9 quote
-    "‛": "'",  # single high-reversed-9 quote
-    "′": "'",  # prime
-    "“": '"',  # left double quote
-    "”": '"',  # right double quote
-    "„": '"',  # double low-9 quote
-    "‟": '"',  # double high-reversed-9 quote
-    "″": '"',  # double prime
-    "‐": "-",  # hyphen
-    "‑": "-",  # non-breaking hyphen
-    "‒": "-",  # figure dash
-    "–": "-",  # en dash
-    "—": "-",  # em dash
-    "―": "-",  # horizontal bar
-    "−": "-",  # minus sign
-}
-
-
-def _normalize_with_index_map(original: str) -> tuple[str, list[int]]:
-    """Return ``(normalised, norm_to_orig)`` for *original*.
-
-    Normalisation is **NFKC + whitespace folding**: each original character is
-    NFKC-normalised individually (which may expand it to several characters,
-    e.g. the ligature ``ﬁ`` → ``"fi"``), runs of whitespace collapse to a single
-    space, and leading/trailing whitespace is stripped.
-
-    ``norm_to_orig[i]`` is the index into *original* at which normalised
-    character ``i`` began.  Mapping the normalised half-open span ``[ns, ne)``
-    back to the original is ``original[norm_to_orig[ns] : end]`` where ``end`` is
-    ``norm_to_orig[ne]`` if ``ne < len(norm)`` else ``len(original)``.
-
-    Processing character-by-character (rather than normalising the whole string
-    at once) is what keeps the index map exact: we always know which ORIGINAL
-    offset produced each emitted normalised character.
-    """
-    norm_chars: list[str] = []
-    norm_to_orig: list[int] = []
-    pending_space = False  # a folded-whitespace run is pending emission
-
-    for orig_idx, ch in enumerate(original):
-        if ch in _WHITESPACE:
-            # Collapse any run of whitespace; defer the single space so that
-            # trailing whitespace never gets emitted.
-            pending_space = True
-            continue
-
-        nfkc = unicodedata.normalize("NFKC", ch)
-        # NFKC of a single non-whitespace char can itself contain whitespace
-        # (rare), so fold those too rather than emit them verbatim.
-        for sub in nfkc:
-            sub = _PUNCT_FOLD.get(sub, sub)  # 1:1 punctuation fold; length-stable
-            if sub in _WHITESPACE:
-                pending_space = True
-                continue
-            if pending_space and norm_chars:
-                # Emit the single folded space only between real characters.
-                norm_chars.append(" ")
-                norm_to_orig.append(orig_idx)
-            pending_space = False
-            norm_chars.append(sub)
-            norm_to_orig.append(orig_idx)
-
-    return "".join(norm_chars), norm_to_orig
-
-
-def _normalize(text: str) -> str:
-    """NFKC + punctuation + whitespace fold (used for the quote side).
-
-    Mirrors :func:`_normalize_with_index_map` minus the index map: the result
-    must be byte-identical to the page side so exact substring search works.
-    """
-    nfkc = unicodedata.normalize("NFKC", text)
-    folded = "".join(_PUNCT_FOLD.get(c, c) for c in nfkc)
-    return " ".join(folded.split())
 
 
 # ---------------------------------------------------------------------------
@@ -439,9 +356,9 @@ def _trim_whitespace(original: str, char_start: int, char_end: int) -> tuple[int
     whitespace.  Fold-equality is preserved because folding strips exactly this
     leading/trailing whitespace anyway.
     """
-    while char_start < char_end and original[char_start] in _WHITESPACE:
+    while char_start < char_end and original[char_start] in WHITESPACE:
         char_start += 1
-    while char_end > char_start and original[char_end - 1] in _WHITESPACE:
+    while char_end > char_start and original[char_end - 1] in WHITESPACE:
         char_end -= 1
     return char_start, char_end
 
@@ -455,7 +372,7 @@ def _resolve_original_span(
     """Map a matched normalised span to an ORIGINAL span that honours the invariant.
 
     Returns ``(char_start, char_end)`` such that
-    ``_normalize(original[char_start:char_end]) == _normalize(norm_span)`` (the
+    ``normalize_text(original[char_start:char_end]) == normalize_text(norm_span)`` (the
     advertised fold-back guarantee), or ``None`` when no such span exists.
 
     The naive map-back (``norm_to_orig[ns]`` … ``norm_to_orig[ne]``) can break in
@@ -481,7 +398,7 @@ def _resolve_original_span(
     (the overwhelmingly common case) is accepted untouched and a non-representable
     one is rejected rather than silently widened.
     """
-    target = _normalize(norm_page[candidate.norm_start : candidate.norm_end])
+    target = normalize_text(norm_page[candidate.norm_start : candidate.norm_end])
 
     char_start = norm_to_orig[candidate.norm_start]
     char_end = (
@@ -491,7 +408,7 @@ def _resolve_original_span(
     )
     char_start, char_end = _trim_whitespace(original, char_start, char_end)
 
-    if char_end > char_start and _normalize(original[char_start:char_end]) == target:
+    if char_end > char_start and normalize_text(original[char_start:char_end]) == target:
         return char_start, char_end
 
     # The naive span folds wider than the match: the start fell inside an NFKC
@@ -503,7 +420,7 @@ def _resolve_original_span(
         snapped_start, snapped_end = _trim_whitespace(original, char_start + 1, char_end)
         if (
             snapped_end > snapped_start
-            and _normalize(original[snapped_start:snapped_end]) == target
+            and normalize_text(original[snapped_start:snapped_end]) == target
         ):
             return snapped_start, snapped_end
 
@@ -577,7 +494,7 @@ def match(
     Tie-breaking is deterministic: earliest page, then earliest original
     ``char_start``, then the longest contiguous overlap.
     """
-    norm_quote = _normalize(quote)
+    norm_quote = normalize_text(quote)
     if not norm_quote or not blocks:
         return None
 
@@ -609,7 +526,7 @@ def match(
     norm_pages: dict[int, tuple[str, list[int], str]] = {}
     for page in sorted(page_texts):
         original = page_texts[page]
-        norm_page, norm_to_orig = _normalize_with_index_map(original)
+        norm_page, norm_to_orig = normalize_with_index_map(original)
         if norm_page:
             norm_pages[page] = (norm_page, norm_to_orig, original)
 
@@ -677,7 +594,7 @@ def _best_over_pages(
         # degenerate edge case the upstream pipeline cannot produce), degrade
         # gracefully: treat the quote as unlocatable rather than raising in the
         # extraction write path.  A non-None return ALWAYS satisfies the invariant.
-        if _normalize(original[char_start:char_end]) != _normalize(
+        if normalize_text(original[char_start:char_end]) != normalize_text(
             norm_page[candidate.norm_start : candidate.norm_end]
         ):
             continue
@@ -697,10 +614,29 @@ def _best_over_pages(
     return best_result
 
 
+def _hinted_match(
+    quote: str,
+    blocks: Sequence[_Block],
+    hint: BlockRefWindow | None,
+    fuzz_threshold: float,
+) -> AnchorMatch | None:
+    """The match on the cited page, accepted only when it overlaps the cited
+    window; ``None`` (match the whole document) otherwise."""
+    if hint is None:
+        return None
+    m = match(
+        quote, [b for b in blocks if b.page_number == hint.page], fuzz_threshold=fuzz_threshold
+    )
+    if m is None or not set(m.block_ids) & set(hint.block_indexes):
+        return None
+    return m
+
+
 def build_anchor(
     quote: str,
     blocks: Sequence[_Block],
     *,
+    hint: BlockRefWindow | None = None,
     fuzz_threshold: float = DEFAULT_FUZZ_THRESHOLD,
 ) -> PositionV1 | None:
     """Build a :class:`PositionV1` anchor for *quote* against *blocks*.
@@ -725,13 +661,19 @@ def build_anchor(
         blocks: ``ArticleTextBlock`` ORM rows (or ``ParsedBlock`` dataclasses).
             Must cover the full document; typically obtained from
             ``ArticleTextBlockRepository.list_ordered_for_file``.
+        hint: The window of the block ref the model cited.  When set, the
+            quote is first matched on the hint's page alone and that match wins
+            if it overlaps the window; otherwise (or with no hint) the whole
+            document is matched, earliest page first.
         fuzz_threshold: Passed through to :func:`match`.  ``1.0`` = exact only.
 
     Returns:
         A :class:`PositionV1` whose ``anchor`` is set to the appropriate
         variant, or ``None`` if the quote cannot be located in *blocks*.
     """
-    m = match(quote, blocks, fuzz_threshold=fuzz_threshold)
+    m = _hinted_match(quote, blocks, hint, fuzz_threshold) or match(
+        quote, blocks, fuzz_threshold=fuzz_threshold
+    )
     if m is None:
         return None
 

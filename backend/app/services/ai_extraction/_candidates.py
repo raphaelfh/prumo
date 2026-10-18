@@ -4,20 +4,26 @@ Runs after the model calls and before the landing: every field the model
 answered becomes ONE candidate — a found value, an ``ambiguous`` value (a
 needs-attention proposal, ADR-0016 Phase 1), or a ``not_found`` abstention
 recorded as the coded no-information marker so the outcome is traceable
-instead of silently dropped. Each cited quote becomes an evidence row
-anchored to the run's parsed blocks; anchored quotes of found values go
-through the entailment gate, unanchored ones are flagged ``ungroundable``.
+instead of silently dropped. Each cited ``{block_ref, quote}`` becomes an
+evidence row anchored to the run's parsed blocks (the cited block's window
+first): a grounded row stores the source slice and the anchor's page, never a
+page from the model; an unanchored one stores no page and is flagged
+``ungroundable`` whatever its status. Grounded quotes of found values go
+through the entailment gate.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
+from app.domain.evidence_block_refs import parse_block_ref, ref_window
+from app.infrastructure.parsing.base import concat_page_text
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.verify import VerificationAnnotation, VerifyVerdict
 from app.models.extraction import ExtractionEvidence, ExtractionRun
+from app.schemas.extraction import PositionV1
 from app.services.ai_extraction._pipeline import Pipeline
 from app.services.ai_extraction.landing import ProposalCandidate
 from app.services.evidence_anchor_service import build_anchor
@@ -34,6 +40,7 @@ async def build_candidates(
     entity_type_id: UUID,
     extracted: dict[str, Any],
     verdicts: dict[str, VerifyVerdict] | None,
+    grounding_retries: int = 0,
 ) -> tuple[Any, list[ProposalCandidate]]:
     """``(live section, candidates)`` for one field call.
 
@@ -41,6 +48,8 @@ async def build_candidates(
     live names (``Pipeline.live_field_intersection``); a name it no longer
     has is skipped loudly. ``verdicts`` (Verified mode) are ANNOTATION only,
     the ``verification`` sibling on a found value — never a mutation (§IX).
+    ``grounding_retries`` (the validator's send-backs for this call) is
+    logged with the grounded/ungrounded counts as ``evidence_grounding``.
     """
     if not extracted:
         p.logger.info(
@@ -64,6 +73,8 @@ async def build_candidates(
     candidates: list[ProposalCandidate] = []
     gate_specs: list[GateSpec] = []
     gate_rows: list[ExtractionEvidence] = []
+    page_texts = concat_page_text(p.anchor_blocks) if p.anchor_blocks else {}
+    grounded = ungrounded = 0
     for field_name, answer in extracted.items():
         spec = by_name.get(field_name)
         if spec is None:
@@ -78,14 +89,13 @@ async def build_candidates(
         candidates.append(candidate)
         found = answer.get("status") == "found"
         for rank, quote in enumerate(_quotes(answer)[:EVIDENCE_CAP]):
-            row, pos = _evidence(p, run, quote, rank)
+            row, pos = _evidence(p, run, quote, rank, page_texts)
             candidate.evidence.append(row)
-            if not found:
-                continue
             if pos is None:
-                # No text anchor → the value cannot be grounded in the document
-                # (e.g. it appears only in a figure): flag it for a human.
-                row.attribution_label = "ungroundable"
+                ungrounded += 1
+                continue
+            grounded += 1
+            if not found:
                 continue
             gate_specs.append(
                 GateSpec(
@@ -97,13 +107,23 @@ async def build_candidates(
                         allowed_values=spec.allowed_values,
                         value=answer.get("value"),
                     ),
-                    quote=quote["text"],
+                    # The judge reads the source slice a grounded row always
+                    # carries, never the model's words.
+                    quote=cast(str, row.text_content),
                     pos=pos,
                     anchor_blocks=p.anchor_blocks,
                 )
             )
             gate_rows.append(row)
 
+    p.logger.info(
+        "evidence_grounding",
+        trace_id=p.trace_id,
+        entity_type_id=str(entity_type_id),
+        grounded=grounded,
+        ungrounded=ungrounded,
+        retried=grounding_retries,
+    )
     if gate_specs:
         await p.before_external_work()
         labels = await run_entailment_gate(gate_specs, p.wire_model(), p.logger, extract=p.llm)
@@ -139,37 +159,58 @@ def _candidate(
 
 
 def _quotes(answer: dict[str, Any]) -> list[dict[str, Any]]:
-    """The cited quotes with text; a no-info answer cites none."""
+    """The cited ``{quote, block_ref}`` entries with a quote; a no-info
+    answer cites none."""
     if answer.get("status") == "not_found":
         return []
     return [
-        {"text": str(e["text"]).strip(), "page_number": e.get("page_number")}
+        {"quote": str(e["quote"]).strip(), "block_ref": e.get("block_ref")}
         for e in answer.get("evidence") or []
-        if (e.get("text") or "").strip()
+        if (e.get("quote") or "").strip()
     ]
 
 
 def _evidence(
-    p: Pipeline, run: ExtractionRun, quote: dict[str, Any], rank: int
-) -> tuple[ExtractionEvidence, Any]:
-    """The evidence row for one quote, anchored to the run's parsed blocks
-    (``position={}`` and the model's page when no anchor resolves)."""
-    pos = build_anchor(quote["text"], p.anchor_blocks) if p.anchor_blocks else None
-    if pos is not None:
-        position: dict[str, Any] = pos.model_dump(by_alias=True, mode="json")
-        page: int | None = pos.anchor.page if pos.anchor.kind == "region" else pos.anchor.range.page
-    else:
-        position, page = {}, quote.get("page_number")
+    p: Pipeline,
+    run: ExtractionRun,
+    quote: dict[str, Any],
+    rank: int,
+    page_texts: dict[int, str],
+) -> tuple[ExtractionEvidence, PositionV1 | None]:
+    """The evidence row for one quote, anchored to the run's parsed blocks —
+    the cited block's window first (``build_anchor``'s ``hint``).
+
+    Grounded: page and ``position`` from the anchor (whose ``quote`` keeps
+    the model's words) and ``text_content`` the exact source slice.
+    Ungrounded: no page, ``position={}``, the model's quote, ``ungroundable``
+    (e.g. a value only a figure states) — the model never supplies a page.
+    """
+    ref = parse_block_ref(quote["block_ref"] or "")
+    window = ref_window(p.block_ref_index, ref) if ref else None
+    pos = build_anchor(quote["quote"], p.anchor_blocks, hint=window) if p.anchor_blocks else None
+    if pos is None or pos.anchor.kind == "region":
+        row = ExtractionEvidence(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            run_id=run.id,
+            page_number=None,
+            text_content=quote["quote"],
+            position={},
+            attribution_label="ungroundable",
+            rank=rank,
+            created_by=UUID(p.user_id),
+        )
+        return row, None
+    span = pos.anchor.range
     row = ExtractionEvidence(
         project_id=run.project_id,
         article_id=run.article_id,
-        article_file_id=p.anchor_file_id if pos is not None else None,
-        content_version=p.anchor_content_version if pos is not None else None,
+        article_file_id=p.anchor_file_id,
+        content_version=p.anchor_content_version,
         run_id=run.id,
-        proposal_record_id=None,
-        page_number=page,
-        text_content=quote["text"],
-        position=position,
+        page_number=span.page,
+        text_content=page_texts[span.page][span.char_start : span.char_end],
+        position=pos.model_dump(by_alias=True, mode="json"),
         rank=rank,
         created_by=UUID(p.user_id),
     )

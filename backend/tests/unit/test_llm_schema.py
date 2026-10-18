@@ -38,3 +38,21 @@ def test_empty_fields_override_skips_llm():
     distinct from falling back to the entity's own non-empty fields."""
     et = _ET([_F("dose")])
     assert build_output_models(et, fields=[]) == []
+
+
+def test_evidence_item_schema_is_block_ref_and_quote():
+    """The model cites a block ref and a quote; it never supplies a page."""
+    [model] = build_output_models(_ET([_F("dose")]))
+    schema = model.model_json_schema()
+    item = schema["$defs"]["Evidence"]
+    assert set(item["properties"]) == {"block_ref", "quote"}
+    assert set(item["required"]) == {"block_ref", "quote"}
+
+
+def test_per_field_property_count_for_chunking_is_still_eight():
+    from app.llm import schema as llm_schema
+
+    assert llm_schema._PROPERTIES_PER_FIELD == 8
+    # 100 // 8 = 12 fields per call: 13 fields split into two chunks.
+    models = build_output_models(_ET([_F(f"f{i}") for i in range(13)]))
+    assert [len(m.model_fields) for m in models] == [12, 1]

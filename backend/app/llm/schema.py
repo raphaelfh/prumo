@@ -2,7 +2,7 @@
 
 Builds one Pydantic model per chunk of fields. OpenAI strict-mode schemas
 allow ~100 properties and each extraction field expands to ~8 (value,
-confidence, reasoning, status, evidence list[{text, page_number}] + the
+confidence, reasoning, status, evidence list[{block_ref, quote}] + the
 container), so large UI-built templates are split into multiple calls and
 merged by the caller. DB field names are mapped through aliases so any
 template name — spaces, parentheses, leading digits — round-trips safely.
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from app.llm.claim_value import normalize_options
 
 OPENAI_STRICT_PROPERTY_BUDGET = 100
-_PROPERTIES_PER_FIELD = 8  # value, confidence, reasoning, evidence{text,page}, status
+_PROPERTIES_PER_FIELD = 8  # value, confidence, reasoning, evidence{block_ref, quote}, status
 
 
 class SchemaBuildError(ValueError):
@@ -27,10 +27,13 @@ class SchemaBuildError(ValueError):
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str = Field(description="Short verbatim quote from the article supporting the value.")
-    page_number: int | None = Field(
-        description="1-based page number of the quote, null if unknown."
+    block_ref: str = Field(
+        description=(
+            "The citation ref of the block the quote comes from, exactly as shown before "
+            "it in the article text, e.g. p3·b12 (or p3·b12–b18 for a table)."
+        )
     )
+    quote: str = Field(description="Short verbatim quote from that block supporting the value.")
 
 
 _SCALAR_TYPES: dict[str, type] = {
