@@ -14211,7 +14211,7 @@
     },
     "/api/v1/extraction/instances/{instance_id}": {
       "patch": {
-        "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.",
+        "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history. A re-key onto an identity a sibling already holds answers a typed 409 ENTRY_KEY_DUPLICATE and changes nothing.",
         "operationId": "update_instance_api_v1_extraction_instances__instance_id__patch",
         "parameters": [
           {
@@ -14245,6 +14245,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "ENTRY_KEY_DUPLICATE: a sibling entry already holds the requested key."
           },
           "422": {
             "content": {

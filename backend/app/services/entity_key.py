@@ -332,6 +332,7 @@ async def match_or_none(
     entity_type_id: UUID,
     key_value: str,
     parent_instance_id: UUID | None = None,
+    exclude_id: UUID | None = None,
 ) -> ExtractionInstance | None:
     """The instance already holding this identity, if any.
 
@@ -344,8 +345,8 @@ async def match_or_none(
     row from it is two round trips for one entry, because the identity map
     holds these rows weakly and has dropped them by then.
 
-    Two siblings can hold one normalized key: ``update_instance_identity``
-    re-keys without a uniqueness check, so which one answers is arbitrary.
+    ``exclude_id`` leaves one row out, so a re-key asks "does a SIBLING hold
+    this identity" without matching the entry being re-keyed.
     """
     stmt = (
         select(ExtractionInstance)
@@ -359,4 +360,6 @@ async def match_or_none(
         )
         .limit(1)
     )
+    if exclude_id is not None:
+        stmt = stmt.where(ExtractionInstance.id != exclude_id)
     return (await db.execute(stmt)).scalars().first()

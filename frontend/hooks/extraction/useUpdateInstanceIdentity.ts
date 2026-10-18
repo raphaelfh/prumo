@@ -12,6 +12,7 @@ import {toast} from 'sonner';
 
 import {runsKeys} from '@/hooks/runs/types';
 import {
+  ApiError,
   updateInstanceIdentity,
   type InstanceIdentityUpdateRequest,
   type InstanceIdentityUpdateResponse,
@@ -36,9 +37,11 @@ export function useUpdateInstanceIdentity(runId: string | null | undefined) {
     },
     onError: (error, {noun}) => {
       console.error('[useUpdateInstanceIdentity]', error);
-      toast.error(
-        `${t('extraction', 'errors_updateEntry').replace('{{noun}}', noun)}: ${error.message}`,
-      );
+      // Only the typed 409 (a sibling holds the key) carries a message worth
+      // showing; a 404, 403 or network failure stays generic.
+      const generic = t('extraction', 'errors_updateEntry').replace('{{noun}}', noun);
+      const isDuplicate = error instanceof ApiError && error.status === 409;
+      toast.error(isDuplicate ? `${generic}: ${error.message}` : generic);
     },
   });
 }

@@ -195,8 +195,15 @@ async def delete_entries_endpoint(
     summary="Rename or re-key one extraction instance",
     description=(
         "Rewrites the entry's label and/or its identity key; a re-key appends "
-        "{who, when, from, to} to the instance's entity_key_history."
+        "{who, when, from, to} to the instance's entity_key_history. "
+        "A re-key onto an identity a sibling already holds answers a typed 409 "
+        "ENTRY_KEY_DUPLICATE and changes nothing."
     ),
+    responses={
+        409: {
+            "description": ("ENTRY_KEY_DUPLICATE: a sibling entry already holds the requested key.")
+        }
+    },
 )
 @limiter.limit("60/minute")
 async def update_instance(
@@ -223,6 +230,9 @@ async def update_instance(
     except InstanceNotFoundError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except EntryKeyDuplicateError:
+        await db.rollback()
+        raise  # AppError -> the global handler's typed 409 envelope
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -21,6 +21,7 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 from app.core.integrity import violates_constraint
 from app.models.extraction_instance import ExtractionInstance
+from app.services import entry_hierarchy_service
 from app.services.entity_key import (
     ENTITY_KEY_UNIQUE_INDEX,
     HISTORY_KEY,
@@ -30,6 +31,7 @@ from app.services.entity_key import (
     resolve_instance,
     stamp,
 )
+from app.services.entry_hierarchy_service import EntryHierarchyService, EntryKeyDuplicateError
 from tests.integration.conftest import SEED
 
 pytestmark = pytest.mark.asyncio
@@ -288,6 +290,58 @@ async def test_resolve_instance_reraises_other_integrity_errors(db_session: Asyn
             created_by=uuid4(),  # no such profile: a foreign-key violation
         )
     assert not violates_constraint(caught.value, ENTITY_KEY_UNIQUE_INDEX)
+
+
+async def test_create_entry_maps_index_violation_to_409(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent creator the pre-check missed: the identity index rejects
+    the insert, and the reviewer gets the typed 409, not a 500."""
+    entity_type_id, _ = await _repeating_group(db_session, with_key=True)
+    existing_id = await _instance(db_session, entity_type_id, "Cox Model")
+
+    async def _miss(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(entry_hierarchy_service, "match_or_none", _miss)
+
+    with pytest.raises(EntryKeyDuplicateError) as caught:
+        await EntryHierarchyService(db_session).create_entry(
+            project_id=SEED.primary_project,
+            article_id=SEED.primary_article,
+            template_id=SEED.primary_template,
+            entity_type_id=entity_type_id,
+            parent_instance_id=None,
+            label="Cox model",
+            entity_key=" cox  MODEL ",
+            user_id=SEED.primary_profile,
+        )
+
+    assert caught.value.status_code == 409
+    # The savepoint kept the session usable: the holder is still the only row.
+    rows = (
+        await db_session.execute(
+            text("SELECT id FROM public.extraction_instances WHERE entity_type_id = :et"),
+            {"et": entity_type_id},
+        )
+    ).all()
+    assert [row[0] for row in rows] == [existing_id]
+
+
+async def test_match_or_none_excludes_the_given_instance(db_session: AsyncSession) -> None:
+    entity_type_id, _ = await _repeating_group(db_session, with_key=True)
+    instance_id = await _instance(db_session, entity_type_id, "Cox Model")
+    coordinate = {"article_id": SEED.primary_article, "entity_type_id": entity_type_id}
+
+    assert await _match_id(db_session, key_value="cox model", **coordinate) == instance_id
+    assert (
+        await _match_id(db_session, key_value="cox model", exclude_id=instance_id, **coordinate)
+        is None
+    )
+    assert (
+        await _match_id(db_session, key_value="cox model", exclude_id=uuid4(), **coordinate)
+        == instance_id
+    )
 
 
 async def test_concurrent_resolve_instance_yields_one_row() -> None:

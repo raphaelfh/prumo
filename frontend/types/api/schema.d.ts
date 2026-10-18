@@ -414,7 +414,7 @@ export interface paths {
         head?: never;
         /**
          * Rename or re-key one extraction instance
-         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.
+         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history. A re-key onto an identity a sibling already holds answers a typed 409 ENTRY_KEY_DUPLICATE and changes nothing.
          */
         patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
         trace?: never;
@@ -8396,6 +8396,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
                 };
+            };
+            /** @description ENTRY_KEY_DUPLICATE: a sibling entry already holds the requested key. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
