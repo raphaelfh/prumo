@@ -595,3 +595,61 @@ async def test_article_mode_cursor_pages(mcp_client, pat_primary_rw, db_session)
     assert pages == 2
     assert len(seen) == len(set(seen))
     assert set(seen) == expected
+
+
+async def _first_cursor(mcp_client, pat, query, group_by):
+    body = structured(await _tool_search(mcp_client, pat, query=query, group_by=group_by))
+    assert body["next_cursor"] is not None
+    return body["next_cursor"]
+
+
+async def test_cursor_from_the_other_group_by_is_refused(mcp_client, pat_primary_rw, db_session):
+    for n in range(svc._PAGE_SIZE + 3):
+        await _article_with_blocks(
+            db_session, f"Mode {n}", [(1, 0, f"crossmodemarker item {n}.", "paragraph")]
+        )
+    for issued_by, used_with in [("block", "article"), ("article", "block")]:
+        cursor = await _first_cursor(mcp_client, pat_primary_rw, "crossmodemarker", issued_by)
+        payload = error_payload(
+            await _tool_search(
+                mcp_client,
+                pat_primary_rw,
+                query="crossmodemarker",
+                group_by=used_with,
+                cursor=cursor,
+            )
+        )
+        assert (payload["code"], payload["field"]) == ("INVALID_ARGUMENT", "cursor"), issued_by
+        # The same cursor stays valid in the mode that issued it.
+        same = structured(
+            await _tool_search(
+                mcp_client,
+                pat_primary_rw,
+                query="crossmodemarker",
+                group_by=issued_by,
+                cursor=cursor,
+            )
+        )
+        assert same["articles"], issued_by
+
+
+async def test_empty_page_after_a_cursor_is_end_of_results(mcp_client, pat_primary_rw, db_session):
+    article = await insert_article(db_session, SEED.primary_project, title="End Of Results")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article)
+    await insert_blocks(
+        db_session,
+        file_id,
+        [(1, i, f"endpagemarker block {i}.", "paragraph") for i in range(svc._PAGE_SIZE + 3)],
+    )
+    cursor = await _first_cursor(mcp_client, pat_primary_rw, "endpagemarker", "block")
+    await db_session.execute(
+        text("DELETE FROM public.article_text_blocks WHERE article_file_id = :fid"),
+        {"fid": str(file_id)},
+    )
+
+    body = structured(
+        await _tool_search(mcp_client, pat_primary_rw, query="endpagemarker", cursor=cursor)
+    )
+    assert body["articles"] == []
+    assert body["next_cursor"] is None
+    assert body["note"] == "No more hits: this is the end of the results."

@@ -31,8 +31,9 @@ from app.utils.opaque_cursor import InvalidCursorError
     destructive=False,
     description=(
         "Keyword search over the parsed text of a project's articles; returns one row per "
-        "article file, each with its hits (page, block locator, snippet). The 'simple' config "
-        "does not stem or strip accents: try variant spellings (plural, pt/en, accented). "
+        "article file, each with its hits (page, block locator, snippet). Words are ANDed; "
+        '"quoted phrase", or and -term work; & and ! are ignored; no stemming or accent '
+        "folding. Try variant spellings (plural, pt/en, accented). "
         "Call get_article_text with the row's article_id and the hit's page next. "
         "group_by='article' returns one row per article instead, with its hit_count, top "
         "locators and best snippet. exclude_references (on by default) skips hits under a "

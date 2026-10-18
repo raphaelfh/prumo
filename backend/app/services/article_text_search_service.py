@@ -36,7 +36,13 @@ from app.schemas.mcp_search import (
     McpSearchResult,
 )
 from app.utils.compact_json import compact_json
-from app.utils.opaque_cursor import cursor_rank, cursor_uuid, decode_cursor, encode_cursor
+from app.utils.opaque_cursor import (
+    InvalidCursorError,
+    cursor_rank,
+    cursor_uuid,
+    decode_cursor,
+    encode_cursor,
+)
 from app.utils.text_caps import cap_text
 
 _PAGE_SIZE = 20
@@ -48,6 +54,7 @@ _NO_HITS_NOTE = (
     'No hits for "{query}". The search does not stem or strip accents: try variant '
     "spellings (plural, pt/en, accented)."
 )
+_END_OF_RESULTS_NOTE = "No more hits: this is the end of the results."
 _ALL_IN_REFERENCES_NOTE = (
     "Every hit is inside a references section; retry with exclude_references=false."
 )
@@ -152,13 +159,25 @@ def _candidates_sql(
     return _CANDIDATES_TEMPLATE.format(lateral=lateral, filters="\n  ".join(filters))
 
 
+#: A search cursor's first value names the group_by that issued it: a block
+#: cursor decoded as an article one (or the reverse) would page silently wrong.
+_CURSOR_MODE = {"block": "b", "article": "a"}
+
+
 def _cursor_filter(
-    params: dict[str, object], cursor: str | None, *, rank_col: str, id_col: str
+    params: dict[str, object],
+    cursor: str | None,
+    *,
+    mode: Literal["block", "article"],
+    rank_col: str,
+    id_col: str,
 ) -> str:
-    decoded = decode_cursor(cursor, arity=2)
+    decoded = decode_cursor(cursor, arity=3)
     if decoded is None:
         return ""
-    rank_value, id_value = decoded
+    mode_tag, rank_value, id_value = decoded
+    if mode_tag != _CURSOR_MODE[mode]:
+        raise InvalidCursorError("cursor was issued for another group_by")
     params["rank"] = repr(cursor_rank(rank_value))
     params["cid"] = str(cursor_uuid(id_value))
     rank = "CAST(CAST(:rank AS text) AS real)"
@@ -188,12 +207,14 @@ async def search_project_text(
         exclude_references=exclude_references,
     )
     if group_by == "article":
-        cursor_filter = _cursor_filter(params, cursor, rank_col="max_rank", id_col="article_id")
+        cursor_filter = _cursor_filter(
+            params, cursor, mode="article", rank_col="max_rank", id_col="article_id"
+        )
         page_sql = _ARTICLE_PAGE_TEMPLATE.format(
             candidates=candidates, cursor_filter=cursor_filter, top=_TOP_LOCATORS
         )
     else:
-        cursor_filter = _cursor_filter(params, cursor, rank_col="rank", id_col="id")
+        cursor_filter = _cursor_filter(params, cursor, mode="block", rank_col="rank", id_col="id")
         page_sql = _BLOCK_PAGE_TEMPLATE.format(candidates=candidates, cursor_filter=cursor_filter)
     rows = (await db.execute(text(page_sql), params)).all()
 
@@ -209,10 +230,16 @@ async def search_project_text(
                 block_types=block_types,
             )
         )
+        if cursor is not None:
+            note = _END_OF_RESULTS_NOTE
+        elif all_in_refs:
+            note = _ALL_IN_REFERENCES_NOTE
+        else:
+            note = _NO_HITS_NOTE.format(query=query)
         return McpSearchResult(
             articles=[],
             next_cursor=None,
-            note=_ALL_IN_REFERENCES_NOTE if all_in_refs else _NO_HITS_NOTE.format(query=query),
+            note=note,
             references_excluded=exclude_references,
         )
 
@@ -302,7 +329,9 @@ async def _block_page(
 
     next_cursor: str | None = None
     if has_more and last_kept is not None:
-        next_cursor = encode_cursor([repr(last_kept.rank), str(last_kept.id)])
+        next_cursor = encode_cursor(
+            [_CURSOR_MODE["block"], repr(last_kept.rank), str(last_kept.id)]
+        )
     return list(groups.values()), next_cursor
 
 
@@ -357,5 +386,7 @@ async def _article_page(
 
     next_cursor: str | None = None
     if has_more and last_kept is not None:
-        next_cursor = encode_cursor([repr(last_kept.max_rank), str(last_kept.article_id)])
+        next_cursor = encode_cursor(
+            [_CURSOR_MODE["article"], repr(last_kept.max_rank), str(last_kept.article_id)]
+        )
     return articles, next_cursor

@@ -496,6 +496,19 @@ async def test_no_tool_listing_cites_internal_spec_sections(
         assert "spec §" not in listing, tool.name
 
 
+async def test_descriptions_document_search_syntax(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        descriptions = {t.name: t.description or "" for t in (await client.list_tools()).tools}
+
+    assert "Words are ANDed" in descriptions["search_project_text"]
+    assert "case-insensitive substring" in descriptions["list_articles"]
+    assert "ai_only" in descriptions["get_extractions"]
+    assert "run.stage" in descriptions["get_extractions"]
+
+
 async def test_annotation_policy_is_pinned(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
