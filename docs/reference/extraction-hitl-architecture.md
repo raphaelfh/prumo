@@ -136,9 +136,17 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0089_evidence_content_version` (post-squash numbering; run
+`0090_entity_key_unique` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
+
+Entry identity is enforced by the database: the partial unique index
+`uq_extraction_instances_entity_key` holds one `metadata->>'entity_key'` per
+`(article_id, entity_type_id, parent_instance_id)` coordinate, roots included
+(`NULLS NOT DISTINCT`, keyed rows only). 0090 healed earlier duplicates first
+(the oldest holder keeps the key; the others drop it and record the loss in
+`entity_key_history`), and `entity_key.resolve_instance` answers a lost
+creation race by re-reading the winner.
 
 **API-only writes (0081).** `authenticated` holds SELECT but no
 INSERT/UPDATE/DELETE on `article_text_blocks` and the extraction history

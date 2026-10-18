@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0089_evidence_content_version"
+    expected_head = "0090_entity_key_unique"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2357,3 +2357,141 @@ async def test_migration_0089_evidence_content_version_roundtrip(
     column, indexdef = await schema()
     assert column is True
     assert indexdef is not None and "WHERE (article_file_id IS NOT NULL)" in indexdef
+
+
+_ENTITY_KEY_INDEXDEF = text(
+    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+    " AND indexname = 'uq_extraction_instances_entity_key'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0090_entity_key_unique_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``uq_extraction_instances_entity_key`` holds one identity per
+    coordinate, roots included (NULLS NOT DISTINCT), over keyed rows only;
+    the downgrade drops it, the re-upgrade restores it. The partial WHERE is
+    not compared by ``alembic check``, so this indexdef assertion is its guard."""
+    session = migration_session
+
+    async def indexdef() -> str | None:
+        found = (await session.execute(_ENTITY_KEY_INDEXDEF)).scalar_one_or_none()
+        await session.rollback()
+        return found
+
+    def assert_shape(found: str | None) -> None:
+        assert found is not None
+        assert found.startswith("CREATE UNIQUE INDEX")
+        assert (
+            "(article_id, entity_type_id, parent_instance_id, ((metadata ->> 'entity_key'::text)))"
+            in found
+        )
+        assert "NULLS NOT DISTINCT" in found
+        assert found.endswith("WHERE (metadata ? 'entity_key'::text)")
+
+    assert_shape(await indexdef())
+    try:
+        _run_alembic("downgrade", "0089_evidence_content_version", database_url=migration_db_url)
+        assert await indexdef() is None
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    assert_shape(await indexdef())
+
+
+# --- 0090: duplicate entity_key heal ---
+# Fixed fixture ids (0090-prefixed, hex-only) so assertions can name rows.
+_EK_PROFILE = "00900000-0000-4000-8000-00000000000a"
+_EK_PROJECT = "00900000-0000-4000-8000-00000000000b"
+_EK_TEMPLATE = "00900000-0000-4000-8000-00000000000c"
+_EK_ARTICLE = "00900000-0000-4000-8000-00000000000d"
+_EK_SECTION = "00900000-0000-4000-8000-00000000000e"
+_EK_KEEP = "00900000-0000-4000-8000-000000000001"
+_EK_DUP2 = "00900000-0000-4000-8000-000000000002"
+_EK_DUP3 = "00900000-0000-4000-8000-000000000003"
+
+# Duplicates are only representable at 0089 (pre-index). created_at is
+# staggered explicitly because it is the heal's rank key; the newest loser
+# already carries a history entry the heal must append to, not replace.
+_EK_FIXTURE_STATEMENTS = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_EK_PROFILE}', 'heal-0090@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_EK_PROFILE}', 'heal-0090@integration-test.prumo.local', 'Heal 0090')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
+    f"('{_EK_PROJECT}', 'Heal 0090 Project', '{_EK_PROFILE}', true)",
+    "INSERT INTO public.project_extraction_templates "
+    "(id, project_id, name, framework, version, kind, schema, is_active, created_by) VALUES "
+    f"('{_EK_TEMPLATE}', '{_EK_PROJECT}', 'heal-0090-template', 'CUSTOM', '1.0', "
+    f"'extraction', '{{}}'::jsonb, true, '{_EK_PROFILE}')",
+    "INSERT INTO public.extraction_template_versions "
+    "(id, project_template_id, version, schema, published_by, is_active) VALUES "
+    f"('00900000-0000-4000-8000-0000000000aa', '{_EK_TEMPLATE}', 1, "
+    f"'{{\"entity_types\": []}}'::jsonb, '{_EK_PROFILE}', true)",
+    "INSERT INTO public.articles (id, project_id, title, row_version) VALUES "
+    f"('{_EK_ARTICLE}', '{_EK_PROJECT}', 'Heal 0090 Article', 1)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, sort_order, entry_label) VALUES "
+    f"('{_EK_SECTION}', '{_EK_TEMPLATE}', 'heal_models', 'Heal Models', 'many', 0, 'model')",
+    "INSERT INTO public.extraction_instances "
+    "(id, project_id, article_id, template_id, entity_type_id, parent_instance_id,"
+    " label, sort_order, metadata, created_by, created_at) VALUES "
+    f"('{_EK_KEEP}', '{_EK_PROJECT}', '{_EK_ARTICLE}', '{_EK_TEMPLATE}', '{_EK_SECTION}',"
+    " NULL, 'Probe', 0, '{\"entity_key\": \"probe\"}'::jsonb,"
+    f" '{_EK_PROFILE}', now() - interval '3 hours'), "
+    f"('{_EK_DUP2}', '{_EK_PROJECT}', '{_EK_ARTICLE}', '{_EK_TEMPLATE}', '{_EK_SECTION}',"
+    " NULL, 'probe', 1, '{\"entity_key\": \"probe\"}'::jsonb,"
+    f" '{_EK_PROFILE}', now() - interval '2 hours'), "
+    f"('{_EK_DUP3}', '{_EK_PROJECT}', '{_EK_ARTICLE}', '{_EK_TEMPLATE}', '{_EK_SECTION}',"
+    ' NULL, \'PROBE\', 2, \'{"entity_key": "probe", "entity_key_history":'
+    ' [{"who": "u", "when": "2026-01-01T00:00:00+00:00", "from": "old", "to": "probe"}]}\'::jsonb,'
+    f" '{_EK_PROFILE}', now() - interval '1 hour')",
+)
+_EK_METADATA = text(
+    "SELECT id::text, metadata FROM public.extraction_instances WHERE entity_type_id = :sid"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0090_heals_seeded_duplicates(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """Three root holders of one key at one coordinate: the upgrade keeps
+    the key on the oldest and moves it into each loser's key history (the
+    trail is appended to, never replaced) before the index is built."""
+    session = migration_session
+    await session.rollback()
+    _run_alembic("downgrade", "0089_evidence_content_version", database_url=migration_db_url)
+    try:
+        for statement in _EK_FIXTURE_STATEMENTS:
+            await session.execute(text(statement))
+        await session.commit()
+    finally:
+        await session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    try:
+        rows = dict((await session.execute(_EK_METADATA, {"sid": _EK_SECTION})).all())
+        await session.rollback()
+        assert set(rows) == {_EK_KEEP, _EK_DUP2, _EK_DUP3}
+        assert rows[_EK_KEEP] == {"entity_key": "probe"}, "the oldest holder keeps its key"
+        for loser in (_EK_DUP2, _EK_DUP3):
+            assert "entity_key" not in rows[loser]
+            last = rows[loser]["entity_key_history"][-1]
+            assert last["who"] == "migration:0090_entity_key_unique"
+            assert last["from"] == "probe"
+            assert last["to"] is None
+            assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00", last["when"])
+        assert len(rows[_EK_DUP2]["entity_key_history"]) == 1
+        history = rows[_EK_DUP3]["entity_key_history"]
+        assert [entry["from"] for entry in history] == ["old", "probe"]
+        assert (await session.execute(_ENTITY_KEY_INDEXDEF)).scalar_one_or_none() is not None
+    finally:
+        await session.rollback()
+        await session.execute(
+            text("DELETE FROM public.extraction_instances WHERE entity_type_id = :sid"),
+            {"sid": _EK_SECTION},
+        )
+        await session.commit()

@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -22,6 +22,7 @@ class ExtractionInstance(BaseModel):
     - project_id, article_id, template_id: FKs indexadas
     - (article_id, entity_type_id, sort_order): busca ordenada
     - metadata: GIN for busca em JSONB
+    - entity_key: unique per (article, entity type, parent instance)
     """
 
     __tablename__ = "extraction_instances"
@@ -87,6 +88,17 @@ class ExtractionInstance(BaseModel):
         ),
         # Indice GIN for metadata
         Index("idx_extraction_instances_metadata_gin", "metadata", postgresql_using="gin"),
+        # One identity per coordinate, roots included (0090).
+        Index(
+            "uq_extraction_instances_entity_key",
+            "article_id",
+            "entity_type_id",
+            "parent_instance_id",
+            text("(metadata->>'entity_key')"),
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+            postgresql_where=text("metadata ? 'entity_key'"),
+        ),
         {"schema": "public"},
     )
 

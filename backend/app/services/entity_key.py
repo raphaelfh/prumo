@@ -50,9 +50,11 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.core.integrity import violates_constraint
 from app.models.extraction_instance import ExtractionInstance
 from app.schemas.extraction import ExtractionErrorCode
 
@@ -60,6 +62,8 @@ from app.schemas.extraction import ExtractionErrorCode
 STORE_KEY = "entity_key"
 #: Append-only trail of reviewer re-keys: ``[{who, when, from, to}, ...]``.
 HISTORY_KEY = "entity_key_history"
+#: The partial unique index holding one ``STORE_KEY`` per coordinate (0090).
+ENTITY_KEY_UNIQUE_INDEX = "uq_extraction_instances_entity_key"
 
 
 class MissingEntityKeyError(AppError):
@@ -248,6 +252,10 @@ async def resolve_instance(
     values is the per-field guard's decision, not this function's. A miss
     creates the row with the identity materialized alongside ``metadata``
     and the trimmed key as its human-facing ``label``.
+
+    A concurrent creator can win the race between the miss and the insert:
+    the identity index rejects the second row, the savepoint rolls back, and
+    the winner's row is re-read and returned as a match.
     """
     existing = await match_or_none(
         db,
@@ -269,8 +277,23 @@ async def resolve_instance(
         metadata_=stamp(metadata, key_value),
         created_by=created_by,
     )
-    db.add(instance)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(instance)
+            await db.flush()
+    except IntegrityError as exc:
+        if not violates_constraint(exc, ENTITY_KEY_UNIQUE_INDEX):
+            raise
+        winner = await match_or_none(
+            db,
+            article_id=article_id,
+            entity_type_id=entity_type_id,
+            key_value=key_value,
+            parent_instance_id=parent_instance_id,
+        )
+        if winner is None:  # the winner's row was deleted before the re-read
+            raise
+        return winner, False
     return instance, True
 
 
