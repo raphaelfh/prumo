@@ -87,6 +87,8 @@ _SNAPSHOT_KEYS = frozenset(
         "tokens",
         "prompt_composition",
         "passes_detail",
+        "template_version",
+        "schema_sha256",
     }
 )
 _NESTED_SNAPSHOT_KEYS = {
@@ -100,8 +102,16 @@ _NESTED_SNAPSHOT_KEYS = {
         "fields_requested",
         "llm_calls",
     },
+    "template_version": {"id", "version"},
 }
-_ARTICLE_REF_KEYS = {"file_id", "file_name", "truncated", "est_tokens"}
+_ARTICLE_REF_KEYS = {
+    "file_id",
+    "file_name",
+    "truncated",
+    "est_tokens",
+    "content_version",
+    "text_sha256",
+}
 #: One ``passes_detail`` entry (``schemas.prompt_composition.PassDetail``).
 _PASS_DETAIL_KEYS = {"kind", "prompt_name", "prompt_version", "tokens", "request_ids"}
 
@@ -450,10 +460,14 @@ def _heal_verdict(
     sibling (fast re-run / flaked verify) never clears a stored verdict.
 
     The verdict and the execution record describe the SAME pass, so they
-    move together. Engine IDENTITY is deliberately not refreshed: the model
+    move together. Only a row WITHOUT a call snapshot heals: an attempt's row
+    is its immutable record (verdict, execution facts and ``passes_detail``
+    together), so a later write never claims a pass its snapshot lacks. Engine IDENTITY is deliberately not refreshed: the model
     recorded here did produce this value, and a corroborating re-run under
     a different engine is a separate fact (append-only, constitution §IX).
     """
+    if latest.generation_snapshot is not None:
+        return
     incoming = proposed_value.get("verification")
     if incoming is None or incoming == latest.proposed_value.get("verification"):
         return

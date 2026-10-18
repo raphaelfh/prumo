@@ -12,6 +12,7 @@ No unbounded pypdf path remains.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -38,6 +39,9 @@ class PromptInputInfo:
     anchor_file_id: UUID | None
     #: The anchor file's ``content_version`` the blocks were read at.
     content_version: int | None
+    #: SHA-256 (hex) of the returned markdown — the exact text the prompt
+    #: substitutes for the article marker.
+    text_sha256: str
     file_name: str | None
     truncated: bool
     est_tokens: int
@@ -94,6 +98,7 @@ async def build_prompt_input(
         anchor_blocks=blocks,
         anchor_file_id=main_file.id,
         content_version=main_file.content_version,
+        text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         file_name=main_file.original_filename,
         truncated=assembly.truncated,
         est_tokens=assembly.est_tokens,

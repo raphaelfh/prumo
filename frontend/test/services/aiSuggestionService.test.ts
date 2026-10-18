@@ -593,6 +593,33 @@ describe('provenance mapping', () => {
     });
   });
 
+  it('maps the article version and text hash, undefined on a legacy article ref', async () => {
+    const sha = 'ab'.repeat(32);
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({
+          provenance: {
+            prompt_composition: { article_ref: { content_version: 3, text_sha256: sha } },
+          },
+        }),
+        makeItem({
+          id: 'legacy',
+          instance_id: 'inst-2',
+          provenance: { prompt_composition: { article_ref: { file_name: 'a.pdf' } } },
+        }),
+      ],
+      count: 2,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1', 'inst-2']);
+    const current = result.suggestions['inst-1_f-1'].provenance?.promptComposition?.articleRef;
+    expect(current?.contentVersion).toBe(3);
+    expect(current?.textSha256).toBe(sha);
+    const legacy = result.suggestions['inst-2_f-1'].provenance?.promptComposition?.articleRef;
+    expect(legacy?.fileName).toBe('a.pdf');
+    expect(legacy?.contentVersion).toBeUndefined();
+    expect(legacy?.textSha256).toBeUndefined();
+  });
+
   it('leaves promptComposition undefined for legacy runs without it', async () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       suggestions: [makeItem({ provenance: { model: 'x', prompt_text: 'SYS' } })],

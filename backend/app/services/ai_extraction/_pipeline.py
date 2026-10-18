@@ -25,6 +25,7 @@ from app.llm.extractor import StructuredCall
 from app.llm.prompts import Ancestor
 from app.llm.provider import build_model
 from app.models.extraction import ExtractionRun
+from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -39,6 +40,7 @@ from app.repositories import (
     ExtractionRunRepository,
 )
 from app.schemas.llm_target import LlmTarget
+from app.schemas.prompt_composition import TemplateVersionRef
 from app.services.ai_extraction.landing import ProposalLanding
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
@@ -103,6 +105,8 @@ class Pipeline:
         self._filter_run_id: UUID | None = None
         #: The pinned tree per ``(run, version)`` — ``pinned_entity_types``.
         self._pinned: dict[tuple[UUID, UUID], list[Any]] = {}
+        #: The pinned template version's number per ``version_id``.
+        self._template_versions: dict[UUID, TemplateVersionRef] = {}
 
     @property
     def anchor_blocks(self) -> list[ParsedBlock]:
@@ -203,6 +207,23 @@ class Pipeline:
                 self.db, version_id=run.version_id, template_id=run.template_id
             )
         return self._pinned[key]
+
+    async def template_version_ref(self, run: ExtractionRun) -> TemplateVersionRef:
+        """``{id, version}`` of the template version *run* is pinned to now —
+        one read per pin. Read before a section's model calls, so a republish
+        that re-pins the run while the model runs does not relabel them."""
+        ref = self._template_versions.get(run.version_id)
+        if ref is None:
+            version = (
+                await self.db.execute(
+                    select(ExtractionTemplateVersion.version).where(
+                        ExtractionTemplateVersion.id == run.version_id
+                    )
+                )
+            ).scalar_one()
+            ref = TemplateVersionRef(id=str(run.version_id), version=version)
+            self._template_versions[run.version_id] = ref
+        return ref
 
     async def entity_type_on_run(
         self, run: ExtractionRun, entity_type_id: UUID

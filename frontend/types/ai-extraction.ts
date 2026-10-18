@@ -48,6 +48,10 @@ interface PromptCompositionArticleRef {
   fileName?: string | null;
   truncated?: boolean;
   estTokens?: number | null;
+  /** The integer article version the prompt's blocks were read at (not a prompt hash). */
+  contentVersion?: number | null;
+  /** SHA-256 of the exact article text substituted for the marker. */
+  textSha256?: string | null;
 }
 
 /**

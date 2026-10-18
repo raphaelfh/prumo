@@ -37,6 +37,7 @@ from app.services.ai_extraction import (
     ProposalLanding,
     SingletonSlot,
 )
+from app.services.ai_extraction.landing import _sanitize
 from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.factories.template_factory import TemplateFactory
@@ -733,6 +734,63 @@ async def test_a_moved_verdict_heals_in_place_with_its_execution_record(
     assert (row.provenance["mode_executed"], row.provenance["passes"]) == ("verified", 2)
 
 
+def _pass(kind: str, total: int) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "prompt_name": f"{kind}_prompt",
+        "prompt_version": "v",
+        "tokens": {"prompt": total, "completion": 0, "total": total},
+        "request_ids": [f"{kind}-{total}"],
+    }
+
+
+async def test_an_attempt_owned_row_is_never_healed_by_a_write_without_one(
+    db_session: AsyncSession,
+) -> None:
+    """An attempt's row is its immutable call record: a later attempt-less
+    write of the same value does not move its verdict or execution facts, so
+    the row never claims two passes while its ``passes_detail`` lists no
+    verify pass. The section's run-level snapshot still takes the new call."""
+    run = await run_in_extract(db_session)
+    landing, section, instance = (
+        _landing(db_session),
+        await _section(db_session),
+        await _instance(db_session),
+    )
+    fast = {
+        **SNAPSHOT,
+        "mode_executed": "fast",
+        "passes": 1,
+        "passes_detail": [_pass("extract", 10)],
+    }
+    verified = {
+        **SNAPSHOT,
+        "mode_executed": "verified",
+        "passes": 2,
+        "passes_detail": [_pass("extract", 20), _pass("verify", 10)],
+    }
+    attempt = await _attempt(db_session, run)
+    await landing.land(
+        run, section, instance, [_candidate(142)], Generation(ENGINE, fast, attempt.id)
+    )
+    annotated = _candidate(142)
+    annotated.proposed_value = {"value": 142, "verification": {"verdict": "confirmed"}}
+    written = await landing.land(
+        run, section, instance, [annotated], Generation(ENGINE, verified, None)
+    )
+
+    assert written == 1, "the unchanged value still counts"
+    (row,) = await _rows(db_session, run.id)
+    await db_session.refresh(row)
+    assert row.proposed_value == {"value": 142}
+    assert (row.provenance["mode_executed"], row.provenance["passes"]) == ("fast", 1)
+    assert row.generation_snapshot["passes"] == 1
+    assert [p["kind"] for p in row.generation_snapshot["passes_detail"]] == ["extract"]
+    await db_session.refresh(run)
+    merged = run.results["provenance"]["sections"][str(SEED.primary_entity_type)]
+    assert (merged["passes"], len(merged["passes_detail"])) == (2, 2)
+
+
 async def test_a_legacy_disposition_string_lands_as_the_coded_marker(
     db_session: AsyncSession,
 ) -> None:
@@ -858,3 +916,40 @@ async def test_a_failed_evidence_write_rolls_the_landing_back(
             Generation(ENGINE, None, None),
         )
     assert await _rows(db_session, run.id) == []
+
+
+# --------------------------------------------------------------------------
+# Sanitizer
+# --------------------------------------------------------------------------
+
+
+async def test_sanitize_keeps_provenance_keys() -> None:
+    """The snapshot identity survives the sanitizer — template version (id and
+    version only), schema hash, passes and the article version and text hash —
+    and an unknown key is still dropped at every level."""
+    raw = {
+        "ran_by_user_id": "secret",
+        "unknown": 1,
+        "schema_sha256": "a" * 64,
+        "template_version": {"id": "tv-1", "version": 4, "unknown": 1},
+        "passes_detail": [{**_pass("extract", 10), "unknown": 1}],
+        "prompt_composition": {
+            "section_name": "participants",
+            "unknown": 1,
+            "article_ref": {
+                "file_id": "f",
+                "content_version": 3,
+                "text_sha256": "b" * 64,
+                "unknown": 1,
+            },
+        },
+    }
+    assert _sanitize(raw) == {
+        "schema_sha256": "a" * 64,
+        "template_version": {"id": "tv-1", "version": 4},
+        "passes_detail": [_pass("extract", 10)],
+        "prompt_composition": {
+            "section_name": "participants",
+            "article_ref": {"file_id": "f", "content_version": 3, "text_sha256": "b" * 64},
+        },
+    }

@@ -24,6 +24,7 @@ from app.llm.extractor import LlmUsage
 from app.llm.prompts import Ancestor, Scope, entry_identification
 from app.models.extraction import ExtractionRun
 from app.models.extraction_instance import ExtractionInstance
+from app.schemas.prompt_composition import TemplateVersionRef
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._ancestry import ancestry_of, noun_of
 from app.services.ai_extraction._candidates import build_candidates
@@ -84,6 +85,8 @@ async def extract_into_instances(
         memory_context=memory_context,
         prompt_context=prompt_context,
         skip_settled=skip_fields_with_human_proposals,
+        # Read before any model call: the pin the prompts are built from.
+        template_version=await p.template_version_ref(run),
     )
     key_field = key_field_of(entity_type)
     if key_field is None:
@@ -103,6 +106,7 @@ class _SectionArgs:
     memory_context: list[dict[str, str]] | None
     prompt_context: RunPromptContext | None
     skip_settled: bool
+    template_version: TemplateVersionRef
 
 
 async def _extract_singleton(
@@ -220,6 +224,7 @@ async def _verify_and_land(
         kind=a.run.kind,
         pdf_text=a.pdf_text,
         call=call,
+        template_version=a.template_version,
         identify=identify,
     )
     section, candidates, entailment_usage = await build_candidates(

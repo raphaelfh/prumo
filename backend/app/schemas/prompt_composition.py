@@ -7,7 +7,8 @@ extraction service writes into ``extraction_runs.results["provenance"]
 Keeping the shape in one Pydantic model stops a key typo at the write site
 from shipping silently (the payload is otherwise an untyped JSONB dict).
 ``PassDetail`` is the same discipline for each ``passes_detail`` entry of a
-proposal's generation snapshot.
+proposal's generation snapshot, and ``TemplateVersionRef`` for its
+``template_version``.
 """
 
 from __future__ import annotations
@@ -25,6 +26,18 @@ class PromptCompositionArticleRef(BaseModel):
     file_name: str | None = None
     truncated: bool = False
     est_tokens: int | None = None
+    #: The integer article ``content_version`` the blocks were read at — not
+    #: a prompt hash.
+    content_version: int | None = None
+    #: The full SHA-256 (hex) of the article text substituted for the marker.
+    text_sha256: str | None = None
+
+
+class TemplateVersionRef(BaseModel):
+    """The template version a run was pinned to when its prompt was built."""
+
+    id: str
+    version: int
 
 
 class PromptComposition(BaseModel):

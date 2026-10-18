@@ -7,11 +7,16 @@ frozen engine's mode fields are a request-echo (``schemas/llm_target.py``).
 The snapshot's ``passes_detail`` lists every model pass behind the section's
 proposals (:func:`pass_detail`): the group's identify pass, the extract pass
 and the verify pass here; the entailment pass is appended by the caller once
-the judge has run. Every call goes through the pipeline's ``StructuredCall``.
+the judge has run. The snapshot also names its inputs: the pinned
+``template_version``, the ``schema_sha256`` of the output models sent, and the
+article version and text hash under ``prompt_composition.article_ref``. Every
+call goes through the pipeline's ``StructuredCall``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -30,6 +35,7 @@ from app.schemas.prompt_composition import (
     PassTokens,
     PromptComposition,
     PromptCompositionArticleRef,
+    TemplateVersionRef,
 )
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._pipeline import Pipeline
@@ -60,6 +66,8 @@ class _SnapshotInputs:
     section_instruction: str
     fields: list[Any]
     llm_calls: int
+    #: SHA-256 of the canonical JSON schemas of the output models sent.
+    schema_sha256: str
 
 
 @dataclass(frozen=True)
@@ -146,8 +154,17 @@ async def extract_fields(
         section_instruction=prompt.section_instruction,
         fields=effective,
         llm_calls=len(output_models),
+        schema_sha256=_schema_sha256(output_models),
     )
     return FieldCall(extracted, usage, inputs, grounding_retries=stats.retried)
+
+
+def _schema_sha256(output_models: list[Any]) -> str:
+    """The hash of the canonical (sorted-key, compact) JSON schemas of the
+    output models, in the order the chunks were sent."""
+    schemas = [m.model_json_schema(by_alias=True) for m in output_models]
+    canonical = json.dumps(schemas, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def pass_detail(prompt_name: str, prompt_version: str, usage: LlmUsage) -> PassDetail:
@@ -174,13 +191,15 @@ async def verify_and_snapshot(
     kind: str,
     pdf_text: str,
     call: FieldCall,
+    template_version: TemplateVersionRef,
     identify: dict[str, Any] | None = None,
 ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage, dict[str, Any] | None]:
     """``(verdicts, usage, snapshot)``: the verify pass (mode and kind checks
     inside), then the ONE post-verify section snapshot with the extract +
     verify usage sum. ``identify`` — the entry group's identify pass entry —
-    leads the snapshot's ``passes_detail``. No model ran → nothing to verify,
-    no snapshot."""
+    leads the snapshot's ``passes_detail``; ``template_version`` is the pin
+    the prompt was built from. No model ran → nothing to verify, no
+    snapshot."""
     if call.inputs is None:
         return None, call.usage, None
     verdicts, verify_usage, mode_executed, passes = await _verify(
@@ -206,6 +225,8 @@ async def verify_and_snapshot(
     if passes == 2:  # the verify model call answered
         details.append(pass_detail(verify.NAME, verify.VERSION, verify_usage).model_dump())
     snapshot["passes_detail"] = details
+    snapshot["template_version"] = template_version.model_dump()
+    snapshot["schema_sha256"] = call.inputs.schema_sha256
     return verdicts, usage, snapshot
 
 
@@ -296,6 +317,8 @@ def _section_snapshot(
             file_name=info.file_name if info else None,
             truncated=info.truncated if info else False,
             est_tokens=info.est_tokens if info else None,
+            content_version=info.content_version if info else None,
+            text_sha256=info.text_sha256 if info else None,
         ),
         fields_requested=[str(f.name) for f in inputs.fields],
         llm_calls=inputs.llm_calls,

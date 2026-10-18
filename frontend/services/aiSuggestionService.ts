@@ -139,6 +139,8 @@ function mapPromptComposition(raw: unknown): PromptComposition | undefined {
       fileName: ar['file_name'] as string | null | undefined,
       truncated: ar['truncated'] as boolean | undefined,
       estTokens: ar['est_tokens'] as number | null | undefined,
+      contentVersion: ar['content_version'] as number | null | undefined,
+      textSha256: ar['text_sha256'] as string | null | undefined,
     },
     fieldsRequested: pc['fields_requested'] as string[] | undefined,
     llmCalls: pc['llm_calls'] as number | undefined,
