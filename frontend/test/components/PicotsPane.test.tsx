@@ -53,7 +53,7 @@ function readModel(revision: number, population: string) {
 
 const stale = (current: number) =>
   HttpResponse.json(
-    {ok: false, error: {code: 'STALE_VALUE', message: 'stale', details: {current_revision: current}}},
+    {ok: false, error: {code: 'STALE_VALUE', message: 'stale', details: {current_revision: current, current: readModel(current, 'Agent wrote this')}}},
     {status: 409},
   );
 
@@ -128,6 +128,30 @@ describe('PicotsPane — revision compare-and-swap', () => {
     await user.click(save);
     await waitFor(() => expect(putBodies).toHaveLength(2));
     expect(putBodies[1].expected_revision).toBe(4);
+  });
+
+  it('a failed Reload toasts the load error, keeps the banner and the unsaved edit', async () => {
+    const user = userEvent.setup();
+    putReply = () => stale(4);
+    renderPane();
+
+    await user.type(await screen.findByLabelText('Population'), '!');
+    await user.click(screen.getByRole('button', {name: t('aiContext', 'save')}));
+    await screen.findByText(t('aiContext', 'conflictBanner'));
+
+    server.use(
+      http.get(`*/api/v1/projects/${PID}/ai-context`, () => {
+        getCalls += 1;
+        return HttpResponse.json({ok: false, error: {code: 'INTERNAL', message: 'boom'}}, {status: 500});
+      }),
+    );
+    await user.click(screen.getByRole('button', {name: t('aiContext', 'conflictReload')}));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('aiContext', 'loadError')));
+    expect(getCalls).toBe(2);
+    expect(banner()).toBeInTheDocument();
+    expect(screen.getByLabelText('Population')).toHaveValue('Adults!');
+    expect(screen.getByRole('button', {name: t('aiContext', 'save')})).toBeDisabled();
   });
 
   it('sends the seeded revision after a background refetch', async () => {

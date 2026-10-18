@@ -203,7 +203,8 @@ export function loadProjectForSettings(
   }, 'projectSettingsService.loadProjectForSettings');
 }
 
-export type ProjectDetailsFields = components['schemas']['ProjectDetailsFields'];
+type ProjectDetailsFields = components['schemas']['ProjectDetailsFields'];
+export type ProjectDetailsExpected = components['schemas']['ProjectDetailsExpected'];
 type ProjectDetailsUpdate = components['schemas']['ProjectDetailsUpdate'];
 type ProjectDetailsRead = components['schemas']['ProjectDetailsRead'];
 

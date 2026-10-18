@@ -299,10 +299,16 @@ succeeded or not.
 - A review-question slot holds a description of up to 2,000 characters
   and up to 50 inclusion and 50 exclusion criteria of up to 500
   characters each.
-- Each tool result is at most 32,000 characters: long results are paged
-  (`next_cursor`). `get_setup_readiness` drops trailing template items
-  when it must and sets `items_truncated`; its `summary` still counts
-  every item.
+- Results that carry the review protocol return it whole and are not cut
+  to a size: `get_review_question`, `set_review_question`, and the
+  protocol fields of `get_project` and `update_project_details`. A cut
+  read would lose data when the agent writes it back, so at the slot
+  limits above these results can run well past 32,000 characters.
+- Every other tool result is at most 32,000 characters: long results are
+  paged (`next_cursor`). `get_setup_readiness` drops trailing template
+  items when it must and sets `items_truncated`; its `summary` still
+  counts every item. A refused review-question write trims its `current`
+  copy to fit and sets `current_truncated`.
 
 ## Troubleshooting
 

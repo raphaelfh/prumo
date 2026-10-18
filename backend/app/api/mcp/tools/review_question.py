@@ -119,11 +119,9 @@ async def set_review_question(
     # The choke point proved membership; read before any refusal rolls back.
     name = await project_name(db, project_id)
     try:
-        await _apply(db, scope, expected_revision, slots, picots_enabled)
+        return await _apply(db, scope, expected_revision, slots, picots_enabled)
     except McpToolError as error:
         await refuse(db, scope, _fit_current(with_names(error, project_name=name)))
-    view = await get_review_question_view(db, project_id)
-    return view.model_copy(update={"note": _APPLIED_NOTE})
 
 
 async def _apply(
@@ -132,8 +130,10 @@ async def _apply(
     expected_revision: int,
     slots: dict[str, Any] | None,
     picots_enabled: bool | None,
-) -> None:
-    """The write and its applied row; every audited refusal surfaces as McpToolError."""
+) -> McpReviewQuestion:
+    """The write, its applied row and the success view; every audited refusal
+    surfaces as McpToolError. The view is built before the commit: nothing after
+    it may raise, or a committed write would answer as an error."""
     try:
         updates = _parse_slots(slots, picots_enabled)
         before = await lock_ai_context(db, scope.project_id)
@@ -148,7 +148,9 @@ async def _apply(
         await record_applied_write(
             db, scope, before=_audit_view(before, updates), after=_audit_view(after, updates)
         )
+        view = await get_review_question_view(db, scope.project_id)
         await db.commit()  # inside the try: a deadlock here is an audited RETRY too
+        return view.model_copy(update={"note": _APPLIED_NOTE})
     except StaleProtocolRevisionError as exc:
         current = await get_review_question_view(db, scope.project_id)
         raise McpToolError(

@@ -25,7 +25,7 @@ import {
     saveProjectSettings,
     staleValuesOf,
     toDetailsFields,
-    type ProjectDetailsFields,
+    type ProjectDetailsExpected,
 } from '@/services/projectSettingsService';
 
 /** The 11 columns PATCH /projects/{id}/details writes (backend ProjectDetailsFields). */
@@ -108,7 +108,7 @@ export function useProjectSettings(projectId: string) {
         // keys dropped: the server refuses them with 422). `expected` stays the raw
         // snapshot, so the server's canonical-JSON compare matches a legacy row.
         const fields = toDetailsFields(pick(edited, keys));
-        const expected = pick(snapshot, keys) as ProjectDetailsFields;
+        const expected = pick(snapshot, keys) as ProjectDetailsExpected;
         if (!fields) {
             toast.error(t('project', 'settingsSaveError'));
             return;

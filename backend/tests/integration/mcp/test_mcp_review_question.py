@@ -379,6 +379,28 @@ async def test_unexpected_db_error_is_internal_with_no_row(
     assert await _audit_count(db_session, outcome="refused") == 0
 
 
+async def test_reply_failure_commits_nothing(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The success view is built before the commit, so a failure there leaves the
+    revision unmoved and no applied row: a retry cannot double-apply."""
+    await _set_protocol(db_session)
+    r = (await _read(mcp_client, pat_primary_rw))["revision"]
+
+    async def _raise(*_a: object, **_k: object) -> None:
+        raise RuntimeError("view builder broke")
+
+    monkeypatch.setattr(review_question_tool, "get_review_question_view", _raise)
+
+    error = error_payload(
+        await _write(mcp_client, pat_primary_rw, expected_revision=r, slots={"population": _ADULTS})
+    )
+
+    assert error["code"] == "INTERNAL_ERROR"
+    assert (await _row(db_session))["protocol_revision"] == r
+    assert await _audit_count(db_session, outcome="applied") == 0
+
+
 async def test_read_token_cannot_see_or_call_write(
     mcp_client, pat_primary_read, db_session: AsyncSession
 ) -> None:

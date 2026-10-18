@@ -12,7 +12,7 @@
  * screen show a review question the AI never received.
  */
 
-import {apiClient, ApiError} from '@/integrations/api/client';
+import {apiClient} from '@/integrations/api/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {components} from '@/types/api/schema';
 
@@ -38,7 +38,8 @@ export function fetchAiContext(
 /**
  * `body.expected_revision` is the `revision` the editor was seeded with. A
  * moved protocol answers 409 STALE_VALUE; the `ApiError` (`code`, `status`,
- * `details.current_revision`) comes back intact as `error`.
+ * `details.current_revision`, `details.current`) comes back intact as `error`
+ * — `staleValuesOf` (projectSettingsService) is the one predicate for it.
  */
 export function setAiContext(
   projectId: string,
@@ -52,9 +53,4 @@ export function setAiContext(
       ),
     'aiContextService.setAiContext',
   );
-}
-
-/** A save refused because the protocol moved since the editor was seeded. */
-export function isStaleRevision(error: Error): boolean {
-  return error instanceof ApiError && error.status === 409 && error.code === 'STALE_VALUE';
 }

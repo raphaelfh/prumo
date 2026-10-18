@@ -34,12 +34,12 @@ import {SettingsGroup, SettingsRow} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {useAiContext, useSetAiContext} from '@/hooks/project/useAiContext';
 import {
-  isStaleRevision,
   type PicotsSlot,
   type PicotsSlots,
   type ProjectAiContextRead,
   type ProjectAiContextUpdate,
 } from '@/services/aiContextService';
+import {staleValuesOf} from '@/services/projectSettingsService';
 import {PICOTSItemEditor} from './settings/PICOTSItemEditor';
 
 /** Storage order = the instrument's P-I-C-O-T-S order = the prompt's order. */
@@ -237,22 +237,29 @@ export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
         reset();
       },
       onError: (error) => {
-        if (isStaleRevision(error)) setConflict(true);
+        if (staleValuesOf(error)) setConflict(true);
         else toast.error(t('aiContext', 'saveError'));
       },
     });
   };
 
   // The fresh read must land before the re-seed, or the form would remount
-  // from the same stale revision and refuse again.
+  // from the same stale revision and refuse again. A failed refetch keeps the
+  // banner and the draft: re-seeding then would remount from the stale read.
   const reload = () => {
-    void refetch().then(() => {
+    void refetch().then((result) => {
+      if (result.isError) {
+        toast.error(t('aiContext', 'loadError'));
+        return;
+      }
       setConflict(false);
       reset();
     });
   };
 
-  if (isError) {
+  // Only a missing read replaces the form: a failed refetch keeps the cached
+  // data, and swapping the form out then would drop unsaved edits.
+  if (!data && isError) {
     // Save stays unreachable: with no read there is no draft, and an empty
     // one would overwrite the stored review question with blanks.
     return (

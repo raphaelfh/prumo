@@ -147,7 +147,7 @@ export function AdvancedSettingsSection({
               onRemove={(index) => onChange({review_keywords: keywords.filter((_, i) => i !== index)})}
               placeholder={t('project', 'advancedKeywordsPlaceholder')}
               variant="badge"
-              />
+            />
           )}
         </SettingsRow>
 
@@ -212,7 +212,7 @@ export function AdvancedSettingsSection({
               }
               placeholder={t('project', 'advancedStudyTypesPlaceholder')}
               variant="badge"
-              />
+            />
           )}
         </SettingsRow>
 
