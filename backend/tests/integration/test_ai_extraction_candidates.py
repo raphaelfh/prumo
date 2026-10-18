@@ -472,7 +472,7 @@ async def _build(
     run = await run_in_extract(db)
     p = extraction(db, fake or RecordedLlm())._p
     await p.assemble_prompt_text(SEED.primary_article, settings.LLM_DEFAULT_MODEL)
-    _, (candidate,) = await build_candidates(
+    _, (candidate,), _usage = await build_candidates(
         p,
         run=run,
         entity_type_id=SEED.primary_entity_type,

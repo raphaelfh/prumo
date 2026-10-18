@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.llm import entailment, verify
 from app.llm.prompts import (
     Ancestor,
     Scope,
@@ -285,3 +286,11 @@ def test_absent_rules_in_system_prompts(system: str, is_qa: bool) -> None:
     assert "value=null, and evidence=" not in system
     assert 'status="ambiguous"' in system
     assert 'status="found"' in system
+
+
+def test_verify_and_entailment_versions_are_content_hashes():
+    for module in (verify, entailment):
+        assert content_version(module._SYSTEM, module._USER_TEMPLATE) == module.VERSION
+        assert module.VERSION != "1"
+        assert len(module.VERSION) == 12
+        int(module.VERSION, 16)

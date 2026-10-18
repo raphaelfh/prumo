@@ -17,6 +17,10 @@ makes from scripted data, keyed by the prompt that asked:
 - the verify pass answers ``verdicts`` (field name -> verdict);
 - the entailment judge answers ``entailment``.
 
+Usage is ``usages[prompt_name]`` or ``usage``; its ``request_ids`` are the
+scripted ones, or — when the script names none — one deterministic id per
+call, ``recorded-<n>`` with ``n`` the call's 1-based position.
+
 The reply is validated into the caller's ``output_model``, so a script the
 real schema would refuse fails here too. Every call is recorded; ``fail``
 makes the calls of one prompt raise instead, and ``during`` runs while a call
@@ -133,7 +137,10 @@ class RecordedLlm:
         if prompt_name in self.fail:
             raise self.fail[prompt_name]
         usage = self.usages.get(prompt_name, self.usage)
-        return output_model.model_validate(self._reply(call)), usage
+        request_ids = list(usage.request_ids) or [f"recorded-{len(self.calls)}"]
+        return output_model.model_validate(self._reply(call)), LlmUsage(
+            usage.prompt_tokens, usage.completion_tokens, request_ids
+        )
 
     def prompts(self, prompt_name: str) -> list[str]:
         """The user prompts sent under ``prompt_name``, in call order."""

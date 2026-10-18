@@ -86,6 +86,7 @@ _SNAPSHOT_KEYS = frozenset(
         "params",
         "tokens",
         "prompt_composition",
+        "passes_detail",
     }
 )
 _NESTED_SNAPSHOT_KEYS = {
@@ -101,6 +102,8 @@ _NESTED_SNAPSHOT_KEYS = {
     },
 }
 _ARTICLE_REF_KEYS = {"file_id", "file_name", "truncated", "est_tokens"}
+#: One ``passes_detail`` entry (``schemas.prompt_composition.PassDetail``).
+_PASS_DETAIL_KEYS = {"kind", "prompt_name", "prompt_version", "tokens", "request_ids"}
 
 #: The execution facts a verdict heal must carry with it; engine identity
 #: (provider/model/connection_id/key_scope/mode_requested) is never rewritten.
@@ -120,7 +123,20 @@ def _sanitize(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
         composition["article_ref"] = {
             k: v for k, v in composition["article_ref"].items() if k in _ARTICLE_REF_KEYS
         }
+    if isinstance(clean.get("passes_detail"), list):
+        clean["passes_detail"] = [
+            _sanitize_pass(entry) for entry in clean["passes_detail"] if isinstance(entry, dict)
+        ]
     return deepcopy(clean)
+
+
+def _sanitize_pass(entry: dict[str, Any]) -> dict[str, Any]:
+    """One ``passes_detail`` entry, reduced to its known keys."""
+    clean = {k: v for k, v in entry.items() if k in _PASS_DETAIL_KEYS}
+    if isinstance(clean.get("tokens"), dict):
+        allowed = _NESTED_SNAPSHOT_KEYS["tokens"]
+        clean["tokens"] = {k: v for k, v in clean["tokens"].items() if k in allowed}
+    return clean
 
 
 @dataclass

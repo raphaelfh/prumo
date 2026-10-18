@@ -7,7 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.llm import entailment, verify
-from app.llm.entailment import gate_evidence
+from app.llm.entailment import GateSpec, gate_evidence, run_entailment_gate
+from app.llm.extractor import LlmUsage
 from app.llm.verify import run_verify_pass
 from tests.fakes.recorded_llm import RecordedLlm
 
@@ -38,7 +39,7 @@ async def test_the_verify_pass_asks_through_the_injected_call() -> None:
 async def test_the_entailment_judge_asks_through_the_injected_call() -> None:
     fake = RecordedLlm(entailment="weak")
 
-    label = await gate_evidence(
+    label, usage = await gate_evidence(
         field_label="drug",
         value="metformin",
         premise="They used a biguanide.",
@@ -47,5 +48,30 @@ async def test_the_entailment_judge_asks_through_the_injected_call() -> None:
     )
 
     assert label == "weak"
+    assert usage == LlmUsage(10, 5, ["recorded-1"])
     assert [c.prompt_name for c in fake.calls] == [entailment.NAME]
     assert 'CLAIM: "drug = metformin"' in fake.calls[0].user_prompt
+
+
+def _spec(value: str) -> GateSpec:
+    return GateSpec(field_label="drug", value_str=value, quote=value, pos=None, anchor_blocks=[])
+
+
+async def test_the_entailment_gate_sums_the_usage_of_its_judge_calls() -> None:
+    fake = RecordedLlm(usages={entailment.NAME: LlmUsage(7, 1, ["e1"])})
+
+    labels, usage = await run_entailment_gate(
+        [_spec("metformin"), _spec("insulin")], MagicMock(), extract=fake
+    )
+
+    assert labels == ["entailed", "entailed"]
+    assert usage == LlmUsage(14, 2, ["e1", "e1"])
+
+
+async def test_a_raised_judge_degrades_to_none_and_contributes_no_usage() -> None:
+    fake = RecordedLlm(fail={entailment.NAME: RuntimeError("judge down")})
+
+    labels, usage = await run_entailment_gate([_spec("metformin")], MagicMock(), extract=fake)
+
+    assert labels == [None]
+    assert usage == LlmUsage()

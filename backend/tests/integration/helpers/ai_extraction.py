@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.models.extraction_attempt import ExtractionAttempt
 from app.schemas.extraction import SectionExtractionRequest
 from app.services.ai_extraction import AiExtraction
 from app.services.engine_credentials import EngineCredentials
@@ -82,6 +83,27 @@ async def run_in_extract(
     )
     await db.flush()
     return run
+
+
+async def attempt_on(
+    db: AsyncSession, run: ExtractionRun, *, mode: str = "fast"
+) -> ExtractionAttempt:
+    """An attempt on ``run`` owned by the seeded profile: a generation under
+    it keeps each proposal's ``generation_snapshot``. Its frozen engine (in
+    ``mode``) is the one the generation runs."""
+    attempt = ExtractionAttempt(
+        request_id=uuid4(),
+        owner_id=SEED.primary_profile,
+        project_id=run.project_id,
+        article_id=run.article_id,
+        template_id=run.template_id,
+        run_id=run.id,
+        request_payload={},
+        engine={"provider": "openai", "model": "gpt-5.6-luna", "mode_requested": mode},
+    )
+    db.add(attempt)
+    await db.flush()
+    return attempt
 
 
 async def seed_article_text(

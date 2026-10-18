@@ -26,6 +26,7 @@ from app.domain.evidence_block_refs import parse_block_ref, ref_window
 from app.infrastructure.parsing.base import concat_page_text
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
+from app.llm.extractor import LlmUsage
 from app.llm.schema import offered_absent_codes, option_codes, uncertain_code
 from app.llm.verify import VerificationAnnotation, VerifyVerdict
 from app.models.extraction import ExtractionEvidence, ExtractionRun
@@ -47,8 +48,10 @@ async def build_candidates(
     extracted: dict[str, Any],
     verdicts: dict[str, VerifyVerdict] | None,
     grounding_retries: int = 0,
-) -> tuple[Any, list[ProposalCandidate]]:
-    """``(live section, candidates)`` for one field call.
+) -> tuple[Any, list[ProposalCandidate], LlmUsage]:
+    """``(live section, candidates, entailment usage)`` for one field call;
+    the usage is summed over the entailment judge calls that answered (zero
+    when none ran).
 
     Field names resolve against the LIVE entity type — the prompt carried
     live names (``Pipeline.live_field_intersection``); a name it no longer
@@ -63,13 +66,13 @@ async def build_candidates(
             trace_id=p.trace_id,
             entity_type_id=str(entity_type_id),
         )
-        return None, []
+        return None, [], LlmUsage()
     section = await p.entity_types.get_with_fields(entity_type_id)
     if not section:
         p.logger.error(
             "entity_type_not_found", trace_id=p.trace_id, entity_type_id=str(entity_type_id)
         )
-        return None, []
+        return None, [], LlmUsage()
     by_name = {f.name: f for f in section.fields or []}
     # Drift guard: a verdict keyed outside the field vocabulary would
     # silently annotate nothing — be loud instead.
@@ -131,13 +134,16 @@ async def build_candidates(
         ungrounded=ungrounded,
         retried=grounding_retries,
     )
+    entailment_usage = LlmUsage()
     if gate_specs:
         await p.before_external_work()
-        labels = await run_entailment_gate(gate_specs, p.wire_model(), p.logger, extract=p.llm)
+        labels, entailment_usage = await run_entailment_gate(
+            gate_specs, p.wire_model(), p.logger, extract=p.llm
+        )
         for row, label in zip(gate_rows, labels, strict=True):
             if label is not None:
                 row.attribution_label = label
-    return section, candidates
+    return section, candidates, entailment_usage
 
 
 def _candidate(

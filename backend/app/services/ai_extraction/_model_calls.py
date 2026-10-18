@@ -4,7 +4,10 @@ mode) verify them — and the ONE post-verify section snapshot.
 Execution truth lives only in the section snapshot
 (``results.provenance.sections[et_id].mode_executed`` / ``passes``); the
 frozen engine's mode fields are a request-echo (``schemas/llm_target.py``).
-Every call goes through the pipeline's ``StructuredCall``.
+The snapshot's ``passes_detail`` lists every model pass behind the section's
+proposals (:func:`pass_detail`): the group's identify pass, the extract pass
+and the verify pass here; the entailment pass is appended by the caller once
+the judge has run. Every call goes through the pipeline's ``StructuredCall``.
 """
 
 from __future__ import annotations
@@ -13,14 +16,21 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from app.llm import verify
 from app.llm.claim_value import value_str_for_claim
 from app.llm.extractor import LlmUsage
+from app.llm.pass_kinds import PASS_KIND_BY_PROMPT
 from app.llm.prompts import Scope
 from app.llm.prompts.section import render_section_prompt
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import GroundingStats, evidence_grounding_validator
 from app.llm.verify import VerifyVerdict, run_verify_pass
-from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
+from app.schemas.prompt_composition import (
+    PassDetail,
+    PassTokens,
+    PromptComposition,
+    PromptCompositionArticleRef,
+)
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._pipeline import Pipeline
 from app.services.llm_field_filter import LlmFieldFilter
@@ -140,6 +150,22 @@ async def extract_fields(
     return FieldCall(extracted, usage, inputs, grounding_retries=stats.retried)
 
 
+def pass_detail(prompt_name: str, prompt_version: str, usage: LlmUsage) -> PassDetail:
+    """One ``passes_detail`` entry; the kind comes from the one prompt map
+    (an unknown prompt name is a ``KeyError``)."""
+    return PassDetail(
+        kind=PASS_KIND_BY_PROMPT[prompt_name],
+        prompt_name=prompt_name,
+        prompt_version=prompt_version,
+        tokens=PassTokens(
+            prompt=usage.prompt_tokens,
+            completion=usage.completion_tokens,
+            total=usage.total_tokens,
+        ),
+        request_ids=list(usage.request_ids),
+    )
+
+
 async def verify_and_snapshot(
     p: Pipeline,
     *,
@@ -148,10 +174,13 @@ async def verify_and_snapshot(
     kind: str,
     pdf_text: str,
     call: FieldCall,
+    identify: dict[str, Any] | None = None,
 ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage, dict[str, Any] | None]:
     """``(verdicts, usage, snapshot)``: the verify pass (mode and kind checks
     inside), then the ONE post-verify section snapshot with the extract +
-    verify usage sum. No model ran → nothing to verify, no snapshot."""
+    verify usage sum. ``identify`` — the entry group's identify pass entry —
+    leads the snapshot's ``passes_detail``. No model ran → nothing to verify,
+    no snapshot."""
     if call.inputs is None:
         return None, call.usage, None
     verdicts, verify_usage, mode_executed, passes = await _verify(
@@ -170,6 +199,13 @@ async def verify_and_snapshot(
     snapshot = _section_snapshot(
         p, inputs=call.inputs, usage=usage, mode_executed=mode_executed, passes=passes
     )
+    details = [] if identify is None else [identify]
+    details.append(
+        pass_detail(call.inputs.prompt_name, call.inputs.prompt_version, call.usage).model_dump()
+    )
+    if passes == 2:  # the verify model call answered
+        details.append(pass_detail(verify.NAME, verify.VERSION, verify_usage).model_dump())
+    snapshot["passes_detail"] = details
     return verdicts, usage, snapshot
 
 
@@ -182,7 +218,8 @@ async def _verify(
     inputs: _SnapshotInputs,
     log_context: dict[str, Any],
 ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage, str, int]:
-    """``(verdicts | None, usage, mode_executed, passes)``.
+    """``(verdicts | None, usage, mode_executed, passes)``; ``passes`` is 2
+    only when the verify model call answered.
 
     Fast mode is a no-op. A ``quality_assessment`` run SKIPS the pass even
     when the engine says verified: the prompt judges whether the text states

@@ -4,6 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.llm import entailment
+from app.llm.entailment import EntailmentVerdict
+from app.llm.extractor import LlmUsage
 from app.llm.prompts import section_extraction
 from app.llm.schema import build_output_models, dump_extraction
 from tests.fakes.recorded_llm import RecordedLlm
@@ -73,3 +76,24 @@ async def test_scale_with_two_casings_of_unclear_answers_the_first() -> None:
     field = _field("judgment", ["Low", "unclear", "Unclear"])
     reply = await _ask(RecordedLlm(), [field])
     assert reply["judgment"]["value"] == "unclear"
+
+
+async def test_request_ids_are_scripted_or_numbered_by_call_order() -> None:
+    fake = RecordedLlm()
+
+    async def call() -> LlmUsage:
+        _, usage = await fake(
+            output_model=EntailmentVerdict,
+            system_prompt="s",
+            user_prompt="u",
+            model=None,
+            prompt_name=entailment.NAME,
+            prompt_version="v",
+        )
+        return usage
+
+    assert (await call()).request_ids == ["recorded-1"]
+    fake.usages = {entailment.NAME: LlmUsage(1, 1, ["r-x"])}
+    assert (await call()).request_ids == ["r-x"]
+    fake.usages = {}
+    assert (await call()).request_ids == ["recorded-3"]

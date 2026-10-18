@@ -17,12 +17,12 @@ both ``UnexpectedModelBehavior`` (reask budget exhausted) and
 ``UsageLimitExceeded`` (request ceiling hit)."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent, UsageLimits
+from pydantic_ai import Agent, ModelResponse, UsageLimits
 from pydantic_ai.models import Model
 
 from app.core.config import settings
@@ -48,10 +48,15 @@ OUTPUT_RETRIES_DEFAULT = 2
 @dataclass
 class LlmUsage:
     """Token accounting in the legacy OpenAIUsage vocabulary so
-    extraction_runs.results keeps its tokens_* keys unchanged."""
+    extraction_runs.results keeps its tokens_* keys unchanged, plus the
+    provider's id of every response the call received (every attempt,
+    output-validator retries included) so a snapshot pass resolves to the
+    provider's own records. Adding two usages sums the tokens and
+    concatenates the ids in order."""
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    request_ids: list[str] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -61,6 +66,7 @@ class LlmUsage:
         return LlmUsage(
             prompt_tokens=self.prompt_tokens + other.prompt_tokens,
             completion_tokens=self.completion_tokens + other.completion_tokens,
+            request_ids=self.request_ids + other.request_ids,
         )
 
 
@@ -121,4 +127,9 @@ async def extract_structured(
     return result.output, LlmUsage(
         prompt_tokens=result.usage.input_tokens or 0,
         completion_tokens=result.usage.output_tokens or 0,
+        request_ids=[
+            m.provider_response_id
+            for m in result.all_messages()
+            if isinstance(m, ModelResponse) and m.provider_response_id
+        ],
     )
