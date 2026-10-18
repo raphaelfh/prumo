@@ -37,7 +37,7 @@ def render_section_prompt(
     article_marker: str,
     memory_context: list[dict[str, str]] | None,
     general_instructions: str | None,
-    review_context: str | None,
+    review_question: str | None,
     entry_scope: Scope | None,
 ) -> SectionPrompt:
     """The prompt for ``kind``; ``entry_scope`` names the entry, or the
@@ -51,7 +51,7 @@ def render_section_prompt(
                 framework=framework,
                 memory_context=memory_context,
                 general_instructions=general_instructions,
-                review_context=review_context,
+                review_question=review_question,
                 entry_scope=entry_scope,
             )
             for text in (article_text, article_marker)
@@ -70,7 +70,7 @@ def render_section_prompt(
             article_text=text,
             memory_context=memory_context,
             general_instructions=general_instructions,
-            review_context=review_context,
+            review_question=review_question,
             entry_scope=entry_scope,
         )
         for text in (article_text, article_marker)

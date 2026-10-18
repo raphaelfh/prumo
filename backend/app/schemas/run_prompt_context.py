@@ -12,7 +12,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
-class ReviewContextPin(BaseModel):
+class ReviewQuestionPin(BaseModel):
     """What ``results["provenance"]["review_context"]`` holds.
 
     A fixed-shape JSONB payload that crosses the API boundary verbatim, so it
@@ -32,5 +32,5 @@ class ReviewContextPin(BaseModel):
 class RunPromptContext(BaseModel):
     """Run-constant prompt inputs, resolved once and reused by every section."""
 
-    review_context: str | None = None
+    review_question: str | None = None
     general_instructions: str | None = None

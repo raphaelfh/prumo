@@ -24,9 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionRun
 from app.repositories import ExtractionRunRepository
 from app.services.extraction_run_read_service import build_run_view
-from app.services.project_ai_context import build_review_context
+from app.services.project_ai_context import build_review_question
 from app.services.run_prompt_context import (
-    read_pinned_review_context,
+    read_pinned_review_question,
     resolve_run_prompt_context,
 )
 from tests.integration.conftest import SEED
@@ -66,7 +66,7 @@ async def test_first_resolve_pins_the_rendered_block(db_session: AsyncSession) -
 
     context = await resolve_run_prompt_context(db_session, run)
 
-    assert context.review_context == _BLOCK_FIRST
+    assert context.review_question == _BLOCK_FIRST
     await db_session.refresh(run)
     assert _pinned_raw(run) == {"text": _BLOCK_FIRST}
     await db_session.rollback()
@@ -90,9 +90,9 @@ async def test_a_mid_run_picot_edit_cannot_change_what_an_open_run_sees(
     await db_session.refresh(run)
     second = await resolve_run_prompt_context(db_session, run)
 
-    assert first.review_context == _BLOCK_FIRST
-    assert second.review_context == _BLOCK_FIRST, (
-        f"a mid-run edit leaked into an open run: {second.review_context!r}"
+    assert first.review_question == _BLOCK_FIRST
+    assert second.review_question == _BLOCK_FIRST, (
+        f"a mid-run edit leaked into an open run: {second.review_question!r}"
     )
     await db_session.rollback()
 
@@ -112,14 +112,14 @@ async def test_an_empty_review_pins_a_recorded_nothing_not_an_absent_key(
     await _set_picots(db_session, run.project_id, None)
 
     context = await resolve_run_prompt_context(db_session, run)
-    assert context.review_context is None
+    assert context.review_question is None
     await db_session.refresh(run)
     assert _pinned_raw(run) == {"text": None}
 
     await _set_picots(db_session, run.project_id, _PICOT_FIRST)
     await db_session.refresh(run)
     again = await resolve_run_prompt_context(db_session, run)
-    assert again.review_context is None, (
+    assert again.review_question is None, (
         "a pinned empty context re-resolved — the truthy-dict guard is broken"
     )
     await db_session.rollback()
@@ -137,11 +137,11 @@ async def test_a_run_that_predates_the_feature_is_pinned_on_its_next_call(
     """
     run = await engine_setup.run_in_extract(db_session)
     await _set_picots(db_session, run.project_id, _PICOT_FIRST)
-    assert read_pinned_review_context(run.results) is None
+    assert read_pinned_review_question(run.results) is None
 
     context = await resolve_run_prompt_context(db_session, run)
 
-    assert context.review_context == _BLOCK_FIRST
+    assert context.review_question == _BLOCK_FIRST
     await db_session.rollback()
 
 
@@ -180,7 +180,7 @@ async def test_the_toggle_switches_the_block_off(db_session: AsyncSession) -> No
 
     context = await resolve_run_prompt_context(db_session, run)
 
-    assert context.review_context is None
+    assert context.review_question is None
     await db_session.rollback()
 
 
@@ -219,14 +219,14 @@ async def test_the_run_view_serves_the_pin_and_never_installs_one(
 @pytest.mark.asyncio
 async def test_a_missing_project_renders_nothing(db_session: AsyncSession) -> None:
     """A run whose project is gone must not raise on the prompt path."""
-    assert await build_review_context(db_session, uuid4()) is None
+    assert await build_review_question(db_session, uuid4()) is None
     await db_session.rollback()
 
 
 def test_reading_a_pin_is_a_pure_function_of_results() -> None:
-    assert read_pinned_review_context(None) is None
-    assert read_pinned_review_context({}) is None
-    assert read_pinned_review_context({"provenance": {}}) is None
-    assert read_pinned_review_context({"provenance": {"review_context": {}}}) is None
-    pin = read_pinned_review_context({"provenance": {"review_context": {"text": "- P: x"}}})
+    assert read_pinned_review_question(None) is None
+    assert read_pinned_review_question({}) is None
+    assert read_pinned_review_question({"provenance": {}}) is None
+    assert read_pinned_review_question({"provenance": {"review_context": {}}}) is None
+    pin = read_pinned_review_question({"provenance": {"review_context": {"text": "- P: x"}}})
     assert pin is not None and pin.text == "- P: x"

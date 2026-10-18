@@ -172,7 +172,7 @@ def test_assembled_charms_prompt_carries_no_customize_slot() -> None:
         entity_description="Who was studied",
         article_text="Effect size 0.81.",
         general_instructions=instruction,
-        review_context="Adults with sepsis; 28-day mortality.",
+        review_question="Adults with sepsis; 28-day mortality.",
     )
     assert instruction in prompt
     assert "[customize:" not in prompt

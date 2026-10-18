@@ -6,7 +6,7 @@ instrument's own wording — PROBAST+AI phrases its applicability items against
 "index model(s)", not "intervention" — so the editor reads them from here
 rather than keeping a second copy that can drift from the prompt.
 
-``preview`` is the same string ``build_review_context(...).text`` hands the model, so a
+``preview`` is the same string ``build_review_question(...).text`` hands the model, so a
 manager cannot be shown text the AI did not get.
 """
 

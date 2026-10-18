@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.project_ai_context import (
     ProjectNotFoundError,
-    build_review_context,
+    build_review_question,
     get_ai_context,
     set_ai_context,
 )
@@ -487,13 +487,13 @@ async def test_the_switch_silences_eligibility_too(
 async def test_the_builder_returns_the_preview_text_and_mutes_with_the_switch(
     db_session: AsyncSession,
 ) -> None:
-    """``build_review_context`` and the editor preview render the same row identically."""
+    """``build_review_question`` and the editor preview render the same row identically."""
     await _set_raw(
         db_session, SEED.primary_project, {"outcomes": _slot("Mortality")}, "interventional"
     )
     await _set_eligibility(db_session, {"exclusion": ["animal studies"]}, {"types": ["RCT"]})
 
-    built = await build_review_context(db_session, SEED.primary_project)
+    built = await build_review_question(db_session, SEED.primary_project)
     read = await get_ai_context(db_session, SEED.primary_project)
 
     assert built is not None
@@ -506,7 +506,7 @@ async def test_the_builder_returns_the_preview_text_and_mutes_with_the_switch(
     assert built.text == read["preview"]
 
     await set_ai_context(db_session, SEED.primary_project, picots=None, picots_enabled=False)
-    muted = await build_review_context(db_session, SEED.primary_project)
+    muted = await build_review_question(db_session, SEED.primary_project)
     assert muted is not None
     assert muted.text is None
     await db_session.rollback()

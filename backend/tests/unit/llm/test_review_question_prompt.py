@@ -1,4 +1,4 @@
-"""The review-context block in the three prompts.
+"""The review-question block in the three prompts.
 
 The goldens below are LITERALS captured from the tree BEFORE the block existed
 (``git show HEAD~:...`` -> render -> paste). Re-rendering them at test time
@@ -17,7 +17,7 @@ from app.llm import prompts
 from app.llm.prompts import (
     entry_identification,
     quality_assessment,
-    render_review_context_section,
+    render_review_question_section,
     section_extraction,
 )
 
@@ -105,8 +105,8 @@ def _render_entry_id(**kwargs: object) -> str:
 
 
 def test_the_renderer_is_inert_on_nothing() -> None:
-    assert render_review_context_section(None) == ""
-    assert render_review_context_section("") == ""
+    assert render_review_question_section(None) == ""
+    assert render_review_question_section("") == ""
 
 
 def test_an_empty_context_reproduces_the_pre_change_prompt_byte_for_byte() -> None:
@@ -128,7 +128,7 @@ def test_the_review_question_frames_the_task_before_the_template_instruction() -
     """
     body = "- Population: Adults"
     for render in (_render_section, _render_qa, _render_entry_id):
-        prompt = render(review_context=body, general_instructions="Judge conservatively.")
+        prompt = render(review_question=body, general_instructions="Judge conservatively.")
         assert prompt.startswith(
             "Review question and scope:\n"
             "- Population: Adults\n"
@@ -140,7 +140,7 @@ def test_the_review_question_frames_the_task_before_the_template_instruction() -
 
 
 def test_the_block_stands_alone_without_a_template_instruction() -> None:
-    prompt = _render_section(review_context="- Population: Adults")
+    prompt = _render_section(review_question="- Population: Adults")
     assert prompt.startswith("Review question and scope:\n- Population: Adults\n\n")
     assert "General instructions" not in prompt
 
@@ -154,6 +154,26 @@ def test_version_moved_from_every_retired_hash(module) -> None:
     assert module.VERSION not in RETIRED_VERSIONS[module.NAME]
 
 
+#: Literal VERSIONs of the shipped prompts. A code-only rename (a parameter,
+#: a renderer name) leaves the prompt bytes alone, so it must leave the
+#: recorded prompt version alone too; the template's format placeholders are
+#: hashed into VERSION, which is why they keep their names.
+CURRENT_VERSIONS = {
+    "section_extraction": "76166aeb85bc",
+    "quality_assessment": "95fca9f91a55",
+    "entry_identification": "1e461aa1faeb",
+}
+
+
+@pytest.mark.parametrize(
+    "module",
+    [section_extraction, quality_assessment, entry_identification],
+    ids=lambda m: m.NAME,
+)
+def test_version_is_pinned_to_the_shipped_prompt(module) -> None:
+    assert CURRENT_VERSIONS[module.NAME] == module.VERSION
+
+
 @pytest.mark.parametrize(
     "module",
     [section_extraction, quality_assessment, entry_identification],
@@ -165,11 +185,11 @@ def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> 
     Asserting ``VERSION != "<old hash>"`` would pass trivially forever and
     cannot tell "the template gained a placeholder" from "the canary argument
     was added" — and the canary is the thing under test. Only a mutation
-    proves it: editing ``render_review_context_section`` changes production
+    proves it: editing ``render_review_question_section`` changes production
     prompts, so §IX requires it to bump the version too.
     """
     before = module.VERSION
-    monkeypatch.setattr(prompts, "render_review_context_section", lambda _body: "MUTATED")
+    monkeypatch.setattr(prompts, "render_review_question_section", lambda _body: "MUTATED")
     try:
         importlib.reload(module)
         assert before != module.VERSION

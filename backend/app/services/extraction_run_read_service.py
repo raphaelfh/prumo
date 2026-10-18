@@ -73,7 +73,7 @@ from app.services.proposal_generation_read import (
     proposal_reveal_context,
     serialize_proposal_generation,
 )
-from app.services.run_prompt_context import read_pinned_review_context
+from app.services.run_prompt_context import read_pinned_review_question
 
 logger = get_logger(__name__)
 
@@ -448,7 +448,7 @@ async def build_run_view(
     general_instructions = await general_instructions_for_version(db, detail.run.version_id)
     # A pure READ of the run's pin — never ``resolve_run_prompt_context``, which
     # installs one. A read path must not take the row lock or write provenance.
-    review_pin = read_pinned_review_context(detail.run.results)
+    review_pin = read_pinned_review_question(detail.run.results)
 
     if detail.run.stage in ExtractionRunStage.reviewing():
         # include_peers reuses detail.peers_revealed (the single blind source),

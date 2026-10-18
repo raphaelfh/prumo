@@ -9,7 +9,7 @@ Two halves, split so the rendering is testable without a database:
 
 * ``render_review_question`` — pure, and where every shape decision lives:
   the PICOTS slots, then the project's eligibility and eligible study designs.
-* ``build_review_context`` — reads the project + the one toggle.
+* ``build_review_question`` — reads the project + the one toggle.
 
 The column's writer is ``PUT /api/v1/projects/{project_id}/ai-context``
 (manager-only). It has no server default, and rows written before that endpoint
@@ -227,7 +227,7 @@ class ReviewQuestion:
     text: str | None
 
 
-async def build_review_context(db: AsyncSession, project_id: UUID) -> ReviewQuestion | None:
+async def build_review_question(db: AsyncSession, project_id: UUID) -> ReviewQuestion | None:
     """The project's review question, or ``None`` when the project is missing.
 
     ``settings.ai_context.picots`` is the off switch for the WHOLE block,

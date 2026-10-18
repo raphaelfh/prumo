@@ -252,7 +252,7 @@ async def _identify_entries(
             instruction=getattr(a.entity_type, "description", None),
             allowed_values=getattr(key_field, "allowed_values", None),
             general_instructions=context.general_instructions,
-            review_context=context.review_context,
+            review_question=context.review_question,
             existing_keys=already,
             ancestors=ancestors,
         ),

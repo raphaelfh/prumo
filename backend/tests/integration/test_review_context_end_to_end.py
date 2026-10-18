@@ -1,7 +1,7 @@
 """The review question actually reaches a real prompt, and is recorded.
 
 Everything upstream of this is proven in isolation: the renderer
-(``test_project_ai_context``), the prompt block (``test_review_context_prompt``)
+(``test_project_ai_context``), the prompt block (``test_review_question_prompt``)
 and the pin (``test_run_review_context_pin``). This is the seam that proves
 they are wired together — a manager fills PICOT, a run extracts, and the block
 is in the prompt the model got AND in the provenance a reviewer can read back.
@@ -36,7 +36,7 @@ _PICOT = {
 }
 
 #: A LITERAL, not a re-render. Comparing the recorded provenance against a live
-#: ``build_review_context`` call would compare the renderer to itself and could
+#: ``build_review_question`` call would compare the renderer to itself and could
 #: never fail — the same self-fulfilling trap the prompt goldens avoid.
 _EXPECTED_BLOCK = (
     "- Population: Adults hospitalised with acute heart failure\n"

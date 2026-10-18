@@ -31,9 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun
 from app.repositories import ExtractionRunRepository
-from app.schemas.run_prompt_context import ReviewContextPin, RunPromptContext
+from app.schemas.run_prompt_context import ReviewQuestionPin, RunPromptContext
 from app.services.extraction_snapshot import general_instructions_for_version
-from app.services.project_ai_context import build_review_context
+from app.services.project_ai_context import build_review_question
 
 #: Annotated so it satisfies ``freeze_provenance_key``'s Literal — that
 #: parameter is narrow on purpose (it writes into the dict holding the engine
@@ -41,7 +41,7 @@ from app.services.project_ai_context import build_review_context
 _PIN_KEY: Literal["review_context"] = "review_context"
 
 
-def read_pinned_review_context(results: dict[str, Any] | None) -> ReviewContextPin | None:
+def read_pinned_review_question(results: dict[str, Any] | None) -> ReviewQuestionPin | None:
     """The run's pinned review context, or ``None`` — a pure READ.
 
     ``None`` means no LLM call has run on this run yet, which is a different
@@ -51,7 +51,7 @@ def read_pinned_review_context(results: dict[str, Any] | None) -> ReviewContextP
     """
     pinned = ((results or {}).get("provenance") or {}).get(_PIN_KEY)
     if isinstance(pinned, dict) and pinned:
-        return ReviewContextPin.model_validate(pinned)
+        return ReviewQuestionPin.model_validate(pinned)
     return None
 
 
@@ -65,16 +65,16 @@ async def resolve_run_prompt_context(db: AsyncSession, run: ExtractionRun) -> Ru
     lock the two share is re-entrant within one transaction and would deadlock
     across two.
     """
-    pinned = read_pinned_review_context(run.results)
+    pinned = read_pinned_review_question(run.results)
     if pinned is None:
-        question = await build_review_context(db, run.project_id)
+        question = await build_review_question(db, run.project_id)
         stored = await ExtractionRunRepository(db).freeze_provenance_key(
             run.id,
             _PIN_KEY,
-            ReviewContextPin(text=question.text if question else None).model_dump(),
+            ReviewQuestionPin(text=question.text if question else None).model_dump(),
         )
-        pinned = ReviewContextPin.model_validate(stored) if stored else ReviewContextPin()
+        pinned = ReviewQuestionPin.model_validate(stored) if stored else ReviewQuestionPin()
     return RunPromptContext(
-        review_context=pinned.text,
+        review_question=pinned.text,
         general_instructions=await general_instructions_for_version(db, run.version_id),
     )

@@ -94,7 +94,7 @@ async def extract_fields(
         article_marker=ARTICLE_MARKDOWN_MARKER,
         memory_context=memory_context,
         general_instructions=context.general_instructions,
-        review_context=context.review_context,
+        review_question=context.review_question,
         entry_scope=entry_scope,
     )
     effective: list[Any] = fields if fields is not None else list(entity_type.fields or [])

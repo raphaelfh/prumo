@@ -112,7 +112,7 @@ def test_nothing_to_say_renders_nothing(picots) -> None:
     """Every shape an untouched project can hold renders ``None``.
 
     This is the no-regression proof for shipping the block ON by default: if
-    it returns None, ``render_review_context_section`` emits "" and the prompt
+    it returns None, ``render_review_question_section`` emits "" and the prompt
     is byte-identical to today's.
     """
     assert _picots_only(picots, "predictive_model") is None
