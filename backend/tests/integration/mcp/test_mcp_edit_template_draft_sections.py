@@ -10,10 +10,14 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mcp.tools import template_draft as template_draft_tool
+from app.services import agent_template_draft_service
 from app.services.template_create_service import create_blank_template
 from tests.integration.conftest import SEED, clean_project_clones, make_proposal, open_session
 from tests.integration.helpers.template_fixtures import (
@@ -667,3 +671,113 @@ async def test_one_applied_row_covers_section_ops(
     assert row.after["ops"][3]["changed"] is True
     assert row.before["ops"][1] == {"label": "renamed"}
     assert row.before["ops"][2]["section_id"] == str(doomed)
+
+
+async def _sections_named(db: AsyncSession, template_id: UUID, label: str) -> int:
+    return (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_entity_types "
+                "WHERE project_template_id = :t AND label = :l"
+            ),
+            {"t": str(template_id), "l": label},
+        )
+    ).scalar_one()
+
+
+def _raise_lint(*_args: Any, **_kwargs: Any) -> Any:
+    raise OperationalError("SELECT 1", {}, Exception("connection reset"))
+
+
+def _raise_diff(*_args: Any, **_kwargs: Any) -> Any:
+    raise RuntimeError("diff builder broke")
+
+
+@pytest.mark.parametrize(
+    ("target", "attr", "boom"),
+    [
+        (agent_template_draft_service, "draft_lint_counts", _raise_lint),
+        (template_draft_tool, "capped_diff", _raise_diff),
+        (template_draft_tool, "RESULT_CAP", 10),  # a reply that cannot fit
+    ],
+    ids=["lint", "diff", "oversize"],
+)
+async def test_reply_failure_commits_nothing(
+    mcp_client,
+    pat_primary_rw,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    target: Any,
+    attr: str,
+    boom: Any,
+) -> None:
+    """Everything the success reply needs is computed before the commit, so a
+    failure there leaves no section and no applied row: a retry cannot duplicate."""
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    monkeypatch.setattr(target, attr, boom)
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "add_section", "label": "Never committed", "cardinality": "one"}],
+        )
+    )
+    assert payload["code"] in {"RATE_LIMITED", "INTERNAL_ERROR"}
+    assert await _sections_named(db_session, template_id, "Never committed") == 0
+    assert await _audit_count(db_session, outcome="applied") == 0
+    assert await draft_lock_holder(db_session, template_id) is None
+
+
+@pytest.mark.parametrize(
+    "op_kind", ["update_section", "delete_section", "add_section_parent"], ids=lambda k: k
+)
+async def test_section_of_another_template_is_not_found(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, op_kind: str
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    other = (
+        await create_blank_template(
+            db_session,
+            project_id=project_id,
+            name="Other template",
+            description=None,
+            framework="CUSTOM",
+            user_id=SEED.primary_profile,
+        )
+    ).project_template_id
+    foreign = await add_section(
+        db_session, other, "foreign_group", cardinality="many", entry_label="Item"
+    )
+    op: dict[str, Any] = {
+        "update_section": {"op": "update_section", "section_id": str(foreign), "label": "X"},
+        "delete_section": {"op": "delete_section", "section_id": str(foreign)},
+        "add_section_parent": {
+            "op": "add_section",
+            "label": "Child",
+            "cardinality": "one",
+            "parent_section_id": str(foreign),
+        },
+    }[op_kind]
+    extra = (
+        {
+            "expected_fingerprint": await _fingerprint(
+                mcp_client, pat_primary_rw, project_id, template_id
+            )
+        }
+        if op_kind == "delete_section"
+        else {}
+    )
+    before = await _structure(db_session, template_id)
+    other_before = await _structure(db_session, other)
+    payload = error_payload(
+        await _edit(mcp_client, pat_primary_rw, project_id, template_id, [op], **extra)
+    )
+    # NOT_FOUND is not an audited code: no row, and nothing changed in either template.
+    assert payload["code"] == "NOT_FOUND"
+    assert payload["op_index"] == 0
+    assert await _structure(db_session, template_id) == before
+    assert await _structure(db_session, other) == other_before
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="applied") == 0

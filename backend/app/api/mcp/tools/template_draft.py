@@ -238,33 +238,11 @@ async def edit_template_draft(
     names = {"project_name": await project_name(db, project_id), "template_name": template.name}
     link = editor_url(project_id, template.kind)
     try:
-        applied, diff = await _apply(db, scope, project_id, template_id, ops, expected_fingerprint)
+        return await _apply(
+            db, scope, project_id, template_id, ops, expected_fingerprint, names, link
+        )
     except McpToolError as error:
         await refuse(db, scope, with_names(error, **names))
-    block, warn = await agent_template_draft_service.draft_lint_counts(db, template_id=template_id)
-
-    result = EditTemplateDraftResult(
-        status="draft_saved_unpublished",
-        visible_to_reviewers_and_ai=False,
-        project_name=cap_text(names["project_name"])[0],
-        template_name=cap_text(names["template_name"])[0],
-        applied=[_applied_reply(a) for a in applied],
-        diff=capped_diff(diff, budget=0),  # placeholder: measures the rest of the result
-        draft_fingerprint=diff.fingerprint,
-        editor_url=link,
-        next_step=_NEXT_STEP,
-        lint=McpLintCounts(block=block, warn=warn),
-        destructive_changes=len(diff.changes.destructive),
-    )
-    # The diff gets whatever the result cap leaves after everything else
-    # (measured with the row-less diff above, whose own fixed part the
-    # budget then re-counts).
-    rest = len(compact_json(result.model_dump(mode="json"))) - len(
-        compact_json(result.diff.model_dump(mode="json"))
-    )
-    result = result.model_copy(update={"diff": capped_diff(diff, budget=max(0, RESULT_CAP - rest))})
-    assert len(compact_json(result.model_dump(mode="json"))) <= RESULT_CAP
-    return result
 
 
 async def _apply(
@@ -274,8 +252,15 @@ async def _apply(
     template_id: UUID,
     ops: list[dict[str, Any]],
     expected_fingerprint: str | None,
-) -> tuple[list[AppliedDraftOp], TemplateConfigDiffRead]:
-    """Steps 2-5 and the applied row; every audited refusal surfaces as McpToolError."""
+    names: dict[str, str],
+    link: str,
+) -> EditTemplateDraftResult:
+    """Steps 2-5, the reply and the applied row; every audited refusal surfaces
+    as McpToolError.
+
+    The whole success reply is built before the applied row and the commit: a
+    failure while building it rolls the write back (a retry cannot duplicate a
+    non-idempotent op), and nothing after the commit can raise."""
     try:
         parsed = _parse_ops(ops)  # 2, 3
         guarded = any(op.op in _FINGERPRINTED_OPS for op in parsed)
@@ -299,6 +284,10 @@ async def _apply(
             db, project_id=project_id, template_id=template_id, ops=parsed
         )
         diff = await get_template_config_diff(db, project_id=project_id, template_id=template_id)
+        block, warn = await agent_template_draft_service.draft_lint_counts(
+            db, template_id=template_id
+        )
+        result = _result(applied, diff, names, link, block, warn)
         await record_applied_write(
             db,
             scope,
@@ -325,7 +314,43 @@ async def _apply(
         raise McpToolError(
             McpErrorCode.RETRY, "A concurrent edit won; nothing was changed."
         ) from exc
-    return applied, diff
+    return result
+
+
+def _result(
+    applied: list[AppliedDraftOp],
+    diff: TemplateConfigDiffRead,
+    names: dict[str, str],
+    link: str,
+    block: int,
+    warn: int,
+) -> EditTemplateDraftResult:
+    """The success reply, inside ``RESULT_CAP``: the diff keeps only the rows
+    that fit what the cap leaves after everything else. A reply whose row-less
+    form already overflows raises -- before the commit, so nothing is written."""
+    result = EditTemplateDraftResult(
+        status="draft_saved_unpublished",
+        visible_to_reviewers_and_ai=False,
+        project_name=cap_text(names["project_name"])[0],
+        template_name=cap_text(names["template_name"])[0],
+        applied=[_applied_reply(a) for a in applied],
+        diff=capped_diff(diff, budget=0),  # row-less: measures the rest of the result
+        draft_fingerprint=diff.fingerprint,
+        editor_url=link,
+        next_step=_NEXT_STEP,
+        lint=McpLintCounts(block=block, warn=warn),
+        destructive_changes=len(diff.changes.destructive),
+    )
+    # The budget re-counts the row-less diff's own fixed part.
+    rest = _json_len(result) - len(compact_json(result.diff.model_dump(mode="json")))
+    result = result.model_copy(update={"diff": capped_diff(diff, budget=max(0, RESULT_CAP - rest))})
+    if _json_len(result) > RESULT_CAP:
+        raise RuntimeError("edit_template_draft reply exceeds RESULT_CAP")
+    return result
+
+
+def _json_len(result: EditTemplateDraftResult) -> int:
+    return len(compact_json(result.model_dump(mode="json")))
 
 
 def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
