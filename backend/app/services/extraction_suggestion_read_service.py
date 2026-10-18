@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +33,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
-from app.schemas.extraction import PositionV1, parse_position
+from app.schemas.extraction import stored_anchor
 from app.schemas.extraction_suggestion import (
     AISuggestionHistoryItem,
     AISuggestionItem,
@@ -49,21 +48,11 @@ from app.services.proposal_generation_read import (
 from app.services.value_semantics import is_value_empty
 
 
-def _anchor_of(ev: ExtractionEvidence) -> PositionV1 | None:
-    """Return the stored PositionV1 anchor, or None on a missing/invalid position."""
-    if not ev.position:
-        return None
-    try:
-        return parse_position(ev.position)
-    except (ValidationError, ValueError):
-        return None
-
-
 def _evidence_response(
     p_id: UUID, ev: ExtractionEvidence, versions: dict[UUID, int]
 ) -> EvidenceResponse:
     """Map one evidence row; ``block_ids`` and ``grounded`` come from one parse."""
-    pos = _anchor_of(ev)
+    pos = stored_anchor(ev.position)
     grounded = pos is not None
     file_version = versions.get(ev.article_file_id) if ev.article_file_id else None
     return EvidenceResponse(

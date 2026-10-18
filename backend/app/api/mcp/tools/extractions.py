@@ -37,7 +37,10 @@ from app.utils.opaque_cursor import InvalidCursorError
         "code or number (null when empty or marked absent); label is the option's display text "
         "when it differs from the code; absent_reason is no_information, not_applicable or "
         "not_evaluated. Each article's run.stage is the extraction stage; ai_only marks a value "
-        "only the AI has proposed."
+        "only the AI has proposed. Detailed evidence carries a p{page}·b{block} locator from "
+        "the parsed text (null when ungrounded, matching get_article_text's references) and "
+        "grounded/stale flags; stale means the article was re-parsed since, so the location "
+        "may have moved."
     ),
 )
 async def get_extractions(

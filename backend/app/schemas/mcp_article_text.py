@@ -20,6 +20,14 @@ class McpTextPage(BaseModel):
     next_cursor: str | None
 
 
+def block_locator(page_number: int, block_index: int) -> str:
+    """The bare block reference, ``p4·b123``: the body of every locator
+    prefix below, and the ``get_extractions`` evidence locator, so an agent
+    can match a quote's locator to the ``get_article_text`` line it came
+    from."""
+    return f"p{page_number}·b{block_index}"
+
+
 def chunk_locator_prefix(page_number: int, block_index: int, char_offset: int) -> str:
     """The one locator-prefix format (spec §5.0): ``[p4·b123]``, or
     ``[p4·b123 cont.]`` for a chunk that resumes mid-block (``char_offset``
@@ -27,11 +35,11 @@ def chunk_locator_prefix(page_number: int, block_index: int, char_offset: int) -
     ``article_text_block_read_service.page_text_blocks`` and the tool's
     text rendering so the two never drift."""
     suffix = " cont." if char_offset else ""
-    return f"[p{page_number}·b{block_index}{suffix}] "
+    return f"[{block_locator(page_number, block_index)}{suffix}] "
 
 
 def block_range_prefix(page_number: int, first: int, last: int) -> str:
     """The table form of ``chunk_locator_prefix``: ``[p3·b12–b18] `` (en
     dash) for a coalesced ``table_cell`` run on one page, first to last
     block index."""
-    return f"[p{page_number}·b{first}–b{last}] "
+    return f"[{block_locator(page_number, first)}–b{last}] "

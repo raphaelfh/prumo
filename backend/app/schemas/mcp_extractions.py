@@ -27,9 +27,15 @@ class McpRunRef(BaseModel):
 
 
 class McpEvidence(BaseModel):
+    """`locator` is `p{page}·b{block}` from the parsed anchor, or null when the
+    quote could not be grounded; `stale`: the article was re-parsed after
+    anchoring, so the location may have moved."""
+
     quote: str
     quote_truncated: bool
     locator: str | None
+    grounded: bool
+    stale: bool
 
 
 class McpValue(BaseModel):

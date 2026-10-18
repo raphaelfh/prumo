@@ -4,11 +4,13 @@ handler lines register coverage (the ASGI blind spot)."""
 from __future__ import annotations
 
 import json
+import re
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
 
+from app.models.article import ArticleFile
 from app.models.extraction import ExtractionEvidence
 from app.models.extraction_workflow import ExtractionReviewerDecisionType
 from app.schemas.mcp_extractions import McpExtractionsPage
@@ -306,6 +308,161 @@ async def test_detailed_evidence_quote_flags_its_cut(mcp_client, pat_reviewer_rw
     [short_quote] = evidence[str(contract.select_id)]
     assert short_quote["quote"] == "short quote"
     assert short_quote["quote_truncated"] is False
+
+
+def _block_position(page: int, block_ids: list[int], *, kind: str = "hybrid") -> dict:
+    rect = {"x": 0.0, "y": 0.0, "width": 100.0, "height": 20.0}
+    if kind == "region":
+        anchor = {"kind": "region", "page": page, "rect": rect, "blockIds": block_ids}
+    else:
+        anchor = {
+            "kind": "hybrid",
+            "range": {"page": page, "charStart": 0, "charEnd": 5},
+            "rect": rect,
+            "quote": "quote",
+            "blockIds": block_ids,
+        }
+    return {"version": 1, "anchor": anchor}
+
+
+async def _file_at_version(db_session, version: int) -> ArticleFile:
+    file = ArticleFile(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        file_type="PDF",
+        storage_key=f"{SEED.primary_project}/{SEED.primary_article}/{uuid4()}.pdf",
+        file_role="SUPPLEMENT",
+        content_version=version,
+    )
+    db_session.add(file)
+    await db_session.flush()
+    return file
+
+
+async def _evidence_on_decision(
+    db_session, run_id: UUID, decision_id: UUID, rows: list[dict]
+) -> None:
+    for rank, row in enumerate(rows):
+        db_session.add(
+            ExtractionEvidence(
+                project_id=SEED.primary_project,
+                article_id=SEED.primary_article,
+                run_id=run_id,
+                reviewer_decision_id=decision_id,
+                created_by=SEED.reviewer_profile,
+                rank=rank,
+                **row,
+            )
+        )
+    await db_session.flush()
+
+
+async def _own_evidence(mcp_client, pat, contract: ContractRun, field_id: UUID) -> list[dict]:
+    body = await _get(mcp_client, pat, contract.template_id, "detailed")
+    [row] = [
+        r
+        for r in body["articles"][0]["rows"]
+        if r["reviewer"] == "self" and r["field_id"] == str(field_id)
+    ]
+    return row["evidence"]
+
+
+async def test_evidence_locator_is_block_anchored(mcp_client, pat_reviewer_rw, db_session):
+    contract, decisions = await _plant_typed_values(db_session)
+    await _evidence_on_decision(
+        db_session,
+        contract.run_id,
+        decisions[contract.number_id],
+        [
+            {"text_content": "grounded", "page_number": 3, "position": _block_position(3, [8, 7])},
+            {"text_content": "ungrounded", "page_number": 5, "position": {}},
+            {
+                "text_content": "region",
+                "page_number": 4,
+                "position": _block_position(4, [2], kind="region"),
+            },
+        ],
+    )
+
+    evidence = await _own_evidence(mcp_client, pat_reviewer_rw, contract, contract.number_id)
+
+    assert [(e["quote"], e["locator"], e["grounded"]) for e in evidence] == [
+        ("grounded", "p3·b7", True),
+        ("ungrounded", None, False),
+        ("region", "p4·b2", True),
+    ]
+    for e in evidence:
+        assert set(e) == {"quote", "quote_truncated", "locator", "grounded", "stale"}
+        assert e["locator"] is None or re.fullmatch(r"p\d+·b\d+", e["locator"])
+
+
+async def test_legacy_llm_page_never_becomes_locator(mcp_client, pat_reviewer_rw, db_session):
+    """A legacy row: an LLM-supplied page and no, an empty or an invalid
+    position."""
+    contract, decisions = await _plant_typed_values(db_session)
+    await _evidence_on_decision(
+        db_session,
+        contract.run_id,
+        decisions[contract.number_id],
+        [
+            {"text_content": "no position", "page_number": 5, "position": None},
+            {"text_content": "empty position", "page_number": 5, "position": {}},
+            {"text_content": "invalid position", "page_number": 5, "position": {"version": 9}},
+        ],
+    )
+
+    evidence = await _own_evidence(mcp_client, pat_reviewer_rw, contract, contract.number_id)
+
+    assert [(e["locator"], e["grounded"]) for e in evidence] == [(None, False)] * 3
+    assert "p5" not in json.dumps(evidence)
+
+
+async def test_legacy_grounded_anchor_without_blocks(mcp_client, pat_reviewer_rw, db_session):
+    """An anchor that predates block ids stays grounded, without a locator."""
+    contract, decisions = await _plant_typed_values(db_session)
+    await _evidence_on_decision(
+        db_session,
+        contract.run_id,
+        decisions[contract.number_id],
+        [{"text_content": "no blocks", "page_number": 5, "position": _block_position(5, [])}],
+    )
+
+    [evidence] = await _own_evidence(mcp_client, pat_reviewer_rw, contract, contract.number_id)
+
+    assert (evidence["locator"], evidence["grounded"], evidence["stale"]) == (None, True, False)
+
+
+async def test_stale_after_reparse(mcp_client, pat_reviewer_rw, db_session):
+    contract, decisions = await _plant_typed_values(db_session)
+    file = await _file_at_version(db_session, 1)
+    grounded = {"article_file_id": file.id, "page_number": 2, "position": _block_position(2, [4])}
+    await _evidence_on_decision(
+        db_session,
+        contract.run_id,
+        decisions[contract.number_id],
+        [
+            {"text_content": "stamped", "content_version": 1, **grounded},
+            {"text_content": "unstamped", "content_version": None, **grounded},
+            {"text_content": "ungrounded", "content_version": 1, "article_file_id": file.id},
+        ],
+    )
+
+    before = await _own_evidence(mcp_client, pat_reviewer_rw, contract, contract.number_id)
+    assert [(e["quote"], e["grounded"], e["stale"]) for e in before] == [
+        ("stamped", True, False),
+        ("unstamped", True, False),
+        ("ungrounded", False, False),
+    ]
+
+    file.content_version = 2  # a reparse bumped the file
+    await db_session.flush()
+
+    after = await _own_evidence(mcp_client, pat_reviewer_rw, contract, contract.number_id)
+    assert [(e["quote"], e["grounded"], e["stale"]) for e in after] == [
+        ("stamped", True, True),
+        ("unstamped", True, False),
+        ("ungrounded", False, False),
+    ]
 
 
 async def test_concise_values_truncate_on_many_instances(mcp_client, pat_primary_rw, db_session):
