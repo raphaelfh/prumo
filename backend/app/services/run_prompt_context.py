@@ -61,7 +61,9 @@ def read_pinned_review_question(results: dict[str, Any] | None) -> ReviewQuestio
 async def current_protocol_revision(db: AsyncSession, project_id: UUID) -> int | None:
     """The project's ``protocol_revision`` now, or ``None`` when the row is gone.
 
-    Callers pass the run's own ``project_id``, never a caller-supplied one.
+    Not an ownership guard: callers pass a ``project_id`` whose access is
+    already proven — the run's own project on the run view, or the
+    membership-checked ``project_id`` an MCP read was called with.
     """
     stmt = select(Project.protocol_revision).where(Project.id == project_id)
     return (await db.execute(stmt)).scalar_one_or_none()

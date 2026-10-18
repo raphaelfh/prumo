@@ -521,3 +521,50 @@ async def test_malformed_op_writes_one_audited_invalid_argument_row(
         )
         == 1
     )
+
+
+async def _protocol_revision(db: AsyncSession) -> int:
+    return (
+        await db.execute(
+            text("SELECT protocol_revision FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.parametrize(
+    ("revision_offset", "outcome", "error_code"),
+    [(0, "applied", None), (-1, "refused", "STALE_VALUE")],
+    ids=["applied", "stale_value"],
+)
+async def test_set_review_question_writes_one_row(
+    mcp_client,
+    pat_primary_rw,
+    db_session: AsyncSession,
+    revision_offset: int,
+    outcome: str,
+    error_code: str | None,
+) -> None:
+    revision = await _protocol_revision(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "set_review_question",
+        {
+            "project_id": str(SEED.primary_project),
+            "expected_revision": revision + revision_offset,
+            "slots": {"population": {"description": "Audited adults"}},
+        },
+    )
+    assert result.is_error is (outcome == "refused")
+    assert (
+        await _audit_count(
+            db_session, outcome=outcome, error_code=error_code, tool="set_review_question"
+        )
+        == 1
+    )
+    assert (
+        await _audit_count(db_session, outcome="applied", tool="set_review_question")
+        + await _audit_count(db_session, outcome="refused", tool="set_review_question")
+        == 1
+    )

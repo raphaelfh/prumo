@@ -122,6 +122,8 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
         }
     ),
     "update_project_details": frozenset({"note"}),
+    "get_review_question": frozenset({"review_type", "slots{}.label", "note"}),
+    "set_review_question": frozenset({"review_type", "slots{}.label", "note"}),
 }
 _FLAG_FIELDS = frozenset({"untrusted_content", "untrusted_fields"})
 _PINNED_FORMATS = frozenset({"uuid", "date-time"})
@@ -205,6 +207,7 @@ async def test_read_results_carry_raw_text_and_the_untrusted_flag(
         "get_article_pdf": {"article_id": str(article)},
         "get_extractions": template,
         "get_template": template,
+        "get_review_question": project,
     }
     bodies = {}
     for name, args in calls.items():

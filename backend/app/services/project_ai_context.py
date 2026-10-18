@@ -30,7 +30,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
 from app.repositories.project_repository import ProjectRepository
+from app.schemas.mcp_review_question import (
+    McpEligibility,
+    McpReviewQuestion,
+    McpReviewSlot,
+    McpStudyDesign,
+)
 from app.services.project_protocol import bump_protocol_revision
+from app.services.project_read_service import project_name
+from app.utils.text_caps import cap_text
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -282,11 +290,7 @@ def _slots_payload(raw: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
-async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
-    """The editor's read model. Raises ``ProjectNotFoundError`` if the row is gone."""
-    project = await ProjectRepository(db).get_by_id(project_id)
-    if project is None:
-        raise ProjectNotFoundError(f"Project {project_id} not found")
+def _read_model(project: Project) -> dict[str, Any]:
     enabled = _picots_enabled(project.settings)
     return {
         "picots": _slots_payload(project.picots_config_ai_review),
@@ -296,6 +300,70 @@ async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
         "preview": _render_for(project) if enabled else None,
         "revision": project.protocol_revision,
     }
+
+
+async def _load(db: AsyncSession, project_id: UUID) -> Project:
+    project = await ProjectRepository(db).get_by_id(project_id)
+    if project is None:
+        raise ProjectNotFoundError(f"Project {project_id} not found")
+    return project
+
+
+async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
+    """The editor's read model. Raises ``ProjectNotFoundError`` if the row is gone."""
+    return _read_model(await _load(db, project_id))
+
+
+async def lock_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
+    """The editor's read model under the row lock, held to the end of the transaction.
+
+    A writer that audits its "before" reads it here, so no concurrent write can
+    land between that read and its own ``set_ai_context``.
+    """
+    project = await ProjectRepository(db).lock_for_update(project_id)
+    if project is None:
+        raise ProjectNotFoundError(f"Project {project_id} not found")
+    return _read_model(project)
+
+
+def _notes(raw: Any) -> str:
+    notes = raw.get("notes") if isinstance(raw, Mapping) else None
+    return notes if isinstance(notes, str) else ""
+
+
+async def get_review_question_view(db: AsyncSession, project_id: UUID) -> McpReviewQuestion:
+    """The agent's read model: the editor's, plus eligibility and study design.
+
+    One project read. ``preview`` is the editor's, byte-identical to
+    ``build_review_question(...).text``; eligibility and design go through the
+    renderer's own tolerant list reader, so the agent sees what the AI gets.
+    ``note`` is left for the caller. A missing project raises ``NotFoundError``
+    (from ``project_name``, read first).
+    """
+    name = await project_name(db, project_id)
+    project = await _load(db, project_id)
+    model = _read_model(project)
+    eligibility = project.eligibility_criteria
+    eligibility = eligibility if isinstance(eligibility, Mapping) else {}
+    design = project.study_design if isinstance(project.study_design, Mapping) else {}
+    return McpReviewQuestion(
+        project_id=project_id,
+        project_name=cap_text(name)[0],
+        revision=model["revision"],
+        review_type=model["review_type"],
+        picots_enabled=model["picots_enabled"],
+        slots={
+            key: McpReviewSlot(label=model["labels"][key], **slot)
+            for key, slot in model["picots"].items()
+        },
+        eligibility=McpEligibility(
+            inclusion=_string_list(eligibility.get("inclusion")),
+            exclusion=_string_list(eligibility.get("exclusion")),
+            notes=_notes(eligibility),
+        ),
+        study_design=McpStudyDesign(types=_string_list(design.get("types")), notes=_notes(design)),
+        preview=model["preview"],
+    )
 
 
 async def set_ai_context(
