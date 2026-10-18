@@ -7,7 +7,11 @@ makes from scripted data, keyed by the prompt that asked:
 - field extraction (``section_extraction`` / ``quality_assessment``) answers
   per field NAME from ``fields`` — a dict, or a callable of the :class:`Call`
   so the answer can depend on the prompt (e.g. which entry it is scoped to).
-  A field the script does not name answers ``not_found``;
+  Defaults follow the field's own result model: a field the script does not
+  name answers ``not_found``, or, on an uncertainty scale (its ``status``
+  Literal has no ``not_found``), ``ambiguous`` with the scale's own Unclear
+  code as the value; ``absent_reason`` is filled with ``None`` wherever the
+  model declares it and the script (or default) does not set it;
 - entry identification answers ``entries``;
 - the verify pass answers ``verdicts`` (field name -> verdict);
 - the entailment judge answers ``entailment``.
@@ -22,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -41,6 +45,35 @@ NOT_FOUND: dict[str, Any] = {
 
 #: Defaults a scripted ``found`` answer is completed with.
 _FOUND: dict[str, Any] = {"confidence": 0.9, "reasoning": None, "evidence": [], "status": "found"}
+
+
+def _literal_codes(annotation: Any) -> list[Any]:
+    """Every Literal arg reachable inside ``annotation`` (unions, lists)."""
+    if get_origin(annotation) is Literal:
+        return list(get_args(annotation))
+    return [code for arg in get_args(annotation) for code in _literal_codes(arg)]
+
+
+def _unclear_value(result_model: type[BaseModel]) -> Any:
+    annotation = result_model.model_fields["value"].annotation
+    [code] = [
+        c for c in _literal_codes(annotation) if isinstance(c, str) and c.casefold() == "unclear"
+    ]
+    is_list = any(get_origin(arg) is list for arg in (annotation, *get_args(annotation)))
+    return [code] if is_list else code
+
+
+def _default_answer(result_model: type[BaseModel]) -> dict[str, Any]:
+    """The answer for a field the script does not name, valid for its model."""
+    if "not_found" in _literal_codes(result_model.model_fields["status"].annotation):
+        return dict(NOT_FOUND)
+    return {**NOT_FOUND, "value": _unclear_value(result_model), "status": "ambiguous"}
+
+
+def _complete(result_model: type[BaseModel], answer: dict[str, Any]) -> dict[str, Any]:
+    if "absent_reason" in result_model.model_fields:
+        return {"absent_reason": None, **answer}
+    return answer
 
 
 @dataclass(frozen=True)
@@ -123,7 +156,10 @@ class RecordedLlm:
         if call.prompt_name == entailment.NAME:
             return {"label": self.entailment, "rationale": None}
         script = self.fields(call) if callable(self.fields) else self.fields
-        return {
-            name: {**_FOUND, **script[name]} if name in script else dict(NOT_FOUND)
-            for name in call.field_names
-        }
+        reply: dict[str, Any] = {}
+        for attr, info in call.output_model.model_fields.items():
+            name = info.alias or attr
+            result_model = info.annotation
+            answer = {**_FOUND, **script[name]} if name in script else _default_answer(result_model)
+            reply[name] = _complete(result_model, answer)
+        return reply

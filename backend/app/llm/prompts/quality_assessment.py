@@ -23,8 +23,15 @@ _SYSTEM_TEMPLATE = (
     "Be conservative: when the article gives only a weak or indirect "
     "signal, prefer the allowed value that captures uncertainty "
     "(e.g., 'PN' or 'Unclear') over guessing. "
-    'If the article does not contain the value, set status="not_found", value=null, and evidence=[]'
-    ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
+    "When the article is silent about a field: if the field's allowed values include a"
+    " no-information answer (for example NI), return it as the value; otherwise, if"
+    " absent_reason offers no_information, set it; otherwise return value=null with"
+    ' status="not_found". Never invent a value or a quote.'
+    ' When a criterion does not apply to this study, set absent_reason="not_applicable"'
+    " where it is offered."
+    " A domain judgment is never 'not found': when the article does not permit judging,"
+    " answer Unclear."
+    ' Use status="ambiguous" when the value is present but'
     ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
     " the value. The article text marks each block with a citation ref such as [p3·b12]"
     " (page 3, block 12) or [p3·b12\u2013b18] for a table; refs are not part of the"

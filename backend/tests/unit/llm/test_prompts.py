@@ -252,3 +252,36 @@ _BLOCK_REF_SENTENCE = (
 )
 def test_system_prompts_explain_block_refs(system: str) -> None:
     assert system.endswith(" " + _BLOCK_REF_SENTENCE)
+
+
+_NO_INFORMATION_RULE = (
+    "When the article is silent about a field: if the field's allowed values include a "
+    "no-information answer (for example NI), return it as the value; otherwise, if "
+    "absent_reason offers no_information, set it; otherwise return value=null with "
+    'status="not_found". Never invent a value or a quote.'
+)
+_NOT_APPLICABLE_RULE = (
+    'When a criterion does not apply to this study, set absent_reason="not_applicable" '
+    "where it is offered."
+)
+_UNCLEAR_RULE = (
+    "A domain judgment is never 'not found': when the article does not permit judging, "
+    "answer Unclear."
+)
+
+
+@pytest.mark.parametrize(
+    ("system", "is_qa"),
+    [
+        (section_extraction.SYSTEM_PROMPT, False),
+        (quality_assessment.system_prompt("PROBAST"), True),
+    ],
+    ids=["section_extraction", "quality_assessment"],
+)
+def test_absent_rules_in_system_prompts(system: str, is_qa: bool) -> None:
+    assert _NO_INFORMATION_RULE in system
+    assert _NOT_APPLICABLE_RULE in system
+    assert (_UNCLEAR_RULE in system) is is_qa
+    assert "value=null, and evidence=" not in system
+    assert 'status="ambiguous"' in system
+    assert 'status="found"' in system
