@@ -1,7 +1,7 @@
 """Evidence and generation provenance for the researcher MCP `get_extractions`
 read, batched once per page: one evidence select for every visible proposal
-and decision, one `article_files` version read, one snapshot select for the
-visible AI proposals, then a pure per-row mapping.
+and decision, one `article_files` version read, then a pure per-row mapping;
+provenance reads the generation snapshots the run details already carry.
 
 Locators are derived from the parsed anchor only (`p{page}·b{block}`, the
 `get_article_text` block reference); a bare `page_number` -- which an older
@@ -12,17 +12,17 @@ model call may have supplied -- never becomes a locator. `grounded` and
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, and_, func, literal_column, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.evidence_block_refs import evidence_is_stale
-from app.models.extraction import ExtractionEvidence, ExtractionRun
-from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
+from app.models.extraction import ExtractionEvidence
+from app.models.extraction_workflow import ExtractionProposalSource
 from app.schemas.extraction import PositionV1, RegionCitationAnchor, stored_anchor
 from app.schemas.mcp_article_text import block_locator
 from app.schemas.mcp_extractions import McpEvidence, McpProvenance
@@ -152,69 +152,19 @@ def evidence_for(resolved: _ResolvedSource, batch: EvidenceBatch) -> list[McpEvi
     return out
 
 
-def _jsonb_object(*pairs: tuple[str, ColumnElement[Any]]) -> ColumnElement[Any]:
-    """`jsonb_build_object` over constant keys (inlined, never user input)."""
-    args: list[ColumnElement[Any]] = []
-    for key, value in pairs:
-        args += [literal_column(f"'{key}'"), value]
-    return func.jsonb_build_object(*args)
-
-
-_SNAPSHOT = ExtractionProposalRecord.generation_snapshot
-# Only the identity keys `compact_provenance` reads, in the snapshot's own
-# shape, so a large snapshot never crosses the wire whole.
-_IDENTITY_PROJECTION = _jsonb_object(
-    ("model", _SNAPSHOT["model"]),
-    ("mode_executed", _SNAPSHOT["mode_executed"]),
-    ("schema_sha256", _SNAPSHOT["schema_sha256"]),
-    ("prompt_version", _SNAPSHOT["prompt_version"]),
-    ("template_version", _jsonb_object(("version", _SNAPSHOT[("template_version", "version")]))),
-    (
-        "prompt_composition",
-        _jsonb_object(
-            (
-                "article_ref",
-                _jsonb_object(
-                    (
-                        "text_sha256",
-                        _SNAPSHOT[("prompt_composition", "article_ref", "text_sha256")],
-                    ),
-                    (
-                        "content_version",
-                        _SNAPSHOT[("prompt_composition", "article_ref", "content_version")],
-                    ),
-                ),
-            )
-        ),
-    ),
-).label("identity")
-
-
-async def load_provenance_batch(
-    db: AsyncSession, *, project_id: UUID, proposal_ids: Collection[UUID]
-) -> dict[UUID, McpProvenance]:
-    """Compact provenance of each AI proposal in *proposal_ids* (the caller's
-    already blind-filtered, visible AI proposals), in one select scoped to
-    *project_id*; a proposal whose snapshot predates the identity keys is
-    absent from the result."""
-    if not proposal_ids:
-        return {}
-    rows = (
-        await db.execute(
-            select(ExtractionProposalRecord.id, _IDENTITY_PROJECTION)
-            .join(ExtractionRun, ExtractionRun.id == ExtractionProposalRecord.run_id)
-            .where(
-                ExtractionRun.project_id == project_id,
-                ExtractionProposalRecord.id.in_(list(proposal_ids)),
-                ExtractionProposalRecord.source == ExtractionProposalSource.AI.value,
-            )
-        )
-    ).all()
+def provenance_batch(details: Mapping[UUID, Any]) -> dict[UUID, McpProvenance]:
+    """Compact provenance of each AI proposal of *details* (run id -> the
+    caller's blind-filtered run detail), computed from the generation snapshot
+    each proposal already carries; a proposal whose snapshot predates the
+    identity keys is absent from the result."""
     out: dict[UUID, McpProvenance] = {}
-    for proposal_id, snapshot in rows:
-        provenance = compact_provenance(snapshot)
-        if provenance is not None:
-            out[proposal_id] = provenance
+    for detail in details.values():
+        for proposal in detail.proposals:
+            if proposal.source != ExtractionProposalSource.AI.value:
+                continue
+            provenance = compact_provenance(proposal.generation_snapshot)
+            if provenance is not None:
+                out[proposal.id] = provenance
     return out
 
 

@@ -706,7 +706,10 @@ async def test_detailed_page_with_provenance_fits_the_cap(mcp_client, pat_primar
     assert arm_rows == 40 * len(field_ids)
 
 
-async def test_provenance_is_one_select_per_call(mcp_client, pat_reviewer_rw, db_session):
+async def test_provenance_adds_no_select(mcp_client, pat_reviewer_rw, db_session):
+    """Provenance comes from the snapshots the run details already carry: no
+    statement reads `generation_snapshot` on its own, and the statement count
+    does not grow with the number of AI rows."""
     from sqlalchemy import event
 
     contract = await contract_run(db_session)
@@ -714,7 +717,7 @@ async def test_provenance_is_one_select_per_call(mcp_client, pat_reviewer_rw, db
         await add_field(db_session, SEED.primary_entity_type, f"prov_q{i}") for i in range(4)
     ]
 
-    async def provenance_selects() -> tuple[int, int]:
+    async def statements_of_one_call() -> list[str]:
         statements: list[str] = []
 
         def record(_conn, _cursor, statement, _parameters, _context, _many):
@@ -725,23 +728,17 @@ async def test_provenance_is_one_select_per_call(mcp_client, pat_reviewer_rw, db
             await _get(mcp_client, pat_reviewer_rw, contract.template_id, "detailed")
         finally:
             event.remove(db_session.bind.sync_engine, "before_cursor_execute", record)
-        # The provenance read projects only the identity keys out of the
-        # snapshot (never the whole JSONB), so it is the one statement that
-        # builds a JSON object from `generation_snapshot`.
-        snapshot_reads = [
-            s for s in statements if "jsonb_build_object" in s and "generation_snapshot" in s
-        ]
-        return len(snapshot_reads), len(statements)
+        return statements
 
     await _ai_proposal(
         db_session, contract.run_id, contract.instance_id, contract.number_id, _new_style_snapshot()
     )
-    one_row, total_one = await provenance_selects()
+    one_row = await statements_of_one_call()
     for field_id in extra_fields:
         await _ai_proposal(
             db_session, contract.run_id, contract.instance_id, field_id, _new_style_snapshot()
         )
-    many_rows, total_many = await provenance_selects()
+    many_rows = await statements_of_one_call()
 
-    assert (one_row, many_rows) == (1, 1)
-    assert total_one == total_many
+    assert not [s for s in one_row + many_rows if "jsonb_build_object" in s]
+    assert len(one_row) == len(many_rows)

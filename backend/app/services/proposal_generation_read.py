@@ -46,7 +46,14 @@ def _snapshot(raw: object) -> dict[str, Any] | None:
     if not isinstance(raw, dict) or not raw:
         return None
     result = _scalars(
-        raw, {**_ENGINE_FIELDS, "strategy": str, "prompt_version": str, "prompt_text": str}
+        raw,
+        {
+            **_ENGINE_FIELDS,
+            "strategy": str,
+            "prompt_version": str,
+            "prompt_text": str,
+            "schema_sha256": str,
+        },
     )
     containers: dict[str, dict[str, type | tuple[type, ...]]] = {
         "params": {
@@ -55,6 +62,7 @@ def _snapshot(raw: object) -> dict[str, Any] | None:
             "timeout_seconds": (int, float),
         },
         "tokens": {"prompt": int, "completion": int, "total": int},
+        "template_version": {"version": int},
     }
     for key, fields in containers.items():
         if isinstance(raw.get(key), dict):

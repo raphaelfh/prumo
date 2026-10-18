@@ -59,7 +59,7 @@ from app.services.extraction_agent_evidence import (
     EvidenceBatch,
     evidence_for,
     load_evidence_batch,
-    load_provenance_batch,
+    provenance_batch,
     provenance_for,
 )
 from app.services.extraction_run_read_service import (
@@ -555,20 +555,7 @@ async def list_agent_extractions(
         if response_format == "detailed" and details
         else EvidenceBatch()
     )
-    provenance = (
-        await load_provenance_batch(
-            db,
-            project_id=project_id,
-            proposal_ids={
-                p.id
-                for d in details.values()
-                for p in d.proposals
-                if p.source == ExtractionProposalSource.AI.value
-            },
-        )
-        if response_format == "detailed"
-        else {}
-    )
+    provenance = provenance_batch(details) if response_format == "detailed" else {}
 
     article_meta: dict[UUID, dict[str, Any]] = {}
     items_by_article: list[tuple[UUID, list[Any]]] = []

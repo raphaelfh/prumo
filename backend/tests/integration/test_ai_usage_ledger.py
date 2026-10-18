@@ -30,6 +30,7 @@ from app.models.ai_usage_ledger import AiUsageLedger
 from app.models.extraction import ExtractionRun
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem
+from app.repositories.extraction_run_repository import ExtractionRunRepository
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_usage_metering import LedgerSink, UsageContext, metered
 from app.services.template_versioning import TemplateVersionService
@@ -642,3 +643,31 @@ async def test_missing_project_is_skipped_and_logged(
     assert skipped["log_level"] == "warning"
     assert skipped["pass_kind"] == "extract"
     assert skipped["attempt_id"] == str(parents.attempt_id)
+
+
+@pytest.mark.parametrize(
+    "hold_lock",
+    [
+        lambda repo, run_id: repo.add_tokens(run_id, prompt=1, completion=1),
+        lambda repo, run_id: repo.merge_provenance_section(run_id, uuid4(), {"k": "v"}),
+    ],
+    ids=["add_tokens", "merge_provenance_section"],
+)
+async def test_run_row_lock_does_not_block_a_ledger_insert(
+    committed_ledger_parents: _Parents, _engine: AsyncEngine, hold_lock: Any
+) -> None:
+    """The run's read-modify-write lock is FOR NO KEY UPDATE: a ledger row
+    referencing the run on another connection takes FOR KEY SHARE for its FK
+    check, which a plain FOR UPDATE would block until the holder commits."""
+    parents = committed_ledger_parents
+    async with async_sessionmaker(_engine)() as holder:
+        await hold_lock(ExtractionRunRepository(holder), parents.run_id)
+        try:
+            async with async_sessionmaker(_engine)() as writer:
+                await writer.execute(text("SET LOCAL lock_timeout = '500ms'"))
+                writer.add(_ledger_row(parents.project_id, run_id=parents.run_id))
+                await writer.commit()
+        finally:
+            await holder.rollback()
+
+    assert [r.run_id for r in await _rows(_engine, parents.project_id)] == [parents.run_id]

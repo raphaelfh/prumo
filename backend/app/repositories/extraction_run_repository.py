@@ -142,13 +142,15 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         per-entry passes each add to the same run, and a worker session
         commits between them, so the identity-mapped copy can be stale. The
         lock serializes concurrent adders; the re-read keeps the later one
-        from summing onto an old value. Sibling keys are preserved.
+        from summing onto an old value. Sibling keys are preserved. FOR NO
+        KEY UPDATE (``key_share=True``) still serializes adders but leaves
+        the FK checks of rows referencing the run (ledger, proposals) unblocked.
         """
         run = (
             await self.db.execute(
                 select(ExtractionRun)
                 .where(ExtractionRun.id == run_id)
-                .with_for_update()
+                .with_for_update(key_share=True)
                 .execution_options(populate_existing=True)
             )
         ).scalar_one()
@@ -190,7 +192,9 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         """
         run = (
             await self.db.execute(
-                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
+                select(ExtractionRun)
+                .where(ExtractionRun.id == run_id)
+                .with_for_update(key_share=True)
             )
         ).scalar_one_or_none()
         if run is None:

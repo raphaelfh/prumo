@@ -456,6 +456,24 @@ def test_main_requires_project_and_user_for_reparse(capsys: pytest.CaptureFixtur
     assert "--project" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("command", ["llm-pages", "stamp-versions"])
+@pytest.mark.parametrize("flag", ["--project", "--as-user"])
+def test_main_refuses_reparse_flags_on_global_commands(
+    command: str, flag: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The global commands repair every project; a scope flag they would
+    silently ignore is a usage error, before any database work."""
+
+    async def must_not_run(_args: object) -> None:
+        raise AssertionError("ran despite a usage error")
+
+    monkeypatch.setattr(evidence_repair, "_run", must_not_run)
+    with pytest.raises(SystemExit) as exited:
+        evidence_repair.main([command, flag, str(uuid.uuid4())])
+    assert exited.value.code == 2
+    assert f"{command} does not take --project or --as-user" in capsys.readouterr().err
+
+
 async def test_file_without_blocks_reports_none_and_writes_nothing(
     db_session: AsyncSession,
 ) -> None:

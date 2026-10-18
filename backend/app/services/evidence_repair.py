@@ -22,7 +22,9 @@ read-only on the server (``SET TRANSACTION READ ONLY``) and writes nothing.
 Run it with::
 
     cd backend && uv run python -m app.services.evidence_repair \\
-        llm-pages|stamp-versions|reparse [--project ID --as-user PROFILE_ID] [--apply]
+        llm-pages|stamp-versions [--apply]
+    cd backend && uv run python -m app.services.evidence_repair \\
+        reparse --project ID --as-user PROFILE_ID [--apply]
 """
 
 from __future__ import annotations
@@ -444,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "reparse" and (args.project is None or args.as_user is None):
         parser.error("reparse needs --project and --as-user")
+    if args.command != "reparse" and (args.project is not None or args.as_user is not None):
+        parser.error(f"{args.command} does not take --project or --as-user")
     print(format_report(asyncio.run(_run(args))))
     return 0
 
