@@ -44,6 +44,8 @@ function mapEvidenceList(
     blockIds: e.blockIds ?? [],
     attributionLabel: (e.attributionLabel as EvidenceCitation['attributionLabel']) ?? null,
     rank: e.rank ?? 0,
+    grounded: e.grounded ?? false,
+    stale: e.stale ?? false,
   }));
 }
 

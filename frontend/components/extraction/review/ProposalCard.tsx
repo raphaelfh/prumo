@@ -1,7 +1,7 @@
 import {useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {AcceptCheck} from './AcceptCheck';
-import {AISuggestionEvidence} from '../ai/AISuggestionEvidence';
+import {AISuggestionEvidence, citationLocateArgs} from '../ai/AISuggestionEvidence';
 import {GenerationDetailsContent} from '../ai/shared/GenerationDetailsContent';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {formatFullSuggestionValue, valuelessProposalKind, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
@@ -43,9 +43,10 @@ export function ProposalCard({proposal, ordinal, latest, accepted, saving, pendi
     {proposal.reasoning && <section className="space-y-1"><h3 className="text-xs text-muted-foreground">{t('extraction', 'aiRationaleLabel')}</h3><p className="whitespace-pre-wrap break-words">{proposal.reasoning}</p></section>}
     <AISuggestionEvidence presentation="review" evidence={evidence} activeRank={activeRank} onLocate={isAvailable ? rank => {
       const citation = evidence.find(item => item.rank === rank);
-      if (!citation) return;
+      const args = citation && citationLocateArgs(citation);
+      if (!args) return;
       setActiveRank(rank);
-      locate(citation.text, citation.pageNumber ?? null, citation.blockIds);
+      locate(...args);
     } : undefined}/>
     <Button size="xs" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>{t('extraction', 'provenanceToggle')}</Button>
     <div hidden={!detailsOpen}><GenerationDetailsContent provenance={snapshot} historicalInputAvailable={snapshot?.promptComposition?.articleRef?.historicalInputAvailable}/></div>

@@ -29,6 +29,10 @@ export interface EvidenceCitation {
   blockIds: number[];
   attributionLabel?: 'entailed' | 'weak' | 'unsupported' | 'ungroundable' | null;
   rank: number;
+  /** The stored position resolves to a parsed-text anchor; false → verify manually, no Locate. */
+  grounded: boolean;
+  /** Grounded, but the article was re-parsed since: the page and block hints may be wrong. */
+  stale: boolean;
 }
 
 /**

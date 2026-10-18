@@ -32,7 +32,7 @@ import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
-import {AISuggestionEvidence} from './AISuggestionEvidence';
+import {AISuggestionEvidence, citationLocateArgs} from './AISuggestionEvidence';
 
 // Lazy-loaded: the generation dialog pulls the article-content service → the
 // shared apiClient (which imports the Supabase client at module scope). Loading
@@ -87,8 +87,10 @@ function EvidenceSection({evidence}: EvidenceSectionProps) {
   const onLocate = isAvailable
     ? (rank: number) => {
         const citation = evidence.find((e) => e.rank === rank) ?? evidence[0];
+        const args = citationLocateArgs(citation);
+        if (!args) return;
         setActiveRank(rank);
-        locate(citation.text, citation.pageNumber ?? null, citation.blockIds ?? []);
+        locate(...args);
       }
     : undefined;
 
@@ -348,7 +350,8 @@ interface AISuggestionReviewPopoverProps {
   fieldType?: string | null;
   allowedValues?: unknown;
   /** Threaded to the generation dialog so it can lazily fetch the stored
-   *  markdown the LLM received. Omit to hide the "view text sent" expand. */
+   *  article markdown the prompt was built from. Omit to hide the "view text
+   *  sent" expand. */
   articleId?: string;
 }
 

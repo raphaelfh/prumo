@@ -684,6 +684,10 @@ export const extraction = {
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
     attributionUngroundable: 'Verify manually',
+    // Grounded evidence whose article was re-parsed after it was anchored.
+    evidenceStale: 'Location may have moved',
+    evidenceStaleTooltip:
+      'The article was re-parsed after this evidence was anchored; the passage is searched by its text.',
     // Attribution badge tooltips — this grades whether the CITED QUOTE supports
     // the value, independent of the AI's confidence or its rationale.
     attributionTooltipEntailed:

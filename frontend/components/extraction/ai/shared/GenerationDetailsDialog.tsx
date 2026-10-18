@@ -7,9 +7,8 @@
  * requested fields), and the token totals. Runs that predate composition capture
  * fall back to the legacy flat rows + raw prompt-text code block.
  *
- * The article chip's "view text sent" markdown expand is wired in a follow-up
- * (needs the lazy content-markdown fetch); this component renders the recipe and
- * the chip metadata.
+ * The article chip carries a "view text sent" expand (`ArticleTextExpand`) when
+ * an `articleId` is threaded in.
  */
 
 import {useState} from 'react';
@@ -32,8 +31,9 @@ import type {RunProvenance} from '@/types/ai-extraction';
 import {GenerationDetailsContent} from './GenerationDetailsContent';
 
 /**
- * The "view text sent" expand: lazily fetches the stored article markdown (the
- * exact text the LLM received) only when the user opens it. Renders a loading,
+ * The "view text sent" expand: lazily fetches the stored article markdown the
+ * prompt was built from (the prompt also carries block refs, omitted here) only
+ * when the user opens it. Renders a loading,
  * error+retry, or scrollable text state inside the article chip.
  */
 function ArticleTextExpand({articleId}: {articleId: string}) {
@@ -102,7 +102,7 @@ interface GenerationDetailsDialogProps {
   /** The call's immutable facts. Runner identity rides only here: the backend
    *  resolves it from the attempt owner after the run reveals peers (spec §12.2). */
   generationSnapshot?: RunProvenance;
-  /** Threaded so a follow-up can lazily fetch the stored markdown. */
+  /** Enables the article chip's "view text sent" expand (lazy markdown fetch). */
   articleId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
