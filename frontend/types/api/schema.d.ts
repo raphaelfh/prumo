@@ -6820,6 +6820,8 @@ export interface components {
          *     shipped.
          */
         TemplateChangeRowRead: {
+            /** Affects Ai */
+            affects_ai: boolean;
             /**
              * Affects Recorded Data
              * @default false

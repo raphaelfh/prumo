@@ -131,6 +131,7 @@ def _diff_with_additive_rows(count: int) -> TemplateConfigDiffRead:
             "tier": "additive",
             "label_path": [f"Section {i}"],
             "after": "x" * 500,
+            "affects_ai": True,
         }
         for i in range(count)
     ]
@@ -172,6 +173,7 @@ def _pt_br_diff(count: int) -> TemplateConfigDiffRead:
             "attribute": "llm_description",
             "before": "ação " * 100,
             "after": "intervenção " * 100,
+            "affects_ai": True,
         }
         for i in range(count)
     ]

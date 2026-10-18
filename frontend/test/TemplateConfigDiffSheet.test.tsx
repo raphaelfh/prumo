@@ -587,3 +587,48 @@ describe('TemplateConfigDiffSheet — every open reads fresh', () => {
     expect(screen.queryByText('Section A › First edit')).toBeNull();
   });
 });
+
+describe('TemplateConfigDiffSheet — AI input badge', () => {
+  it('badges a row that changes the AI input and leaves the others bare', async () => {
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([
+        {
+          id: 'ai-row',
+          variant: 'field_modified',
+          tier: 'destructive',
+          attribute: 'label',
+          before: 'Age',
+          after: 'Age (years)',
+          affects_ai: true,
+        },
+        {
+          id: 'plain-row',
+          variant: 'field_modified',
+          tier: 'destructive',
+          attribute: 'unit',
+          before: 'kg',
+          after: 'g',
+          affects_ai: false,
+        },
+        {
+          id: 'node-row',
+          variant: 'field_removed',
+          tier: 'destructive',
+          affects_ai: true,
+        },
+      ]),
+    );
+    renderSheet();
+
+    const destructive = await group('destructive');
+    const aiRow = within(destructive).getByTestId('template-diff-row-ai-row');
+    const plainRow = within(destructive).getByTestId('template-diff-row-plain-row');
+    const nodeRow = within(destructive).getByTestId('template-diff-row-node-row');
+    expect(templateConfig.diffAffectsAiBadge).toBe('AI input');
+    expect(within(aiRow).getByText(templateConfig.diffAffectsAiBadge)).toBeInTheDocument();
+    expect(within(nodeRow).getByText(templateConfig.diffAffectsAiBadge)).toBeInTheDocument();
+    expect(
+      within(plainRow).queryByText(templateConfig.diffAffectsAiBadge),
+    ).not.toBeInTheDocument();
+  });
+});

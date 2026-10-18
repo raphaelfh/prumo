@@ -45,6 +45,7 @@ def _row(node_id: str, tier: ChangeTier = ChangeTier.DESTRUCTIVE) -> TemplateCha
         variant=ChangeVariant.ENTITY_TYPE_REMOVED,
         tier=tier,
         label_path=[DUPLICATE_LABEL],
+        affects_ai=True,
     )
 
 
@@ -67,6 +68,7 @@ _ALTERNATIVE: dict[str, object] = {
     "after_opaque_state": OpaqueValueState.EMPTY.value,
     "reorder_count": 3,
     "affects_recorded_data": True,
+    "affects_ai": False,
 }
 
 
@@ -132,7 +134,7 @@ def test_hash_is_stable_across_processes() -> None:
         "id='removed:entity_type:x:-:-',"
         "variant=ChangeVariant.ENTITY_TYPE_REMOVED,"
         "tier=ChangeTier.DESTRUCTIVE,"
-        "label_path=['A','B']);"
+        "label_path=['A','B'],affects_ai=True);"
         "print(fingerprint(UUID('11111111-1111-4111-8111-111111111111'), [row]))"
     )
     # Inherit the parent environment and vary ONLY the seed. A minimal env

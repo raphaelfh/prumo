@@ -28,6 +28,7 @@ export interface RowSeed {
   after_opaque_state?: OpaqueState | null;
   reorder_count?: number | null;
   affects_recorded_data?: boolean;
+  affects_ai?: boolean;
 }
 
 export function row(seed: RowSeed) {
@@ -40,6 +41,7 @@ export function row(seed: RowSeed) {
     after_opaque_state: null,
     reorder_count: null,
     affects_recorded_data: false,
+    affects_ai: false,
     ...seed,
   };
 }
