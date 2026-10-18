@@ -132,7 +132,8 @@ class AppliedReorderOp(BaseModel):
     op: Literal["reorder_questions"]
     section_id: UUID
     section_label: str
-    field_ids: list[UUID]
+    count: int
+    """How many questions the section now orders; the ids are in the audit row."""
 
 
 AppliedOp = Annotated[

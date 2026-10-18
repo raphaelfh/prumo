@@ -1466,7 +1466,7 @@ async def test_reorder_questions_sets_order(
             "op": "reorder_questions",
             "section_id": section["id"],
             "section_label": section["label"],
-            "field_ids": reversed_ids,
+            "count": len(reversed_ids),
         }
     ]
 
@@ -1495,6 +1495,75 @@ async def test_reorder_with_mismatched_ids_is_invalid_argument(
     assert payload["message"] == "field_ids must name exactly this section's questions"
     assert await _ordered_field_ids(db_session, section["id"]) == ids
     assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def _bulk_section(
+    db: AsyncSession, template_id: UUID, name: str, questions: int
+) -> tuple[str, list[str]]:
+    """A section labelled at the 200-char label cap with ``questions`` text fields."""
+    section_id = await add_section(db, template_id, name)
+    await db.execute(
+        text("UPDATE public.extraction_entity_types SET label = :l WHERE id = :id"),
+        {"l": ("Seção de intervenção " * 10)[:200], "id": str(section_id)},
+    )
+    ids = [uuid4() for _ in range(questions)]
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required, sort_order, "
+            " allow_other, allows_not_applicable, allows_not_evaluated) "
+            "VALUES (:id, :et, :name, :name, 'text', false, :o, false, false, false)"
+        ),
+        [
+            {"id": str(fid), "et": str(section_id), "name": f"{name}_q{i}", "o": i}
+            for i, fid in enumerate(ids)
+        ],
+    )
+    await db.flush()
+    return str(section_id), [str(fid) for fid in ids]
+
+
+@pytest.mark.parametrize(
+    ("sections", "questions", "ops_per_section"),
+    [(1, 32, 25), (2, 500, 1)],
+    ids=["25x32", "2x500"],
+)
+async def test_reorder_reply_stays_under_result_cap(
+    mcp_client,
+    pat_primary_rw,
+    db_session: AsyncSession,
+    sections: int,
+    questions: int,
+    ops_per_section: int,
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    built = [
+        await _bulk_section(db_session, template_id, f"bulk_{n}", questions)
+        for n in range(sections)
+    ]
+    ops = [
+        {
+            "op": "reorder_questions",
+            "section_id": section_id,
+            "field_ids": ids if k % 2 else list(reversed(ids)),
+        }
+        for section_id, ids in built
+        for k in range(ops_per_section)
+    ]
+
+    body = structured(await _edit(mcp_client, pat_primary_rw, project_id, template_id, ops))
+    assert len(compact_json(body)) <= RESULT_CAP
+    assert [a["count"] for a in body["applied"]] == [questions] * len(ops)
+    assert all("field_ids" not in a for a in body["applied"])
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert [op["field_ids"] for op in row.after["ops"]] == [op["field_ids"] for op in ops]
 
 
 async def test_failing_op_rolls_back_batch(

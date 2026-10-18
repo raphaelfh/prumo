@@ -1,22 +1,30 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from app.api.mcp.draft_diff import DIFF_CHAR_BUDGET, DIFF_ROW_CAP, capped_diff
+from app.api.mcp.draft_diff import DIFF_CHAR_BUDGET, DIFF_ROW_CAP, LABEL_CAP, capped_diff
 from app.api.mcp.errors import validation_failure
-from app.api.mcp.tools.template_draft import _DESCRIPTION
+from app.api.mcp.tools.template_draft import (
+    _DESCRIPTION,
+    _NEXT_STEP,
+    MAX_OPS,
+    _applied_reply,
+)
 from app.core.config import Settings
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
     DeleteQuestionOp,
+    EditTemplateDraftResult,
     MoveQuestionOp,
     ReorderQuestionsOp,
     UpdateQuestionOp,
 )
-from app.schemas.template_structure import OptionItem
-from app.utils.compact_json import compact_json
+from app.schemas.template_structure import OptionItem, TemplateFieldRead
+from app.services.agent_template_draft_service import AppliedDraftOp
+from app.utils.compact_json import RESULT_CAP, compact_json
 
 _SECTION_ID = uuid4()
 _FIELD_ID = uuid4()
@@ -279,3 +287,46 @@ def test_tool_description_names_the_fingerprint_rule() -> None:
     for op in ("delete_question", "move_question", "reorder_questions"):
         assert op in _DESCRIPTION
     assert "expected_fingerprint" in _DESCRIPTION
+
+
+def test_applied_reply_caps_every_text_leaf_so_a_full_batch_fits_the_result_cap() -> None:
+    # Escape-heavy UI-written names and labels, far over any agent-side limit.
+    long_text = '"' * 1000
+    field = TemplateFieldRead(
+        id=_FIELD_ID,
+        entity_type_id=_SECTION_ID,
+        name=long_text,
+        label=long_text,
+        field_type="text",
+        is_required=False,
+        sort_order=0,
+        created_at=datetime.now(UTC),
+    )
+    applied = [
+        AppliedDraftOp(
+            op_index=i,
+            op="move_question",
+            field=field,
+            section_id=_SECTION_ID,
+            section_label=long_text,
+        )
+        for i in range(MAX_OPS)
+    ]
+    replies = [_applied_reply(a) for a in applied]
+    assert {len(r.label) for r in replies} == {LABEL_CAP}
+    assert {len(r.name) for r in replies} == {LABEL_CAP}
+    assert {len(r.section_label) for r in replies} == {LABEL_CAP}
+    # The floor of every reply: a full worst-case batch, capped names, and the
+    # row-less diff a zero budget still renders.
+    floor = EditTemplateDraftResult(
+        status="draft_saved_unpublished",
+        visible_to_reviewers_and_ai=False,
+        project_name=long_text[:200],
+        template_name=long_text[:200],
+        applied=replies,
+        diff=capped_diff(_diff_with_additive_rows(DIFF_ROW_CAP), budget=0),
+        draft_fingerprint="f" * 64,
+        editor_url="https://example.test/" + "p" * 200,
+        next_step=_NEXT_STEP,
+    )
+    assert len(compact_json(floor.model_dump(mode="json"))) <= RESULT_CAP

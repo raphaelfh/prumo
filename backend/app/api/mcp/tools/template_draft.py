@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.draft_diff import capped_diff
+from app.api.mcp.draft_diff import LABEL_CAP, capped_diff
 from app.api.mcp.errors import (
     NOT_FOUND_MESSAGE,
     McpErrorCode,
@@ -203,7 +203,9 @@ async def edit_template_draft(
     rest = len(compact_json(result.model_dump(mode="json"))) - len(
         compact_json(result.diff.model_dump(mode="json"))
     )
-    return result.model_copy(update={"diff": capped_diff(diff, budget=RESULT_CAP - rest)})
+    result = result.model_copy(update={"diff": capped_diff(diff, budget=max(0, RESULT_CAP - rest))})
+    assert len(compact_json(result.model_dump(mode="json"))) <= RESULT_CAP
+    return result
 
 
 async def _apply(
@@ -376,7 +378,8 @@ def _applied_reply(a: AppliedDraftOp) -> AppliedOp:
     if a.op == "delete_question":
         return AppliedDeleteOp(op_index=a.op_index, op=a.op, field_id=_deleted_id(a))
     assert a.section_id is not None and a.section_label is not None
-    section_label = cap_text(a.section_label)[0]
+    # Every text leaf is capped so 25 applied ops stay well inside RESULT_CAP.
+    section_label = cap_text(a.section_label, LABEL_CAP)[0]
     if a.op == "reorder_questions":
         assert a.field_ids is not None
         return AppliedReorderOp(
@@ -384,7 +387,7 @@ def _applied_reply(a: AppliedDraftOp) -> AppliedOp:
             op=a.op,
             section_id=a.section_id,
             section_label=section_label,
-            field_ids=a.field_ids,
+            count=len(a.field_ids),
         )
     assert a.field is not None
     return AppliedQuestionOp(
@@ -393,8 +396,8 @@ def _applied_reply(a: AppliedDraftOp) -> AppliedOp:
         field_id=a.field.id,
         section_id=a.section_id,
         section_label=section_label,
-        name=a.field.name,
-        label=a.field.label,
+        name=cap_text(a.field.name, LABEL_CAP)[0],
+        label=cap_text(a.field.label, LABEL_CAP)[0],
     )
 
 

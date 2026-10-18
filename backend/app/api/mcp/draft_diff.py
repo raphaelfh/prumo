@@ -23,7 +23,7 @@ DIFF_CHAR_BUDGET = RESULT_CAP // 2
 """Default diff budget: half the result cap, the rest left to the envelope."""
 _TIER_ORDER = ("additive", "cosmetic", "semantic", "destructive")
 _VALUE_CAP = 200
-_LABEL_CAP = 100
+LABEL_CAP = 100
 _ITEM_SEPARATOR = len(", ")
 
 
@@ -84,7 +84,7 @@ def _change(tier: str, row: TemplateChangeRowRead) -> McpDraftChange:
 
 def capped_labels(label_path: list[str]) -> list[str]:
     """A row's ``label_path`` with each label cut to 100 chars."""
-    return [cap_text(label, _LABEL_CAP)[0] for label in label_path]
+    return [cap_text(label, LABEL_CAP)[0] for label in label_path]
 
 
 def display_value(value: str | bool | None) -> str | None:
