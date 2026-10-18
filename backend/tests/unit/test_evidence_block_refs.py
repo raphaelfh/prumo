@@ -10,6 +10,7 @@ import pytest
 from app.domain.evidence_block_refs import (
     BlockRef,
     BlockRefIndex,
+    evidence_is_stale,
     normalize_text,
     normalize_with_index_map,
     parse_block_ref,
@@ -169,3 +170,25 @@ def test_moved_normalizers_keep_their_behavior() -> None:
     assert norm == "a b"
     # A folded space maps to the original index of the character after the run.
     assert index_map == [1, 4, 4]
+
+
+@pytest.mark.parametrize(
+    ("grounded", "evidence_version", "file_version", "expected"),
+    [
+        (False, 1, 2, False),
+        (True, None, 2, False),
+        (True, 2, 2, False),
+        (True, 1, 2, True),
+        (True, 1, None, False),
+    ],
+    ids=["ungrounded", "null-evidence-version", "equal", "different", "unknown-file"],
+)
+def test_evidence_is_stale_truth_table(
+    grounded: bool, evidence_version: int | None, file_version: int | None, expected: bool
+) -> None:
+    assert (
+        evidence_is_stale(
+            grounded=grounded, evidence_version=evidence_version, file_version=file_version
+        )
+        is expected
+    )

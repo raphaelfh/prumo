@@ -22,7 +22,7 @@ nothing here commits.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -31,6 +31,7 @@ from sqlalchemy import ColumnElement, and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.parsing.base import ParsedBlock
+from app.models.article import ArticleFile
 from app.models.extraction import ExtractionEvidence
 from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.schemas.extraction import PositionV1, parse_position
@@ -55,6 +56,21 @@ async def lock_file_blocks(db: AsyncSession, file_id: UUID) -> None:
         text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
         {"k": str(file_id)},
     )
+
+
+async def file_versions(db: AsyncSession, file_ids: Iterable[UUID]) -> dict[UUID, int]:
+    """Current ``content_version`` of each file in *file_ids*, in one read.
+
+    Keyed only by ids taken from evidence rows the caller already scoped; an
+    empty set issues no query.
+    """
+    ids = set(file_ids)
+    if not ids:
+        return {}
+    rows = await db.execute(
+        select(ArticleFile.id, ArticleFile.content_version).where(ArticleFile.id.in_(ids))
+    )
+    return dict(rows.tuples().all())
 
 
 def match_anchor(text_content: str, blocks: Sequence[ParsedBlock]) -> PositionV1 | None:

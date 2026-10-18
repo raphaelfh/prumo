@@ -197,3 +197,27 @@ def quote_in_window(quote: str, window: BlockRefWindow) -> bool:
     """A non-empty quote whose normalized text is inside the window's."""
     needle = normalize_text(quote)
     return bool(needle) and needle in normalize_text(window.text)
+
+
+# ---------------------------------------------------------------------------
+# Staleness
+# ---------------------------------------------------------------------------
+
+
+def evidence_is_stale(
+    *, grounded: bool, evidence_version: int | None, file_version: int | None
+) -> bool:
+    """Whether a grounded evidence location may have moved since it was anchored.
+
+    Stale = grounded AND the evidence's ``content_version`` is known AND it
+    differs from the file's current ``content_version``. A NULL evidence
+    version is unknown and reads current until a reparse or ``stamp-versions``
+    stamps it; an ungrounded row has no location to go stale. The one
+    predicate every read (REST and MCP) uses.
+    """
+    return (
+        grounded
+        and evidence_version is not None
+        and file_version is not None
+        and evidence_version != file_version
+    )

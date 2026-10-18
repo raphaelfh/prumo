@@ -4037,6 +4037,12 @@ export interface components {
              * @description block_index values for deterministic reader highlight
              */
             blockIds?: number[];
+            /**
+             * Grounded
+             * @description the position resolves to a parsed-text anchor
+             * @default false
+             */
+            grounded: boolean;
             /** Page Number */
             page_number: number | null;
             /** Proposal Record Id */
@@ -4046,6 +4052,12 @@ export interface components {
              * @default 0
              */
             rank: number;
+            /**
+             * Stale
+             * @description grounded, and the article was re-parsed since this anchor was made: the location may have moved
+             * @default false
+             */
+            stale: boolean;
             /** Text Content */
             text_content: string | null;
         };
