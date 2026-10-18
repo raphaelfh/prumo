@@ -11,6 +11,10 @@ metrics intentionally mirror what ADR-0011's Validation section asks for:
   at evaluation time with external tools/models; this proxy needs no deps
   and gives a fast, reproducible signal in CI.
 * ``recall_set`` — section-heading and reference recovery.
+* ``column_inversions`` / ``chrome_leakage`` / ``zw_char_count`` — reading
+  order against the gold paragraph sequence, running heads left as body text,
+  and invisible characters in the stored block text.
+* ``p95`` / ``maxrss_to_mb`` — per-parser latency tail and peak memory.
 * ``aggregate`` — roll per-document scores up to one report per parser.
 
 Text comparisons normalise with Unicode NFKC + whitespace folding +
@@ -20,8 +24,10 @@ must not cause false misses).
 
 from __future__ import annotations
 
+import math
+import re
 import unicodedata
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
@@ -136,6 +142,130 @@ def recall_set(pred: list[str], gold: list[str]) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Block-level metrics: reading order, page chrome, invisible characters
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Block:
+    """One stored block in reading order. ``box`` is top-left origin (y down)."""
+
+    page: int
+    text: str
+    block_type: str
+    box: Box
+
+
+#: Blocks that are not body text for reading order.
+_NON_BODY_TYPES = frozenset({"header", "footer", "table_cell", "figure"})
+#: A block and a gold paragraph match when their first this-many alphanumeric
+#: characters (normalized) agree; shorter gold paragraphs are skipped.
+_PARAGRAPH_KEY_CHARS = 24
+
+
+def _paragraph_key(text: str) -> str:
+    alnum = "".join(ch for ch in normalize_text(text) if ch.isalnum())
+    return alnum[:_PARAGRAPH_KEY_CHARS]
+
+
+def column_inversions(blocks: list[Block], gold_paragraphs: list[str]) -> tuple[int, int]:
+    """Inversions of gold paragraph indexes in the parser's reading order.
+
+    Each body block is matched to the gold paragraph whose normalized,
+    alphanumeric-only prefix it starts with (so a line-break hyphen or a
+    trailing sentence does not break the match); a block that starts mid
+    paragraph matches nothing. Gold paragraphs with a short or ambiguous
+    prefix are skipped, and each gold paragraph counts once (its first block).
+    Returns ``(inversions, paragraphs_matched)``: the number of pairs read in
+    the opposite order to the gold sequence, and how many paragraphs matched.
+    """
+    key_counts = Counter(_paragraph_key(p) for p in gold_paragraphs)
+    index_by_key = {
+        _paragraph_key(p): i
+        for i, p in enumerate(gold_paragraphs)
+        if len(_paragraph_key(p)) == _PARAGRAPH_KEY_CHARS and key_counts[_paragraph_key(p)] == 1
+    }
+    order: list[int] = []
+    seen: set[int] = set()
+    for block in blocks:
+        if block.block_type in _NON_BODY_TYPES:
+            continue
+        index = index_by_key.get(_paragraph_key(block.text))
+        if index is not None and index not in seen:
+            seen.add(index)
+            order.append(index)
+    inversions = sum(1 for i, left in enumerate(order) for right in order[i + 1 :] if left > right)
+    return inversions, len(order)
+
+
+#: The 4.1a chrome rule: top/bottom band height ratio and minimum repeat pages.
+_CHROME_BAND_RATIO = 0.08
+_CHROME_MIN_PAGES = 3
+_CHROME_IGNORED_TYPES = frozenset({"table_cell", "figure"})
+_CHROME_TYPES = frozenset({"header", "footer"})
+_CAPTION = re.compile(r"^(?:table|figure|fig\.?)\s*\d+", re.IGNORECASE)
+
+
+def _chrome_key(text: str) -> str:
+    return " ".join(re.sub(r"\d+", "#", text.casefold()).split())
+
+
+def chrome_leakage(blocks: list[Block], page_heights: dict[int, float]) -> int:
+    """Count running heads/footers a parser left typed as content.
+
+    A block lying wholly in the top (bottom) 8% band of its page whose
+    digit-masked text recurs in that band on at least three distinct pages is
+    chrome; it leaks when its type is not ``header``/``footer``. Table cells,
+    figures and numbered captions are never chrome (the 4.1a rule).
+    """
+    candidates: list[tuple[Block, tuple[str, str]]] = []
+    pages_by_key: dict[tuple[str, str], set[int]] = defaultdict(set)
+    for block in blocks:
+        height = page_heights.get(block.page)
+        text = block.text.strip()
+        if not height or block.block_type in _CHROME_IGNORED_TYPES:
+            continue
+        if not text or _CAPTION.match(text):
+            continue
+        band = height * _CHROME_BAND_RATIO
+        if block.box.y + block.box.height <= band:
+            key = ("top", _chrome_key(text))
+        elif block.box.y >= height - band:
+            key = ("bottom", _chrome_key(text))
+        else:
+            continue
+        candidates.append((block, key))
+        pages_by_key[key].add(block.page)
+    return sum(
+        1
+        for block, key in candidates
+        if block.block_type not in _CHROME_TYPES and len(pages_by_key[key]) >= _CHROME_MIN_PAGES
+    )
+
+
+#: Zero-width space / non-joiner / joiner, word joiner, BOM, soft hyphen.
+ZW_CHARS = frozenset("\u200b\u200c\u200d\u2060\ufeff\u00ad")
+
+
+def zw_char_count(blocks: list[Block]) -> int:
+    """Invisible characters left in the stored block text."""
+    return sum(1 for block in blocks for ch in block.text if ch in ZW_CHARS)
+
+
+def p95(values: list[float]) -> float:
+    """Nearest-rank 95th percentile (an observed value). Empty → 0.0."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    return ordered[math.ceil(0.95 * len(ordered)) - 1]
+
+
+def maxrss_to_mb(raw: int, platform: str) -> float:
+    """``ru_maxrss`` → MB: macOS reports bytes, Linux reports KiB."""
+    return raw / (1024 * 1024) if platform == "darwin" else raw / 1024
+
+
+# ---------------------------------------------------------------------------
 # Per-document and per-parser aggregation
 # ---------------------------------------------------------------------------
 
@@ -153,7 +283,11 @@ class DocScore:
     bbox_scored: bool = False
     section_recall: float = 0.0
     reference_recall: float = 0.0
-    elapsed_s: float = 0.0
+    column_inversions: int = 0
+    paragraphs_matched: int = 0
+    chrome_leakage: int = 0
+    zw_chars: int = 0
+    parse_seconds: float = 0.0
     est_cost_usd: float = 0.0
     error: str | None = None
 
@@ -171,6 +305,12 @@ class ParserReport:
     mean_reference_recall: float
     mean_latency_s: float
     total_cost_usd: float
+    total_column_inversions: int = 0
+    total_chrome_leakage: int = 0
+    total_zw_chars: int = 0
+    p95_parse_seconds: float = 0.0
+    #: Peak resident memory of the parser's own subprocess (None in-process).
+    peak_rss_mb: float | None = None
     doc_scores: list[DocScore] = field(default_factory=list)
 
 
@@ -178,10 +318,12 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def aggregate(parser: str, doc_scores: list[DocScore]) -> ParserReport:
+def aggregate(
+    parser: str, doc_scores: list[DocScore], peak_rss_mb: float | None = None
+) -> ParserReport:
     """Roll per-document scores into one report. Errored docs are excluded
-    from the quality means (you cannot score a parse that failed) but are
-    counted in ``n_errors`` and still contribute their cost/latency."""
+    from the quality means and totals (you cannot score a parse that failed)
+    but are counted in ``n_errors`` and still contribute their cost/latency."""
     ok = [d for d in doc_scores if d.error is None]
     return ParserReport(
         parser=parser,
@@ -191,7 +333,12 @@ def aggregate(parser: str, doc_scores: list[DocScore]) -> ParserReport:
         mean_bbox_f1=_mean([d.bbox_f1 for d in ok if d.bbox_scored]),
         mean_section_recall=_mean([d.section_recall for d in ok]),
         mean_reference_recall=_mean([d.reference_recall for d in ok]),
-        mean_latency_s=_mean([d.elapsed_s for d in doc_scores]),
+        mean_latency_s=_mean([d.parse_seconds for d in doc_scores]),
         total_cost_usd=sum(d.est_cost_usd for d in doc_scores),
+        total_column_inversions=sum(d.column_inversions for d in ok),
+        total_chrome_leakage=sum(d.chrome_leakage for d in ok),
+        total_zw_chars=sum(d.zw_chars for d in ok),
+        p95_parse_seconds=p95([d.parse_seconds for d in doc_scores]),
+        peak_rss_mb=peak_rss_mb,
         doc_scores=doc_scores,
     )
