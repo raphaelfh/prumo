@@ -12,7 +12,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.models import Model
 
-from app.llm.extractor import LlmUsage, StructuredCall, extract_structured
+from app.llm.extractor import (
+    LlmUsage,
+    StructuredCall,
+    UsageLedgerWriteError,
+    extract_structured,
+)
 from app.llm.prompts import content_version
 from app.llm.value_support import is_numeric_like, numeric_value_supported
 
@@ -167,7 +172,9 @@ async def run_entailment_gate(
     Builds the premise for each spec from anchor block context (or falls back
     to the raw evidence quote), then fans out over ``gate_evidence`` with a
     bounded semaphore. Any judge exception leaves the corresponding entry as
-    ``None`` (degrade path — the run never aborts) and contributes no usage.
+    ``None`` (degrade path — the run never aborts) and contributes no usage;
+    a ``UsageLedgerWriteError`` (an answered call whose ledger row was lost)
+    is raised instead.
 
     Args:
         specs:       One :class:`GateSpec` per field to judge.
@@ -193,6 +200,9 @@ async def run_entailment_gate(
             )
 
     raw = await asyncio.gather(*[_one(s) for s in specs], return_exceptions=True)
+    for outcome in raw:
+        if isinstance(outcome, UsageLedgerWriteError):
+            raise outcome  # a lost ledger row is not a judge failure
     results: list[AttributionLabel | None] = []
     usage = LlmUsage()
     for spec, outcome in zip(specs, raw, strict=True):

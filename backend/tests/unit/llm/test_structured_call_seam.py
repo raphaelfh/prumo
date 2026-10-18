@@ -8,7 +8,7 @@ import pytest
 
 from app.llm import entailment, verify
 from app.llm.entailment import GateSpec, gate_evidence, run_entailment_gate
-from app.llm.extractor import LlmUsage
+from app.llm.extractor import LlmUsage, UsageLedgerWriteError
 from app.llm.verify import run_verify_pass
 from tests.fakes.recorded_llm import RecordedLlm
 
@@ -75,3 +75,26 @@ async def test_a_raised_judge_degrades_to_none_and_contributes_no_usage() -> Non
 
     assert labels == [None]
     assert usage == LlmUsage()
+
+
+async def test_a_ledger_write_failure_is_not_degraded_by_the_verify_pass() -> None:
+    """The verify pass degrades on a model failure, never on a lost ledger
+    row: a call whose usage could not be recorded fails the section."""
+    fake = RecordedLlm(fail={verify.NAME: UsageLedgerWriteError("ledger down")})
+
+    with pytest.raises(UsageLedgerWriteError):
+        await run_verify_pass(
+            pdf_text="They used metformin.",
+            entity_type_label="Intervention",
+            proposals=[("drug", "Drug", "metformin")],
+            model=MagicMock(),
+            logger=MagicMock(),
+            extract=fake,
+        )
+
+
+async def test_a_ledger_write_failure_is_not_degraded_by_the_entailment_gate() -> None:
+    fake = RecordedLlm(fail={entailment.NAME: UsageLedgerWriteError("ledger down")})
+
+    with pytest.raises(UsageLedgerWriteError):
+        await run_entailment_gate([_spec("metformin")], MagicMock(), extract=fake)

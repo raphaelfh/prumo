@@ -5,6 +5,7 @@ Funcoes factory for criacao de dependencias de forma centralizada.
 Elimina duplicacao and garante consistencia in the inicializacao de componentes.
 """
 
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from supabase import Client
 
 from app.core.logging import get_logger
@@ -83,3 +84,9 @@ def create_document_parser(
         _logger.warning("parser_gate_unknown_backend_fallback_pymupdf", backend=backend)
 
     return PymupdfParser()
+
+
+def create_ledger_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """A second session factory on the caller's engine: ledger rows commit
+    independently of the run transaction, each on its own connection."""
+    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)

@@ -211,7 +211,8 @@ async def _verify_and_land(
     *,
     identify: dict[str, Any] | None = None,
 ) -> tuple[int, LlmUsage]:
-    """Verify the call, build its candidates, land them; ``(written, usage)``.
+    """Verify the call, build its candidates, land them; ``(written, usage)``
+    with ``usage`` summed over extract, verify and the entailment judge.
 
     ``identify`` (an entry group's identify pass) leads the snapshot's
     ``passes_detail``; the entailment pass, known only once the candidates
@@ -235,6 +236,8 @@ async def _verify_and_land(
         verdicts=verdicts,
         grounding_retries=call.grounding_retries,
     )
+    # Section usage covers every call behind it, the entailment judge included.
+    usage = usage + entailment_usage
     if not candidates:
         return 0, usage
     # A judge call that answered always reports tokens or a response id.

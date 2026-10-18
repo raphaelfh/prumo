@@ -21,6 +21,7 @@ from app.services.ai_extraction import AiExtraction
 from app.services.engine_credentials import EngineCredentials
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.fakes.recorded_llm import RecordedLlm
+from tests.fakes.usage_sink import RecordingUsageSink
 from tests.integration.conftest import SEED
 
 #: Offline credentials: ``build_model`` constructs a client, the fake answers.
@@ -37,8 +38,11 @@ def extraction(
     attempt_id: UUID | None = None,
     owns_transactions: bool = False,
     storage: Any = None,
+    usage_sink: RecordingUsageSink | None = None,
 ) -> AiExtraction:
-    """The real service with the model call faked."""
+    """The real service with the model call faked; metering goes to
+    ``usage_sink`` (a fresh recording fake when omitted), never to the
+    ledger table on the shared test connection."""
     return AiExtraction(
         db,
         str(user_id),
@@ -48,6 +52,7 @@ def extraction(
         attempt_id=attempt_id,
         owns_transactions=owns_transactions,
         llm=llm,
+        usage_sink=usage_sink if usage_sink is not None else RecordingUsageSink(),
     )
 
 

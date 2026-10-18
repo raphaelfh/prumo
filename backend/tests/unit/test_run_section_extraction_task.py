@@ -66,6 +66,9 @@ class _FakeSession:
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
         self.close = AsyncMock()
+        #: The per-task engine ``worker_session`` builds; the ledger sink's
+        #: session factory is bound to it.
+        self.bind = MagicMock(name="task_engine")
 
 
 def _session_factory(session: _FakeSession) -> Any:
@@ -98,7 +101,7 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
                 "entity_type_name": "Outcome",
                 "success": True,
                 "suggestions_created": 4,
-                "tokens_used": 200,
+                "tokens": {"prompt": 150, "completion": 50, "total": 200},
                 "skipped": False,
                 "error": None,
             },
@@ -106,8 +109,6 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
                 "entity_type_id": "etype-bbb",
                 "entity_type_name": "Population",
                 "success": False,
-                "suggestions_created": 0,
-                "tokens_used": 0,
                 "skipped": False,
                 "error": "timeout",
             },
@@ -290,9 +291,50 @@ class TestRunSectionExtractionTaskBatch:
         assert result["sections"][0]["entity_type_id"] == "etype-aaa"
         assert result["sections"][0]["success"] is True
         assert result["sections"][0]["suggestions_created"] == 4
+        # The job result keeps the API's per-section ``tokens_used`` total.
+        assert result["sections"][0]["tokens_used"] == 200
+        assert "tokens" not in result["sections"][0]
+        assert "tokens_used" not in result["sections"][1]
         assert result["sections"][1]["entity_type_id"] == "etype-bbb"
         assert result["sections"][1]["success"] is False
         assert result["sections"][1]["error"] == "timeout"
+
+
+class TestRunSectionExtractionTaskMetering:
+    def test_worker_injects_a_ledger_sink(self):
+        """The composition root builds the ledger sink on the task session's
+        own engine, through ``create_ledger_session_factory``."""
+        from app.services.ai_usage_metering import LedgerSink
+
+        run_id, entity_type_id = str(uuid4()), str(uuid4())
+        session = _FakeSession()
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(
+            return_value=_single_result(run_id, entity_type_id)
+        )
+        with (
+            patch("app.services.ai_extraction.AiExtraction", return_value=fake_service) as domain,
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+        ):
+            _apply(
+                {
+                    "projectId": str(uuid4()),
+                    "articleId": str(uuid4()),
+                    "templateId": str(uuid4()),
+                    "entityTypeId": entity_type_id,
+                },
+                str(uuid4()),
+            )
+
+        sink = domain.call_args.kwargs["usage_sink"]
+        assert isinstance(sink, LedgerSink)
+        assert sink.session_factory.kw["bind"] is session.bind
+        assert sink.session_factory.kw["expire_on_commit"] is False
 
 
 # ---------------------------------------------------------------------------

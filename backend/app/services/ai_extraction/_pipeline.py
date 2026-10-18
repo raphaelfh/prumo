@@ -42,6 +42,7 @@ from app.repositories import (
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import TemplateVersionRef
 from app.services.ai_extraction.landing import ProposalLanding
+from app.services.ai_usage_metering import UsageContext, UsageSink, metered
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_snapshot import entity_types_for_version
@@ -71,13 +72,18 @@ class Pipeline:
         attempt_id: UUID | None,
         owns_transactions: bool,
         llm: StructuredCall,
+        usage_sink: UsageSink,
     ) -> None:
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
         self.attempt_id = attempt_id
-        self.llm = llm
+        #: The run the model calls are billed to — set by the flow that opens
+        #: it; ``None`` before (the ledger then skips the call).
+        self.current_run: ExtractionRun | None = None
+        #: Every model call is metered into the usage ledger.
+        self.llm = metered(llm, usage_sink, self._usage_context)
         self.logger = get_logger("AiExtraction")
         self.credentials = credentials or EngineCredentials(None, None, None, None, None)
         self._key_provider = key_provider
@@ -107,6 +113,21 @@ class Pipeline:
         self._pinned: dict[tuple[UUID, UUID], list[Any]] = {}
         #: The pinned template version's number per ``version_id``.
         self._template_versions: dict[UUID, TemplateVersionRef] = {}
+
+    def _usage_context(self) -> UsageContext:
+        """Read per model call: the run, the adopted engine and the
+        re-keyed credentials all settle after the pipeline is built."""
+        run = self.current_run
+        scope = self.credentials.key_scope
+        return UsageContext(
+            project_id=run.project_id if run is not None else None,
+            owner_id=UUID(self.user_id),
+            run_id=run.id if run is not None else None,
+            attempt_id=self.attempt_id,
+            provider=self.engine.provider,
+            model=self.engine.model,
+            key_scope=scope.value if scope is not None else None,
+        )
 
     @property
     def anchor_blocks(self) -> list[ParsedBlock]:

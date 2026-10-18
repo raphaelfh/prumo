@@ -16,6 +16,7 @@ import pytest
 
 from app.services.ai_extraction import _pipeline
 from app.services.ai_extraction._pipeline import Pipeline
+from tests.fakes.usage_sink import RecordingUsageSink
 
 pytestmark = pytest.mark.asyncio
 
@@ -32,6 +33,7 @@ def _pipeline_on(db: Any) -> Pipeline:
         attempt_id=None,
         owns_transactions=False,
         llm=MagicMock(),
+        usage_sink=RecordingUsageSink(),
     )
 
 

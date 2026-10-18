@@ -24,7 +24,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.models import Model
 
-from app.llm.extractor import LlmUsage, StructuredCall, extract_structured
+from app.llm.extractor import (
+    LlmUsage,
+    StructuredCall,
+    UsageLedgerWriteError,
+    extract_structured,
+)
 from app.llm.prompts import content_version
 from app.llm.value_support import is_numeric_like, numeric_value_supported
 
@@ -95,8 +100,9 @@ async def run_verify_pass(
     extract: StructuredCall = extract_structured,
 ) -> tuple[dict[str, VerifyVerdict], LlmUsage] | None:
     """Judge each proposed ``(field_key, field_label, value_str)`` against
-    *pdf_text*; ``None`` on ANY exception (the degrade contract — logged as
-    ``verify_pass_failed`` with *log_context*, never raised).
+    *pdf_text*; ``None`` on any exception (the degrade contract — logged as
+    ``verify_pass_failed`` with *log_context*, never raised) except a
+    ``UsageLedgerWriteError``, which propagates.
 
     Success returns the per-field verdict map — keys are the proposal
     ``field_key`` vocabulary; unknown keys in the reply are dropped WITH a
@@ -139,6 +145,8 @@ async def run_verify_pass(
             ):
                 verdicts[key] = "unsupported"
         return verdicts, usage
+    except UsageLedgerWriteError:
+        raise  # a lost ledger row is not a model failure: never degraded
     except Exception as exc:
         logger.warning("verify_pass_failed", error=str(exc), **context)
         return None

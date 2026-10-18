@@ -40,6 +40,15 @@ def _retry_countdown(retries: int) -> float:
     return min(base + random.uniform(0, base * 0.1), float(_RETRY_MAX_SECONDS))
 
 
+def _api_section(section: dict[str, Any]) -> dict[str, Any]:
+    """A per-section outcome in the job-result shape the API serves
+    (``SectionOutcome.tokens_used``): the section's ``tokens`` total."""
+    api = {k: v for k, v in section.items() if k != "tokens"}
+    if "tokens" in section:
+        api["tokens_used"] = section["tokens"]["total"]
+    return api
+
+
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -78,13 +87,14 @@ def run_section_extraction_task(
 
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
-        from app.core.factories import create_storage_adapter
+        from app.core.factories import create_ledger_session_factory, create_storage_adapter
         from app.schemas.extraction import SectionExtractionRequest
         from app.services.ai_extraction import (
             AiExtraction,
             BatchAllSectionsFailed,
             BatchExtractionResult,
         )
+        from app.services.ai_usage_metering import LedgerSink
         from app.services.engine_credentials import resolve_engine_credentials
         from app.worker._session import worker_session
 
@@ -160,6 +170,10 @@ def run_section_extraction_task(
                     repin=repin,
                     attempt_id=UUID(attempt_id) if attempt_id else None,
                     owns_transactions=True,
+                    # Every model call writes a ledger row on its own
+                    # connection to this task's engine, committed apart from
+                    # the run transaction.
+                    usage_sink=LedgerSink(create_ledger_session_factory(session.bind)),
                 )
 
                 res = await service.run_from_request(request, engine=engine)
@@ -176,7 +190,7 @@ def run_section_extraction_task(
                         "total_suggestions_created": res.total_suggestions_created,
                         # Per-section outcomes — enables legacy frontend flows to
                         # reconstruct BatchSectionResult.sections from the job result.
-                        "sections": res.sections,
+                        "sections": [_api_section(s) for s in res.sections],
                     }
 
                 # SectionExtractionResult (single)

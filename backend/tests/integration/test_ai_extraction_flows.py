@@ -188,7 +188,7 @@ async def test_a_standalone_section_resolves_runs_and_completes_its_own_run(
     assert run.stage == ExtractionRunStage.EXTRACT.value
     assert run.status == "completed"
     assert run.results["suggestions_created"] == 1
-    assert run.results["tokens_total"] == 15
+    assert run.results["tokens"]["total"] == 15
     assert run.results["fields_extracted"] == 1
     assert run.results["provenance"]["sections"], "completion merged, never replaced"
 
