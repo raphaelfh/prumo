@@ -4,7 +4,8 @@ Orchestrates the PDF-only parsing pipeline:
 
 1. Load ArticleFile by ID.
 2. Download PDF bytes via the injected StorageAdapter.
-3. Parse bytes via the injected DocumentParser.
+3. Parse bytes via the injected DocumentParser, then normalize block text
+   once (``normalize_blocks``: invisible chars, dot leaders) for every parser.
 4. Normalise char offsets via assign_char_offsets_to_blocks (single source of
    truth from the parsing.base module).
 5. Persist blocks via ArticleTextBlockRepository.replace_for_file (flush only).
@@ -36,6 +37,7 @@ from app.core.logging import get_logger
 from app.infrastructure.parsing.base import (
     DocumentParser,
     assign_char_offsets_to_blocks,
+    normalize_blocks,
     render_blocks_to_markdown,
 )
 from app.infrastructure.storage.base import StorageAdapter
@@ -123,9 +125,10 @@ class DocumentParsingService:
         # 2. Download PDF bytes.
         pdf_bytes = await self.storage.download("articles", article_file.storage_key)
 
-        # 3. Parse — isolate so we can catch and handle parser errors.
+        # 3. Parse + normalize block text once for every parser (a
+        #    normalization error is a parse failure).
         try:
-            blocks = self.parser.parse(pdf_bytes)
+            blocks = normalize_blocks(self.parser.parse(pdf_bytes))
         except Exception:
             log.exception("document_parsing_failed")
             article_file.extraction_status = "parse_failed"

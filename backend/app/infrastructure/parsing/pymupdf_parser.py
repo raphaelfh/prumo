@@ -2,7 +2,8 @@
 
 The free default parser (ADR-0011/0013). Extracts per-block text + real bbox via
 `page.get_text("dict")`, classifying each block as `heading` (relative font size)
-or `paragraph`. Table cells are emitted as `table_cell` blocks via
+or `paragraph`; running heads, footers and page numbers in the top/bottom page
+bands are then typed `header` / `footer` (stored, skipped by the renderer). Table cells are emitted as `table_cell` blocks via
 `page.find_tables()` carrying the native grid (row/col, is_header, per-cell bbox);
 text blocks inside a detected table's bbox are dropped so cells own that text.
 Markdown is NOT produced here — the canonical projection is
@@ -13,6 +14,8 @@ No DB / IO / HTTP — pure given the bytes.
 
 from __future__ import annotations
 
+import re
+from collections import defaultdict
 from typing import Any
 
 import fitz  # PyMuPDF
@@ -28,6 +31,16 @@ from app.infrastructure.parsing.base import (
 _HEADING_SIZE_RATIO = 1.25
 #: Headings are short; longer lines that happen to be large are still body text.
 _HEADING_MAX_CHARS = 120
+
+#: Top/bottom chrome band: at most this fraction of the page height.
+_CHROME_BAND_RATIO = 0.08
+#: A digit-masked band text repeated on at least this many pages is chrome.
+_CHROME_MIN_REPEATS = 3
+#: Below this page count, at least half the pages (minimum 2) instead.
+_CHROME_SHORT_DOC_PAGES = 6
+_PAGE_LABEL = re.compile(r"^(?:\d{1,4}|page\s+\d{1,4}(?:\s+of\s+\d{1,4})?)$", re.IGNORECASE)
+_PAGE_DIGIT_SEPARATORS = re.compile(r"[\s\-\u2013/.]")
+_NON_CHROME_TYPES = frozenset({"table_cell", "figure"})
 
 
 def _block_text(block: dict[str, Any]) -> str:
@@ -131,6 +144,66 @@ def _table_to_rows(table: Any) -> tuple[list[list[tuple[str, dict[str, float]]]]
     return rows, header_rows
 
 
+def _is_page_label(text: str) -> bool:
+    """A bare page number, ``Page n`` / ``Page n of m``, or short digit run."""
+    if _PAGE_LABEL.match(text):
+        return True
+    digits = _PAGE_DIGIT_SEPARATORS.sub("", text)
+    return 0 < len(digits) <= 6 and digits.isdigit()
+
+
+def _chrome_key(text: str) -> str:
+    """Digit-masked, casefolded, whitespace-collapsed key for repeat counting."""
+    return " ".join(re.sub(r"\d+", "#", text.casefold()).split())
+
+
+def _classify_chrome(
+    per_page: dict[int, list[ParsedBlock]], page_heights: dict[int, float]
+) -> None:
+    """Type running heads, footers and page numbers as ``header`` / ``footer``.
+
+    Pure; mutates ``block_type`` in place. A non-table, non-figure block lying
+    wholly in the top (bottom) band of its page becomes ``header``
+    (``footer``) when its text is a page label, or when its digit-masked key
+    recurs in the same band on enough distinct pages (``_CHROME_MIN_REPEATS``,
+    or half the pages, minimum 2, for a short document). Body text that
+    appears once is never touched.
+    """
+    page_count = len(page_heights)
+    if page_count < _CHROME_SHORT_DOC_PAGES:
+        min_repeats = max(2, -(-page_count // 2))
+    else:
+        min_repeats = _CHROME_MIN_REPEATS
+
+    candidates: list[tuple[ParsedBlock, str, str]] = []
+    pages_by_key: dict[tuple[str, str], set[int]] = defaultdict(set)
+    for page_number, blocks in per_page.items():
+        height = page_heights.get(page_number)
+        if not height:
+            continue
+        band = height * _CHROME_BAND_RATIO
+        for block in blocks:
+            if block.block_type in _NON_CHROME_TYPES:
+                continue
+            text = block.text.strip()
+            if not text:
+                continue
+            y, h = block.bbox["y"], block.bbox["height"]
+            if y + h <= band:
+                kind = "header"
+            elif y >= height - band:
+                kind = "footer"
+            else:
+                continue
+            key = _chrome_key(text)
+            candidates.append((block, kind, key))
+            pages_by_key[(kind, key)].add(page_number)
+
+    for block, kind, key in candidates:
+        if _is_page_label(block.text.strip()) or len(pages_by_key[(kind, key)]) >= min_repeats:
+            block.block_type = kind
+
+
 class PymupdfParser(DocumentParser):
     """DocumentParser implementation backed by PyMuPDF (fitz)."""
 
@@ -141,11 +214,13 @@ class PymupdfParser(DocumentParser):
             # (dropping text that overlaps a SUCCESSFULLY converted table so the
             # cells own that text). Gather span sizes for the heading heuristic.
             per_page: dict[int, dict[str, Any]] = {}
+            page_heights: dict[int, float] = {}
             all_sizes: list[float] = []
 
             for page_index in range(doc.page_count):
                 page = doc.load_page(page_index)
                 page_number = page_index + 1
+                page_heights[page_number] = float(page.rect.height)
 
                 try:
                     found = list(page.find_tables().tables)
@@ -273,6 +348,11 @@ class PymupdfParser(DocumentParser):
                             )
                         )
                         idx += 1
+
+            blocks_by_page: dict[int, list[ParsedBlock]] = defaultdict(list)
+            for block in blocks:
+                blocks_by_page[block.page_number].append(block)
+            _classify_chrome(blocks_by_page, page_heights)
 
             if not blocks:
                 # ``blocks`` here can hold figures / table cells with no text,

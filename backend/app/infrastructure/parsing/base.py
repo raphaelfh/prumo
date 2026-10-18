@@ -27,9 +27,10 @@ truth.
 """
 
 import math
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol, runtime_checkable
 
 # ---------------------------------------------------------------------------
@@ -194,6 +195,46 @@ def assign_char_offsets_to_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock
             cursor = block.char_end
 
     return blocks
+
+
+# ---------------------------------------------------------------------------
+# normalize_blocks — one text-normalization pass for every parser
+# ---------------------------------------------------------------------------
+
+#: Zero-width space / non-joiner / joiner, word joiner, BOM, soft hyphen.
+_INVISIBLE = dict.fromkeys(map(ord, "​‌‍⁠﻿­"), None)
+#: Four or more dots, spaced or not (a table-of-contents style leader).
+_DOT_LEADER = re.compile(r"(?:\s*\.){4,}\s*")
+
+
+def normalize_block_text(text: str) -> str:
+    """Strip invisible characters and collapse dot leaders to one space.
+
+    ``"..."`` (three dots) is kept; no Unicode NFKC folding is applied, so
+    ligatures and other compatibility characters stay as parsed.
+    """
+    return _DOT_LEADER.sub(" ", text.translate(_INVISIBLE)).strip()
+
+
+def normalize_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+    """Return new blocks with normalized text, renumbered per page.
+
+    A non-``table_cell`` block whose text was non-empty and normalizes to
+    empty is dropped (figures, already ``""``, are kept; an empty table cell
+    is a valid grid position). ``block_index`` is then renumbered
+    contiguously per page in the existing order. Run before
+    ``assign_char_offsets_to_blocks``.
+    """
+    out: list[ParsedBlock] = []
+    for page_blocks in _blocks_by_page_sorted(blocks).values():
+        idx = 0
+        for block in page_blocks:
+            text = normalize_block_text(block.text)
+            if block.text and not text and block.block_type != "table_cell":
+                continue
+            out.append(replace(block, text=text, block_index=idx))
+            idx += 1
+    return out
 
 
 # ---------------------------------------------------------------------------

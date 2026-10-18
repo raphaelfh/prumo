@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.parsing.base import DocumentParser, ParsedBlock
+from app.infrastructure.parsing.base import DocumentParser, ParsedBlock, concat_page_text
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import ArticleFile
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
@@ -104,6 +104,29 @@ class FakeParser(DocumentParser):
         import copy
 
         return copy.deepcopy(self.FIXED_BLOCKS)
+
+
+class ZeroWidthParser(DocumentParser):
+    """Returns blocks carrying zero-width characters, one of them nothing else."""
+
+    def parse(self, pdf_bytes: bytes) -> list[ParsedBlock]:  # noqa: ARG002
+        def block(page: int, idx: int, text: str) -> ParsedBlock:
+            return ParsedBlock(
+                page_number=page,
+                block_index=idx,
+                text=text,
+                char_start=0,
+                char_end=0,
+                bbox={"x": 0.0, "y": float(idx * 20), "width": 100.0, "height": 12.0},
+                block_type="paragraph",
+            )
+
+        return [
+            block(1, 0, "doi:10.1000/\u200bxyz"),
+            block(1, 1, "\u200b"),
+            block(1, 2, "Age ...... 54 years\u200b"),
+            block(2, 0, "\ufeffPage two"),
+        ]
 
 
 class BrokenParser(DocumentParser):
@@ -299,5 +322,42 @@ async def test_parse_persists_content_markdown_and_bumps_version(
         assert article_file.content_version == before + 1
 
         await db_session_real.commit()
+    finally:
+        await _cleanup(db_session_real, file_id=file_id)
+
+
+@pytest.mark.asyncio
+async def test_blocks_normalized_before_offsets(
+    db_session_real: AsyncSession,
+) -> None:
+    """Every parser's blocks are normalized before offsets: no U+200B is stored and
+    each stored block's offsets index its own text in the concatenated page."""
+    file_id = await _insert_article_file(
+        db_session_real,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+    )
+    try:
+        service = DocumentParsingService(
+            db=db_session_real,
+            user_id=str(SEED.primary_profile),
+            storage=FakeStorageAdapter(),
+            parser=ZeroWidthParser(),
+            trace_id="test-trace-normalize",
+        )
+        result = await service.parse_article_file(file_id)
+        await db_session_real.commit()
+
+        stored = await ArticleTextBlockRepository(db_session_real).list_ordered_for_file(file_id)
+        assert result.block_count == 3
+        assert [(b.page_number, b.block_index, b.text) for b in stored] == [
+            (1, 0, "doi:10.1000/xyz"),
+            (1, 1, "Age 54 years"),
+            (2, 0, "Page two"),
+        ]
+        assert not any("\u200b" in b.text or "\ufeff" in b.text for b in stored)
+        pages = concat_page_text(stored)  # type: ignore[arg-type]
+        for b in stored:
+            assert pages[b.page_number][b.char_start : b.char_end] == b.text
     finally:
         await _cleanup(db_session_real, file_id=file_id)
