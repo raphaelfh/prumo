@@ -33,7 +33,6 @@ from app.api.mcp.errors import (
 )
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
-from app.core.config import settings
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
@@ -64,6 +63,7 @@ from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_template_config_diff,
 )
+from app.utils.app_urls import editor_url
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.json_schema import inline_json_schema
 from app.utils.text_caps import cap_text
@@ -86,10 +86,6 @@ _ALLOWED_OPS = sorted(_OPS)
 # update_question rewords only; a type or options change goes through the UI.
 _LOCKED_UPDATE_KEYS = frozenset({"type", "options"})
 _EDITABLE_UPDATE_FIELDS = sorted(UpdateQuestionOp.model_fields.keys() - {"op", "field_id"})
-_EDITOR_TAB = {
-    "extraction": "tab=extraction&extractionTab=configuration",
-    "quality_assessment": "tab=quality&qaTab=configuration",
-}
 _ROW_GUARDS = (SectionNotFoundError, EntityTypeNotFoundError, FieldNotFoundError)
 _NOT_ALLOWED_MESSAGE = "This op can only be done in the prumo UI."
 _LOCKED_KEY_MESSAGE = "A question's type or options can only be changed in the prumo UI."
@@ -152,7 +148,7 @@ async def edit_template_draft(
     # Membership and ownership are proven: refusals from here on name both,
     # read now because a refusal's rollback expires every loaded row.
     names = {"project_name": await project_name(db, project_id), "template_name": template.name}
-    editor_tab = _EDITOR_TAB[template.kind]
+    link = editor_url(project_id, template.kind)
     try:
         applied, diff = await _apply(db, scope, project_id, template_id, ops)
     except McpToolError as error:
@@ -177,7 +173,7 @@ async def edit_template_draft(
         ],
         diff=capped_diff(diff, budget=0),  # placeholder: measures the rest of the result
         draft_fingerprint=diff.fingerprint,
-        editor_url=f"{settings.PUBLIC_APP_URL.rstrip('/')}/projects/{project_id}?{editor_tab}",
+        editor_url=link,
         next_step=_NEXT_STEP,
     )
     # The diff gets whatever the result cap leaves after everything else

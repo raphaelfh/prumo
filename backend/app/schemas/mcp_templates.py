@@ -25,13 +25,18 @@ class McpTemplateQuestion(BaseModel):
     type: str
     options: list[McpOption] | None
     instructions: str | None
-    required: bool
+    unit: str | None
+    allowed_units: list[str] | None
+    flags: list[str]
 
 
 class McpTemplateSection(BaseModel):
     section_id: UUID
     name: str
     label: str
+    description: str | None
+    entry_label: str | None
+    required: bool
     parent_section_id: UUID | None
     cardinality: str
     continued: bool
@@ -56,26 +61,35 @@ class McpDraftDiff(BaseModel):
 
 class McpTemplateView(BaseModel):
     template_id: UUID
-    name: str
+    template_name: str
+    project_name: str
     kind: str
     instrument: InstrumentCode
     published_version: int | None
     narrow: bool | None
+    instruction: str | None
+    instruction_is_default: bool
     draft_open: bool | None
     sections: list[McpTemplateSection]
     draft_diff: McpDraftDiff | None
     next_cursor: str | None
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
-        "name",
+        "template_name",
+        "project_name",
+        "instruction",
         "sections[].name",
         "sections[].label",
+        "sections[].description",
+        "sections[].entry_label",
         "sections[].questions[].name",
         "sections[].questions[].label",
         "sections[].questions[].description",
         "sections[].questions[].options[].value",
         "sections[].questions[].options[].label",
         "sections[].questions[].instructions",
+        "sections[].questions[].unit",
+        "sections[].questions[].allowed_units[]",
         "draft_diff.changes[].label_path[]",
         "draft_diff.changes[].before",
         "draft_diff.changes[].after",

@@ -83,3 +83,49 @@ def test_page_sections_forces_progress_on_oversized_first_question() -> None:
     assert [s.name for s in sections] == ["A"]
     assert len(sections[0].questions) == 1
     assert nxt is None
+
+
+def test_question_lists_only_true_flags_in_a_fixed_order() -> None:
+    field = _field("all").model_copy(
+        update={
+            "is_required": True,
+            "is_entity_key": True,
+            "allows_not_applicable": True,
+            "allows_not_evaluated": True,
+            "allows_no_information": True,
+            "allow_other": True,
+        }
+    )
+    assert _question(field).flags == [
+        "required",
+        "entity_key",
+        "allows_not_applicable",
+        "allows_not_evaluated",
+        "allows_no_information",
+        "allow_other",
+    ]
+    none = _field("none").model_copy(update={"allows_no_information": False})
+    assert _question(none).flags == []
+    assert "required" not in _question(none).model_dump()
+
+
+def test_question_keeps_only_a_list_of_unit_strings() -> None:
+    listed = _field("u").model_copy(update={"unit": "mg", "allowed_units": ["mg", "g"]})
+    assert (_question(listed).unit, _question(listed).allowed_units) == ("mg", ["mg", "g"])
+    mapped = _field("m").model_copy(update={"allowed_units": {"mg": 1}})
+    assert _question(mapped).allowed_units is None
+    mixed = _field("x").model_copy(update={"allowed_units": ["mg", 3]})
+    assert _question(mixed).allowed_units == ["mg"]
+
+
+def test_section_header_carries_description_entry_label_and_required() -> None:
+    entity = _entity("Doses", []).model_copy(
+        update={"description": "Each dose", "entry_label": "dose", "is_required": True}
+    )
+    sections, _ = _page_sections([entity], (0, 0), budget=10_000)
+    header = sections[0]
+    assert (header.description, header.entry_label, header.required) == (
+        "Each dose",
+        "dose",
+        True,
+    )

@@ -57,6 +57,24 @@ async def list_global_templates(
     return [GlobalTemplateSummaryRead.model_validate(row, from_attributes=True) for row in rows]
 
 
+async def list_catalogue_for_project(
+    db: AsyncSession, *, project_id: UUID, kind: TemplateKindLiteral
+) -> list[tuple[GlobalTemplateSummaryRead, bool]]:
+    """The import catalogue of one kind, each row paired with whether
+    ``project_id`` already has a template cloned from it."""
+    imported = set(
+        (
+            await db.execute(
+                select(ProjectExtractionTemplate.global_template_id).where(
+                    ProjectExtractionTemplate.project_id == project_id,
+                    ProjectExtractionTemplate.global_template_id.is_not(None),
+                )
+            )
+        ).scalars()
+    )
+    return [(row, row.id in imported) for row in await list_global_templates(db, kind=kind)]
+
+
 async def list_project_templates(
     db: AsyncSession, *, project_id: UUID, kind: TemplateKindLiteral
 ) -> list[ProjectTemplateRead]:

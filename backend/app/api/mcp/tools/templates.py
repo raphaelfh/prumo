@@ -50,9 +50,10 @@ from app.schemas.mcp_templates import (
     McpTemplateSection,
     McpTemplateView,
 )
-from app.services.extraction_snapshot import live_entity_types
-from app.services.project_read_service import template_summaries
+from app.services.extraction_snapshot import general_instructions_for_version, live_entity_types
+from app.services.project_read_service import project_name, template_summaries
 from app.services.project_template_active_service import owned_template
+from app.services.template_instruction_service import get_template_instruction
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
@@ -65,12 +66,23 @@ from app.utils.opaque_cursor import (
     decode_cursor,
     encode_cursor,
 )
+from app.utils.text_caps import cap_text
 
 #: Reserved for `next_cursor` itself: the envelope is measured with it
 #: `None`, but a page that is NOT the last one replaces that with an
 #: opaque base64 cursor string a caller's later page count could grow
 #: (larger ints encode to a few more base64 chars).
 _CURSOR_RESERVE = 64
+
+#: (flag, RunViewField attribute) in the order `flags` lists the true ones.
+_FLAGS = (
+    ("required", "is_required"),
+    ("entity_key", "is_entity_key"),
+    ("allows_not_applicable", "allows_not_applicable"),
+    ("allows_not_evaluated", "allows_not_evaluated"),
+    ("allows_no_information", "allows_no_information"),
+    ("allow_other", "allow_other"),
+)
 
 
 def _json_len(model: BaseModel) -> int:
@@ -92,10 +104,16 @@ def _json_len(model: BaseModel) -> int:
     title="Get template",
     destructive=False,
     description=(
-        "Return a questionnaire: sections -> questions (type, options, instructions), whether a "
-        "draft is open, the published version and the draft's changes vs published. Paged: pass "
-        "next_cursor until it is null. Draft edits are invisible to reviewers and AI until a "
-        "manager publishes in prumo."
+        "Return a questionnaire: the template instruction (and whether it is still the "
+        "imported default), sections (description, entry label, required) -> questions "
+        "(type, options, instructions, unit, allowed units, flags), whether a draft is open, "
+        "the published version and the draft's changes vs published. `instrument` is the "
+        "stable code of the tool the template comes from (custom for an in-house one). "
+        "`narrow` is true when the published version is empty or in an older format (a "
+        "publish in prumo refreshes it), null when nothing is published. `flags` lists "
+        "only the flags that are "
+        "true. Paged: pass next_cursor until it is null. Draft edits are invisible to "
+        "reviewers and AI until a manager publishes in prumo."
     ),
 )
 async def get_template(
@@ -108,12 +126,20 @@ async def get_template(
         for t in await template_summaries(db, project_id=project_id)
         if t.template_id == template_id
     )
+    instruction: str | None = None
     try:
-        tree = (
-            await get_active_version_tree(db, project_id=project_id, template_id=template_id)
-        ).entity_types
+        active = await get_active_version_tree(db, project_id=project_id, template_id=template_id)
     except NoActiveTemplateVersionError:
         tree = await live_entity_types(db, template_id=template_id)
+    else:
+        tree = active.entity_types
+        instruction = await general_instructions_for_version(db, active.version_id)
+    is_default = False
+    if template.global_template_id is not None:
+        default = (
+            await get_template_instruction(db, project_id=project_id, template_id=template_id)
+        ).default_instruction
+        is_default = instruction == default
 
     is_manager = await is_project_manager(db, project_id, current_principal().user_sub)
     draft_open = None
@@ -141,11 +167,14 @@ async def get_template(
     # questions only and let the diff and section headers ride free).
     envelope = McpTemplateView(
         template_id=template.id,
-        name=template.name,
+        template_name=cap_text(template.name)[0],
+        project_name=cap_text(await project_name(db, project_id))[0],
         kind=template.kind,
         instrument=summary.instrument,
         published_version=summary.published_version,
         narrow=summary.narrow,
+        instruction=instruction,
+        instruction_is_default=is_default,
         draft_open=draft_open,
         sections=[],
         draft_diff=diff,
@@ -252,6 +281,9 @@ def _section(
         section_id=et.id,
         name=et.name,
         label=et.label,
+        description=et.description,
+        entry_label=et.entry_label,
+        required=et.is_required,
         parent_section_id=et.parent_entity_type_id,
         cardinality=et.cardinality,
         continued=continued,
@@ -268,8 +300,17 @@ def _question(field: RunViewField) -> McpTemplateQuestion:
         type=field.field_type,
         options=_options(field.allowed_values),
         instructions=field.llm_description,
-        required=field.is_required,
+        unit=field.unit,
+        allowed_units=_unit_strings(field.allowed_units),
+        flags=[flag for flag, attr in _FLAGS if getattr(field, attr)],
     )
+
+
+def _unit_strings(allowed_units: object) -> list[str] | None:
+    """The string units of a list; any other stored shape reads as None."""
+    if not isinstance(allowed_units, list):
+        return None
+    return [u for u in allowed_units if isinstance(u, str)]
 
 
 def _options(allowed_values: object) -> list[McpOption] | None:
