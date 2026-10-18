@@ -4881,6 +4881,39 @@
         "title": "DownloadAttachmentResponse",
         "type": "object"
       },
+      "EligibilityCriteria": {
+        "additionalProperties": false,
+        "properties": {
+          "exclusion": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Exclusion",
+            "type": "array"
+          },
+          "inclusion": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Inclusion",
+            "type": "array"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Notes",
+            "type": "string"
+          }
+        },
+        "title": "EligibilityCriteria",
+        "type": "object"
+      },
       "EntryBulkDeleteRequest": {
         "additionalProperties": false,
         "description": "Delete several entries of a repeating section, all or none.\n\n``extra=\"forbid\"`` for the reason every sibling gives: this body is\nvalidated once, in the request cycle.\n\nThe list is non-empty and DISTINCT. A duplicate id is refused rather than\nde-duplicated because ``deleted`` would then over-report \u2014 the caller\nnamed one row twice and the count would say two, which is exactly the\nnumber a confirmation dialog shows back to the reviewer.",
@@ -7760,6 +7793,38 @@
         "title": "PicotsSlot",
         "type": "object"
       },
+      "PicotsSlotWrite": {
+        "additionalProperties": false,
+        "description": "One PICOTS slot as written. The read model (``PicotsSlot``) stays unbounded.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "exclusion": {
+            "items": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Exclusion",
+            "type": "array"
+          },
+          "inclusion": {
+            "items": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Inclusion",
+            "type": "array"
+          }
+        },
+        "title": "PicotsSlotWrite",
+        "type": "object"
+      },
       "PicotsSlots": {
         "description": "The six slots, in the instrument's P-I-C-O-T-S order.",
         "properties": {
@@ -7783,6 +7848,32 @@
           }
         },
         "title": "PicotsSlots",
+        "type": "object"
+      },
+      "PicotsSlotsWrite": {
+        "additionalProperties": false,
+        "description": "The six slots as written; an omitted slot is written empty.",
+        "properties": {
+          "comparator_models": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "index_models": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "outcomes": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "population": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "setting_and_intended_use": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          }
+        },
+        "title": "PicotsSlotsWrite",
         "type": "object"
       },
       "PortableField": {
@@ -8158,22 +8249,40 @@
               }
             ],
             "title": "Review Type"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
           }
         },
         "required": [
           "picots",
-          "labels"
+          "labels",
+          "revision"
         ],
         "title": "ProjectAiContextRead",
         "type": "object"
       },
       "ProjectAiContextUpdate": {
-        "description": "Both halves ride one write so they cannot disagree.\n\nEach field is optional: omitting ``picots`` changes only the switch and vice\nversa, which is what lets the toggle and the editor share one endpoint\nwithout either clobbering the other's value.",
+        "additionalProperties": false,
+        "description": "Both halves ride one write so they cannot disagree.\n\nEach field is optional: omitting ``picots`` changes only the switch and vice\nversa, which is what lets the toggle and the editor share one endpoint\nwithout either clobbering the other's value.\n\n``expected_revision`` is the ``revision`` last read: when the protocol moved\nsince, the save is refused with 409 ``STALE_VALUE`` and nothing is written.\nOmitting it saves unconditionally.",
         "properties": {
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
           "picots": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PicotsSlots"
+                "$ref": "#/components/schemas/PicotsSlotsWrite"
               },
               {
                 "type": "null"
@@ -8301,9 +8410,9 @@
         "title": "ProjectDeleteRead",
         "type": "object"
       },
-      "ProjectDetailsFields": {
+      "ProjectDetailsExpected": {
         "additionalProperties": false,
-        "description": "A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.",
+        "description": "The values the caller last read, echoed back as the write's precondition.\n\nLoose on purpose: the two JSON columns may hold a shape written before the\ntyped write bounds existed, and the caller must be able to echo it.",
         "properties": {
           "condition_studied": {
             "anyOf": [
@@ -8342,7 +8451,6 @@
           "name": {
             "anyOf": [
               {
-                "minLength": 1,
                 "type": "string"
               },
               {
@@ -8439,6 +8547,145 @@
               }
             ],
             "title": "Study Design"
+          }
+        },
+        "title": "ProjectDetailsExpected",
+        "type": "object"
+      },
+      "ProjectDetailsFields": {
+        "additionalProperties": false,
+        "description": "A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.",
+        "properties": {
+          "condition_studied": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition Studied"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "eligibility_criteria": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EligibilityCriteria"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "review_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Context"
+          },
+          "review_keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Keywords"
+          },
+          "review_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Rationale"
+          },
+          "review_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Title"
+          },
+          "review_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "interventional",
+                  "predictive_model",
+                  "diagnostic",
+                  "prognostic",
+                  "qualitative",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Type"
+          },
+          "search_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Strategy"
+          },
+          "study_design": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyDesign"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ProjectDetailsFields",
@@ -8654,7 +8901,7 @@
         "description": "The changed columns and the values the caller last read for each of them.\n\n``expected`` must name every key of ``fields``: the write applies only if\neach of those columns still holds its ``expected`` value, else 409.",
         "properties": {
           "expected": {
-            "$ref": "#/components/schemas/ProjectDetailsFields"
+            "$ref": "#/components/schemas/ProjectDetailsExpected"
           },
           "fields": {
             "$ref": "#/components/schemas/ProjectDetailsFields"
@@ -10537,6 +10784,28 @@
           "reason"
         ],
         "title": "SkippedFileEntry",
+        "type": "object"
+      },
+      "StudyDesign": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "types": {
+            "items": {
+              "maxLength": 100,
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "title": "StudyDesign",
         "type": "object"
       },
       "SyncCollectionResponse": {
@@ -14852,7 +15121,7 @@
         ]
       },
       "put": {
-        "description": "Persist the review question and/or its switch, and return the new preview.\n\nReturning the re-read model (rather than echoing the request) is what makes\nthe preview trustworthy: it is rendered from what was actually stored.",
+        "description": "Persist the review question and/or its switch, and return the new preview.\n\nReturning the re-read model (rather than echoing the request) is what makes\nthe preview trustworthy: it is rendered from what was actually stored.\nA stale ``expected_revision`` raises ``StaleProtocolRevisionError`` (409,\nvia the global handler) before anything is written.",
         "operationId": "update_ai_context_api_v1_projects__project_id__ai_context_put",
         "parameters": [
           {
@@ -14886,6 +15155,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "The review question changed since it was read (STALE_VALUE)."
           },
           "422": {
             "content": {

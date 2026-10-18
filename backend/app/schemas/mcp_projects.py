@@ -59,6 +59,7 @@ class McpProjectOverview(BaseModel):
     role: ProjectRoleValue
     is_active: bool
     details: ProjectDetailsValues  # typed outputSchema; never truncated (update_project_details needs exact `expected`)
+    protocol_revision: int
     counts: McpProjectCounts
     templates: list[McpTemplateSummary]
     untrusted_content: Literal[True] = True

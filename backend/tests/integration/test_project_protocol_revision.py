@@ -15,8 +15,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.project_details import ProjectDetailsExpected as E
 from app.schemas.project_details import ProjectDetailsFields as F
-from app.services.project_ai_context import set_ai_context
+from app.services.project_ai_context import StaleProtocolRevisionError, set_ai_context
 from app.services.project_details_service import update_details
 from tests.integration.conftest import SEED
 
@@ -76,7 +77,7 @@ async def test_details_eligibility_bumps_once(db_session: AsyncSession) -> None:
         db_session,
         project_id=SEED.primary_project,
         fields=F(eligibility_criteria={**_ELIGIBILITY, "notes": "new"}),
-        expected=F(eligibility_criteria=_ELIGIBILITY),
+        expected=E(eligibility_criteria=_ELIGIBILITY),
     )
 
     assert await _revision(db_session) == start + 1
@@ -91,7 +92,7 @@ async def test_details_review_type_bumps_once(db_session: AsyncSession) -> None:
         db_session,
         project_id=SEED.primary_project,
         fields=F(review_type="diagnostic"),
-        expected=F(review_type="interventional"),
+        expected=E(review_type="interventional"),
     )
 
     assert await _revision(db_session) == start + 1
@@ -106,7 +107,7 @@ async def test_details_description_only_does_not_bump(db_session: AsyncSession) 
         db_session,
         project_id=SEED.primary_project,
         fields=F(description="new"),
-        expected=F(description="old"),
+        expected=E(description="old"),
     )
 
     assert change.after == {"description": "new"}
@@ -122,7 +123,7 @@ async def test_details_same_value_does_not_bump(db_session: AsyncSession) -> Non
         db_session,
         project_id=SEED.primary_project,
         fields=F(eligibility_criteria=_ELIGIBILITY),
-        expected=F(eligibility_criteria=_ELIGIBILITY),
+        expected=E(eligibility_criteria=_ELIGIBILITY),
     )
 
     assert await _revision(db_session) == start
@@ -183,3 +184,134 @@ async def test_ai_context_both_halves_bump_once(db_session: AsyncSession) -> Non
     )
 
     assert await _revision(db_session) == start + 1
+
+
+@pytest.mark.asyncio
+async def test_slot_updates_replace_only_the_named_slots(db_session: AsyncSession) -> None:
+    await _seed_row(
+        db_session,
+        picots={"population": {"description": "old"}, "outcomes": {"description": "kept"}},
+    )
+    start = await _revision(db_session)
+    new_population = {"description": "new", "inclusion": ["adults"], "exclusion": []}
+
+    result = await set_ai_context(
+        db_session,
+        SEED.primary_project,
+        picots=None,
+        picots_enabled=None,
+        slot_updates={"population": new_population},
+    )
+
+    stored = (
+        await db_session.execute(
+            text("SELECT picots_config_ai_review FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert stored == {"population": new_population, "outcomes": {"description": "kept"}}
+    assert result["revision"] == start + 1
+    assert await _revision(db_session) == start + 1
+
+
+@pytest.mark.asyncio
+async def test_slot_updates_with_the_same_value_do_not_bump(db_session: AsyncSession) -> None:
+    await _seed_row(db_session, picots={"population": {"description": "old"}})
+    start = await _revision(db_session)
+
+    await set_ai_context(
+        db_session,
+        SEED.primary_project,
+        picots=None,
+        picots_enabled=None,
+        slot_updates={"population": {"description": "old"}},
+    )
+
+    assert await _revision(db_session) == start
+
+
+@pytest.mark.asyncio
+async def test_slot_updates_over_a_non_mapping_row_start_from_empty(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_row(db_session, picots="junk")
+
+    await set_ai_context(
+        db_session,
+        SEED.primary_project,
+        picots=None,
+        picots_enabled=None,
+        slot_updates={"timing": {"description": "30 days"}},
+    )
+
+    stored = (
+        await db_session.execute(
+            text("SELECT picots_config_ai_review FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert stored == {"timing": {"description": "30 days"}}
+
+
+@pytest.mark.asyncio
+async def test_picots_and_slot_updates_together_raise(db_session: AsyncSession) -> None:
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        await set_ai_context(
+            db_session,
+            SEED.primary_project,
+            picots={"population": {"description": "x"}},
+            picots_enabled=None,
+            slot_updates={"population": {"description": "y"}},
+        )
+
+
+@pytest.mark.asyncio
+async def test_stale_expected_revision_raises_under_the_lock_and_writes_nothing(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_row(db_session)
+    start = await _revision(db_session)
+
+    with pytest.raises(StaleProtocolRevisionError) as info:
+        await set_ai_context(
+            db_session,
+            SEED.primary_project,
+            picots=None,
+            picots_enabled=False,
+            expected_revision=start + 1,
+            slot_updates={"population": {"description": "new"}},
+        )
+
+    assert info.value.status_code == 409
+    assert info.value.details is not None
+    assert info.value.details["current_revision"] == start
+    assert info.value.details["current"]["revision"] == start
+    assert info.value.details["current"]["picots_enabled"] is True
+    assert info.value.details["current"]["picots"]["population"]["description"] == "old"
+    await db_session.flush()
+    db_session.expire_all()
+    assert await _revision(db_session) == start
+    settings = (
+        await db_session.execute(
+            text("SELECT settings FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert "ai_context" not in (settings or {})
+
+
+@pytest.mark.asyncio
+async def test_matching_expected_revision_writes_and_bumps(db_session: AsyncSession) -> None:
+    await _seed_row(db_session)
+    start = await _revision(db_session)
+
+    result = await set_ai_context(
+        db_session,
+        SEED.primary_project,
+        picots=None,
+        picots_enabled=False,
+        expected_revision=start,
+    )
+
+    assert result["revision"] == start + 1
+    assert result["picots_enabled"] is False

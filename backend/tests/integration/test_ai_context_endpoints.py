@@ -312,3 +312,115 @@ async def test_the_service_refuses_a_project_that_is_not_there(
     with pytest.raises(ProjectNotFoundError):
         await set_ai_context(db_session, uuid4(), picots=None, picots_enabled=True)
     await db_session.rollback()
+
+
+async def _stored(db: AsyncSession) -> tuple[int, object]:
+    row = (
+        await db.execute(
+            text(
+                "SELECT protocol_revision, picots_config_ai_review FROM public.projects "
+                "WHERE id = :pid"
+            ),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).one()
+    return row[0], row[1]
+
+
+@pytest.mark.asyncio
+async def test_a_stale_expected_revision_is_409_and_writes_nothing(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    revision, picots = await _stored(db_session)
+
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot("Children")}, "expected_revision": revision + 5},
+    )
+
+    assert res.status_code == 409, res.text
+    error = res.json()["error"]
+    assert error["code"] == "STALE_VALUE"
+    assert error["details"]["current_revision"] == revision
+    assert error["details"]["current"]["picots"]["population"]["description"] == "Adults"
+    db_session.expire_all()
+    assert await _stored(db_session) == (revision, picots)
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_an_omitted_expected_revision_still_saves(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    """A stale bundle carries no revision: last writer wins (deploy skew)."""
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    revision, _ = await _stored(db_session)
+
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot("Children")}},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["picots"]["population"]["description"] == "Children"
+    assert res.json()["data"]["revision"] == revision + 1
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_matching_expected_revision_saves_and_returns_the_next_one(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    revision, _ = await _stored(db_session)
+    read = await client_as_manager.get(_URL.format(pid=SEED.primary_project))
+    assert read.json()["data"]["revision"] == revision
+
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot("Children")}, "expected_revision": revision},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["revision"] == revision + 1
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_an_over_bound_picots_write_is_422(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot(inclusion=["x"] * 51)}},
+    )
+
+    assert res.status_code == 422, res.text
+    assert res.json()["error"]["code"] == "VALIDATION_ERROR"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_over_bound_row_still_reads(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    """Bounds apply to writes only; rows stored before them keep reading."""
+    await _set_raw(
+        db_session,
+        SEED.primary_project,
+        {"population": _slot("Adults", inclusion=[f"c{i}" for i in range(60)])},
+        "predictive_model",
+    )
+
+    res = await client_as_manager.get(_URL.format(pid=SEED.primary_project))
+
+    assert res.status_code == 200, res.text
+    assert len(res.json()["data"]["picots"]["population"]["inclusion"]) == 60
+    await db_session.rollback()

@@ -250,8 +250,10 @@ export function toDetailsFields(values: Partial<Project>): ProjectDetailsFields 
     review_rationale: values.review_rationale,
     search_strategy: values.search_strategy,
     review_context: values.review_context,
-    eligibility_criteria,
-    study_design,
+    // Shape-checked as an object only: the server enforces the typed bounds (422)
+    // and fills the `notes` default the generated type marks as required.
+    eligibility_criteria: eligibility_criteria as ProjectDetailsFields['eligibility_criteria'],
+    study_design: study_design as ProjectDetailsFields['study_design'],
     review_keywords,
   };
 }

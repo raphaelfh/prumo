@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_handler import AppError, NotFoundError
 from app.models.project import Project
 from app.schemas.project_details import (
+    ProjectDetailsExpected,
     ProjectDetailsFields,
     ProjectDetailsRead,
     ProjectDetailsRefusalCode,
@@ -58,7 +59,7 @@ async def update_details(
     *,
     project_id: UUID,
     fields: ProjectDetailsFields,
-    expected: ProjectDetailsFields,
+    expected: ProjectDetailsExpected,
 ) -> ProjectDetailsChange:
     """Write ``fields`` if every one of their ``expected`` values is still current."""
     project = (

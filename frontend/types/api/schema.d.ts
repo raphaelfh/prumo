@@ -731,6 +731,8 @@ export interface paths {
          *
          *     Returning the re-read model (rather than echoing the request) is what makes
          *     the preview trustworthy: it is rendered from what was actually stored.
+         *     A stale ``expected_revision`` raises ``StaleProtocolRevisionError`` (409,
+         *     via the global handler) before anything is written.
          */
         put: operations["update_ai_context_api_v1_projects__project_id__ai_context_put"];
         post?: never;
@@ -3889,6 +3891,18 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** EligibilityCriteria */
+        EligibilityCriteria: {
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
         /**
          * EntryBulkDeleteRequest
          * @description Delete several entries of a repeating section, all or none.
@@ -5296,6 +5310,21 @@ export interface components {
             inclusion?: string[];
         };
         /**
+         * PicotsSlotWrite
+         * @description One PICOTS slot as written. The read model (``PicotsSlot``) stays unbounded.
+         */
+        PicotsSlotWrite: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+        };
+        /**
          * PicotsSlots
          * @description The six slots, in the instrument's P-I-C-O-T-S order.
          */
@@ -5306,6 +5335,18 @@ export interface components {
             population?: components["schemas"]["PicotsSlot"];
             setting_and_intended_use?: components["schemas"]["PicotsSlot"];
             timing?: components["schemas"]["PicotsSlot"];
+        };
+        /**
+         * PicotsSlotsWrite
+         * @description The six slots as written; an omitted slot is written empty.
+         */
+        PicotsSlotsWrite: {
+            comparator_models?: components["schemas"]["PicotsSlotWrite"];
+            index_models?: components["schemas"]["PicotsSlotWrite"];
+            outcomes?: components["schemas"]["PicotsSlotWrite"];
+            population?: components["schemas"]["PicotsSlotWrite"];
+            setting_and_intended_use?: components["schemas"]["PicotsSlotWrite"];
+            timing?: components["schemas"]["PicotsSlotWrite"];
         };
         /**
          * PortableField
@@ -5467,6 +5508,8 @@ export interface components {
             preview?: string | null;
             /** Review Type */
             review_type?: string | null;
+            /** Revision */
+            revision: number;
         };
         /**
          * ProjectAiContextUpdate
@@ -5475,9 +5518,15 @@ export interface components {
          *     Each field is optional: omitting ``picots`` changes only the switch and vice
          *     versa, which is what lets the toggle and the editor share one endpoint
          *     without either clobbering the other's value.
+         *
+         *     ``expected_revision`` is the ``revision`` last read: when the protocol moved
+         *     since, the save is refused with 409 ``STALE_VALUE`` and nothing is written.
+         *     Omitting it saves unconditionally.
          */
         ProjectAiContextUpdate: {
-            picots?: components["schemas"]["PicotsSlots"] | null;
+            /** Expected Revision */
+            expected_revision?: number | null;
+            picots?: components["schemas"]["PicotsSlotsWrite"] | null;
             /** Picots Enabled */
             picots_enabled?: boolean | null;
         };
@@ -5530,10 +5579,13 @@ export interface components {
             id: string;
         };
         /**
-         * ProjectDetailsFields
-         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         * ProjectDetailsExpected
+         * @description The values the caller last read, echoed back as the write's precondition.
+         *
+         *     Loose on purpose: the two JSON columns may hold a shape written before the
+         *     typed write bounds existed, and the caller must be able to echo it.
          */
-        ProjectDetailsFields: {
+        ProjectDetailsExpected: {
             /** Condition Studied */
             condition_studied?: string | null;
             /** Description */
@@ -5560,6 +5612,32 @@ export interface components {
             study_design?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ProjectDetailsFields
+         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         */
+        ProjectDetailsFields: {
+            /** Condition Studied */
+            condition_studied?: string | null;
+            /** Description */
+            description?: string | null;
+            eligibility_criteria?: components["schemas"]["EligibilityCriteria"] | null;
+            /** Name */
+            name?: string | null;
+            /** Review Context */
+            review_context?: string | null;
+            /** Review Keywords */
+            review_keywords?: string[] | null;
+            /** Review Rationale */
+            review_rationale?: string | null;
+            /** Review Title */
+            review_title?: string | null;
+            /** Review Type */
+            review_type?: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy?: string | null;
+            study_design?: components["schemas"]["StudyDesign"] | null;
         };
         /**
          * ProjectDetailsRead
@@ -5646,7 +5724,7 @@ export interface components {
          *     each of those columns still holds its ``expected`` value, else 409.
          */
         ProjectDetailsUpdate: {
-            expected: components["schemas"]["ProjectDetailsFields"];
+            expected: components["schemas"]["ProjectDetailsExpected"];
             fields: components["schemas"]["ProjectDetailsFields"];
         };
         /**
@@ -6579,6 +6657,16 @@ export interface components {
             reason: string;
             /** Storage Key */
             storage_key: string;
+        };
+        /** StudyDesign */
+        StudyDesign: {
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Types */
+            types?: string[];
         };
         /** SyncCollectionResponse */
         SyncCollectionResponse: {
@@ -9004,6 +9092,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ProjectAiContextRead_"];
                 };
+            };
+            /** @description The review question changed since it was read (STALE_VALUE). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

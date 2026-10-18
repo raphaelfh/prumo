@@ -1,6 +1,8 @@
 """list_projects / get_project tool-logic tests (task 6a): the in-memory SDK
 client, so handler lines register coverage (the ASGI blind spot)."""
 
+from sqlalchemy import text
+
 from app.schemas.mcp_projects import McpProjectList, McpProjectOverview
 from tests.integration.conftest import SEED, clone_charms
 from tests.integration.mcp.tool_calls import call_tool, structured
@@ -36,6 +38,13 @@ async def test_get_project_tool(mcp_client, pat_reviewer_rw, db_session):
     assert all("instrument" in t for t in body["templates"])
     assert by_id[str(SEED.primary_template)]["instrument"] == "custom"
     assert by_id[str(clone.project_template_id)]["instrument"] == "charms"
+    revision = (
+        await db_session.execute(
+            text("SELECT protocol_revision FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert body["protocol_revision"] == revision
 
 
 async def test_project_tools_metadata(mcp_client, pat_primary_read):

@@ -451,3 +451,66 @@ async def test_a_long_project_name_is_capped(mcp_client, pat_primary_rw, db_sess
         )
     )
     assert body["project_name"] == long_name[:TITLE_CAP]
+
+
+async def test_a_legacy_eligibility_echoed_in_expected_applies(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    await db_session.execute(
+        text(
+            'UPDATE public.projects SET eligibility_criteria = \'{"legacy": "x"}\'::jsonb '
+            "WHERE id = :id"
+        ),
+        {"id": str(P)},
+    )
+    await db_session.flush()
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {
+                "project_id": str(P),
+                "fields": {"eligibility_criteria": {"inclusion": ["adults"]}},
+                "expected": {"eligibility_criteria": {"legacy": "x"}},
+            },
+        )
+    )
+
+    assert body["before"] == {"eligibility_criteria": {"legacy": "x"}}
+    assert body["after"] == {"eligibility_criteria": {"inclusion": ["adults"]}}
+    assert (await _audit_count(db_session, outcome="applied", tool="update_project_details")) == 1
+
+
+async def test_a_malformed_eligibility_in_fields_is_one_audited_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    current = await _current(db_session, "eligibility_criteria")
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "update_project_details",
+        {
+            "project_id": str(P),
+            "fields": {"eligibility_criteria": {"inclusion": ["x"] * 51}},
+            "expected": {"eligibility_criteria": current["eligibility_criteria"]},
+        },
+    )
+
+    error = error_payload(result)
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert error["field"].startswith("eligibility_criteria")
+    assert (await _audit_count(db_session, outcome="refused", error_code="INVALID_ARGUMENT")) == 1
+    assert await _current(db_session, "eligibility_criteria") == current
+
+
+async def test_the_expected_argument_advertises_the_loose_schema(mcp_client, pat_primary_rw):
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    props = tools["update_project_details"].input_schema["properties"]
+    fields_elig = props["fields"]["properties"]["eligibility_criteria"]
+    expected_elig = props["expected"]["properties"]["eligibility_criteria"]
+    assert "inclusion" in str(fields_elig)
+    assert "inclusion" not in str(expected_elig)

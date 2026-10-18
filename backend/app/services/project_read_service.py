@@ -97,6 +97,7 @@ async def get_project_overview(
         role=cast(ProjectRoleValue, member.role),
         is_active=project.is_active,
         details=details,
+        protocol_revision=project.protocol_revision,
         counts=McpProjectCounts(articles=counts_row[0], articles_with_text=counts_row[1]),
         templates=await template_summaries(db, project_id=project_id),
     )

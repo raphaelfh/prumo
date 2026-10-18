@@ -23,8 +23,10 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
+from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.repositories.project_repository import ProjectRepository
 from app.services.project_protocol import bump_protocol_revision
 
@@ -187,6 +189,18 @@ class ProjectNotFoundError(Exception):
     """Raised when the project row is missing. HTTP translation in the router."""
 
 
+class StaleProtocolRevisionError(AppError):
+    """The protocol moved since the caller read it; nothing was written."""
+
+    def __init__(self, *, current_revision: int, current: dict[str, Any]) -> None:
+        super().__init__(
+            code="STALE_VALUE",
+            message="The review question changed since you read it.",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"current_revision": current_revision, "current": current},
+        )
+
+
 def _slots_payload(raw: Any) -> dict[str, dict[str, Any]]:
     """Every slot in canonical flat form, for the editor.
 
@@ -221,6 +235,7 @@ async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
         "preview": render_picots_block(project.picots_config_ai_review, project.review_type)
         if enabled
         else None,
+        "revision": project.protocol_revision,
     }
 
 
@@ -230,20 +245,40 @@ async def set_ai_context(
     *,
     picots: dict[str, Any] | None,
     picots_enabled: bool | None,
+    expected_revision: int | None = None,
+    slot_updates: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Write either half (or both) under one row lock.
+
+    ``picots`` replaces the whole question; ``slot_updates`` replaces only the
+    named slots of the stored one. The two are mutually exclusive.
+
+    ``expected_revision``, when given, is compared under the lock before any
+    write: a mismatch raises ``StaleProtocolRevisionError`` carrying the current
+    read model, and nothing is written.
 
     The switch goes through ``ProjectRepository.update_settings_key``:
     ``projects.settings`` is one JSONB column shared by several writers, and a
     write outside that helper could drop a concurrent sibling key, such as the
     ``managers_see_reviewers`` blind-review control.
     """
+    if picots is not None and slot_updates is not None:
+        raise ValueError("picots and slot_updates are mutually exclusive")
     projects = ProjectRepository(db)
     project = await projects.lock_for_update(project_id)
     if project is None:
         raise ProjectNotFoundError(f"Project {project_id} not found")
+    if expected_revision is not None and expected_revision != project.protocol_revision:
+        raise StaleProtocolRevisionError(
+            current_revision=project.protocol_revision,
+            current=await get_ai_context(db, project_id),
+        )
     old_enabled = _picots_enabled(project.settings)
     old_picots = project.picots_config_ai_review
+    if slot_updates is not None:
+        # A new dict: plain JSONB tracks reassignment only.
+        stored = old_picots if isinstance(old_picots, Mapping) else {}
+        picots = {**stored, **slot_updates}
 
     # Switch first, question second. ``update_settings_key`` re-reads the
     # locked row with ``populate_existing``, and with ``autoflush=False`` that
