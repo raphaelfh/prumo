@@ -21,6 +21,7 @@ import re
 import subprocess
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import NamedTuple
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -1331,7 +1332,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0090_entity_key_unique"
+    expected_head = "0091_ai_usage_ledger"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2495,3 +2496,100 @@ async def test_migration_0090_heals_seeded_duplicates(
             {"sid": _EK_SECTION},
         )
         await session.commit()
+
+
+# --- 0091: ai_usage_ledger (backend-only, deny_all) ------------------------
+_LEDGER_INDEXES = {
+    "ix_ai_usage_ledger_project_created",
+    "ix_ai_usage_ledger_owner_created",
+    "ix_ai_usage_ledger_run_id",
+    "ix_ai_usage_ledger_attempt_id",
+    "ix_ai_usage_ledger_batch_id",
+}
+_LEDGER_CHECKS = {
+    "ck_ai_usage_ledger_key_scope",
+    "ck_ai_usage_ledger_pass_kind",
+    "ck_ai_usage_ledger_outcome",
+    "ck_ai_usage_ledger_prompt_tokens_nonneg",
+    "ck_ai_usage_ledger_completion_tokens_nonneg",
+}
+
+
+class _LedgerPosture(NamedTuple):
+    exists: bool
+    rls: bool
+    policies: set[str]
+    indexes: set[str]
+    checks: set[str]
+
+
+@pytest.mark.asyncio
+async def test_migration_0091_ai_usage_ledger_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The ledger table, its five indexes, its CHECKs and the deny-all
+    posture exist at head, go with the downgrade, and come back with the
+    re-upgrade, REVOKE included (Supabase default privileges would
+    otherwise re-grant the client roles)."""
+    session = migration_session
+
+    async def posture() -> _LedgerPosture:
+        rls = (
+            await session.execute(
+                text(
+                    "SELECT relrowsecurity FROM pg_class "
+                    "WHERE oid = to_regclass('public.ai_usage_ledger')"
+                )
+            )
+        ).scalar_one_or_none()
+        policies = (
+            await session.execute(
+                text(
+                    "SELECT policyname FROM pg_policies "
+                    "WHERE schemaname = 'public' AND tablename = 'ai_usage_ledger'"
+                )
+            )
+        ).scalars()
+        indexes = (
+            await session.execute(
+                text(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE schemaname = 'public' AND tablename = 'ai_usage_ledger'"
+                )
+            )
+        ).scalars()
+        checks = (
+            await session.execute(
+                text(
+                    "SELECT conname FROM pg_constraint WHERE contype = 'c' "
+                    "AND conrelid = to_regclass('public.ai_usage_ledger')"
+                )
+            )
+        ).scalars()
+        found = _LedgerPosture(
+            exists=rls is not None,
+            rls=bool(rls),
+            policies=set(policies),
+            indexes=set(indexes) - {"ai_usage_ledger_pkey"},
+            checks=set(checks),
+        )
+        await session.rollback()
+        return found
+
+    at_head = _LedgerPosture(True, True, {"deny_all"}, _LEDGER_INDEXES, _LEDGER_CHECKS)
+    assert await posture() == at_head
+    try:
+        _run_alembic("downgrade", "0090_entity_key_unique", database_url=migration_db_url)
+        assert await posture() == _LedgerPosture(False, False, set(), set(), set())
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == at_head
+    for role in ("anon", "authenticated"):
+        granted = (
+            await session.execute(
+                text("SELECT has_table_privilege(:role, 'public.ai_usage_ledger', 'SELECT')"),
+                {"role": role},
+            )
+        ).scalar_one()
+        await session.rollback()
+        assert granted is False, f"{role} regained SELECT on ai_usage_ledger after re-upgrade"

@@ -136,7 +136,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0090_entity_key_unique` (post-squash numbering; run
+`0091_ai_usage_ledger` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -147,6 +147,16 @@ Entry identity is enforced by the database: the partial unique index
 (the oldest holder keeps the key; the others drop it and record the loss in
 `entity_key_history`), and `entity_key.resolve_instance` answers a lost
 creation race by re-reading the winner.
+
+**AI usage ledger (0091).** `ai_usage_ledger` holds one append-only row per
+model call: provider, model, key scope (NULL before credentials resolve),
+pass kind (`extract` / `identify` / `verify` / `entailment`), prompt version,
+prompt and completion tokens (`total_tokens` is a stored generated column),
+outcome (`ok` / `failed`) and the provider request id. A project delete
+cascades; owner, run, attempt and batch links are `ON DELETE SET NULL`, so
+usage outlives the work it metered. The table is backend-only with the 0072
+posture: RLS on, a single `deny_all` policy, and every privilege revoked from
+`authenticated` and `anon`.
 
 **API-only writes (0081).** `authenticated` holds SELECT but no
 INSERT/UPDATE/DELETE on `article_text_blocks` and the extraction history
