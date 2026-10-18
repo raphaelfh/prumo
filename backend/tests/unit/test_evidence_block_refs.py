@@ -3,6 +3,8 @@ source blocks, and normalized quote containment inside that window."""
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from app.domain.evidence_block_refs import (
@@ -70,8 +72,32 @@ def test_parse_block_ref_accepts(raw: str, expected: BlockRef) -> None:
 
 @pytest.mark.parametrize(
     "raw",
-    ["p0·b1", "p3·b9–b2", "page 3", "", "p3", "b12", "p3·b12 cont.", "p-1·b2"],
-    ids=["page-zero", "reversed", "prose", "empty", "no-block", "no-page", "cont", "negative"],
+    [
+        "p0·b1",
+        "p3·b9–b2",
+        "page 3",
+        "",
+        "p3",
+        "b12",
+        "p3·b12 cont.",
+        "p-1·b2",
+        "p\u0661·b0",
+        "p1·b\u0661",
+        "p1·b0–b\uff19",
+    ],
+    ids=[
+        "page-zero",
+        "reversed",
+        "prose",
+        "empty",
+        "no-block",
+        "no-page",
+        "cont",
+        "negative",
+        "arabic-indic-page",
+        "arabic-indic-block",
+        "fullwidth-last",
+    ],
 )
 def test_parse_block_ref_rejects(raw: str) -> None:
     assert parse_block_ref(raw) is None
@@ -96,6 +122,24 @@ def test_single_ref_window_is_clipped_at_page_edges() -> None:
 
 def test_range_ref_window_is_the_whole_run() -> None:
     window = ref_window(BlockRefIndex(_BLOCKS), BlockRef(page=1, first=1, last=3))
+    assert window is not None
+    assert window.block_indexes == (1, 2, 3)
+
+
+def test_huge_range_ref_window_is_bounded_by_the_page_blocks() -> None:
+    # A model-chosen range must not drive an O(range) loop: the window walks
+    # the page's blocks, so a 20-digit ``last`` returns at once.
+    ref = parse_block_ref("p1·b1–b99999999999999999999")
+    assert ref is not None and ref.last == 99999999999999999999
+    result: list[object] = []
+    worker = threading.Thread(
+        target=lambda: result.append(ref_window(BlockRefIndex(_BLOCKS), ref)),
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout=5)
+    assert not worker.is_alive(), "ref_window looped over the ref's integer range"
+    window = result[0]
     assert window is not None
     assert window.block_indexes == (1, 2, 3)
 

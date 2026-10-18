@@ -123,9 +123,10 @@ def normalize_text(text: str) -> str:
 
 #: ``p3·b12`` / ``p3.b12`` / ``p3·b12–b18`` / ``p3.b12-b18``, optionally
 #: bracketed, case-insensitive. A ``cont.`` suffix (a chunk
-#: resuming mid-block in the MCP reader) is not a citable ref.
+#: resuming mid-block in the MCP reader) is not a citable ref. ASCII digits
+#: only: ``\d`` would let ``int()`` read Arabic-Indic or fullwidth digits.
 _REF = re.compile(
-    r"\s*\[?\s*p(\d+)\s*[·.]\s*b(\d+)(?:\s*[–-]\s*b?(\d+))?\s*\]?\s*",
+    r"\s*\[?\s*p([0-9]+)\s*[·.]\s*b([0-9]+)(?:\s*[–-]\s*b?([0-9]+))?\s*\]?\s*",
     re.IGNORECASE,
 )
 
@@ -176,12 +177,15 @@ def parse_block_ref(raw: str) -> BlockRef | None:
 def ref_window(index: BlockRefIndex, ref: BlockRef) -> BlockRefWindow | None:
     """The blocks *ref* names: a single block plus its existing neighbours on
     the page (a quote may run across a block boundary), or every block of a
-    range (a table run). ``None`` when the page or ``ref.first`` is unknown."""
+    range (a table run). ``None`` when the page or ``ref.first`` is unknown.
+
+    The range is model-chosen, so the window walks the page's blocks, never
+    ``range(first, last)``: a ``b0–b99999999999`` ref costs one page scan."""
     blocks = index.page(ref.page)
     if blocks is None or ref.first not in blocks:
         return None
     lo, hi = (ref.first - 1, ref.first + 1) if ref.first == ref.last else (ref.first, ref.last)
-    indexes = tuple(i for i in range(lo, hi + 1) if i in blocks)
+    indexes = tuple(sorted(i for i in blocks if lo <= i <= hi))
     return BlockRefWindow(
         page=ref.page,
         block_indexes=indexes,
