@@ -26,7 +26,9 @@ _SYSTEM_TEMPLATE = (
     'If the article does not contain the value, set status="not_found", value=null, and evidence=null'
     ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
     ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
-    " the value."
+    " the value. The article text marks each block with a citation ref such as [p3·b12]"
+    " (page 3, block 12) or [p3·b12\u2013b18] for a table; refs are not part of the"
+    " article's words."
 )
 
 _USER_TEMPLATE = """{review_context_section}{general_instructions_section}Assess the following domain of {framework_label} for the study below.

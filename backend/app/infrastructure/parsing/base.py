@@ -33,6 +33,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol, runtime_checkable
 
+from app.schemas.mcp_article_text import block_range_prefix, chunk_locator_prefix
+
 # ---------------------------------------------------------------------------
 # Closed block-type vocabulary
 # ---------------------------------------------------------------------------
@@ -367,7 +369,7 @@ def _render_table(cells: Sequence[BlockLike]) -> str:
     return _render_table_legacy([c.text for c in cells])
 
 
-def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
+def render_blocks_to_markdown(blocks: Sequence[BlockLike], *, block_refs: bool = False) -> str:
     """Project article text blocks to deterministic GFM markdown (ADR-0013 free tier).
 
     Reading order (page asc, block_index asc); ``## `` headings; ``- `` list
@@ -376,6 +378,12 @@ def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
     page chrome suppressed. Pure: no DB, no IO. The extraction assembler
     serialises each kept section through this function so the prompt's tables and
     the reader's tables are byte-identical (one serialization codepath).
+
+    ``block_refs`` (prompt-only, ADR-0013 Amendment 2026-10) puts each kept
+    block's citation ref after its markdown marker (``## [p2·b1] Title``,
+    ``- [p2·b2] item``, ``[p2·b0] text``) and a table run's range ref
+    (``[p2·b3–b6] ``) on its own line above the table. Off, the output is
+    the reader's ``content_markdown``.
     """
     ordered = sorted(blocks, key=lambda b: (b.page_number, b.block_index))
     parts: list[str] = []
@@ -395,13 +403,19 @@ def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
             ):
                 run.append(ordered[i])
                 i += 1
-            parts.append(_render_table(run))
+            table = _render_table(run)
+            if block_refs and table:
+                table = block_range_prefix(page, run[0].block_index, run[-1].block_index) + (
+                    "\n" + table
+                )
+            parts.append(table)
             continue
+        ref = chunk_locator_prefix(block.page_number, block.block_index, 0) if block_refs else ""
         if block.block_type == "heading":
-            parts.append(f"## {block.text}")
+            parts.append(f"## {ref}{block.text}")
         elif block.block_type == "list_item":
-            parts.append(f"- {block.text}")
-        else:
-            parts.append(block.text)
+            parts.append(f"- {ref}{block.text}")
+        elif block.text:
+            parts.append(ref + block.text)
         i += 1
     return "\n".join(p for p in parts if p)

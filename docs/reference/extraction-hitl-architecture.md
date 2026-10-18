@@ -615,17 +615,19 @@ depends on the active template version are built at runtime by
 **Article-text input (2026-06-24).** The `article_text` passed to each
 `render(...)` is no longer raw `pypdf` text truncated at 15k. The extraction
 services call `build_prompt_input` (`app/services/extraction_prompt_input.py`),
-which uses the **stored `article_files.content_markdown`** column directly when
-it fits within `LLM_ASSEMBLY_BUDGET_TOKENS`; otherwise it falls back to
+which always assembles it from the persisted blocks through
 `app/llm/assembler.py::assemble_for_model` (a deterministic
-`render_blocks_to_markdown` + IMRaD-aware whole-section dropping). The assembly
-event is logged as `extraction.assembly` with a `source` field:
-`stored_markdown` or `budgeted_blocks`. When an article has never been parsed,
+`render_blocks_to_markdown(..., block_refs=True)` + IMRaD-aware whole-section
+dropping under `LLM_ASSEMBLY_BUDGET_TOKENS`). Every kept block carries its
+citation ref (`[p3·b12] `, or `[p3·b12–b18] ` above a table); the refs are
+prompt-only and the stored `content_markdown` the reader shows is unchanged
+(ADR-0013 Amendment 2026-10). The assembly event is logged as
+`extraction.assembly`. When an article has never been parsed,
 `build_prompt_input` runs `PymupdfParser` **once** via `DocumentParsingService`
 and persists blocks + `content_markdown` atomically — it is never re-parsed
 afterward. The `pypdf` fallback (`pdf_processor.py`, `blocks_from_plain_text`,
 the `pypdf` dep) has been **removed**; no unbounded-text path remains.
-See ADR-0011 (block input) and ADR-0013 (stored markdown + deterministic highlight).
+See ADR-0011 (block input) and ADR-0013 (stored markdown, prompt block refs, deterministic highlight).
 
 Unit tests for the prompt layer live in
 `backend/tests/unit/llm/test_prompts.py`.

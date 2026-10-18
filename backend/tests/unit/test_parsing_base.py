@@ -429,3 +429,66 @@ def test_normalize_blocks_drops_emptied_prose_keeps_figures_and_cells() -> None:
     assert [(b.block_index, b.text) for b in page2] == [(0, "Page two")]
     # Input blocks are not mutated.
     assert [b.text for b in blocks] == originals
+
+
+# ---------------------------------------------------------------------------
+# Block refs (prompt-only projection, ADR 0013 Amendment 2026-10)
+# ---------------------------------------------------------------------------
+
+
+def _ref_doc() -> list[ParsedBlock]:
+    return [
+        make_block(2, 0, "text"),
+        make_block(2, 1, "Title", "heading"),
+        make_block(2, 2, "item", "list_item"),
+        make_block(2, 3, "Name", "table_cell"),
+        make_block(2, 4, "Age", "table_cell"),
+        make_block(2, 5, "Alice", "table_cell"),
+        make_block(2, 6, "30", "table_cell"),
+        make_block(2, 7, "Journal", "header"),
+        make_block(2, 8, "[image]", "figure"),
+        make_block(2, 9, "Figure 1. Flow.", "figure_caption"),
+        make_block(2, 10, "7", "footer"),
+    ]
+
+
+_REF_DOC_READER_MD = (
+    "text\n## Title\n- item\n| Name  | Age |\n|-------|-----|\n| Alice | 30  |\nFigure 1. Flow."
+)
+
+
+def test_block_refs_prefix_blocks_and_tables() -> None:
+    md = render_blocks_to_markdown(_ref_doc(), block_refs=True)
+    assert md == (
+        "[p2·b0] text\n"
+        "## [p2·b1] Title\n"
+        "- [p2·b2] item\n"
+        "[p2·b3–b6] \n"
+        "| Name  | Age |\n|-------|-----|\n| Alice | 30  |\n"
+        "[p2·b9] Figure 1. Flow."
+    )
+    assert "Journal" not in md and "[image]" not in md
+    assert "[p2·b7]" not in md and "[p2·b8]" not in md and "[p2·b10]" not in md
+
+
+def test_reader_markdown_unchanged() -> None:
+    from pathlib import Path
+
+    from app.infrastructure.parsing.pymupdf_parser import PymupdfParser
+    from tests.fixtures.parsing.two_column import build_two_column_pdf
+
+    assert render_blocks_to_markdown(_ref_doc()) == _REF_DOC_READER_MD
+
+    golden_blocks = assign_char_offsets_to_blocks(
+        normalize_blocks(PymupdfParser().parse(build_two_column_pdf()))
+    )
+    reader_md = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "parsing" / "two_column.reader.md"
+    ).read_text(encoding="utf-8")
+    assert render_blocks_to_markdown(golden_blocks) + "\n" == reader_md
+
+
+def test_block_range_prefix_uses_en_dash() -> None:
+    from app.schemas.mcp_article_text import block_range_prefix
+
+    assert block_range_prefix(3, 12, 18) == "[p3·b12–b18] "

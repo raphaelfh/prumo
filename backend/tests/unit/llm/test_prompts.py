@@ -236,3 +236,19 @@ def test_a_scope_names_a_key_or_a_chain():
         Scope(entry_label="model")
     with pytest.raises(ValueError):
         Scope(entry_label="model", key_label="Model name", ancestors=(_XGBOOST,))
+
+
+_BLOCK_REF_SENTENCE = (
+    "The article text marks each block with a citation ref such as [p3·b12] "
+    "(page 3, block 12) or [p3·b12–b18] for a table; refs are not part of the "
+    "article's words."
+)
+
+
+@pytest.mark.parametrize(
+    "system",
+    [section_extraction.SYSTEM_PROMPT, quality_assessment.system_prompt("PROBAST")],
+    ids=["section_extraction", "quality_assessment"],
+)
+def test_system_prompts_explain_block_refs(system: str) -> None:
+    assert system.endswith(" " + _BLOCK_REF_SENTENCE)

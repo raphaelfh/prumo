@@ -28,3 +28,10 @@ def chunk_locator_prefix(page_number: int, block_index: int, char_offset: int) -
     text rendering so the two never drift."""
     suffix = " cont." if char_offset else ""
     return f"[p{page_number}·b{block_index}{suffix}] "
+
+
+def block_range_prefix(page_number: int, first: int, last: int) -> str:
+    """The table form of ``chunk_locator_prefix``: ``[p3·b12–b18] `` (en
+    dash) for a coalesced ``table_cell`` run on one page, first to last
+    block index."""
+    return f"[p{page_number}·b{first}–b{last}] "

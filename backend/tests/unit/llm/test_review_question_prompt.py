@@ -73,11 +73,12 @@ GOLDEN_ENTRY_IDENTIFICATION = 'Analyze the following scientific article and iden
 #: that module's last version: a parameterized prompt is a different
 #: prompt), and the three on ``dev`` ``bf93a278`` before the trees train's B1
 #: gave a singleton under an entry the scope block and made the parent
-#: clause a chain. §IX: a changed prompt is a new version, so VERSION may
-#: equal none of these.
+#: clause a chain, and the two article-text prompts before block citation
+#: refs were explained in their system prompts. §IX: a changed prompt is a
+#: new version, so VERSION may equal none of these.
 RETIRED_VERSIONS = {
-    "section_extraction": {"d1d4d2483a3b", "bb62071982f1"},
-    "quality_assessment": {"6f04461c6f23", "19018644da80"},
+    "section_extraction": {"d1d4d2483a3b", "bb62071982f1", "76166aeb85bc"},
+    "quality_assessment": {"6f04461c6f23", "19018644da80", "95fca9f91a55"},
     "entry_identification": {"046fd17ca366", "f7cacd2a4efb"},
 }
 
@@ -159,8 +160,8 @@ def test_version_moved_from_every_retired_hash(module) -> None:
 #: recorded prompt version alone too; the template's format placeholders are
 #: hashed into VERSION, which is why they keep their names.
 CURRENT_VERSIONS = {
-    "section_extraction": "76166aeb85bc",
-    "quality_assessment": "95fca9f91a55",
+    "section_extraction": "44b61dd14d96",
+    "quality_assessment": "a4a2f3a7a04f",
     "entry_identification": "1e461aa1faeb",
 }
 
