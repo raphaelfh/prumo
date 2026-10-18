@@ -725,14 +725,11 @@ async def test_provenance_is_one_select_per_call(mcp_client, pat_reviewer_rw, db
             await _get(mcp_client, pat_reviewer_rw, contract.template_id, "detailed")
         finally:
             event.remove(db_session.bind.sync_engine, "before_cursor_execute", record)
+        # The provenance read projects only the identity keys out of the
+        # snapshot (never the whole JSONB), so it is the one statement that
+        # builds a JSON object from `generation_snapshot`.
         snapshot_reads = [
-            s
-            for s in statements
-            if "generation_snapshot" in s
-            and "extraction_runs" in s
-            and "project_id" in s
-            and s.lstrip().upper().startswith("SELECT")
-            and "JOIN" in s.upper()
+            s for s in statements if "jsonb_build_object" in s and "generation_snapshot" in s
         ]
         return len(snapshot_reads), len(statements)
 

@@ -69,9 +69,10 @@ class McpConciseCell(BaseModel):
 
 
 class McpProvenance(BaseModel):
-    """Server-generated identity of the generation behind an AI row: the
-    model, the mode that ran, the pinned template version, the output schema
-    and article text it saw (hashes are the first 12 hex characters), the
+    """Identity of the generation behind an AI row: the model id (untrusted
+    text -- a custom host's id is user-entered; capped at 200 chars), the
+    mode that ran, the pinned template version, the output schema and
+    article text it saw (hashes are the first 12 hex characters), the
     article's content version and the prompt version."""
 
     model: str
@@ -137,4 +138,5 @@ class McpExtractionsPage(BaseModel):
         "articles[].rows[].value.unit",
         "articles[].rows[].value.other_text",
         "articles[].rows[].evidence[].quote",
+        "articles[].rows[].provenance.model",
     ]

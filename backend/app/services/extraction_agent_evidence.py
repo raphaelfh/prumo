@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import ColumnElement, and_, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.evidence_block_refs import evidence_is_stale
@@ -27,6 +27,7 @@ from app.schemas.extraction import PositionV1, RegionCitationAnchor, stored_anch
 from app.schemas.mcp_article_text import block_locator
 from app.schemas.mcp_extractions import McpEvidence, McpProvenance
 from app.services.evidence_reanchor import file_versions
+from app.utils.text_caps import cap_text
 
 EVIDENCE_QUOTE_CAP = 300
 EVIDENCE_PER_ROW_CAP = 3
@@ -151,6 +152,44 @@ def evidence_for(resolved: _ResolvedSource, batch: EvidenceBatch) -> list[McpEvi
     return out
 
 
+def _jsonb_object(*pairs: tuple[str, ColumnElement[Any]]) -> ColumnElement[Any]:
+    """`jsonb_build_object` over constant keys (inlined, never user input)."""
+    args: list[ColumnElement[Any]] = []
+    for key, value in pairs:
+        args += [literal_column(f"'{key}'"), value]
+    return func.jsonb_build_object(*args)
+
+
+_SNAPSHOT = ExtractionProposalRecord.generation_snapshot
+# Only the identity keys `compact_provenance` reads, in the snapshot's own
+# shape, so a large snapshot never crosses the wire whole.
+_IDENTITY_PROJECTION = _jsonb_object(
+    ("model", _SNAPSHOT["model"]),
+    ("mode_executed", _SNAPSHOT["mode_executed"]),
+    ("schema_sha256", _SNAPSHOT["schema_sha256"]),
+    ("prompt_version", _SNAPSHOT["prompt_version"]),
+    ("template_version", _jsonb_object(("version", _SNAPSHOT[("template_version", "version")]))),
+    (
+        "prompt_composition",
+        _jsonb_object(
+            (
+                "article_ref",
+                _jsonb_object(
+                    (
+                        "text_sha256",
+                        _SNAPSHOT[("prompt_composition", "article_ref", "text_sha256")],
+                    ),
+                    (
+                        "content_version",
+                        _SNAPSHOT[("prompt_composition", "article_ref", "content_version")],
+                    ),
+                ),
+            )
+        ),
+    ),
+).label("identity")
+
+
 async def load_provenance_batch(
     db: AsyncSession, *, project_id: UUID, proposal_ids: Collection[UUID]
 ) -> dict[UUID, McpProvenance]:
@@ -162,7 +201,7 @@ async def load_provenance_batch(
         return {}
     rows = (
         await db.execute(
-            select(ExtractionProposalRecord.id, ExtractionProposalRecord.generation_snapshot)
+            select(ExtractionProposalRecord.id, _IDENTITY_PROJECTION)
             .join(ExtractionRun, ExtractionRun.id == ExtractionProposalRecord.run_id)
             .where(
                 ExtractionRun.project_id == project_id,
@@ -216,7 +255,7 @@ def compact_provenance(snapshot: Mapping[str, Any] | None) -> McpProvenance | No
     ref = ref if isinstance(ref, Mapping) else {}
     text_sha256 = _str(ref.get("text_sha256"))
     return McpProvenance(
-        model=model,
+        model=cap_text(model)[0],
         mode=cast(Literal["fast", "verified"], mode),
         template_version=version,
         schema_sha256=schema_sha256[:_HASH_PREFIX],

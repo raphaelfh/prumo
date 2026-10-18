@@ -90,3 +90,10 @@ def _without(key: str) -> dict[str, Any]:
 )
 def test_legacy_or_malformed_snapshot_is_none(snapshot):
     assert compact_provenance(snapshot) is None
+
+
+def test_model_id_is_capped_like_untrusted_text():
+    """A custom host's model id is user free text: cut to the title cap."""
+    p = compact_provenance({**_full(), "model": "m" * 300})
+    assert p is not None
+    assert p.model == "m" * 200

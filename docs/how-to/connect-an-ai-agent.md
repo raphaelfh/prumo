@@ -143,7 +143,8 @@ Read tools:
   carries `provenance = {model, mode, template_version, schema_sha256,
   text_sha256, content_version, prompt_version}` (hashes cut to 12
   characters) naming the generation behind it; human, consensus and older
-  AI rows carry `null`.
+  AI rows carry `null`. `model` is listed in `untrusted_fields`: a custom
+  host's model id is text its owner typed.
 - `get_template` — a project's questionnaire, in three views:
   `published` (default; what reviewers and the AI use), `draft` (managers
   only; the unpublished questionnaire with its `fingerprint` and `lint`)
