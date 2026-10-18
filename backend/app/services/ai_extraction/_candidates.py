@@ -1,15 +1,20 @@
 """Model output → :class:`ProposalCandidate` rows, with grounded evidence.
 
 Runs after the model calls and before the landing: every field the model
-answered becomes ONE candidate — a found value, an ``ambiguous`` value (a
-needs-attention proposal, ADR-0016 Phase 1), or a ``not_found`` abstention
-recorded as the coded no-information marker so the outcome is traceable
-instead of silently dropped. Each cited ``{block_ref, quote}`` becomes an
-evidence row anchored to the run's parsed blocks (the cited block's window
-first): a grounded row stores the source slice and the anchor's page, never a
-page from the model; an unanchored one stores no page and is flagged
-``ungroundable`` whatever its status. Grounded quotes of found values go
-through the entailment gate.
+answered becomes ONE candidate, mapped in order (ADR-0016 Amendment
+2026-10): an offered ``absent_reason`` becomes its typed marker (an un-offered
+code is logged, never written); an in-domain option answer (e.g. ``NI``) is
+kept whatever the status; an uncertainty scale's ``not_found`` stores the
+scale's own ``Unclear`` code; any other ``not_found`` becomes the
+no-information marker when the field allows it, else a bare null — traceable,
+never silently dropped; a ``found`` / ``ambiguous`` value lands as answered.
+Each cited ``{block_ref, quote}`` of a candidate that stores something (a
+value or a marker other than no-information) becomes an evidence row anchored
+to the run's parsed blocks (the cited block's window first): a grounded row
+stores the source slice and the anchor's page, never a page from the model; an
+unanchored one stores no page and is flagged ``ungroundable`` whatever its
+status. Grounded quotes of found values (never of a marker) go through the
+entailment gate.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from app.domain.evidence_block_refs import parse_block_ref, ref_window
 from app.infrastructure.parsing.base import concat_page_text
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
+from app.llm.schema import offered_absent_codes, option_codes, uncertain_code
 from app.llm.verify import VerificationAnnotation, VerifyVerdict
 from app.models.extraction import ExtractionEvidence, ExtractionRun
 from app.schemas.extraction import PositionV1
@@ -85,17 +91,18 @@ async def build_candidates(
                 available_fields=list(by_name),
             )
             continue
-        candidate = _candidate(spec, answer, verdicts)
+        candidate = _candidate(spec, answer, verdicts, logger=p.logger)
         candidates.append(candidate)
-        found = answer.get("status") == "found"
-        for rank, quote in enumerate(_quotes(answer)[:EVIDENCE_CAP]):
+        stored = candidate.proposed_value
+        judged = answer.get("status") == "found" and "absent_reason" not in stored
+        for rank, quote in enumerate(_quotes(answer, stored)[:EVIDENCE_CAP]):
             row, pos = _evidence(p, run, quote, rank, page_texts)
             candidate.evidence.append(row)
             if pos is None:
                 ungrounded += 1
                 continue
             grounded += 1
-            if not found:
+            if not judged:
                 continue
             gate_specs.append(
                 GateSpec(
@@ -134,34 +141,79 @@ async def build_candidates(
 
 
 def _candidate(
-    spec: Any, answer: dict[str, Any], verdicts: dict[str, VerifyVerdict] | None
+    spec: Any,
+    answer: dict[str, Any],
+    verdicts: dict[str, VerifyVerdict] | None,
+    *,
+    logger: Any,
 ) -> ProposalCandidate:
-    """One field's proposal. The JSONB value is always wrapped
-    (``{"value": ...}``) so scalars and lists read back uniformly."""
-    if answer.get("status") == "not_found":
-        # The no-info value is null — never the status dict; the abstention
-        # confidence is dropped (a not_found 0.0 reads as a misleading 0%) and
-        # the "why not found" reasoning kept. The coded marker is gated by
-        # ``allows_no_information`` (0062) like the human write path: on an
-        # opted-out field it would be invisible AND unclearable yet still
-        # count as filled. Reads the LIVE row while the form reads the run's
-        # frozen snapshot — a mid-run republish can skew them.
-        value: dict[str, Any] = {"value": None}
-        if spec.allows_no_information:
-            value["absent_reason"] = AbsentReason.NO_INFORMATION.value
-        return ProposalCandidate(spec.id, spec.name, value, None, answer.get("reasoning"))
-    value = {"value": answer.get("value")}
+    """One field's proposal, by the first rule that applies (module
+    docstring). The JSONB value is always wrapped (``{"value": ...}``) so
+    scalars and lists read back uniformly. A marker or a ``not_found`` answer
+    drops the confidence (a not_found 0.0 reads as a misleading 0%) and keeps
+    the reasoning. Flags are read from the LIVE row while the form reads the
+    run's frozen snapshot — a mid-run republish can skew them."""
+    reasoning = answer.get("reasoning")
+    code = _offered_absent_reason(spec, answer, logger)
+    if code is not None:
+        return _proposal(spec, {"value": None, "absent_reason": code}, None, reasoning)
+    value = answer.get("value")
+    not_found = answer.get("status") == "not_found"
+    if not_found and not _in_domain(spec, value):
+        unclear = uncertain_code(spec)
+        if unclear is not None:
+            # An uncertainty scale answers Unclear, never a marker (PRU-66).
+            return _proposal(spec, {"value": unclear}, None, reasoning)
+        absent: dict[str, Any] = {"value": None}
+        # Gated by ``allows_no_information`` (0062) like the human write path:
+        # on an opted-out field the marker would be invisible AND unclearable
+        # yet still count as filled.
+        if AbsentReason.NO_INFORMATION.value in offered_absent_codes(spec):
+            absent["absent_reason"] = AbsentReason.NO_INFORMATION.value
+        return _proposal(spec, absent, None, reasoning)
+    stored: dict[str, Any] = {"value": value}
     if verdicts and spec.name in verdicts:
-        value["verification"] = VerificationAnnotation(verdict=verdicts[spec.name]).model_dump()
-    return ProposalCandidate(
-        spec.id, spec.name, value, answer.get("confidence"), answer.get("reasoning")
-    )
+        stored["verification"] = VerificationAnnotation(verdict=verdicts[spec.name]).model_dump()
+    confidence = None if not_found else answer.get("confidence")
+    return _proposal(spec, stored, confidence, reasoning)
 
 
-def _quotes(answer: dict[str, Any]) -> list[dict[str, Any]]:
-    """The cited ``{quote, block_ref}`` entries with a quote; a no-info
-    answer cites none."""
-    if answer.get("status") == "not_found":
+def _proposal(
+    spec: Any, value: dict[str, Any], confidence: float | None, reasoning: str | None
+) -> ProposalCandidate:
+    return ProposalCandidate(spec.id, spec.name, value, confidence, reasoning)
+
+
+def _offered_absent_reason(spec: Any, answer: dict[str, Any], logger: Any) -> str | None:
+    """The answer's ``absent_reason`` when the field offers it; an un-offered
+    code is logged and read as null (it is never written)."""
+    code = answer.get("absent_reason")
+    if not code:
+        return None
+    if code in offered_absent_codes(spec):
+        return str(code)
+    logger.warning("absent_reason_not_offered", field=spec.name, code=code)
+    return None
+
+
+def _in_domain(spec: Any, value: Any) -> bool:
+    """True when ``value`` is one of the field's option codes — for a list,
+    non-empty with every item a code. A field without options has no domain."""
+    codes = set(option_codes(spec))
+    if not codes:
+        return False
+    if isinstance(value, list):
+        return bool(value) and all(item in codes for item in value)
+    return value in codes
+
+
+def _quotes(answer: dict[str, Any], stored: dict[str, Any]) -> list[dict[str, Any]]:
+    """The cited ``{quote, block_ref}`` entries with a quote; a stored bare
+    null or no-information marker cites none."""
+    if stored.get("value") is None and stored.get("absent_reason") in (
+        None,
+        AbsentReason.NO_INFORMATION.value,
+    ):
         return []
     return [
         {"quote": str(e["quote"]).strip(), "block_ref": e.get("block_ref")}

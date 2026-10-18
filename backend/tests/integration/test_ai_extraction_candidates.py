@@ -8,6 +8,7 @@ resolve for real. The seeded section is ``participants`` with one field,
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from app.models.extraction import ExtractionEvidence, ExtractionRun, ExtractionR
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_extraction._candidates import build_candidates
+from app.services.ai_extraction.landing import ProposalCandidate
 from tests.fakes.recorded_llm import RecordedLlm
 from tests.integration.conftest import SEED
 from tests.integration.helpers.ai_extraction import (
@@ -428,3 +430,185 @@ async def test_grounded_evidence_stamps_content_version(db_session: AsyncSession
     assert grounded.position != {}
     assert unanchored.position == {}
     assert (unanchored.article_file_id, unanchored.content_version) == (None, None)
+
+
+# --------------------------------------------------------------------------
+# The write mapping (ADR-0016 Amendment 2026-10): what the model meant
+# --------------------------------------------------------------------------
+
+PROBAST_AI_ANSWERS = ["Y", "PY", "PN", "N", "NI"]
+
+
+async def _shape_field(db: AsyncSession, **columns: Any) -> None:
+    """Reshape the seeded ``sample_size`` field (type, options, flags)."""
+    if "allowed_values" in columns:
+        columns["allowed_values"] = json.dumps(columns["allowed_values"])
+    assignments = ", ".join(
+        f"{name} = CAST(:{name} AS jsonb)" if name == "allowed_values" else f"{name} = :{name}"
+        for name in columns
+    )
+    await db.execute(
+        text(f"UPDATE public.extraction_fields SET {assignments} WHERE id = :id"),
+        {"id": SEED.primary_field, **columns},
+    )
+    db.expire_all()
+
+
+def _answer(**overrides: Any) -> dict[str, Any]:
+    return {
+        "value": None,
+        "confidence": 0.0,
+        "reasoning": "why",
+        "status": "not_found",
+        "evidence": [],
+        **overrides,
+    }
+
+
+async def _build(
+    db: AsyncSession, answer: dict[str, Any], fake: RecordedLlm | None = None
+) -> ProposalCandidate:
+    """``build_candidates`` on a hand-built model answer for ``sample_size``."""
+    run = await run_in_extract(db)
+    p = extraction(db, fake or RecordedLlm())._p
+    await p.assemble_prompt_text(SEED.primary_article, settings.LLM_DEFAULT_MODEL)
+    _, (candidate,) = await build_candidates(
+        p,
+        run=run,
+        entity_type_id=SEED.primary_entity_type,
+        extracted={"sample_size": answer},
+        verdicts=None,
+    )
+    return candidate
+
+
+async def test_probast_ai_ni_answer_is_kept_as_value(db_session: AsyncSession) -> None:
+    """PROBAST+AI encodes "no information" as the in-domain answer NI with the
+    marker switched off: the answer is the value, whatever the status."""
+    await seed_article_text(db_session, QUOTE_A)
+    await _shape_field(
+        db_session,
+        field_type="select",
+        allowed_values=PROBAST_AI_ANSWERS,
+        allows_no_information=False,
+    )
+
+    candidate = await _build(db_session, _answer(value="NI", reasoning="Not reported."))
+
+    assert candidate.proposed_value == {"value": "NI"}
+    assert candidate.rationale == "Not reported."
+
+
+@pytest.mark.parametrize("code", ["Unclear", "unclear"], ids=["title-case", "lowercase"])
+async def test_unclear_scale_not_found_stores_unclear_code(
+    db_session: AsyncSession, code: str
+) -> None:
+    """An uncertainty scale answers its own Unclear code, never a marker — even
+    from a model or replay that ignored the narrowed status Literal."""
+    await seed_article_text(db_session, QUOTE_A)
+    await _shape_field(db_session, field_type="select", allowed_values=["Low", "High", code])
+
+    candidate = await _build(db_session, _answer())
+
+    assert candidate.proposed_value == {"value": code}
+
+
+async def test_conditional_criterion_stores_not_applicable_marker(
+    db_session: AsyncSession,
+) -> None:
+    """An offered ``not_applicable`` lands as its typed marker; the quote that
+    shows why is kept as evidence and never sent to the entailment judge."""
+    await seed_article_text(db_session, QUOTE_A)
+    await _shape_field(db_session, allows_not_applicable=True)
+    fake = RecordedLlm()
+
+    candidate = await _build(
+        db_session,
+        _answer(
+            status="found", confidence=0.8, absent_reason="not_applicable", evidence=_cite(QUOTE_A)
+        ),
+        fake,
+    )
+
+    assert candidate.proposed_value == {"value": None, "absent_reason": "not_applicable"}
+    assert (candidate.confidence_score, candidate.rationale) == (None, "why")
+    (row,) = candidate.evidence
+    assert row.text_content == QUOTE_A
+    assert row.page_number == 1
+    assert row.attribution_label is None
+    assert fake.prompts(entailment.NAME) == []
+
+
+@pytest.mark.parametrize(
+    ("allows_no_information", "expected"),
+    [
+        (True, {"value": None, "absent_reason": "no_information"}),
+        (False, {"value": None}),
+    ],
+    ids=["marker-allowed", "marker-off"],
+)
+async def test_unoffered_code_is_not_written(
+    db_session: AsyncSession, allows_no_information: bool, expected: dict[str, Any]
+) -> None:
+    await seed_article_text(db_session, QUOTE_A)
+    await _shape_field(
+        db_session, allows_not_applicable=False, allows_no_information=allows_no_information
+    )
+
+    with capture_logs() as entries:
+        candidate = await _build(db_session, _answer(absent_reason="not_applicable"))
+
+    assert candidate.proposed_value == expected
+    (log,) = [e for e in entries if e["event"] == "absent_reason_not_offered"]
+    assert (log["field"], log["code"]) == ("sample_size", "not_applicable")
+
+
+@pytest.mark.parametrize(
+    ("allows_no_information", "expected"),
+    [
+        (True, {"value": None, "absent_reason": "no_information"}),
+        (False, {"value": None}),
+    ],
+    ids=["marker-allowed", "marker-off"],
+)
+async def test_numeric_not_found_gives_no_information_marker(
+    db_session: AsyncSession, allows_no_information: bool, expected: dict[str, Any]
+) -> None:
+    await seed_article_text(db_session, QUOTE_A)
+    await _shape_field(db_session, allows_no_information=allows_no_information)
+
+    candidate = await _build(db_session, _answer(evidence=_cite(QUOTE_A)))
+
+    assert candidate.proposed_value == expected
+    assert candidate.confidence_score is None
+    assert candidate.evidence == []
+
+
+@pytest.mark.parametrize(
+    ("value", "allows_no_information", "expected"),
+    [
+        (["a", "c"], True, {"value": ["a", "c"]}),
+        (["a", "zzz"], True, {"value": None, "absent_reason": "no_information"}),
+        ([], True, {"value": None, "absent_reason": "no_information"}),
+        (["a", "zzz"], False, {"value": None}),
+        ([], False, {"value": None}),
+    ],
+    ids=["in-domain", "out-of-domain-marker", "empty-marker", "out-of-domain-off", "empty-off"],
+)
+async def test_multiselect_list_value_rule(
+    db_session: AsyncSession,
+    value: list[str],
+    allows_no_information: bool,
+    expected: dict[str, Any],
+) -> None:
+    await seed_article_text(db_session, QUOTE_A)
+    await _shape_field(
+        db_session,
+        field_type="multiselect",
+        allowed_values=["a", "b", "c"],
+        allows_no_information=allows_no_information,
+    )
+
+    candidate = await _build(db_session, _answer(value=value))
+
+    assert candidate.proposed_value == expected

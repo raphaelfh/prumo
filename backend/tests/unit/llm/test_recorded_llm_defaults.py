@@ -67,3 +67,9 @@ async def test_scripted_answer_gets_absent_reason_filled_unless_given() -> None:
     assert reply["dose"]["value"] == "5 mg"
     assert reply["dose"]["absent_reason"] is None
     assert reply["arm"]["absent_reason"] == "not_applicable"
+
+
+async def test_scale_with_two_casings_of_unclear_answers_the_first() -> None:
+    field = _field("judgment", ["Low", "unclear", "Unclear"])
+    reply = await _ask(RecordedLlm(), [field])
+    assert reply["judgment"]["value"] == "unclear"

@@ -10,8 +10,9 @@ makes from scripted data, keyed by the prompt that asked:
   Defaults follow the field's own result model: a field the script does not
   name answers ``not_found``, or, on an uncertainty scale (its ``status``
   Literal has no ``not_found``), ``ambiguous`` with the scale's own Unclear
-  code as the value; ``absent_reason`` is filled with ``None`` wherever the
-  model declares it and the script (or default) does not set it;
+  code as the value (the first, when two casings coexist); ``absent_reason``
+  is filled with ``None`` wherever the model declares it and the script (or
+  default) does not set it;
 - entry identification answers ``entries``;
 - the verify pass answers ``verdicts`` (field name -> verdict);
 - the entailment judge answers ``entailment``.
@@ -56,9 +57,10 @@ def _literal_codes(annotation: Any) -> list[Any]:
 
 def _unclear_value(result_model: type[BaseModel]) -> Any:
     annotation = result_model.model_fields["value"].annotation
-    [code] = [
+    # The first Unclear code in option order, like ``schema.uncertain_code``.
+    code = next(
         c for c in _literal_codes(annotation) if isinstance(c, str) and c.casefold() == "unclear"
-    ]
+    )
     is_list = any(get_origin(arg) is list for arg in (annotation, *get_args(annotation)))
     return [code] if is_list else code
 

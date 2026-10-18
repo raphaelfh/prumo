@@ -4,7 +4,7 @@ import {AcceptCheck} from './AcceptCheck';
 import {AISuggestionEvidence, citationLocateArgs} from '../ai/AISuggestionEvidence';
 import {GenerationDetailsContent} from '../ai/shared/GenerationDetailsContent';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
-import {formatFullSuggestionValue, valuelessProposalKind, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, valuelessProposalLabel, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
 import {t} from '@/lib/copy';
 import type {AISuggestion} from '@/types/ai-extraction';
 
@@ -27,7 +27,7 @@ export function ProposalCard({proposal, ordinal, latest, accepted, saving, pendi
   const {locate, isAvailable} = useReaderLocate();
   const evidence = proposal.evidence ?? [];
   const snapshot = proposal.generationSnapshot;
-  const kind = valuelessProposalKind(proposal.value);
+  const valuelessLabel = valuelessProposalLabel(proposal.value);
   return <article className="min-w-0 space-y-3 rounded-md border border-border/40 p-2 text-[13px] motion-reduce:transition-none">
     <header className="flex items-start justify-between gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
@@ -39,7 +39,7 @@ export function ProposalCard({proposal, ordinal, latest, accepted, saving, pendi
       </div>
       {!readOnly && <AcceptCheck accepted={accepted} saving={saving} pending={pending} onToggle={() => onToggle(proposal)}/>}
     </header>
-    <p className="whitespace-pre-wrap break-words font-medium">{kind ? t('extraction', kind === 'marker' ? 'reviewNoInformation' : 'reviewNoValue') : formatFullSuggestionValue(proposal.value, field)}</p>
+    <p className="whitespace-pre-wrap break-words font-medium">{valuelessLabel ?? formatFullSuggestionValue(proposal.value, field)}</p>
     {proposal.reasoning && <section className="space-y-1"><h3 className="text-xs text-muted-foreground">{t('extraction', 'aiRationaleLabel')}</h3><p className="whitespace-pre-wrap break-words">{proposal.reasoning}</p></section>}
     <AISuggestionEvidence presentation="review" evidence={evidence} activeRank={activeRank} onLocate={isAvailable ? rank => {
       const citation = evidence.find(item => item.rank === rank);

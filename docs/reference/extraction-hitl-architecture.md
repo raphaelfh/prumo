@@ -197,6 +197,15 @@ keeps one control. Historical in-band disposition strings
 migration `0039_absent_reason_backfill`. Decision record:
 [ADR-0016](../adr/0016-typed-absent-reason-marker.md).
 
+**AI proposals** are offered only the codes a field allows (`no_information`,
+`not_applicable`; never `not_evaluated`) and write, by the first rule that
+applies: an offered `absent_reason` → its marker (an un-offered code is logged,
+never written); an in-domain option answer (e.g. `NI`) → the value, whatever the
+status; an uncertainty scale (an option coded `Unclear`, any case) answering
+`not_found` → its own `Unclear` code, never a marker; any other `not_found` →
+the `no_information` marker when allowed, else a bare null; `found` /
+`ambiguous` → the value (ADR-0016 Amendment 2026-10).
+
 ### Core HITL tables (introduced pre-squash 0010 → 0012; evolving — see migration head above)
 
 | Table | Append-only? | Purpose |

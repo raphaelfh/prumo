@@ -7,6 +7,8 @@
 import type {AISuggestion} from '@/types/ai-extraction';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {optionLabelMap} from '@/lib/extraction/options';
+import {absentReasonLabel} from '@/lib/extraction/absentReasonLabel';
+import {t} from '@/lib/copy';
 
 /**
  * Field context needed to resolve a select/multiselect option CODE to its human
@@ -157,6 +159,21 @@ export function valuelessProposalKind(value: unknown): ValuelessProposal | null 
   // A marker is an object, so the two branches are disjoint by construction.
   if (value === null || value === undefined) return 'unmarked';
   return null;
+}
+
+/**
+ * What a review surface shows for a valueless AI proposal, or `null` for an
+ * ordinary value. A `no_information` marker keeps the AI wording ("No
+ * information found"); any other marker reads as its disposition label ("Not
+ * applicable"), so an AI `not_applicable` answer never claims the article was
+ * silent; a bare null reads "No value proposed".
+ */
+export function valuelessProposalLabel(value: unknown): string | null {
+  const kind = valuelessProposalKind(value);
+  if (kind === null) return null;
+  if (kind === 'unmarked') return t('extraction', 'reviewNoValue');
+  if (valueAbsentReason(value) === 'no_information') return t('extraction', 'reviewNoInformation');
+  return absentReasonLabel(value);
 }
 
 /**

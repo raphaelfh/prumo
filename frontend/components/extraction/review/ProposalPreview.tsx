@@ -2,7 +2,7 @@ import {History} from 'lucide-react';
 import {IconButton} from '@/components/patterns/IconButton';
 import {AcceptCheck} from './AcceptCheck';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {formatFullSuggestionValue, valuelessProposalKind, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, valuelessProposalLabel, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
 import {t} from '@/lib/copy';
 import type {AISuggestion} from '@/types/ai-extraction';
 
@@ -24,8 +24,7 @@ interface ProposalPreviewProps extends SuggestionFieldContext {
 }
 
 export function ProposalPreview({latest, count, expanded, onExpand, accepted = false, saving, pending, readOnly, onToggle, acceptedOlder, onOpenAccepted, disclosureId, ...field}: ProposalPreviewProps) {
-  const kind = valuelessProposalKind(latest.value);
-  const value = kind ? t('extraction', kind === 'marker' ? 'reviewNoInformation' : 'reviewNoValue') : formatFullSuggestionValue(latest.value, field);
+  const value = valuelessProposalLabel(latest.value) ?? formatFullSuggestionValue(latest.value, field);
   return <div className="flex min-w-0 items-center gap-1">
     <Tooltip>
       <TooltipTrigger asChild>

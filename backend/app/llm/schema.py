@@ -59,17 +59,25 @@ _SCALAR_TYPES: dict[str, type] = {
 _LIST_TYPES = ("array", "list", "multiselect")
 
 
-def _enum_values(field: Any) -> list[Any]:
+def option_codes(field: Any) -> list[Any]:
     """allowed_values options → list of option codes (each option's "value"),
-    read through ``claim_value.normalize_options``."""
+    read through ``claim_value.normalize_options``. The output model's value
+    Literal and the AI write path's in-domain check both read it."""
     return [o["value"] for o in normalize_options(getattr(field, "allowed_values", None))]
+
+
+def uncertain_code(field: Any) -> str | None:
+    """The field's own ``Unclear`` option code, exact case (the first one when
+    several differ only in case), or ``None`` when the field has none."""
+    return next(
+        (c for c in option_codes(field) if isinstance(c, str) and c.casefold() == _UNCERTAIN_CODE),
+        None,
+    )
 
 
 def is_uncertainty_scale(field: Any) -> bool:
     """True when one of the field's option codes is ``Unclear`` (any case)."""
-    return any(
-        isinstance(code, str) and code.casefold() == _UNCERTAIN_CODE for code in _enum_values(field)
-    )
+    return uncertain_code(field) is not None
 
 
 def offered_absent_codes(field: Any) -> tuple[str, ...]:
@@ -102,7 +110,7 @@ def _description(field: Any) -> str:
 
 def _value_type(field: Any) -> Any:
     field_type = getattr(field, "field_type", None) or "text"
-    enum_values = _enum_values(field)
+    enum_values = option_codes(field)
     if enum_values:
         literal = Literal[tuple(enum_values)]
         if field_type in _LIST_TYPES:

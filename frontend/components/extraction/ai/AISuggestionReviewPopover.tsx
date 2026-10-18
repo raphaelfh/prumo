@@ -25,8 +25,9 @@ import {Separator} from '@/components/ui/separator';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
+import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
-import {formatFullSuggestionValue, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, valuelessProposalKind, valuelessProposalLabel} from '@/lib/ai-extraction/suggestionUtils';
 import {adoptionWording, type PeerAdoptionMark} from '@/lib/runs/adoption';
 import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
@@ -186,8 +187,16 @@ function VersionRow({version, ranByName, isSelected, selectedChipLabel, marks, o
   }
 
   // Both valueless kinds suppress the confidence badge; only a `'marker'`
-  // claims a recorded "No information" answer (see `valuelessProposalKind`).
+  // claims a recorded answer (see `valuelessProposalKind`).
   const valueless = valuelessProposalKind(version.value);
+  // Only the two "nothing found" shapes carry an explanation; another marker
+  // (e.g. not_applicable) is self-explanatory through its label.
+  const valuelessDesc =
+    valueless === 'unmarked'
+      ? 'reviewNoValueDesc'
+      : valueAbsentReason(version.value) === 'no_information'
+        ? 'reviewNoInformationDesc'
+        : null;
   const hasReasoning = !!version.reasoning?.trim();
   const evidence = version.evidence ?? [];
   const hasEvidence = evidence.length > 0 && !!evidence[0]?.text?.trim();
@@ -207,11 +216,11 @@ function VersionRow({version, ranByName, isSelected, selectedChipLabel, marks, o
           {valueless ? (
             <div>
               <p className="text-[13px] font-medium text-foreground/90">
-                {t('extraction', valueless === 'marker' ? 'reviewNoInformation' : 'reviewNoValue')}
+                {valuelessProposalLabel(version.value)}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('extraction', valueless === 'marker' ? 'reviewNoInformationDesc' : 'reviewNoValueDesc')}
-              </p>
+              {valuelessDesc && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{t('extraction', valuelessDesc)}</p>
+              )}
             </div>
           ) : (
             <p
