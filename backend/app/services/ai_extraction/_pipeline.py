@@ -21,7 +21,7 @@ from app.core.logging import get_logger
 from app.domain.evidence_block_refs import BlockRefIndex
 from app.infrastructure.parsing.base import ParsedBlock
 from app.infrastructure.storage import StorageAdapter
-from app.llm.extractor import StructuredCall
+from app.llm.extractor import LlmUsage, StructuredCall
 from app.llm.prompts import Ancestor
 from app.llm.provider import build_model
 from app.models.extraction import ExtractionRun
@@ -127,6 +127,17 @@ class Pipeline:
             provider=self.engine.provider,
             model=self.engine.model,
             key_scope=scope.value if scope is not None else None,
+        )
+
+    async def add_run_usage(self, run_id: UUID, usage: LlmUsage) -> None:
+        """Add a flow's ``ok`` usage to the run's ``results.tokens`` — every
+        flow, on a run it owns or one it reuses, so the run total is the sum
+        of the run's ``ok`` ledger rows. Usage behind a section or verify
+        that failed after answered calls is in the ledger only, and a flow
+        that fails rolls its addition back: the ledger is authoritative for
+        failed paths."""
+        await self.runs.add_tokens(
+            run_id, prompt=usage.prompt_tokens, completion=usage.completion_tokens
         )
 
     @property

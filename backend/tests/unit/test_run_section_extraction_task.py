@@ -66,14 +66,31 @@ class _FakeSession:
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
         self.close = AsyncMock()
-        #: The per-task engine ``worker_session`` builds; the ledger sink's
-        #: session factory is bound to it.
-        self.bind = MagicMock(name="task_engine")
 
 
-def _session_factory(session: _FakeSession) -> Any:
+#: The per-task engine ``worker_engine`` yields; the task session and the
+#: ledger sink's session factory are both built on it.
+_TASK_ENGINE = MagicMock(name="task_engine")
+
+
+@pytest.fixture(autouse=True)
+def task_engine(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Patch ``worker_engine`` — no real engine is built. Returns the engines
+    each ``worker_session`` call received, in call order."""
+
     @asynccontextmanager
-    async def _factory() -> AsyncIterator[_FakeSession]:
+    async def _engine() -> AsyncIterator[Any]:
+        yield _TASK_ENGINE
+
+    monkeypatch.setattr("app.worker._session.worker_engine", _engine)
+    return []
+
+
+def _session_factory(session: _FakeSession, seen: list[Any] | None = None) -> Any:
+    @asynccontextmanager
+    async def _factory(engine: Any = None) -> AsyncIterator[_FakeSession]:
+        if seen is not None:
+            seen.append(engine)
         yield session
 
     return _factory
@@ -301,9 +318,10 @@ class TestRunSectionExtractionTaskBatch:
 
 
 class TestRunSectionExtractionTaskMetering:
-    def test_worker_injects_a_ledger_sink(self):
-        """The composition root builds the ledger sink on the task session's
-        own engine, through ``create_ledger_session_factory``."""
+    def test_worker_injects_a_ledger_sink(self, task_engine: list[Any]):
+        """The composition root builds the ledger sink on the task's own
+        engine — the one its session runs on — through
+        ``create_ledger_session_factory``."""
         from app.services.ai_usage_metering import LedgerSink
 
         run_id, entity_type_id = str(uuid4()), str(uuid4())
@@ -319,7 +337,10 @@ class TestRunSectionExtractionTaskMetering:
             ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
-            patch("app.worker._session.worker_session", new=_session_factory(session)),
+            patch(
+                "app.worker._session.worker_session",
+                new=_session_factory(session, task_engine),
+            ),
         ):
             _apply(
                 {
@@ -333,7 +354,8 @@ class TestRunSectionExtractionTaskMetering:
 
         sink = domain.call_args.kwargs["usage_sink"]
         assert isinstance(sink, LedgerSink)
-        assert sink.session_factory.kw["bind"] is session.bind
+        assert task_engine == [_TASK_ENGINE]
+        assert sink.session_factory.kw["bind"] is _TASK_ENGINE
         assert sink.session_factory.kw["expire_on_commit"] is False
 
 
@@ -656,7 +678,7 @@ def test_durable_delivery_uses_recorded_owner_payload_and_separate_session():
     sessions = []
 
     @asynccontextmanager
-    async def session_factory():
+    async def session_factory(_engine: Any = None):
         session = _FakeSession()
         session.get.return_value = SimpleNamespace(
             id=attempt_id,

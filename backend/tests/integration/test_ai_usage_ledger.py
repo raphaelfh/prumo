@@ -342,6 +342,86 @@ async def test_a_standalone_entry_batch_reports_one_tokens_shape(
     assert [s["tokens"]["total"] for s in result.sections] == [13, 13]
 
 
+async def test_the_full_pass_counts_child_sections_in_run_tokens(
+    db_session: AsyncSession,
+) -> None:
+    """The full pass (batch kickoff): top-level sections, then each root
+    entry's child sections on the same run. ``results.tokens`` equals the
+    ``ok`` entries, the child sections' calls included."""
+    (group,) = await _sections(db_session, ("models_x", ("model_name",)))
+    await db_session.execute(
+        text(
+            "UPDATE extraction_entity_types SET cardinality='many', entry_label='model' "
+            "WHERE id=:id"
+        ),
+        {"id": group},
+    )
+    await db_session.execute(
+        text("UPDATE extraction_fields SET is_entity_key=true WHERE entity_type_id=:id"),
+        {"id": group},
+    )
+    (child,) = await _sections(db_session, ("model_child", ("auc",)), parent=group)
+    await TemplateVersionService(db_session).republish(
+        project_id=SEED.primary_project,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    run = await run_in_extract(db_session)
+    await seed_article_text(db_session)
+    fake = RecordedLlm(
+        entries=["A", "B"],
+        usages={
+            entry_identification.NAME: LlmUsage(3, 1),
+            section_extraction.NAME: LlmUsage(20, 2),
+        },
+    )
+    sink = RecordingUsageSink()
+
+    result = await extraction(db_session, fake, usage_sink=sink).run_from_request(
+        request(run_id=run.id, extract_all_sections=True)
+    )
+
+    await db_session.refresh(run)
+    child_sections = [s for s in result.sections if s["entity_type_id"] == str(child)]
+    assert len(child_sections) == 2, "precondition: one child section per entry"
+    assert all(s["success"] for s in child_sections)
+    extracts = len(fake.field_calls())
+    expected = {"prompt": 3 + 20 * extracts, "completion": 1 + 2 * extracts}
+    expected["total"] = expected["prompt"] + expected["completion"]
+    assert run.results["tokens"] == expected == sink.ok_sum()
+
+
+async def test_chunked_batch_calls_on_one_run_accumulate_tokens(
+    db_session: AsyncSession,
+) -> None:
+    """Two chunked per-entry batch calls resolve the same live run; the run's
+    ``results.tokens`` is the sum over both chunks, never the last one."""
+    parent, (first, second) = await _entry_with_children(
+        db_session, ("first_child", ("a",)), ("second_child", ("b",))
+    )
+    await _no_live_run(db_session)
+    await seed_article_text(db_session)
+    sink = RecordingUsageSink()
+
+    one = await extraction(
+        db_session, RecordedLlm(usage=LlmUsage(11, 2)), usage_sink=sink
+    ).run_from_request(
+        request(parent_instance_id=parent, section_ids=[first], extract_all_sections=True)
+    )
+    two = await extraction(
+        db_session, RecordedLlm(usage=LlmUsage(5, 1)), usage_sink=sink
+    ).run_from_request(
+        request(parent_instance_id=parent, section_ids=[second], extract_all_sections=True)
+    )
+
+    assert one.extraction_run_id == two.extraction_run_id, "precondition: one run"
+    run = await db_session.get(ExtractionRun, UUID(one.extraction_run_id))
+    assert run is not None
+    await db_session.refresh(run)
+    assert run.results["tokens"] == {"prompt": 16, "completion": 3, "total": 19}
+    assert run.results["tokens"] == sink.ok_sum()
+
+
 # --------------------------------------------------------------------------
 # Durability: ``LedgerSink`` on its own engine, against committed parents
 # --------------------------------------------------------------------------

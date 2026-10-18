@@ -156,7 +156,11 @@ outcome (`ok` / `failed`) and the provider request id. A project delete
 cascades; owner, run, attempt and batch links are `ON DELETE SET NULL`, so
 usage outlives the work it metered. The table is backend-only with the 0072
 posture: RLS on, a single `deny_all` policy, and every privilege revoked from
-`authenticated` and `anon`.
+`authenticated` and `anon`. Every extraction flow adds its usage to the run's
+`results.tokens` (`{prompt, completion, total}`), so it equals the run's `ok`
+rows; usage behind a section that failed after answered calls, a degraded
+verify, or a flow that rolled back is in the ledger only — the ledger is
+authoritative for failed paths.
 
 **API-only writes (0081).** `authenticated` holds SELECT but no
 INSERT/UPDATE/DELETE on `article_text_blocks` and the extraction history

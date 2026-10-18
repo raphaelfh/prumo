@@ -137,6 +137,9 @@ async def extract_all_sections(
         if child_types and successful == 0:
             raise BatchAllSectionsFailed(f"All {failed} section(s) failed for run {run.id}.")
         duration = (perf_counter() - start_time) * 1000
+        # Chunked calls and the full pass's entries share the run: add, never
+        # overwrite.
+        await p.add_run_usage(run.id, usage)
         if manage_lifecycle:
             await p.runs.complete_run(
                 run_id=run.id,
@@ -145,7 +148,6 @@ async def extract_all_sections(
                     "successful_sections": successful,
                     "failed_sections": failed,
                     "total_suggestions_created": total_suggestions,
-                    "tokens": tokens_of(usage),
                     "duration_ms": duration,
                     "phase_durations_ms": phases,
                 },

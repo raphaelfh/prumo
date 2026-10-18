@@ -9,8 +9,9 @@ from app.llm.extractor import LlmUsage
 
 
 def tokens_of(usage: LlmUsage) -> dict[str, int]:
-    """The one ``tokens`` shape run results and per-section outcomes carry —
-    the sum of the ``ok`` usage-ledger rows behind them."""
+    """A per-section outcome's ``tokens`` — the sum of the ``ok`` usage-ledger
+    rows behind it; the run's ``results.tokens`` has the same shape and is
+    accumulated by ``ExtractionRunRepository.add_tokens``."""
     return {
         "prompt": usage.prompt_tokens,
         "completion": usage.completion_tokens,

@@ -240,13 +240,13 @@ class AiExtraction:
             )
             phases["extract_and_record"] = (perf_counter() - phase_start) * 1000
             duration = (perf_counter() - start_time) * 1000
+            await p.add_run_usage(run.id, outcome.usage)
             if manage_lifecycle:
                 phase_start = perf_counter()
                 await p.runs.complete_run(
                     run_id=run.id,
                     results={
                         "suggestions_created": outcome.suggestions_created,
-                        "tokens": tokens_of(outcome.usage),
                         "duration_ms": duration,
                         "fields_extracted": len(outcome.extracted_data),
                         "phase_durations_ms": phases,
@@ -382,6 +382,7 @@ class AiExtraction:
             # Provenance was merged per section at the landing; a run-level
             # ``provenance`` key here would clobber that ``sections`` map
             # (``complete_run`` shallow-merges).
+            await p.add_run_usage(run.id, usage)
             await p.runs.complete_run(
                 run_id=run.id,
                 results={
@@ -389,7 +390,6 @@ class AiExtraction:
                     "successful_sections": successful,
                     "failed_sections": failed,
                     "total_suggestions_created": total_suggestions,
-                    "tokens": tokens_of(usage),
                     "duration_ms": (perf_counter() - start_time) * 1000,
                     "kind": kind,
                     "skip_fields_with_human_proposals": skip_settled,

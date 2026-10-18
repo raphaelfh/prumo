@@ -96,9 +96,9 @@ def run_section_extraction_task(
         )
         from app.services.ai_usage_metering import LedgerSink
         from app.services.engine_credentials import resolve_engine_credentials
-        from app.worker._session import worker_session
+        from app.worker._session import worker_engine, worker_session
 
-        async with worker_session() as session:
+        async with worker_engine() as db_engine, worker_session(db_engine) as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
@@ -173,7 +173,7 @@ def run_section_extraction_task(
                     # Every model call writes a ledger row on its own
                     # connection to this task's engine, committed apart from
                     # the run transaction.
-                    usage_sink=LedgerSink(create_ledger_session_factory(session.bind)),
+                    usage_sink=LedgerSink(create_ledger_session_factory(db_engine)),
                 )
 
                 res = await service.run_from_request(request, engine=engine)
