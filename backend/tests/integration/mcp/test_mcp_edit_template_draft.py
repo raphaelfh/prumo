@@ -155,7 +155,10 @@ async def test_success_returns_unpublished_draft(
         "diff.changes[].label_path[]",
         "diff.changes[].before",
         "diff.changes[].after",
+        "diff.changes[].id",
     }
+    assert body["diff"]["fingerprint"] == body["draft_fingerprint"]
+    assert all(change["id"] for change in body["diff"]["changes"])
 
     row = (
         await db_session.execute(

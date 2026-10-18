@@ -1,6 +1,6 @@
 """Result models for the researcher MCP `get_template` tool (task 8a). Each
 is the exact `outputSchema` of its tool: no field beyond what the model
-needs."""
+needs. `McpDraftDiff` is also `edit_template_draft`'s `diff`."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.schemas.extraction import InstrumentCode
+from app.schemas.template_lint import LintFinding
 
 
 class McpOption(BaseModel):
@@ -44,6 +45,7 @@ class McpTemplateSection(BaseModel):
 
 
 class McpDraftChange(BaseModel):
+    id: str
     tier: str
     variant: str
     label_path: list[str]
@@ -57,12 +59,28 @@ class McpDraftDiff(BaseModel):
     counts: dict[str, int]
     changes: list[McpDraftChange]
     changes_truncated: bool
+    fingerprint: str | None
+
+
+class McpTemplateChangeRow(BaseModel):
+    """One row Publish would apply, as the `changes` view pages it."""
+
+    id: str
+    tier: str
+    variant: str
+    label_path: list[str]
+    attribute: str | None
+    before: str | None
+    after: str | None
+    affects_recorded_data: bool
+    affects_ai: bool
 
 
 class McpTemplateView(BaseModel):
     template_id: UUID
     template_name: str
     project_name: str
+    view: Literal["published", "draft", "changes"]
     kind: str
     instrument: InstrumentCode
     published_version: int | None
@@ -73,6 +91,12 @@ class McpTemplateView(BaseModel):
     sections: list[McpTemplateSection]
     draft_diff: McpDraftDiff | None
     next_cursor: str | None
+    fingerprint: str | None = None
+    status: str | None = None
+    counts: dict[str, int] | None = None
+    changes: list[McpTemplateChangeRow] | None = None
+    lint: list[LintFinding] | None = None
+    note: str | None = None
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
         "template_name",
@@ -93,4 +117,11 @@ class McpTemplateView(BaseModel):
         "draft_diff.changes[].label_path[]",
         "draft_diff.changes[].before",
         "draft_diff.changes[].after",
+        "draft_diff.changes[].id",
+        "changes[].id",
+        "changes[].label_path[]",
+        "changes[].before",
+        "changes[].after",
+        "lint[].section_label",
+        "lint[].question_labels[]",
     ]

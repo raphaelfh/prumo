@@ -115,4 +115,5 @@ class EditTemplateDraftResult(BaseModel):
         "diff.changes[].label_path[]",
         "diff.changes[].before",
         "diff.changes[].after",
+        "diff.changes[].id",
     ]
