@@ -8,7 +8,9 @@ Orchestrates the PDF-only parsing pipeline:
    once (``normalize_blocks``: invisible chars, dot leaders) for every parser.
 4. Normalise char offsets via assign_char_offsets_to_blocks (single source of
    truth from the parsing.base module).
-5. Persist blocks via ArticleTextBlockRepository.replace_for_file (flush only).
+5. Persist blocks via ArticleTextBlockRepository.replace_for_file (flush only),
+   bump content_version and re-anchor the file's grounded AI evidence
+   (``evidence_reanchor.reanchor_file``) under the same per-file lock.
 6. Update ArticleFile.extraction_status and flush.
 7. Return a typed DocumentParsingResult.
 
@@ -30,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -43,6 +45,7 @@ from app.infrastructure.parsing.base import (
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import ArticleFile
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
+from app.services.evidence_reanchor import lock_file_blocks, reanchor_file
 
 _logger = get_logger(__name__)
 
@@ -142,10 +145,7 @@ class DocumentParsingService:
         # 5. Serialize the block write per file so a concurrent Retry cannot
         #    interleave two delete-then-insert passes. Transaction-scoped:
         #    released on commit.
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
-            {"k": str(article_file_id)},
-        )
+        await lock_file_blocks(self.db, article_file_id)
 
         # Persist blocks (delete-then-bulk-insert, flush only).
         await self._repo.replace_for_file(article_file_id, blocks)
@@ -154,7 +154,19 @@ class DocumentParsingService:
         # the SAME transaction + advisory lock as the blocks, so the markdown can
         # never drift from the blocks. content_version bumps on every rewrite.
         article_file.content_markdown = render_blocks_to_markdown(blocks)
-        article_file.content_version = (article_file.content_version or 0) + 1
+        old_version = article_file.content_version or 0
+        article_file.content_version = old_version + 1
+
+        # Grounded AI evidence on this file follows the new blocks or reads
+        # stale — same lock, same transaction (a first parse finds none).
+        outcome = await reanchor_file(
+            self.db, article_file_id, old_version, article_file.content_version, blocks
+        )
+        log.info(
+            "evidence_reanchored",
+            reanchored=outcome.reanchored,
+            stale=outcome.stale,
+        )
 
         # 6. Update status.
         article_file.extraction_status = "parsed"

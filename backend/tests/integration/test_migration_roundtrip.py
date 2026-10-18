@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0088_protocol_revision"
+    expected_head = "0089_evidence_content_version"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2313,3 +2313,47 @@ async def test_migration_0088_protocol_revision_roundtrip(
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert "(head)" in _run_alembic("current", database_url=migration_db_url)
     assert await schema() == (True, True)
+
+
+@pytest.mark.asyncio
+async def test_migration_0089_evidence_content_version_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``extraction_evidence`` gains a nullable ``content_version`` and a
+    partial index on ``article_file_id``; the downgrade drops both, the
+    re-upgrade restores both."""
+    session = migration_session
+
+    async def schema() -> tuple[bool, str | None]:
+        column = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns"
+                    " WHERE table_schema = 'public' AND table_name = 'extraction_evidence'"
+                    " AND column_name = 'content_version'"
+                )
+            )
+        ).scalar_one_or_none() is not None
+        indexdef = (
+            await session.execute(
+                text(
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+                    " AND indexname = 'idx_extraction_evidence_article_file_id'"
+                )
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+        return column, indexdef
+
+    column, indexdef = await schema()
+    assert column is True
+    assert indexdef is not None and "WHERE (article_file_id IS NOT NULL)" in indexdef
+    try:
+        _run_alembic("downgrade", "0088_protocol_revision", database_url=migration_db_url)
+        assert await schema() == (False, None)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    column, indexdef = await schema()
+    assert column is True
+    assert indexdef is not None and "WHERE (article_file_id IS NOT NULL)" in indexdef

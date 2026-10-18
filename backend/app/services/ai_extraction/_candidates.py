@@ -164,6 +164,7 @@ def _evidence(
         project_id=run.project_id,
         article_id=run.article_id,
         article_file_id=p.anchor_file_id if pos is not None else None,
+        content_version=p.anchor_content_version if pos is not None else None,
         run_id=run.id,
         proposal_record_id=None,
         page_number=page,

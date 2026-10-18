@@ -622,6 +622,8 @@ class ExtractionEvidence(BaseModel):
     attribution_label: Mapped[str | None] = mapped_column(Text, nullable=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # order of an evidence span within its proposal (0 = primary/first; LLM order)
+    # article_files.content_version the position was anchored against; NULL = unknown
+    content_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -638,6 +640,11 @@ class ExtractionEvidence(BaseModel):
         Index("idx_extraction_evidence_proposal_record_id", "proposal_record_id"),
         Index("idx_extraction_evidence_reviewer_decision_id", "reviewer_decision_id"),
         Index("idx_extraction_evidence_consensus_decision_id", "consensus_decision_id"),
+        Index(  # the per-file reparse read (0089)
+            "idx_extraction_evidence_article_file_id",
+            "article_file_id",
+            postgresql_where=text("article_file_id IS NOT NULL"),
+        ),
         CheckConstraint(
             """
             run_id IS NOT NULL

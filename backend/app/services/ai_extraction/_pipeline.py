@@ -108,6 +108,10 @@ class Pipeline:
     def anchor_file_id(self) -> UUID | None:
         return self.prompt_input.anchor_file_id if self.prompt_input else None
 
+    @property
+    def anchor_content_version(self) -> int | None:
+        return self.prompt_input.content_version if self.prompt_input else None
+
     async def adopt_frozen_engine(
         self, run_id: UUID, candidate: LlmTarget, project_id: UUID
     ) -> str:

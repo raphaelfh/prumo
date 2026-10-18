@@ -324,3 +324,29 @@ async def test_the_section_snapshot_records_the_call_without_the_article(
     assert composition["llm_calls"] == 1
     assert composition["article_ref"]["file_name"] == "article.pdf"
     assert composition["article_ref"]["truncated"] is False
+
+
+async def test_grounded_evidence_stamps_content_version(db_session: AsyncSession) -> None:
+    """A grounded row records the file version it anchored against; an
+    unanchored row records neither the file nor a version."""
+    file_id = await seed_article_text(db_session, QUOTE_A)
+    await db_session.execute(
+        text("UPDATE public.article_files SET content_version = 7 WHERE id = :id"),
+        {"id": file_id},
+    )
+    fake = RecordedLlm(
+        fields={
+            "sample_size": {
+                "value": 142,
+                "evidence": _cite(QUOTE_A, "a quote absent from the text"),
+            }
+        }
+    )
+
+    run, _ = await _extract(db_session, fake)
+
+    grounded, unanchored = await _evidence(db_session, run.id)
+    assert (grounded.article_file_id, grounded.content_version) == (file_id, 7)
+    assert grounded.position != {}
+    assert unanchored.position == {}
+    assert (unanchored.article_file_id, unanchored.content_version) == (None, None)

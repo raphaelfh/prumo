@@ -35,6 +35,8 @@ class PromptInputInfo:
 
     anchor_blocks: list[Any]
     anchor_file_id: UUID | None
+    #: The anchor file's ``content_version`` the blocks were read at.
+    content_version: int | None
     file_name: str | None
     truncated: bool
     est_tokens: int
@@ -103,6 +105,7 @@ async def build_prompt_input(
     return text, PromptInputInfo(
         anchor_blocks=blocks,
         anchor_file_id=main_file.id,
+        content_version=main_file.content_version,
         file_name=main_file.original_filename,
         truncated=info_truncated,
         est_tokens=est,
