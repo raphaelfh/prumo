@@ -97,6 +97,10 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
             "articles[].run.stage",
             "articles[].rows[].evidence[].locator",
             "articles[].rows[].run_stage",
+            "articles[].rows[].provenance.model",
+            "articles[].rows[].provenance.schema_sha256",
+            "articles[].rows[].provenance.text_sha256",
+            "articles[].rows[].provenance.prompt_version",
             "next_cursor",
         }
     ),

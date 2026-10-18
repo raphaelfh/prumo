@@ -55,7 +55,13 @@ from app.schemas.mcp_extractions import (
     McpRunRef,
 )
 from app.services.current_run import CurrentRunResolver
-from app.services.extraction_agent_evidence import EvidenceBatch, evidence_for, load_evidence_batch
+from app.services.extraction_agent_evidence import (
+    EvidenceBatch,
+    evidence_for,
+    load_evidence_batch,
+    load_provenance_batch,
+    provenance_for,
+)
 from app.services.extraction_run_read_service import (
     caller_can_see_peers,
     get_run_with_workflow_history,
@@ -549,6 +555,20 @@ async def list_agent_extractions(
         if response_format == "detailed" and details
         else EvidenceBatch()
     )
+    provenance = (
+        await load_provenance_batch(
+            db,
+            project_id=project_id,
+            proposal_ids={
+                p.id
+                for d in details.values()
+                for p in d.proposals
+                if p.source == ExtractionProposalSource.AI.value
+            },
+        )
+        if response_format == "detailed"
+        else {}
+    )
 
     article_meta: dict[UUID, dict[str, Any]] = {}
     items_by_article: list[tuple[UUID, list[Any]]] = []
@@ -659,6 +679,7 @@ async def list_agent_extractions(
                                 reviewer=resolved.reviewer,
                                 evidence=evidence_for(resolved, batch),
                                 run_stage=run.stage,
+                                provenance=provenance_for(resolved, provenance),
                             )
                         )
             items_by_article.append((article_pk, d_items))

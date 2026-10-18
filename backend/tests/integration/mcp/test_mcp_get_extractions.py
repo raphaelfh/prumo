@@ -537,3 +537,214 @@ async def test_run_reports_review_question_drift(mcp_client, pat_primary_rw, db_
         },
     )
     assert await drift() is True
+
+
+_SCHEMA_SHA = "a1" * 32
+_TEXT_SHA = "b2" * 32
+
+
+def _new_style_snapshot(*, model: str = "gpt-test-model") -> dict:
+    """A landed per-proposal snapshot with every identity key a generation
+    records."""
+    return {
+        "provider": "openai",
+        "model": model,
+        "mode_requested": "verified",
+        "mode_executed": "verified",
+        "passes": 2,
+        "prompt_version": "c3d4e5f6a7b8",
+        "template_version": {"id": str(uuid4()), "version": 7},
+        "schema_sha256": _SCHEMA_SHA,
+        "prompt_composition": {
+            "section_name": "participants",
+            "article_ref": {"file_name": "a.pdf", "content_version": 3, "text_sha256": _TEXT_SHA},
+        },
+    }
+
+
+_LEGACY_SNAPSHOT = {"provider": "openai", "model": "gpt-old", "prompt_version": "0123456789ab"}
+
+
+async def _ai_proposal(db_session, run_id: UUID, instance_id: UUID, field_id: UUID, snapshot):
+    from app.models.extraction_workflow import ExtractionProposalRecord
+
+    record = ExtractionProposalRecord(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source="ai",
+        source_user_id=None,
+        proposed_value={"value": "ai answer"},
+        generation_snapshot=snapshot,
+    )
+    db_session.add(record)
+    await db_session.flush()
+    return record.id
+
+
+async def _rows_by_field(mcp_client, pat, template_id) -> dict[str, list[dict]]:
+    body = await _get(mcp_client, pat, template_id, "detailed")
+    rows: dict[str, list[dict]] = {}
+    for row in body["articles"][0]["rows"]:
+        rows.setdefault(row["field_id"], []).append(row)
+    return rows
+
+
+async def test_ai_row_has_compact_provenance(mcp_client, pat_reviewer_rw, db_session):
+    contract = await contract_run(db_session)
+    await _ai_proposal(
+        db_session, contract.run_id, contract.instance_id, contract.number_id, _new_style_snapshot()
+    )
+
+    rows = await _rows_by_field(mcp_client, pat_reviewer_rw, contract.template_id)
+
+    [row] = rows[str(contract.number_id)]
+    assert row["decider"] == "ai"
+    assert row["provenance"] == {
+        "model": "gpt-test-model",
+        "mode": "verified",
+        "template_version": 7,
+        "schema_sha256": "a1a1a1a1a1a1",
+        "text_sha256": "b2b2b2b2b2b2",
+        "content_version": 3,
+        "prompt_version": "c3d4e5f6a7b8",
+    }
+
+
+async def test_human_and_legacy_rows_provenance_null(mcp_client, pat_reviewer_rw, db_session):
+    contract, _decisions = await _plant_typed_values(db_session)  # human rows on all 3 fields
+    legacy_field = await add_field(db_session, SEED.primary_entity_type, "legacy_ai")
+    pre_identity_field = await add_field(db_session, SEED.primary_entity_type, "pre_identity_ai")
+    await _ai_proposal(
+        db_session, contract.run_id, contract.instance_id, legacy_field, _LEGACY_SNAPSHOT
+    )
+    pre_identity = _new_style_snapshot()
+    del pre_identity["template_version"], pre_identity["schema_sha256"]
+    await _ai_proposal(
+        db_session, contract.run_id, contract.instance_id, pre_identity_field, pre_identity
+    )
+
+    rows = await _rows_by_field(mcp_client, pat_reviewer_rw, contract.template_id)
+
+    human_rows = [r for rs in rows.values() for r in rs if r["decider"] == "human"]
+    assert human_rows
+    assert all(r["provenance"] is None for r in human_rows)
+    for field_id in (legacy_field, pre_identity_field):
+        [row] = rows[str(field_id)]
+        assert row["decider"] == "ai"
+        assert row["provenance"] is None
+
+
+async def test_detailed_page_with_provenance_fits_the_cap(mcp_client, pat_primary_rw, db_session):
+    """Worst case: every row an AI row with full provenance, a long model id
+    and three 300-character quotes -- each page stays under the cap and the
+    cursor walks every row."""
+    section_id = await add_section(
+        db_session, SEED.primary_template, "arms", cardinality="many", entry_label="Arm"
+    )
+    field_ids = [await add_field(db_session, section_id, f"arm_f{i}") for i in range(3)]
+    run = await run_in_extract(db_session)
+    snapshot = _new_style_snapshot(model="m" * 120)
+    for position in range(40):
+        instance_id = uuid4()
+        await db_session.execute(
+            text(
+                "INSERT INTO public.extraction_instances "
+                "(id, project_id, article_id, template_id, entity_type_id, label, sort_order, "
+                " created_by) "
+                "VALUES (:id, :pid, :aid, :tid, :et, 'arm', :o, :uid)"
+            ),
+            {
+                "id": str(instance_id),
+                "pid": str(SEED.primary_project),
+                "aid": str(SEED.primary_article),
+                "tid": str(SEED.primary_template),
+                "et": str(section_id),
+                "o": position,
+                "uid": str(SEED.primary_profile),
+            },
+        )
+        for field_id in field_ids:
+            proposal_id = await _ai_proposal(db_session, run.id, instance_id, field_id, snapshot)
+            for rank in range(3):
+                db_session.add(
+                    ExtractionEvidence(
+                        project_id=SEED.primary_project,
+                        article_id=SEED.primary_article,
+                        run_id=run.id,
+                        proposal_record_id=proposal_id,
+                        created_by=SEED.primary_profile,
+                        text_content="e" * 400,
+                        rank=rank,
+                        position=_block_position(2, [4]),
+                    )
+                )
+    await db_session.flush()
+
+    cursor, pages, arm_rows = None, 0, 0
+    while True:
+        args = {
+            "project_id": str(SEED.primary_project),
+            "template_id": str(SEED.primary_template),
+            "article_id": str(SEED.primary_article),
+            "response_format": "detailed",
+        }
+        if cursor is not None:
+            args["cursor"] = cursor
+        body = structured(await call_tool(mcp_client, pat_primary_rw, "get_extractions", args))
+        assert len(compact_json(body)) <= RESULT_CAP
+        pages += 1
+        for row in body["articles"][0]["rows"] if body["articles"] else []:
+            if row["field_id"] in {str(f) for f in field_ids}:
+                assert row["provenance"]["model"] == "m" * 120
+                assert len(row["evidence"]) == 3
+                arm_rows += 1
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    assert pages > 1
+    assert arm_rows == 40 * len(field_ids)
+
+
+async def test_provenance_is_one_select_per_call(mcp_client, pat_reviewer_rw, db_session):
+    from sqlalchemy import event
+
+    contract = await contract_run(db_session)
+    extra_fields = [
+        await add_field(db_session, SEED.primary_entity_type, f"prov_q{i}") for i in range(4)
+    ]
+
+    async def provenance_selects() -> tuple[int, int]:
+        statements: list[str] = []
+
+        def record(_conn, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+
+        event.listen(db_session.bind.sync_engine, "before_cursor_execute", record)
+        try:
+            await _get(mcp_client, pat_reviewer_rw, contract.template_id, "detailed")
+        finally:
+            event.remove(db_session.bind.sync_engine, "before_cursor_execute", record)
+        snapshot_reads = [
+            s
+            for s in statements
+            if "generation_snapshot" in s
+            and "extraction_runs" in s
+            and "project_id" in s
+            and s.lstrip().upper().startswith("SELECT")
+            and "JOIN" in s.upper()
+        ]
+        return len(snapshot_reads), len(statements)
+
+    await _ai_proposal(
+        db_session, contract.run_id, contract.instance_id, contract.number_id, _new_style_snapshot()
+    )
+    one_row, total_one = await provenance_selects()
+    for field_id in extra_fields:
+        await _ai_proposal(
+            db_session, contract.run_id, contract.instance_id, field_id, _new_style_snapshot()
+        )
+    many_rows, total_many = await provenance_selects()
+
+    assert (one_row, many_rows) == (1, 1)
+    assert total_one == total_many

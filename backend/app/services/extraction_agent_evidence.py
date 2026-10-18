@@ -1,6 +1,7 @@
-"""Evidence for the researcher MCP `get_extractions` read, batched once per
-page: one evidence select for every visible proposal and decision, one
-`article_files` version read, then a pure per-row mapping.
+"""Evidence and generation provenance for the researcher MCP `get_extractions`
+read, batched once per page: one evidence select for every visible proposal
+and decision, one `article_files` version read, one snapshot select for the
+visible AI proposals, then a pure per-row mapping.
 
 Locators are derived from the parsed anchor only (`p{page}·b{block}`, the
 `get_article_text` block reference); a bare `page_number` -- which an older
@@ -11,34 +12,40 @@ model call may have supplied -- never becomes a locator. `grounded` and
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.evidence_block_refs import evidence_is_stale
-from app.models.extraction import ExtractionEvidence
+from app.models.extraction import ExtractionEvidence, ExtractionRun
+from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.schemas.extraction import PositionV1, RegionCitationAnchor, stored_anchor
 from app.schemas.mcp_article_text import block_locator
-from app.schemas.mcp_extractions import McpEvidence
+from app.schemas.mcp_extractions import McpEvidence, McpProvenance
 from app.services.evidence_reanchor import file_versions
 
 EVIDENCE_QUOTE_CAP = 300
 EVIDENCE_PER_ROW_CAP = 3
+_HASH_PREFIX = 12
+_MODES = frozenset({"fast", "verified"})
 
 
 class _ResolvedSource(Protocol):
-    """The two ids of a resolved value's own source row (the read service's
-    `_Resolved`), typed structurally to avoid an import cycle."""
+    """A resolved value's decider and the two ids of its own source row (the
+    read service's `_Resolved`), typed structurally to avoid an import cycle."""
 
     @property
     def decision_id(self) -> UUID | None: ...
 
     @property
     def proposal_id(self) -> UUID | None: ...
+
+    @property
+    def decider(self) -> str: ...
 
 
 @dataclass
@@ -142,3 +149,87 @@ def evidence_for(resolved: _ResolvedSource, batch: EvidenceBatch) -> list[McpEvi
             )
         )
     return out
+
+
+async def load_provenance_batch(
+    db: AsyncSession, *, project_id: UUID, proposal_ids: Collection[UUID]
+) -> dict[UUID, McpProvenance]:
+    """Compact provenance of each AI proposal in *proposal_ids* (the caller's
+    already blind-filtered, visible AI proposals), in one select scoped to
+    *project_id*; a proposal whose snapshot predates the identity keys is
+    absent from the result."""
+    if not proposal_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ExtractionProposalRecord.id, ExtractionProposalRecord.generation_snapshot)
+            .join(ExtractionRun, ExtractionRun.id == ExtractionProposalRecord.run_id)
+            .where(
+                ExtractionRun.project_id == project_id,
+                ExtractionProposalRecord.id.in_(list(proposal_ids)),
+                ExtractionProposalRecord.source == ExtractionProposalSource.AI.value,
+            )
+        )
+    ).all()
+    out: dict[UUID, McpProvenance] = {}
+    for proposal_id, snapshot in rows:
+        provenance = compact_provenance(snapshot)
+        if provenance is not None:
+            out[proposal_id] = provenance
+    return out
+
+
+def _str(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _int(value: object) -> int | None:
+    return value if type(value) is int else None
+
+
+def compact_provenance(snapshot: Mapping[str, Any] | None) -> McpProvenance | None:
+    """The MCP view of a landed generation snapshot, or `None` unless it holds
+    every required identity key (`model`, `mode_executed`,
+    `template_version.version`, `schema_sha256`, `prompt_version`) -- an older
+    snapshot is never a partial object. The article text hash and content
+    version may be null."""
+    if not isinstance(snapshot, Mapping):
+        return None
+    model = _str(snapshot.get("model"))
+    mode = snapshot.get("mode_executed")
+    template_version = snapshot.get("template_version")
+    version = (
+        _int(template_version.get("version")) if isinstance(template_version, Mapping) else None
+    )
+    schema_sha256 = _str(snapshot.get("schema_sha256"))
+    prompt_version = _str(snapshot.get("prompt_version"))
+    if (
+        model is None
+        or mode not in _MODES
+        or version is None
+        or schema_sha256 is None
+        or prompt_version is None
+    ):
+        return None
+    composition = snapshot.get("prompt_composition")
+    ref = composition.get("article_ref") if isinstance(composition, Mapping) else None
+    ref = ref if isinstance(ref, Mapping) else {}
+    text_sha256 = _str(ref.get("text_sha256"))
+    return McpProvenance(
+        model=model,
+        mode=cast(Literal["fast", "verified"], mode),
+        template_version=version,
+        schema_sha256=schema_sha256[:_HASH_PREFIX],
+        text_sha256=text_sha256[:_HASH_PREFIX] if text_sha256 is not None else None,
+        content_version=_int(ref.get("content_version")),
+        prompt_version=prompt_version,
+    )
+
+
+def provenance_for(
+    resolved: _ResolvedSource, provenance: Mapping[UUID, McpProvenance]
+) -> McpProvenance | None:
+    """A row's provenance: only an AI-decided row carries its proposal's."""
+    if resolved.decider != "ai" or resolved.proposal_id is None:
+        return None
+    return provenance.get(resolved.proposal_id)

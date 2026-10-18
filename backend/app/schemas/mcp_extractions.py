@@ -68,7 +68,25 @@ class McpConciseCell(BaseModel):
     disagreement: bool | None
 
 
+class McpProvenance(BaseModel):
+    """Server-generated identity of the generation behind an AI row: the
+    model, the mode that ran, the pinned template version, the output schema
+    and article text it saw (hashes are the first 12 hex characters), the
+    article's content version and the prompt version."""
+
+    model: str
+    mode: Literal["fast", "verified"]
+    template_version: int
+    schema_sha256: str
+    text_sha256: str | None
+    content_version: int | None
+    prompt_version: str
+
+
 class McpDetailedRow(BaseModel):
+    """`provenance`: set on an AI-decided row whose generation recorded its
+    identity; null for human and consensus rows and older AI rows."""
+
     instance_id: UUID
     field_id: UUID
     value: McpValue
@@ -76,6 +94,7 @@ class McpDetailedRow(BaseModel):
     reviewer: Literal["self", "peer"] | None
     evidence: list[McpEvidence]
     run_stage: str
+    provenance: McpProvenance | None
 
 
 class McpExtractionArticle(BaseModel):

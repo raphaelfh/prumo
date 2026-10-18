@@ -139,7 +139,11 @@ Read tools:
   reference of the first block the quote was anchored to (the same form
   `get_article_text` prints), or null when the quote could not be grounded
   in the parsed text; `stale` means the article was re-parsed after
-  anchoring, so the location may have moved.
+  anchoring, so the location may have moved. An AI-decided row also
+  carries `provenance = {model, mode, template_version, schema_sha256,
+  text_sha256, content_version, prompt_version}` (hashes cut to 12
+  characters) naming the generation behind it; human, consensus and older
+  AI rows carry `null`.
 - `get_template` — a project's questionnaire, in three views:
   `published` (default; what reviewers and the AI use), `draft` (managers
   only; the unpublished questionnaire with its `fingerprint` and `lint`)
