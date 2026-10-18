@@ -2,7 +2,7 @@
 client, so handler lines register coverage (the ASGI blind spot)."""
 
 from app.schemas.mcp_projects import McpProjectList, McpProjectOverview
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, clone_charms
 from tests.integration.mcp.tool_calls import call_tool, structured
 
 
@@ -22,7 +22,8 @@ async def test_list_projects_empty_state(mcp_client, pat_outsider_rw):
     assert body["note"] == "This token's user belongs to no project."
 
 
-async def test_get_project_tool(mcp_client, pat_reviewer_rw):
+async def test_get_project_tool(mcp_client, pat_reviewer_rw, db_session):
+    clone = await clone_charms(db_session, SEED.primary_project, SEED.primary_profile)
     body = structured(
         await call_tool(
             mcp_client, pat_reviewer_rw, "get_project", {"project_id": str(SEED.primary_project)}
@@ -30,6 +31,11 @@ async def test_get_project_tool(mcp_client, pat_reviewer_rw):
     )
     McpProjectOverview.model_validate(body)
     assert body["role"] == "reviewer"
+    assert body["templates"], "the seeded project has templates"
+    by_id = {t["template_id"]: t for t in body["templates"]}
+    assert all("instrument" in t for t in body["templates"])
+    assert by_id[str(SEED.primary_template)]["instrument"] == "custom"
+    assert by_id[str(clone.project_template_id)]["instrument"] == "charms"
 
 
 async def test_project_tools_metadata(mcp_client, pat_primary_read):

@@ -143,6 +143,7 @@ async def get_template(
         template_id=template.id,
         name=template.name,
         kind=template.kind,
+        instrument=summary.instrument,
         published_version=summary.published_version,
         narrow=summary.narrow,
         draft_open=draft_open,

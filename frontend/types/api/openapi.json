@@ -6299,6 +6299,18 @@
             "title": "Id",
             "type": "string"
           },
+          "instrument": {
+            "enum": [
+              "charms",
+              "charms_mm",
+              "probast",
+              "probast_ai",
+              "quadas2",
+              "custom"
+            ],
+            "title": "Instrument",
+            "type": "string"
+          },
           "kind": {
             "enum": [
               "extraction",
@@ -6321,6 +6333,7 @@
           "name",
           "description",
           "framework",
+          "instrument",
           "version",
           "kind",
           "entity_types_count"
@@ -8040,6 +8053,19 @@
             "title": "Framework",
             "type": "string"
           },
+          "instrument": {
+            "default": "custom",
+            "enum": [
+              "charms",
+              "charms_mm",
+              "probast",
+              "probast_ai",
+              "quadas2",
+              "custom"
+            ],
+            "title": "Instrument",
+            "type": "string"
+          },
           "kind": {
             "const": "extraction",
             "title": "Kind",
@@ -8698,6 +8724,18 @@
             "title": "Id",
             "type": "string"
           },
+          "instrument": {
+            "enum": [
+              "charms",
+              "charms_mm",
+              "probast",
+              "probast_ai",
+              "quadas2",
+              "custom"
+            ],
+            "title": "Instrument",
+            "type": "string"
+          },
           "is_active": {
             "title": "Is Active",
             "type": "boolean"
@@ -8736,6 +8774,7 @@
           "name",
           "description",
           "framework",
+          "instrument",
           "version",
           "kind",
           "schema",

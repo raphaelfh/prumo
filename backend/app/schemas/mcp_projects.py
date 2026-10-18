@@ -10,6 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.extraction import InstrumentCode
 from app.schemas.project_details import ProjectDetailsValues
 
 ProjectRoleValue = Literal[
@@ -47,6 +48,7 @@ class McpTemplateSummary(BaseModel):
     template_id: UUID
     name: str
     kind: str
+    instrument: InstrumentCode
     is_active: bool
     published_version: int | None
     narrow: bool | None

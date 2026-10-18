@@ -132,6 +132,7 @@ async def template_summaries(db: AsyncSession, *, project_id: UUID) -> list[McpT
                 template_id=template.id,
                 name=template.name,
                 kind=template.kind,
+                instrument=template.instrument,
                 is_active=template.is_active,
                 published_version=version.version if version is not None else None,
                 narrow=narrow,

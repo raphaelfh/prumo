@@ -4569,6 +4569,11 @@ export interface components {
              */
             id: string;
             /**
+             * Instrument
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
+            /**
              * Kind
              * @enum {string}
              */
@@ -5416,6 +5421,12 @@ export interface components {
              */
             framework: "CHARMS" | "PICOS" | "CUSTOM";
             /**
+             * Instrument
+             * @default custom
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
+            /**
              * Kind
              * @constant
              */
@@ -5667,6 +5678,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Instrument
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
             /** Is Active */
             is_active: boolean;
             /**

@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.extraction import InstrumentCode
+
 
 class McpOption(BaseModel):
     value: str
@@ -56,6 +58,7 @@ class McpTemplateView(BaseModel):
     template_id: UUID
     name: str
     kind: str
+    instrument: InstrumentCode
     published_version: int | None
     narrow: bool | None
     draft_open: bool | None

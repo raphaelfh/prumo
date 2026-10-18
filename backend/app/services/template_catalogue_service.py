@@ -37,6 +37,7 @@ async def list_global_templates(
             ExtractionTemplateGlobal.name,
             ExtractionTemplateGlobal.description,
             ExtractionTemplateGlobal.framework,
+            ExtractionTemplateGlobal.instrument,
             ExtractionTemplateGlobal.version,
             ExtractionTemplateGlobal.kind,
             func.count(ExtractionEntityType.id).label("entity_types_count"),

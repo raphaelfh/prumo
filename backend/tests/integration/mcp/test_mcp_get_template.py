@@ -426,3 +426,26 @@ async def test_legacy_options_read_canonical(mcp_client, pat_primary_read, db_se
         {"value": "No", "label": "No"},
     ]
     assert questions[text_field["id"]]["options"] is None
+
+
+async def test_get_template_carries_the_instrument_code(mcp_client, pat_primary_read, db_session):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_read,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id)},
+        )
+    )
+    assert body["instrument"] == "charms"
+
+    seeded = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_read,
+            "get_template",
+            {"project_id": str(SEED.primary_project), "template_id": str(SEED.primary_template)},
+        )
+    )
+    assert seeded["instrument"] == "custom"
