@@ -222,7 +222,7 @@ def _render_for(project: Project) -> str | None:
     )
 
 
-def _picots_enabled(settings: Any) -> bool:
+def picots_switch_on(settings: Any) -> bool:
     """``settings.ai_context.picots`` — an absent key is the default, ON."""
     ai_context = (settings or {}).get("ai_context") if isinstance(settings, Mapping) else None
     return bool((ai_context or {}).get("picots", True)) if isinstance(ai_context, Mapping) else True
@@ -250,7 +250,7 @@ async def build_review_question(db: AsyncSession, project_id: UUID) -> ReviewQue
     project = await ProjectRepository(db).get_by_id(project_id)
     if project is None:
         return None
-    text = _render_for(project) if _picots_enabled(project.settings) else None
+    text = _render_for(project) if picots_switch_on(project.settings) else None
     return ReviewQuestion(text=text, revision=project.protocol_revision)
 
 
@@ -291,7 +291,7 @@ def _slots_payload(raw: Any) -> dict[str, dict[str, Any]]:
 
 
 def _read_model(project: Project) -> dict[str, Any]:
-    enabled = _picots_enabled(project.settings)
+    enabled = picots_switch_on(project.settings)
     return {
         "picots": _slots_payload(project.picots_config_ai_review),
         "labels": labels_for(project.review_type),
@@ -400,7 +400,7 @@ async def set_ai_context(
             current_revision=project.protocol_revision,
             current=await get_ai_context(db, project_id),
         )
-    old_enabled = _picots_enabled(project.settings)
+    old_enabled = picots_switch_on(project.settings)
     old_picots = project.picots_config_ai_review
     if slot_updates is not None:
         # A new dict: plain JSONB tracks reassignment only.

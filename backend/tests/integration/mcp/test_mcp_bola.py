@@ -216,6 +216,13 @@ BOLA_CASES = [
     ),
     pytest.param(
         "pat_outsider_rw",
+        "get_setup_readiness",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="get_setup_readiness-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
         "set_review_question",
         {"project_id": str(SEED.primary_project), "expected_revision": 1, "picots_enabled": True},
         "NOT_FOUND",
@@ -571,6 +578,7 @@ def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[s
         },
         "get_review_question": {"project_id": b},
         "list_template_catalogue": {"project_id": b, "kind": "extraction"},
+        "get_setup_readiness": {"project_id": b},
         "set_review_question": {"project_id": b, "expected_revision": 1, "picots_enabled": True},
     }
 
