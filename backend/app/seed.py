@@ -3220,7 +3220,7 @@ async def backfill_llm_template_instructions(session: AsyncSession) -> None:
 
 async def main() -> None:
     # Function-local: both import this module's helpers (circular otherwise).
-    from app.seed_instrument import converge_instrument_codes
+    from app.seed_instrument import converge_seeded_globals
     from app.seed_probast_ai import seed_probast_ai
 
     print("Starting database seeding process...")
@@ -3232,8 +3232,7 @@ async def main() -> None:
             await seed_probast(session)
             await seed_quadas2(session)
             await seed_probast_ai(session)
-            await converge_instrument_codes(session)
-            await backfill_llm_template_instructions(session)
+            await converge_seeded_globals(session)
             await session.commit()
             print("Seeding completed successfully.")
         except Exception as e:

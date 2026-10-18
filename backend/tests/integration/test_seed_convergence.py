@@ -17,11 +17,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import seed, seed_instrument
+from app.models.extraction import ExtractionTemplateGlobal
 from app.models.extraction_versioning import TemplateKind
 from app.seed import (
     _CHARMS_CONDITIONAL_FIELDS,
@@ -29,6 +32,7 @@ from app.seed import (
     _ET_PARTICIPANTS,
     converge_charms_global,
 )
+from app.seed_instruction_defaults import CHARMS_INSTRUCTION
 from app.seed_instrument import converge_instrument_codes
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
 from app.services.template_versioning import clone_template
@@ -450,3 +454,42 @@ async def test_clone_inherits_and_converges_to_the_instrument_code(
         (await db_session.execute(_CLONE_INSTRUMENT_SQL, charms_id)).one(),
         (await db_session.execute(_CLONE_INSTRUMENT_SQL, pai_id)).one(),
     ) == after_first
+
+
+_FRESH_GLOBAL_ID = UUID("0f5e0000-0000-0000-0000-000000000001")
+
+
+@pytest.mark.asyncio
+async def test_converge_sees_globals_the_seeders_have_not_flushed(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``app.seed`` runs on ``AsyncSessionLocal`` (``autoflush=False``).
+
+    On a fresh database every seeded global is still a pending INSERT when the
+    converge pass runs, so a bulk UPDATE that does not flush first matches no
+    row and the global ships as ``custom`` with no instruction (CI's fresh
+    seed). A new global registered under a probe id replays that path.
+    """
+    monkeypatch.setattr(seed_instrument, "GLOBAL_INSTRUMENTS", {_FRESH_GLOBAL_ID: "charms"})
+    monkeypatch.setitem(seed._LLM_TEMPLATE_INSTRUCTIONS, _FRESH_GLOBAL_ID, CHARMS_INSTRUCTION)
+    monkeypatch.setitem(seed._RETIRED_LLM_TEMPLATE_INSTRUCTIONS, _FRESH_GLOBAL_ID, "")
+    db_session.sync_session.autoflush = False
+    db_session.add(
+        ExtractionTemplateGlobal(
+            id=_FRESH_GLOBAL_ID, name="Fresh seed probe", framework="CHARMS", version="1.0.0"
+        )
+    )
+
+    await seed_instrument.converge_seeded_globals(db_session)
+    await db_session.flush()
+
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT instrument, llm_template_instruction "
+                "FROM public.extraction_templates_global WHERE id = :tid"
+            ),
+            {"tid": str(_FRESH_GLOBAL_ID)},
+        )
+    ).one()
+    assert tuple(row) == ("charms", CHARMS_INSTRUCTION)
