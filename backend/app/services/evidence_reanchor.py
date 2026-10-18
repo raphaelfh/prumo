@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -98,6 +99,18 @@ def _page(pos: PositionV1) -> int:
     return anchor.page if anchor.kind == "region" else anchor.range.page
 
 
+def reanchored_position(stored: PositionV1 | None, pos: PositionV1) -> tuple[dict[str, Any], int]:
+    """The ``position`` and ``page_number`` a row re-anchored to *pos* takes.
+
+    The stored ``anchor.quote`` is copied back: the quote is history.
+    """
+    position = pos.model_dump(by_alias=True, mode="json")
+    stored_quote = getattr(stored.anchor, "quote", None) if stored is not None else None
+    if stored_quote is not None:
+        position["anchor"]["quote"] = stored_quote
+    return position, _page(pos)
+
+
 async def reanchor_file(
     db: AsyncSession,
     file_id: UUID,
@@ -133,12 +146,7 @@ async def reanchor_file(
                 row.content_version = old_version
             stale += 1
             continue
-        position = pos.model_dump(by_alias=True, mode="json")
-        stored_quote = getattr(stored.anchor, "quote", None) if stored is not None else None
-        if stored_quote is not None:
-            position["anchor"]["quote"] = stored_quote
-        row.position = position
-        row.page_number = _page(pos)
+        row.position, row.page_number = reanchored_position(stored, pos)
         row.content_version = new_version
         reanchored += 1
 
