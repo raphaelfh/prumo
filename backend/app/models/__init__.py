@@ -28,7 +28,6 @@ from app.models.extraction import (
     ExtractionField,
     ExtractionFieldType,
     ExtractionFramework,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
@@ -37,6 +36,7 @@ from app.models.extraction import (
 )
 from app.models.extraction_attempt import ExtractionAttempt  # noqa: F401
 from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem  # noqa: F401
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import (
     ConsensusRule,
     ExtractionHitlConfig,

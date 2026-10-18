@@ -22,10 +22,8 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.evidence_block_refs import evidence_is_stale
-from app.models.extraction import (
-    ExtractionEvidence,
-    ExtractionInstance,
-)
+from app.models.extraction import ExtractionEvidence
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,

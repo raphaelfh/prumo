@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionReviewerDecision,

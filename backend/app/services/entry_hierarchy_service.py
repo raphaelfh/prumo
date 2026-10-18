@@ -25,10 +25,10 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.repositories.extraction_repository import ExtractionInstanceRepository
 from app.schemas.extraction import EntryCreateResponse, ExtractionErrorCode

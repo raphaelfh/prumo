@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.claim_value import option_label_map
 from app.models.article import Article
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalSource, ExtractionReviewerDecisionType
 from app.schemas.extraction_run import (
     ProposalRecordResponse,

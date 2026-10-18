@@ -23,11 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionEvidence,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
 from app.models.extraction_attempt import ExtractionAttempt
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_extraction import (

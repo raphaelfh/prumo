@@ -19,7 +19,8 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEntityType, ExtractionInstance
+from app.models.extraction import ExtractionEntityType
+from app.models.extraction_instance import ExtractionInstance
 from app.repositories.extraction_repository import ExtractionInstanceRepository
 
 

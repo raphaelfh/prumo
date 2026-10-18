@@ -30,11 +30,11 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import StructuredCall, extract_structured
 from app.models.extraction import (
     ExtractionEntityType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.schemas.extraction import INSTRUMENT_LABELS, SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_extraction._batch import extract_all_sections

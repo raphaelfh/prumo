@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.services.entity_key import (
     HISTORY_KEY,
     existing_keys,

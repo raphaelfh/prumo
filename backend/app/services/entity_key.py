@@ -53,7 +53,7 @@ from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.schemas.extraction import ExtractionErrorCode
 
 # JSONB keys under ``extraction_instances.metadata``.

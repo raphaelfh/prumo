@@ -7,8 +7,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.models.extraction import ExtractionInstance, ExtractionRunStage
+from app.models.extraction import ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
+from app.models.extraction_instance import ExtractionInstance
 from app.schemas.extraction import SectionExtractionRequest
 from app.services import llm_connection_service
 from app.services.extraction_attempt_service import ExtractionAttemptService

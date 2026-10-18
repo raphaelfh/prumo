@@ -21,7 +21,8 @@ from uuid import UUID
 
 from app.llm.extractor import LlmUsage
 from app.llm.prompts import Ancestor, Scope, entry_identification
-from app.models.extraction import ExtractionInstance, ExtractionRun
+from app.models.extraction import ExtractionRun
+from app.models.extraction_instance import ExtractionInstance
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._ancestry import ancestry_of, noun_of
 from app.services.ai_extraction._candidates import build_candidates

@@ -235,7 +235,7 @@ async def test_legacy_stored_article_text_key_replays_over_http(graph, monkeypat
 async def test_omitted_run_is_bound_once(graph):
     from sqlalchemy import select
 
-    from app.models.extraction import ExtractionInstance
+    from app.models.extraction_instance import ExtractionInstance
 
     db, scope, iid, _ = graph
     instance = (

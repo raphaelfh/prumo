@@ -19,8 +19,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.error_handler import AuthorizationError
 from app.llm.prompts import entry_identification
-from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRun
+from app.models.extraction import (
+    ExtractionEvidence,
+    ExtractionRun,
+)
 from app.models.extraction_attempt import ExtractionAttempt
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.repositories import ExtractionRunRepository
 from app.schemas.extraction import SectionExtractionRequest

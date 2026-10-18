@@ -42,10 +42,10 @@ from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionField,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.repositories import ExtractionInstanceRepository, ExtractionRunRepository
 from app.repositories.extraction_proposal_repository import ExtractionProposalRepository

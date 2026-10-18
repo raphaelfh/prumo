@@ -32,7 +32,7 @@ from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
 from app.models.extraction_versioning import TemplateKind
 
 if TYPE_CHECKING:
-    pass
+    from app.models.extraction_instance import ExtractionInstance
 
 
 class ExtractionFramework(str, PyEnum):
@@ -479,86 +479,6 @@ class ExtractionField(BaseModel):
 
     def __repr__(self) -> str:
         return f"<ExtractionField {self.name}>"
-
-
-class ExtractionInstance(BaseModel):
-    """
-    Instancia especifica de entidade for cada article.
-
-    Indices:
-    - project_id, article_id, template_id: FKs indexadas
-    - (article_id, entity_type_id, sort_order): busca ordenada
-    - metadata: GIN for busca em JSONB
-    """
-
-    __tablename__ = "extraction_instances"
-
-    project_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.projects.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    article_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.articles.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
-    template_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.project_extraction_templates.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-
-    entity_type_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_entity_types.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
-    parent_instance_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-
-    label: Mapped[str] = mapped_column(String, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default={}, nullable=False)
-
-    created_by: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
-    is_template: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
-
-    # Relationships
-    template: Mapped["ProjectExtractionTemplate"] = relationship(
-        "ProjectExtractionTemplate",
-        back_populates="instances",
-    )
-
-    __table_args__ = (
-        # Indice composto for busca ordenada por article
-        Index(
-            "idx_extraction_instances_article_entity_sort",
-            "article_id",
-            "entity_type_id",
-            "sort_order",
-        ),
-        # Indice GIN for metadata
-        Index("idx_extraction_instances_metadata_gin", "metadata", postgresql_using="gin"),
-        {"schema": "public"},
-    )
-
-    def __repr__(self) -> str:
-        return f"<ExtractionInstance {self.label}>"
 
 
 class ExtractionEvidence(BaseModel):
