@@ -49,6 +49,8 @@ class McpErrorCode(StrEnum):
     FIELD_NOT_EDITABLE = "FIELD_NOT_EDITABLE"
     STALE_VALUE = "STALE_VALUE"
     DUPLICATE_NAME = "DUPLICATE_NAME"
+    IN_USE = "IN_USE"
+    STRUCTURE_CONFLICT = "STRUCTURE_CONFLICT"
     RETRY = "RETRY"
     RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -86,6 +88,14 @@ _SPECS: dict[McpErrorCode, _CodeSpec] = {  # one entry per code; next_step text 
     McpErrorCode.DUPLICATE_NAME: _CodeSpec(
         True, "call get_template, then resend; the server re-derives the name"
     ),
+    McpErrorCode.IN_USE: _CodeSpec(
+        False,
+        "the question or section holds recorded data; tell the user, it can only change in "
+        "prumo after that data is handled",
+    ),
+    McpErrorCode.STRUCTURE_CONFLICT: _CodeSpec(
+        False, "read get_template(view='draft'), fix the structure named by rule, and resend"
+    ),
     McpErrorCode.RETRY: _CodeSpec(True, "call get_template to check state before resending"),
     McpErrorCode.RATE_LIMITED: _CodeSpec(True, "wait retry_after_seconds, then retry"),
     McpErrorCode.INTERNAL_ERROR: _CodeSpec(
@@ -105,6 +115,8 @@ AUDITED_CODES: frozenset[McpErrorCode] = frozenset(
         McpErrorCode.FIELD_NOT_EDITABLE,
         McpErrorCode.STALE_VALUE,
         McpErrorCode.DUPLICATE_NAME,
+        McpErrorCode.IN_USE,
+        McpErrorCode.STRUCTURE_CONFLICT,
         McpErrorCode.RETRY,
     }
 )

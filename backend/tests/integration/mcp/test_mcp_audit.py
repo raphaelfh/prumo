@@ -18,13 +18,17 @@ from app.api.mcp.errors import AUDITED_CODES, McpErrorCode
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import agent_template_draft_service, template_field_service
 from app.services.pat_service import create_token, revoke_token
-from app.services.template_field_service import DuplicateFieldNameError
+from app.services.template_field_service import (
+    CrossTemplateMoveError,
+    DuplicateFieldNameError,
+    FieldInUseError,
+)
 from app.utils.rate_limiter import limiter
 from tests.integration.conftest import SEED, get_config_draft_marker, set_config_draft_marker
 from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.rpc import rpc
-from tests.integration.mcp.tool_calls import call_tool, error_payload
+from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 
 _AUDITED = {
     "INVALID_ARGUMENT",
@@ -36,6 +40,8 @@ _AUDITED = {
     "FIELD_NOT_EDITABLE",
     "STALE_VALUE",
     "DUPLICATE_NAME",
+    "IN_USE",
+    "STRUCTURE_CONFLICT",
     "RETRY",
 }
 
@@ -291,7 +297,7 @@ async def _build_drivers(
             {
                 "project_id": str(project_id),
                 "template_id": str(template_id),
-                "ops": [{"op": "delete_question"}],
+                "ops": [{"op": "publish"}],
             },
         )
 
@@ -353,6 +359,39 @@ async def _build_drivers(
                 ],
             },
         )
+
+    async def fingerprinted(op: dict[str, Any]) -> CallToolResult:
+        project_id, template_id, schema = await fresh_charms(db_session)
+        section = next(et for et in schema["entity_types"] if et.get("fields"))
+        args = {"project_id": str(project_id), "template_id": str(template_id)}
+        view = structured(
+            await call_tool(mcp_client, pat_primary_rw, "get_template", {**args, "view": "changes"})
+        )
+        op = {**op, "field_id": section["fields"][0]["id"]}
+        if "section_id" in op:
+            op["section_id"] = section["id"]
+        return await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "edit_template_draft",
+            {**args, "ops": [op], "expected_fingerprint": view["fingerprint"]},
+        )
+
+    async def in_use() -> CallToolResult:
+        async def _raise(*_a: Any, **_k: Any) -> None:
+            raise FieldInUseError("in use")
+
+        monkeypatch.setattr(template_field_service, "delete_field", _raise)
+        return await fingerprinted({"op": "delete_question"})
+
+    async def structure_conflict() -> CallToolResult:
+        async def _raise(*_a: Any, **_k: Any) -> None:
+            raise CrossTemplateMoveError("cross")
+
+        monkeypatch.setattr(template_field_service, "move_field", _raise)
+        result = await fingerprinted({"op": "move_question", "section_id": "", "position": 0})
+        assert error_payload(result)["rule"] == "cross_template_move"
+        return result
 
     async def retry() -> CallToolResult:
         project_id, template_id, schema = await fresh_charms(db_session)
@@ -426,6 +465,8 @@ async def _build_drivers(
         McpErrorCode.FIELD_NOT_EDITABLE: field_not_editable,
         McpErrorCode.STALE_VALUE: stale_value,
         McpErrorCode.DUPLICATE_NAME: duplicate_name,
+        McpErrorCode.IN_USE: in_use,
+        McpErrorCode.STRUCTURE_CONFLICT: structure_conflict,
         McpErrorCode.RETRY: retry,
         McpErrorCode.RATE_LIMITED: rate_limited,
         McpErrorCode.INTERNAL_ERROR: internal_error,

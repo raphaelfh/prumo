@@ -8,7 +8,13 @@ from app.api.mcp.errors import validation_failure
 from app.api.mcp.tools.template_draft import _DESCRIPTION
 from app.core.config import Settings
 from app.schemas.hitl_session import TemplateConfigDiffRead
-from app.schemas.mcp_template_draft import AddQuestionOp, UpdateQuestionOp
+from app.schemas.mcp_template_draft import (
+    AddQuestionOp,
+    DeleteQuestionOp,
+    MoveQuestionOp,
+    ReorderQuestionsOp,
+    UpdateQuestionOp,
+)
 from app.schemas.template_structure import OptionItem
 from app.utils.compact_json import compact_json
 
@@ -208,3 +214,68 @@ def test_capped_diff_default_budget_bounds_the_worst_case() -> None:
 def test_tool_description_states_the_option_shape() -> None:
     assert "[{value?, label}]" in _DESCRIPTION
     assert "trimmed label" in _DESCRIPTION
+
+
+def test_delete_question_op_validates() -> None:
+    op = DeleteQuestionOp(op="delete_question", field_id=_FIELD_ID)
+    assert op.field_id == _FIELD_ID
+
+
+def test_move_question_op_validates() -> None:
+    op = MoveQuestionOp(op="move_question", field_id=_FIELD_ID, section_id=_SECTION_ID, position=0)
+    assert op.position == 0
+
+
+def test_move_question_op_negative_position_is_invalid() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        MoveQuestionOp(op="move_question", field_id=_FIELD_ID, section_id=_SECTION_ID, position=-1)
+    assert exc_info.value.errors()[0]["loc"] == ("position",)
+
+
+def test_reorder_questions_op_validates() -> None:
+    op = ReorderQuestionsOp(op="reorder_questions", section_id=_SECTION_ID, field_ids=[_FIELD_ID])
+    assert op.field_ids == [_FIELD_ID]
+
+
+def test_reorder_questions_op_empty_field_ids_is_invalid() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ReorderQuestionsOp(op="reorder_questions", section_id=_SECTION_ID, field_ids=[])
+    assert exc_info.value.errors()[0]["loc"] == ("field_ids",)
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (DeleteQuestionOp, {"op": "delete_question", "field_id": _FIELD_ID, "x": 1}),
+        (
+            MoveQuestionOp,
+            {
+                "op": "move_question",
+                "field_id": _FIELD_ID,
+                "section_id": _SECTION_ID,
+                "position": 0,
+                "x": 1,
+            },
+        ),
+        (
+            ReorderQuestionsOp,
+            {
+                "op": "reorder_questions",
+                "section_id": _SECTION_ID,
+                "field_ids": [_FIELD_ID],
+                "x": 1,
+            },
+        ),
+    ],
+    ids=["delete", "move", "reorder"],
+)
+def test_new_ops_forbid_extra_keys(model: type, payload: dict[str, object]) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        model.model_validate(payload)
+    assert exc_info.value.errors()[0]["loc"] == ("x",)
+
+
+def test_tool_description_names_the_fingerprint_rule() -> None:
+    for op in ("delete_question", "move_question", "reorder_questions"):
+        assert op in _DESCRIPTION
+    assert "expected_fingerprint" in _DESCRIPTION

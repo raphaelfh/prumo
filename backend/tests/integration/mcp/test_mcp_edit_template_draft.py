@@ -26,18 +26,28 @@ from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import template_field_naming, template_field_service
 from app.services.pat_service import create_token, resolve_principal
 from app.utils.compact_json import RESULT_CAP, compact_json
-from tests.integration.conftest import SEED, clean_project_clones
+from tests.integration.conftest import SEED, clean_project_clones, make_proposal, open_session
 from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
     add_field,
     add_section,
     draft_lock_holder,
+    entity_id,
     force_narrow_baseline,
     fresh_charms,
 )
+from tests.integration.helpers.template_fixtures import field_id as fixture_field_id
 from tests.integration.mcp.conftest import SeededPat
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
+
+_ALLOWED = [
+    "add_question",
+    "delete_question",
+    "move_question",
+    "reorder_questions",
+    "update_question",
+]
 
 
 class _Pg(Exception):
@@ -369,13 +379,21 @@ async def test_draft_lock_held_precedes_baseline_refusals(
 @pytest.mark.parametrize(
     "extra_op",
     [
-        {"op": "delete_question"},
-        {"op": "move_question"},
+        {"op": "publish"},
+        {"op": "clone_template"},
         {"op": "add_section"},
         {"op": "update_question", "type": "number"},
         {"op": "update_question", "options": ["a"]},
+        {"op": "update_question", "name": "renamed"},
     ],
-    ids=["delete_question", "move_question", "add_section", "update_type", "update_options"],
+    ids=[
+        "publish",
+        "clone_template",
+        "add_section",
+        "update_type",
+        "update_options",
+        "update_name",
+    ],
 )
 async def test_disallowed_op_refused(
     mcp_client, pat_primary_rw, db_session: AsyncSession, extra_op: dict[str, Any]
@@ -400,8 +418,8 @@ async def test_disallowed_op_refused(
     payload = error_payload(result)
     assert payload["code"] == "OP_NOT_ALLOWED_VIA_AGENT"
     assert payload["op_index"] == 1
-    assert payload["allowed_ops"] == ["add_question", "update_question"]
-    blocked_key = {"type", "options"} & bad.keys()
+    assert payload["allowed_ops"] == _ALLOWED
+    blocked_key = {"name", "type", "options"} & bad.keys()
     if blocked_key:
         assert payload["field"] == blocked_key.pop()
         assert payload["editable_fields"] == ["description", "instructions", "label"]
@@ -1133,7 +1151,7 @@ async def test_non_ascii_draft_diff_stays_within_the_result_cap(
             ],
             "INVALID_ARGUMENT",
         ),
-        (lambda _section_id, _field_id: [{"op": "delete_question"}], "OP_NOT_ALLOWED_VIA_AGENT"),
+        (lambda _section_id, _field_id: [{"op": "publish"}], "OP_NOT_ALLOWED_VIA_AGENT"),
         (
             lambda _section_id, field_id: [
                 {"op": "update_question", "field_id": field_id, "type": "number"}
@@ -1170,3 +1188,404 @@ async def test_post_membership_refusals_carry_names(
     )
     assert payload["code"] == code
     _assert_named(payload, await _names(db_session, project_id, template_id))
+
+
+# --------------------------------------------------------------------------
+# delete / move / reorder questions and the fingerprint guard
+# --------------------------------------------------------------------------
+
+
+def _sections_with_fields(schema: dict[str, Any], minimum: int = 1) -> list[dict[str, Any]]:
+    return [et for et in schema["entity_types"] if len(et.get("fields") or []) >= minimum]
+
+
+async def _ordered_field_ids(db: AsyncSession, section_id: str) -> list[str]:
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id FROM public.extraction_fields WHERE entity_type_id = :sid "
+                "ORDER BY sort_order, id"
+            ),
+            {"sid": section_id},
+        )
+    ).scalars()
+    return [str(row) for row in rows]
+
+
+async def _sort_orders(db: AsyncSession, section_id: str) -> list[int]:
+    rows = (
+        await db.execute(
+            text(
+                "SELECT sort_order FROM public.extraction_fields WHERE entity_type_id = :sid "
+                "ORDER BY sort_order, id"
+            ),
+            {"sid": section_id},
+        )
+    ).scalars()
+    return list(rows)
+
+
+async def _fingerprint(mcp_client, pat, project_id: UUID, template_id: UUID) -> str:
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id), "view": "changes"},
+        )
+    )
+    assert body["fingerprint"]
+    return body["fingerprint"]
+
+
+async def _edit(mcp_client, pat, project_id: UUID, template_id: UUID, ops, **extra: Any):
+    return await call_tool(
+        mcp_client,
+        pat,
+        "edit_template_draft",
+        {"project_id": str(project_id), "template_id": str(template_id), "ops": ops, **extra},
+    )
+
+
+async def test_delete_question_applies_with_fingerprint(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    label = _label_of(schema, section_id, field_id)
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": field_id}],
+            expected_fingerprint=fp,
+        )
+    )
+    assert body["applied"] == [{"op_index": 0, "op": "delete_question", "field_id": field_id}]
+    assert field_id not in await _ordered_field_ids(db_session, section_id)
+    assert body["draft_fingerprint"] != fp
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT before, after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert row.before["ops"][0]["label"] == label
+    assert row.before["ops"][0]["section_id"] == section_id
+    assert row.after["ops"][0] == {
+        "op_index": 0,
+        "op": "delete_question",
+        "field_id": field_id,
+    }
+
+
+async def test_delete_without_fingerprint_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    before = await _label_set(db_session, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": field_id}],
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "expected_fingerprint"
+    assert payload["message"] == "required when a batch deletes or moves"
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_stale_fingerprint_is_stale_value(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    current = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+    before = await _label_set(db_session, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": field_id}],
+            expected_fingerprint="stale",
+        )
+    )
+    assert payload["code"] == "STALE_VALUE"
+    assert payload["current_fingerprint"] == current
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == 1
+    assert await _audit_count(db_session, outcome="applied") == 0
+
+
+async def test_delete_question_with_recorded_values_is_in_use(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    owner = await entity_id(db_session, template_id, "sample_size")
+    target = await fixture_field_id(
+        db_session, template_id, "sample_size", "number_of_participants"
+    )
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+    before = await _label_set(db_session, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": str(target)}],
+            expected_fingerprint=fp,
+        )
+    )
+    assert payload["code"] == "IN_USE"
+    assert payload["op_index"] == 0
+    assert payload["retryable"] is False
+    assert await _label_set(db_session, template_id) == before
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_move_question_renumbers_destination(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    source, destination = _sections_with_fields(schema)[:2]
+    moved = source["fields"][0]["id"]
+    existing = await _ordered_field_ids(db_session, destination["id"])
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "move_question",
+                    "field_id": moved,
+                    "section_id": destination["id"],
+                    "position": 0,
+                }
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    assert await _ordered_field_ids(db_session, destination["id"]) == [moved, *existing]
+    assert await _sort_orders(db_session, destination["id"]) == list(range(len(existing) + 1))
+    applied = body["applied"][0]
+    assert applied["op"] == "move_question"
+    assert applied["field_id"] == moved
+    assert applied["section_id"] == destination["id"]
+    assert applied["section_label"] == destination["label"]
+
+
+async def test_move_question_past_the_end_appends(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    source, destination = _sections_with_fields(schema)[:2]
+    moved = source["fields"][0]["id"]
+    existing = await _ordered_field_ids(db_session, destination["id"])
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "move_question",
+                    "field_id": moved,
+                    "section_id": destination["id"],
+                    "position": 999,
+                }
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    assert await _ordered_field_ids(db_session, destination["id"]) == [*existing, moved]
+    assert await _sort_orders(db_session, destination["id"]) == list(range(len(existing) + 1))
+
+
+async def test_reorder_questions_sets_order(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section = _sections_with_fields(schema, minimum=2)[0]
+    reversed_ids = list(reversed(await _ordered_field_ids(db_session, section["id"])))
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "reorder_questions", "section_id": section["id"], "field_ids": reversed_ids}],
+        )
+    )
+    assert await _ordered_field_ids(db_session, section["id"]) == reversed_ids
+    assert await _sort_orders(db_session, section["id"]) == list(range(len(reversed_ids)))
+    assert body["applied"] == [
+        {
+            "op_index": 0,
+            "op": "reorder_questions",
+            "section_id": section["id"],
+            "section_label": section["label"],
+            "field_ids": reversed_ids,
+        }
+    ]
+
+
+@pytest.mark.parametrize("shape", ["missing_one", "duplicate"], ids=["wrong_ids", "duplicate_ids"])
+async def test_reorder_with_mismatched_ids_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, shape: str
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section = _sections_with_fields(schema, minimum=2)[0]
+    ids = await _ordered_field_ids(db_session, section["id"])
+    sent = ids[1:] if shape == "missing_one" else [*ids, ids[0]]
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "reorder_questions", "section_id": section["id"], "field_ids": sent}],
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "field_ids"
+    assert payload["op_index"] == 0
+    assert payload["message"] == "field_ids must name exactly this section's questions"
+    assert await _ordered_field_ids(db_session, section["id"]) == ids
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_failing_op_rolls_back_batch(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    before = await _label_set(db_session, template_id)
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {"op": "add_question", "section_id": section_id, "label": "New Q", "type": "text"},
+                {"op": "update_question", "field_id": field_id, "label": "Reworded"},
+                {"op": "delete_question", "field_id": str(uuid4())},
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    assert payload["code"] == "NOT_FOUND"
+    assert payload["op_index"] == 2
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+
+
+async def test_unknown_op_lists_allowed_ops(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    payload = error_payload(
+        await _edit(mcp_client, pat_primary_rw, project_id, template_id, [{"op": "publish"}])
+    )
+    assert payload["code"] == "OP_NOT_ALLOWED_VIA_AGENT"
+    assert payload["allowed_ops"] == _ALLOWED
+
+
+async def test_one_applied_row_covers_each_op(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    shrinking = _sections_with_fields(schema, minimum=2)[0]
+    others = [s for s in _sections_with_fields(schema) if s["id"] != shrinking["id"]]
+    target, landing = others[:2]
+    moved = (await _ordered_field_ids(db_session, shrinking["id"]))[0]
+    remaining = (await _ordered_field_ids(db_session, shrinking["id"]))[1:]
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "add_question",
+                    "section_id": target["id"],
+                    "label": "Extra",
+                    "type": "text",
+                },
+                {"op": "update_question", "field_id": target["fields"][0]["id"], "label": "New"},
+                {
+                    "op": "move_question",
+                    "field_id": moved,
+                    "section_id": landing["id"],
+                    "position": 0,
+                },
+                {
+                    "op": "reorder_questions",
+                    "section_id": shrinking["id"],
+                    "field_ids": list(reversed(remaining)),
+                },
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    expected = ["add_question", "update_question", "move_question", "reorder_questions"]
+    assert [a["op"] for a in body["applied"]] == expected
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT before, after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert [op["op"] for op in row.after["ops"]] == expected
+    assert row.after["ops"][3]["field_ids"] == list(reversed(remaining))
+    assert row.before["ops"][2]["section_id"] == shrinking["id"]

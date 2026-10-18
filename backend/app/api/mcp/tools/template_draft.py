@@ -36,9 +36,15 @@ from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
-    AppliedQuestion,
+    AppliedDeleteOp,
+    AppliedOp,
+    AppliedQuestionOp,
+    AppliedReorderOp,
+    DeleteQuestionOp,
     DraftOp,
     EditTemplateDraftResult,
+    MoveQuestionOp,
+    ReorderQuestionsOp,
     UpdateQuestionOp,
 )
 from app.services import agent_template_draft_service
@@ -46,6 +52,7 @@ from app.services.agent_template_draft_service import (
     AppliedDraftOp,
     DraftOpError,
     NarrowBaselineError,
+    ReorderMismatchError,
 )
 from app.services.project_read_service import project_name
 from app.services.project_template_active_service import (
@@ -54,8 +61,10 @@ from app.services.project_template_active_service import (
 )
 from app.services.template_draft_lock_service import DraftLockHeldError, claim_draft_lock
 from app.services.template_field_service import (
+    CrossTemplateMoveError,
     DuplicateFieldNameError,
     EntityTypeNotFoundError,
+    FieldInUseError,
     FieldNotFoundError,
 )
 from app.services.template_section_service import SectionNotFoundError
@@ -70,10 +79,22 @@ from app.utils.text_caps import cap_text
 
 _TOOL = "edit_template_draft"
 MAX_OPS = 25
-_OPS: dict[str, type[AddQuestionOp] | type[UpdateQuestionOp]] = {
+_OPS: dict[
+    str,
+    type[AddQuestionOp]
+    | type[UpdateQuestionOp]
+    | type[DeleteQuestionOp]
+    | type[MoveQuestionOp]
+    | type[ReorderQuestionsOp],
+] = {
     "add_question": AddQuestionOp,
     "update_question": UpdateQuestionOp,
+    "delete_question": DeleteQuestionOp,
+    "move_question": MoveQuestionOp,
+    "reorder_questions": ReorderQuestionsOp,
 }
+# Ops that need the draft fingerprint the agent last read.
+_FINGERPRINTED_OPS = frozenset({"delete_question", "move_question"})
 # Advertised only: `_parse_ops` still validates each op, so an empty list, too
 # many ops or a malformed op is an AUDITED refusal, not an SDK-level one.
 _OPS_SCHEMA = WithJsonSchema(
@@ -83,15 +104,15 @@ _OPS_SCHEMA = WithJsonSchema(
     }
 )
 _ALLOWED_OPS = sorted(_OPS)
-# update_question rewords only; a type or options change goes through the UI.
-_LOCKED_UPDATE_KEYS = frozenset({"type", "options"})
+# update_question rewords only; a name, type or options change goes through the UI.
+_LOCKED_UPDATE_KEYS = frozenset({"name", "type", "options"})
 _EDITABLE_UPDATE_FIELDS = sorted(UpdateQuestionOp.model_fields.keys() - {"op", "field_id"})
 _ROW_GUARDS = (SectionNotFoundError, EntityTypeNotFoundError, FieldNotFoundError)
 _NOT_ALLOWED_MESSAGE = "This op can only be done in the prumo UI."
-_LOCKED_KEY_MESSAGE = "A question's type or options can only be changed in the prumo UI."
+_LOCKED_KEY_MESSAGE = "A question's name, type or options can only be changed in the prumo UI."
 _LOCKED_KEY_NEXT_STEP = (
     "resend update_question with only the editable_fields listed here; "
-    "change type or options in the prumo UI"
+    "change name, type or options in the prumo UI"
 )
 # NarrowBaselineError.reason -> (message, next_step): each names its own fix.
 _NARROW_BASELINE = {
@@ -109,8 +130,13 @@ _NEXT_STEP = (
     "reviewers or AI extraction see it."
 )
 _DESCRIPTION = (
-    "Add a question to a section, or reword an existing one, in a project template's "
-    "unpublished draft. Never report a question as live -- it stays invisible "
+    "Edit a project template's unpublished draft: add_question adds a question to a "
+    "section; update_question rewords one; delete_question deletes one (refused while it "
+    "holds recorded data); move_question moves one to a section at a 0-based position; "
+    "reorder_questions sets a section's order and must name exactly its questions. "
+    "A batch with delete_question or move_question needs expected_fingerprint: the "
+    "fingerprint from get_template view 'draft' or 'changes'. "
+    "Never report a change as live -- it stays invisible "
     "to reviewers and to AI extraction until a project manager clicks Publish in prumo. "
     "A select or multiselect question takes options as [{value?, label}]; a missing value "
     "becomes the trimmed label, and values must be unique. "
@@ -133,12 +159,18 @@ async def edit_template_draft(
     project_id: UUID,
     template_id: UUID,
     ops: Annotated[list[dict[str, Any]], _OPS_SCHEMA],
+    expected_fingerprint: str | None = None,
 ) -> EditTemplateDraftResult:
     scope = AuditScope(
         tool=_TOOL,
         project_id=project_id,
         template_id=template_id,
-        input={"project_id": str(project_id), "template_id": str(template_id), "ops": ops},
+        input={
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": ops,
+            "expected_fingerprint": expected_fingerprint,
+        },
     )
     try:  # 1 -- ownership before any audited refusal (no row for NOT_FOUND)
         template = await owned_template(db, project_id=project_id, template_id=template_id)
@@ -150,7 +182,7 @@ async def edit_template_draft(
     names = {"project_name": await project_name(db, project_id), "template_name": template.name}
     link = editor_url(project_id, template.kind)
     try:
-        applied, diff = await _apply(db, scope, project_id, template_id, ops)
+        applied, diff = await _apply(db, scope, project_id, template_id, ops, expected_fingerprint)
     except McpToolError as error:
         await refuse(db, scope, with_names(error, **names))
 
@@ -159,18 +191,7 @@ async def edit_template_draft(
         visible_to_reviewers_and_ai=False,
         project_name=cap_text(names["project_name"])[0],
         template_name=cap_text(names["template_name"])[0],
-        applied=[
-            AppliedQuestion(
-                op_index=a.op_index,
-                op=a.op,
-                field_id=a.field.id,
-                section_id=a.field.entity_type_id,
-                section_label=cap_text(a.section_label)[0],
-                name=a.field.name,
-                label=a.field.label,
-            )
-            for a in applied
-        ],
+        applied=[_applied_reply(a) for a in applied],
         diff=capped_diff(diff, budget=0),  # placeholder: measures the rest of the result
         draft_fingerprint=diff.fingerprint,
         editor_url=link,
@@ -191,10 +212,18 @@ async def _apply(
     project_id: UUID,
     template_id: UUID,
     ops: list[dict[str, Any]],
+    expected_fingerprint: str | None,
 ) -> tuple[list[AppliedDraftOp], TemplateConfigDiffRead]:
     """Steps 2-5 and the applied row; every audited refusal surfaces as McpToolError."""
     try:
         parsed = _parse_ops(ops)  # 2, 3
+        guarded = any(op.op in _FINGERPRINTED_OPS for op in parsed)
+        if guarded and expected_fingerprint is None:
+            raise McpToolError(
+                McpErrorCode.INVALID_ARGUMENT,
+                "required when a batch deletes or moves",
+                field="expected_fingerprint",
+            )
         # Claim before the baseline check: the claim's UPDATE row-locks the
         # template, and create_run takes that row FOR SHARE, so no run can pin
         # the (empty) active version between the pinned-run check and commit.
@@ -203,6 +232,8 @@ async def _apply(
             db, project_id=project_id, template_id=template_id, user_id=current_principal().user_sub
         )  # 4
         await _assert_baseline(db, template_id)  # 5
+        if guarded:
+            await _assert_fingerprint(db, project_id, template_id, expected_fingerprint)
         applied = await agent_template_draft_service.apply_draft_ops(
             db, project_id=project_id, template_id=template_id, ops=parsed
         )
@@ -285,6 +316,23 @@ async def _assert_baseline(db: AsyncSession, template_id: UUID) -> None:
         raise McpToolError(McpErrorCode.NARROW_BASELINE, message, next_step=next_step) from exc
 
 
+async def _assert_fingerprint(
+    db: AsyncSession, project_id: UUID, template_id: UUID, expected: str | None
+) -> None:
+    """A destructive or moving batch applies only to the draft the agent last read."""
+    current = (
+        await get_template_config_diff(db, project_id=project_id, template_id=template_id)
+    ).fingerprint
+    if current != expected:
+        raise McpToolError(
+            McpErrorCode.STALE_VALUE,
+            "The draft changed since you read it; nothing was changed.",
+            next_step="call get_template with view 'changes', confirm with the user, then "
+            "resend with its fingerprint",
+            current_fingerprint=current,
+        )
+
+
 def _op_failure(exc: DraftOpError) -> McpToolError | None:
     cause = exc.cause
     if isinstance(cause, _ROW_GUARDS):
@@ -293,6 +341,26 @@ def _op_failure(exc: DraftOpError) -> McpToolError | None:
         return McpToolError(
             McpErrorCode.DUPLICATE_NAME,
             "That question name is already used in this section.",
+            op_index=exc.op_index,
+        )
+    if isinstance(cause, FieldInUseError):
+        return McpToolError(
+            McpErrorCode.IN_USE,
+            "This question holds recorded data and cannot be deleted.",
+            op_index=exc.op_index,
+        )
+    if isinstance(cause, CrossTemplateMoveError):
+        return McpToolError(
+            McpErrorCode.STRUCTURE_CONFLICT,
+            "A question can only move to a section of the same template.",
+            rule="cross_template_move",
+            op_index=exc.op_index,
+        )
+    if isinstance(cause, ReorderMismatchError):
+        return McpToolError(
+            McpErrorCode.INVALID_ARGUMENT,
+            "field_ids must name exactly this section's questions",
+            field="field_ids",
             op_index=exc.op_index,
         )
     if isinstance(cause, ValidationError):
@@ -304,14 +372,54 @@ def _op_failure(exc: DraftOpError) -> McpToolError | None:
     return None
 
 
+def _applied_reply(a: AppliedDraftOp) -> AppliedOp:
+    if a.op == "delete_question":
+        return AppliedDeleteOp(op_index=a.op_index, op=a.op, field_id=_deleted_id(a))
+    assert a.section_id is not None and a.section_label is not None
+    section_label = cap_text(a.section_label)[0]
+    if a.op == "reorder_questions":
+        assert a.field_ids is not None
+        return AppliedReorderOp(
+            op_index=a.op_index,
+            op=a.op,
+            section_id=a.section_id,
+            section_label=section_label,
+            field_ids=a.field_ids,
+        )
+    assert a.field is not None
+    return AppliedQuestionOp(
+        op_index=a.op_index,
+        op=a.op,
+        field_id=a.field.id,
+        section_id=a.section_id,
+        section_label=section_label,
+        name=a.field.name,
+        label=a.field.label,
+    )
+
+
+def _deleted_id(a: AppliedDraftOp) -> UUID:
+    assert a.before is not None
+    return UUID(a.before["field_id"])
+
+
 def _applied_json(a: AppliedDraftOp) -> dict[str, Any]:
-    return {
-        "op_index": a.op_index,
-        "op": a.op,
-        "field_id": str(a.field.id),
-        "section_id": str(a.field.entity_type_id),
-        "name": a.field.name,
-        "label": a.field.label,
-        "description": a.field.description,
-        "instructions": a.field.llm_description,
-    }
+    row: dict[str, Any] = {"op_index": a.op_index, "op": a.op}
+    if a.op == "delete_question":
+        row["field_id"] = str(_deleted_id(a))
+        return row
+    if a.section_id is not None:
+        row["section_id"] = str(a.section_id)
+    if a.field_ids is not None:
+        row["field_ids"] = [str(fid) for fid in a.field_ids]
+    if a.field is not None:
+        row.update(
+            field_id=str(a.field.id),
+            name=a.field.name,
+            label=a.field.label,
+            description=a.field.description,
+            instructions=a.field.llm_description,
+        )
+    if a.after is not None:
+        row.update(a.after)
+    return row

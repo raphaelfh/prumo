@@ -1,5 +1,5 @@
-"""Questionnaire edits the MCP agent may make (spec §5.2): add a question, or reword
-one. Both stay invisible to reviewers and AI until a manager publishes, and only on a
+"""Questionnaire edits the MCP agent may make (spec §5.2): add, reword, delete, move
+or reorder questions. All stay invisible to reviewers and AI until a manager publishes, and only on a
 non-narrow active version. Flushes only; the MCP tool commits."""
 
 from collections.abc import Sequence
@@ -16,17 +16,29 @@ from app.models.extraction import ExtractionField, ExtractionRun
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
-from app.schemas.mcp_template_draft import AddQuestionOp, DraftOp, UpdateQuestionOp
+from app.schemas.mcp_template_draft import (
+    AddQuestionOp,
+    DeleteQuestionOp,
+    DraftOp,
+    MoveQuestionOp,
+    ReorderQuestionsOp,
+    UpdateQuestionOp,
+)
 from app.schemas.template_structure import (
     TemplateFieldCreateRequest,
+    TemplateFieldMoveRequest,
     TemplateFieldRead,
+    TemplateFieldReorderRequest,
+    TemplateFieldSortOrderUpdate,
     TemplateFieldUpdateRequest,
 )
 from app.services import template_field_naming, template_field_service
 from app.services.extraction_snapshot import baseline_isolated_for_agent
 from app.services.template_field_service import (
+    CrossTemplateMoveError,
     DuplicateFieldNameError,
     EntityTypeNotFoundError,
+    FieldInUseError,
     FieldNotFoundError,
 )
 from app.services.template_section_service import SectionNotFoundError, owned_section
@@ -34,11 +46,19 @@ from app.services.template_versioning import (
     NoActiveTemplateVersionError,
 )
 
+
+class ReorderMismatchError(Exception):
+    """A reorder's ``field_ids`` do not name exactly the section's questions, once each."""
+
+
 _OP_ERRORS = (
     SectionNotFoundError,
     EntityTypeNotFoundError,
     FieldNotFoundError,
     DuplicateFieldNameError,
+    FieldInUseError,
+    CrossTemplateMoveError,
+    ReorderMismatchError,
     ValidationError,
     DBAPIError,
 )
@@ -72,15 +92,28 @@ class DraftOpError(Exception):
         self.cause = cause
 
 
+DraftOpName = Literal[
+    "add_question", "update_question", "delete_question", "move_question", "reorder_questions"
+]
+
+
 @dataclass(frozen=True)
 class AppliedDraftOp:
-    """One successfully-applied op, for the MCP tool's audit row and reply."""
+    """One successfully-applied op, for the MCP tool's audit row and reply.
+
+    ``field`` is the question left in place (add, update, move); a delete
+    leaves none. ``section_id``/``section_label`` name the section the op
+    landed in; ``field_ids`` is a reorder's new order. ``before``/``after``
+    are the op's own audit snapshots."""
 
     op_index: int
-    op: Literal["add_question", "update_question"]
-    field: TemplateFieldRead
-    section_label: str
-    before: dict[str, Any] | None
+    op: DraftOpName
+    field: TemplateFieldRead | None = None
+    section_id: UUID | None = None
+    section_label: str | None = None
+    field_ids: list[UUID] | None = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
 
 
 async def assert_isolated_baseline(db: AsyncSession, *, template_id: UUID) -> None:
@@ -135,7 +168,11 @@ async def _add(
         db, project_id=project_id, template_id=template_id, payload=payload
     )
     return AppliedDraftOp(
-        op_index=index, op="add_question", field=field, section_label=section_label, before=None
+        op_index=index,
+        op="add_question",
+        field=field,
+        section_id=field.entity_type_id,
+        section_label=section_label,
     )
 
 
@@ -159,9 +196,124 @@ async def _update(
         op_index=index,
         op="update_question",
         field=field,
+        section_id=field.entity_type_id,
         section_label=section_label,
         before=before,
     )
+
+
+async def _delete(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: DeleteQuestionOp
+) -> AppliedDraftOp:
+    row = await template_field_service.owned_field(
+        db, template_id=template_id, field_id=op.field_id
+    )
+    before = {
+        "field_id": str(row.id),
+        "label": row.label,
+        "name": row.name,
+        "type": row.field_type,
+        "section_id": str(row.entity_type_id),
+    }
+    await template_field_service.delete_field(
+        db, project_id=project_id, template_id=template_id, field_id=op.field_id
+    )
+    return AppliedDraftOp(op_index=index, op="delete_question", before=before)
+
+
+async def _section_field_ids(db: AsyncSession, section_id: UUID) -> list[UUID]:
+    return list(
+        (
+            await db.execute(
+                select(ExtractionField.id)
+                .where(ExtractionField.entity_type_id == section_id)
+                .order_by(ExtractionField.sort_order, ExtractionField.id)
+            )
+        ).scalars()
+    )
+
+
+async def _renumber(
+    db: AsyncSession, project_id: UUID, template_id: UUID, field_ids: Sequence[UUID]
+) -> None:
+    await template_field_service.reorder_fields(
+        db,
+        project_id=project_id,
+        template_id=template_id,
+        payload=TemplateFieldReorderRequest(
+            updates=[
+                TemplateFieldSortOrderUpdate(id=fid, sort_order=i)
+                for i, fid in enumerate(field_ids)
+            ]
+        ),
+    )
+
+
+async def _move(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: MoveQuestionOp
+) -> AppliedDraftOp:
+    row = await template_field_service.owned_field(
+        db, template_id=template_id, field_id=op.field_id
+    )
+    before = {"section_id": str(row.entity_type_id), "sort_order": row.sort_order}
+    section = await owned_section(db, template_id=template_id, section_id=op.section_id)
+    section_label = section.label
+    field = await template_field_service.move_field(
+        db,
+        project_id=project_id,
+        template_id=template_id,
+        field_id=op.field_id,
+        payload=TemplateFieldMoveRequest(entity_type_id=op.section_id, sort_order=op.position),
+    )
+    order = [fid for fid in await _section_field_ids(db, op.section_id) if fid != op.field_id]
+    position = min(op.position, len(order))
+    order.insert(position, op.field_id)
+    await _renumber(db, project_id, template_id, order)
+    return AppliedDraftOp(
+        op_index=index,
+        op="move_question",
+        field=field,
+        section_id=op.section_id,
+        section_label=section_label,
+        before=before,
+        after={"section_id": str(op.section_id), "position": position},
+    )
+
+
+async def _reorder(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: ReorderQuestionsOp
+) -> AppliedDraftOp:
+    section = await owned_section(db, template_id=template_id, section_id=op.section_id)
+    section_label = section.label
+    current = await _section_field_ids(db, op.section_id)
+    if len(set(op.field_ids)) != len(op.field_ids) or set(op.field_ids) != set(current):
+        raise ReorderMismatchError("field_ids must name exactly this section's questions")
+    await _renumber(db, project_id, template_id, op.field_ids)
+    return AppliedDraftOp(
+        op_index=index,
+        op="reorder_questions",
+        section_id=op.section_id,
+        section_label=section_label,
+        field_ids=list(op.field_ids),
+        before={"field_ids": [str(fid) for fid in current]},
+        after={"field_ids": [str(fid) for fid in op.field_ids]},
+    )
+
+
+async def _dispatch(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: DraftOp
+) -> AppliedDraftOp:
+    match op:
+        case AddQuestionOp():
+            return await _add(db, project_id, template_id, index, op)
+        case UpdateQuestionOp():
+            return await _update(db, project_id, template_id, index, op)
+        case DeleteQuestionOp():
+            return await _delete(db, project_id, template_id, index, op)
+        case MoveQuestionOp():
+            return await _move(db, project_id, template_id, index, op)
+        case ReorderQuestionsOp():
+            return await _reorder(db, project_id, template_id, index, op)
 
 
 async def apply_draft_ops(
@@ -176,10 +328,7 @@ async def apply_draft_ops(
     applied: list[AppliedDraftOp] = []
     for index, op in enumerate(ops):
         try:
-            if isinstance(op, AddQuestionOp):
-                applied.append(await _add(db, project_id, template_id, index, op))
-            else:
-                applied.append(await _update(db, project_id, template_id, index, op))
+            applied.append(await _dispatch(db, project_id, template_id, index, op))
         except _OP_ERRORS as exc:
             raise DraftOpError(index, exc) from exc
     return applied

@@ -3,7 +3,7 @@
 FIELD-level so ``errors()[0]["loc"]`` names the argument (a model validator
 reports an empty loc)."""
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
@@ -78,19 +78,66 @@ class UpdateQuestionOp(BaseModel):
         return value
 
 
-DraftOp = AddQuestionOp | UpdateQuestionOp
+class DeleteQuestionOp(BaseModel):
+    """Delete a question; refused while it holds recorded data."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["delete_question"]
+    field_id: UUID
 
 
-class AppliedQuestion(BaseModel):
-    """One op the tool applied, for the reply."""
+class MoveQuestionOp(BaseModel):
+    """Move a question to a section of the same template at a 0-based position;
+    a position past the end appends."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["move_question"]
+    field_id: UUID
+    section_id: UUID
+    position: int = Field(ge=0)
+
+
+class ReorderQuestionsOp(BaseModel):
+    """Set a section's question order: ``field_ids`` names exactly its questions."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["reorder_questions"]
+    section_id: UUID
+    field_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+DraftOp = AddQuestionOp | UpdateQuestionOp | DeleteQuestionOp | MoveQuestionOp | ReorderQuestionsOp
+
+
+class AppliedQuestionOp(BaseModel):
+    """An applied op that leaves one question in place: added, reworded or moved."""
 
     op_index: int
-    op: Literal["add_question", "update_question"]
+    op: Literal["add_question", "update_question", "move_question"]
     field_id: UUID
     section_id: UUID
     section_label: str
     name: str
     label: str
+
+
+class AppliedDeleteOp(BaseModel):
+    op_index: int
+    op: Literal["delete_question"]
+    field_id: UUID
+
+
+class AppliedReorderOp(BaseModel):
+    op_index: int
+    op: Literal["reorder_questions"]
+    section_id: UUID
+    section_label: str
+    field_ids: list[UUID]
+
+
+AppliedOp = Annotated[
+    AppliedQuestionOp | AppliedDeleteOp | AppliedReorderOp, Field(discriminator="op")
+]
 
 
 class EditTemplateDraftResult(BaseModel):
@@ -100,7 +147,7 @@ class EditTemplateDraftResult(BaseModel):
     visible_to_reviewers_and_ai: Literal[False]
     project_name: str
     template_name: str
-    applied: list[AppliedQuestion]
+    applied: list[AppliedOp]
     diff: McpDraftDiff
     draft_fingerprint: str | None
     editor_url: str
