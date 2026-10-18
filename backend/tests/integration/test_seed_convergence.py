@@ -15,6 +15,7 @@ can be proven by the capturing doubles in ``tests/unit``:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -28,6 +29,7 @@ from app.seed import (
     _ET_PARTICIPANTS,
     converge_charms_global,
 )
+from app.seed_instrument import converge_instrument_codes
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
 from app.services.template_versioning import clone_template
 from tests.integration.conftest import (
@@ -35,6 +37,7 @@ from tests.integration.conftest import (
     SEED,
     clean_project_clones,
     clone_charms,
+    set_config_draft_marker,
 )
 
 # NOTE: the COLUMN is `schema`; `schema_` is only the Python attribute name
@@ -388,3 +391,62 @@ async def test_converge_charms_skips_a_referenced_catalogue(db_session: AsyncSes
     await db_session.commit()
 
     assert set(await _charms_global_fields(db_session)) >= _RETIRED
+
+
+_CLONE_INSTRUMENT_SQL = text(
+    "SELECT instrument, config_draft_since FROM public.project_extraction_templates WHERE id = :cid"
+)
+
+
+@pytest.mark.asyncio
+async def test_clone_inherits_and_converges_to_the_instrument_code(
+    db_session: AsyncSession,
+) -> None:
+    """A clone copies its global's code; a drifted clone converges, idempotently.
+
+    The draft marker is pinned because the instrument converge writes the
+    template row only: the 0048 draft triggers live on entity types and
+    fields, so a boot-time converge must never open a draft.
+    """
+    await seed_probast_ai(db_session)
+    await converge_instrument_codes(db_session)
+    await clean_project_clones(db_session, SEED.secondary_project)
+    charms = await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
+    probast_ai = await clone_template(
+        db_session,
+        project_id=SEED.secondary_project,
+        global_template_id=_PROBAST_AI_TEMPLATE_ID,
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    charms_id = {"cid": str(charms.project_template_id)}
+    pai_id = {"cid": str(probast_ai.project_template_id)}
+    assert (await db_session.execute(_CLONE_INSTRUMENT_SQL, charms_id)).one().instrument == "charms"
+    assert (
+        await db_session.execute(_CLONE_INSTRUMENT_SQL, pai_id)
+    ).one().instrument == "probast_ai"
+
+    draft_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    await set_config_draft_marker(db_session, charms.project_template_id, None)
+    await set_config_draft_marker(db_session, probast_ai.project_template_id, draft_at)
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates SET instrument = 'custom' WHERE id = :cid"
+        ),
+        pai_id,
+    )
+    assert (await db_session.execute(_CLONE_INSTRUMENT_SQL, pai_id)).one().instrument == "custom"
+
+    await converge_instrument_codes(db_session)
+    after_first = (
+        (await db_session.execute(_CLONE_INSTRUMENT_SQL, charms_id)).one(),
+        (await db_session.execute(_CLONE_INSTRUMENT_SQL, pai_id)).one(),
+    )
+    assert tuple(after_first[0]) == ("charms", None)
+    assert tuple(after_first[1]) == ("probast_ai", draft_at)
+
+    await converge_instrument_codes(db_session)
+    assert (
+        (await db_session.execute(_CLONE_INSTRUMENT_SQL, charms_id)).one(),
+        (await db_session.execute(_CLONE_INSTRUMENT_SQL, pai_id)).one(),
+    ) == after_first

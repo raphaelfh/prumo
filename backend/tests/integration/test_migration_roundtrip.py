@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0086_evidence_idx_hitl_fk"
+    expected_head = "0087_template_instrument"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2221,3 +2221,58 @@ async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
         ):
             await session.execute(text(sql), ids)
         await session.commit()
+
+
+_0087_TABLES = ("extraction_templates_global", "project_extraction_templates")
+_0087_CHECKS = (
+    "ck_extraction_templates_global_instrument",
+    "ck_project_extraction_templates_instrument",
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0087_template_instrument_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """Both template tables gain a checked ``instrument`` column; the
+    downgrade drops column and CHECK, the re-upgrade restores both.
+    ``alembic check`` ignores CHECKs, so the names are asserted here."""
+    session = migration_session
+
+    async def schema() -> tuple[set[str], set[str]]:
+        tables = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.columns"
+                        " WHERE table_schema = 'public' AND column_name = 'instrument'"
+                        " AND table_name = ANY(:n)"
+                    ),
+                    {"n": list(_0087_TABLES)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checks = set(
+            (
+                await session.execute(
+                    text("SELECT conname FROM pg_constraint WHERE conname = ANY(:n)"),
+                    {"n": list(_0087_CHECKS)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.rollback()
+        return tables, checks
+
+    at_head = (set(_0087_TABLES), set(_0087_CHECKS))
+    assert await schema() == at_head
+    try:
+        _run_alembic("downgrade", "0086_evidence_idx_hitl_fk", database_url=migration_db_url)
+        assert await schema() == (set(), set())
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    assert await schema() == at_head

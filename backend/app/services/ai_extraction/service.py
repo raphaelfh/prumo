@@ -35,7 +35,7 @@ from app.models.extraction import (
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
-from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.extraction import INSTRUMENT_LABELS, SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_extraction._batch import extract_all_sections
 from app.services.ai_extraction._pipeline import Pipeline
@@ -52,17 +52,20 @@ from app.services.llm_engine_service import resolve_engine
 from app.services.run_prompt_context import resolve_run_prompt_context
 
 
-def _qa_framework_label(template: Any | None) -> str | None:
+def instrument_label(template: Any | None) -> str | None:
     """The instrument a quality-assessment prompt grounds in.
 
-    Prefers the template's human name ("PROBAST+AI", "QUADAS-2"): every QA
-    template is ``framework='CUSTOM'``, so the enum alone produced the prompt
-    "assessing a study using CUSTOM". Falls back to ``framework``.
+    A known ``instrument`` code yields its fixed label, so a renamed clone
+    still prompts as "PROBAST+AI". A ``custom`` template keeps its own name,
+    falling back to ``framework`` (every QA template is ``framework='CUSTOM'``,
+    so the enum alone would prompt "assessing a study using CUSTOM").
     """
     if template is None:
         return None
-    name = (getattr(template, "name", None) or "").strip()
-    return name or getattr(template, "framework", None)
+    label = INSTRUMENT_LABELS.get(template.instrument)
+    if label is not None:
+        return label
+    return (template.name or "").strip() or template.framework
 
 
 class AiExtraction:
@@ -295,13 +298,13 @@ class AiExtraction:
         decision). ``auto_advance_to_review`` is inert in the collapsed
         lifecycle; it is recorded in the results for telemetry continuity.
         The prompt pair follows ``run.kind`` and names the template's
-        instrument (``_qa_framework_label``).
+        instrument (``instrument_label``).
         """
         p = self._p
         start_time = perf_counter()
         run = await open_run_for_write(self._db, run_id, expect=ExtractionRunStage.EXTRACT.only())
         template = await self._db.get(ProjectExtractionTemplate, run.template_id)
-        framework = _qa_framework_label(template)
+        framework = instrument_label(template)
         kind = run.kind
         await p.runs.start_run(run.id)
         model = await p.adopt_frozen_engine(run.id, engine, run.project_id)

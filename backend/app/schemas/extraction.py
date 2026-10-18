@@ -15,6 +15,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # schema layer so request/response models never import the ORM enum.
 Framework = Literal["CHARMS", "PICOS", "CUSTOM"]
 
+# The appraisal instrument a template implements (column ``instrument``, 0087).
+InstrumentCode = Literal["charms", "charms_mm", "probast", "probast_ai", "quadas2", "custom"]
+# Fixed prompt label per code; ``custom`` has none: the template's own name.
+INSTRUMENT_LABELS: dict[str, str] = {
+    "charms": "CHARMS",
+    "charms_mm": "CHARMS + Multimodal (ML prediction)",
+    "probast": "PROBAST",
+    "probast_ai": "PROBAST+AI",
+    "quadas2": "QUADAS-2",
+}
+
 # =================== INTERNAL ASSEMBLY SCHEMAS ===================
 
 

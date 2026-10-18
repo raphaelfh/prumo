@@ -139,12 +139,14 @@ class ExtractionRunStatus(str, PyEnum):
     FAILED = "failed"
 
 
-class ExtractionTemplateGlobal(BaseModel):
-    """
-    Template global de extraction (CHARMS, PICOS, etc.).
+# The closed set of ``instrument`` codes (0087), shared by both template tables.
+_INSTRUMENT_CHECK = (
+    "instrument IN ('charms', 'charms_mm', 'probast', 'probast_ai', 'quadas2', 'custom')"
+)
 
-    Templates globais sao compartilhados entre projects.
-    """
+
+class ExtractionTemplateGlobal(BaseModel):
+    """A catalogue template (CHARMS, PROBAST, ...) shared by every project."""
 
     __tablename__ = "extraction_templates_global"
 
@@ -168,6 +170,8 @@ class ExtractionTemplateGlobal(BaseModel):
     schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stable appraisal-instrument code (0087); ``custom`` = no fixed instrument.
+    instrument: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'custom'"))
 
     # Relationships
     entity_types: Mapped[list["ExtractionEntityType"]] = relationship(
@@ -176,7 +180,6 @@ class ExtractionTemplateGlobal(BaseModel):
         foreign_keys="ExtractionEntityType.template_id",
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         Index("idx_extraction_templates_global_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_extraction_templates_global_id_kind"),
@@ -187,6 +190,7 @@ class ExtractionTemplateGlobal(BaseModel):
             "char_length(llm_template_instruction) <= 4000",
             name="llm_instruction_len",
         ),
+        CheckConstraint(_INSTRUMENT_CHECK, name="instrument"),
         {"schema": "public"},
     )
 
@@ -195,13 +199,7 @@ class ExtractionTemplateGlobal(BaseModel):
 
 
 class ProjectExtractionTemplate(BaseModel):
-    """
-    Template de extraction clonado and customizado por project.
-
-    Indices:
-    - project_id: FK indexada
-    - schema: GIN for busca em JSONB
-    """
+    """A project's own template: a clone of a global one, or created blank."""
 
     __tablename__ = "project_extraction_templates"
 
@@ -238,6 +236,8 @@ class ProjectExtractionTemplate(BaseModel):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stable appraisal-instrument code (0087); ``custom`` = no fixed instrument.
+    instrument: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'custom'"))
 
     # Slice B-4: stamped by DB triggers on any live config write
     # (extraction_entity_types / extraction_fields — the editor writes
@@ -283,7 +283,6 @@ class ProjectExtractionTemplate(BaseModel):
         back_populates="template",
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         Index("idx_project_extraction_templates_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_project_extraction_templates_id_kind"),
@@ -292,6 +291,7 @@ class ProjectExtractionTemplate(BaseModel):
             "char_length(llm_template_instruction) <= 4000",
             name="llm_instruction_len",
         ),
+        CheckConstraint(_INSTRUMENT_CHECK, name="instrument"),
         {"schema": "public"},
     )
 
@@ -544,7 +544,6 @@ class ExtractionInstance(BaseModel):
         back_populates="instances",
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         # Indice composto for busca ordenada por article
         Index(
@@ -630,7 +629,6 @@ class ExtractionEvidence(BaseModel):
         nullable=False,
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         # Indice GIN for position JSONB
         Index("idx_extraction_evidence_position_gin", "position", postgresql_using="gin"),
@@ -755,7 +753,6 @@ class ExtractionRun(Base, UUIDMixin):
         nullable=False,
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         # Indice composto for busca por status and estagio
         Index("idx_extraction_runs_status_stage", "status", "stage"),

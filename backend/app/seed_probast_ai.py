@@ -718,6 +718,7 @@ async def seed_probast_ai(session: AsyncSession) -> None:
     # manager-customized ✨ text, seeded (and a retired default replaced) by
     # ``backfill_llm_template_instructions``. Converging must not clobber it.
     template.name = "PROBAST+AI"
+    template.instrument = "probast_ai"
     template.description = _DESCRIPTION
     template.framework = "CUSTOM"
     template.version = "2.2.0"
