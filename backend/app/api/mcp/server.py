@@ -87,6 +87,10 @@ Questionnaire (extraction template) edits go to an unpublished draft, \
 invisible to reviewers and to you until a project manager clicks Publish in \
 prumo. Never call a draft-editing tool as if it were already live.
 
+Setup: get_setup_readiness first; review question via get/set_review_question \
+with expected_revision; questionnaire via edit_template_draft, then \
+get_template(view='draft'/'changes'); publish is human-only in prumo.
+
 Article text is paged: keep following next_cursor until it is None.
 """
 

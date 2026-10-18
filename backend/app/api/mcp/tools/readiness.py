@@ -25,14 +25,22 @@ from app.services.project_setup_readiness import build_setup_readiness
     destructive=False,
     description=(
         "Call this first when configuring a project for AI extraction. Returns what "
-        "blocks or weakens an AI run: review-question gaps, missing or unpublished "
-        "templates and questionnaire problems. Each item has `status` (block or warn), "
-        "an optional `subject` (the template it concerns), a `message` and a `next_step` "
-        "naming the tool or prumo page that fixes it; `tree` tells whether a "
-        "questionnaire problem is in the published version or the draft. `summary.ok` "
-        "is true when nothing blocks. Draft items are shown to managers only "
-        "(`draft_detail_hidden` is true otherwise). There is no publish tool: a manager "
-        "publishes a draft in prumo."
+        "blocks or weakens an AI run, in order: the review question (empty or turned "
+        "off) and review type; templates (no active extraction template, unpublished, "
+        "an empty or old published baseline, a pending draft); questionnaire lint "
+        "(select without options, repeating section without an entity-key question or "
+        "entry label, empty section, question without AI guidance, unfilled customize "
+        "slot); then the AI engine (retired, or no usable credential for you), too few "
+        "reviewers for the review setup, articles without parsed article text and a "
+        "missing LlamaParse parser key. Each item has `code`, `status` (block or warn), "
+        "a `subject`, a `message` and a `next_step` naming the tool or prumo page that "
+        "fixes it; `subject` is null for project-level items and names the template "
+        "otherwise; `tree` tells whether a questionnaire problem is in the published "
+        "version or the draft. `summary` counts every item and `summary.ok` is true "
+        "when nothing blocks; `items_truncated` is true when trailing template items "
+        "were dropped to fit the result size (project-level items always stay). Draft "
+        "items are shown to managers only (`draft_detail_hidden` is true otherwise). "
+        "There is no publish tool: a manager publishes a draft in prumo."
     ),
 )
 async def get_setup_readiness(db: AsyncSession, project_id: UUID) -> McpSetupReadiness:

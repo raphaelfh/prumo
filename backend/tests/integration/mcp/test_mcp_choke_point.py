@@ -22,11 +22,12 @@ from app.core.config import API_VERSION
 from tests.integration.conftest import SEED, IntegrationSeedIds
 from tests.integration.mcp.conftest import SeededPat, seed_oauth_principal
 
-# Tools allowed a destructive/open-world hint or a requiresUserInteraction meta.
 # INSTRUCTIONS length before the untrusted_fields paragraph: that paragraph
-# may spend at most 250 chars of the 2,048 budget later tools also need.
+# may spend at most 250 chars and the configuration (Setup) paragraph at most
+# 300 more of the 2,048 budget later tools also need.
 _PRE_HARDEN_INSTRUCTIONS_LEN = 1095
 
+# Tools allowed a destructive/open-world hint or a requiresUserInteraction meta.
 _HINT_ALLOWLIST: frozenset[str] = frozenset()
 
 
@@ -264,12 +265,13 @@ async def test_server_info_instructions_and_cache_hints(
         assert client.server_info.version == API_VERSION
         assert client.instructions is not None
         assert len(client.instructions) <= 2048
-        assert len(client.instructions) <= _PRE_HARDEN_INSTRUCTIONS_LEN + 250
+        assert len(client.instructions) <= _PRE_HARDEN_INSTRUCTIONS_LEN + 250 + 300
         assert "list_projects" in client.instructions
         assert "untrusted" in client.instructions
         assert "untrusted_fields" in client.instructions
         assert "nonce" in client.instructions
         assert "Publish" in client.instructions
+        assert "get_setup_readiness" in client.instructions
 
         result = await client.list_tools()
         assert result.ttl_ms == 3_600_000

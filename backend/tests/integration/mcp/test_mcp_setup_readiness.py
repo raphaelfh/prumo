@@ -646,3 +646,22 @@ async def test_result_is_capped_on_many_active_templates(
     assert len(body["items"]) < body["summary"]["block"] + body["summary"]["warn"]
     # The extraction template's items come before the QA ones that were trimmed.
     assert any((i["subject"] or {}).get("id") == str(template_id) for i in body["items"])
+
+
+async def test_description_names_every_item_family(mcp_client, pat_primary_rw):
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    description = tools["get_setup_readiness"].description
+    for phrase in (
+        "review question",
+        "review type",
+        "template",
+        "questionnaire",
+        "engine",
+        "reviewer",
+        "article text",
+        "parser",
+        "`items_truncated`",
+        "`subject` is null",
+    ):
+        assert phrase in description, phrase
