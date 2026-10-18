@@ -82,6 +82,8 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
         {
             "articles[].hits[].block_type",
             "articles[].hits[].locator",
+            "articles[].locators[].block_type",
+            "articles[].locators[].locator",
             "next_cursor",
             "note",
         }
