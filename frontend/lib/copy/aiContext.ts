@@ -18,6 +18,11 @@ export const aiContext = {
     saveError: 'Could not save the review question',
     loadError: 'Could not load the review question',
 
+    // A save refused because the protocol moved since the form was seeded.
+    conflictBanner:
+        'The review question changed since you opened it — another manager or an agent saved it. Reload to see it; your unsaved edits will be lost.',
+    conflictReload: 'Reload',
+
     // The switch
     enabledLabel: 'Send to the AI',
     enabledHint: 'Turn off to withhold the review question from AI calls without deleting it.',

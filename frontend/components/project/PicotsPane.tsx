@@ -19,7 +19,7 @@
  */
 
 import {useState} from 'react';
-import {ChevronRight} from 'lucide-react';
+import {AlertTriangle, ChevronRight} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
@@ -33,10 +33,12 @@ import {Skeleton} from '@/components/ui/skeleton';
 import {SettingsGroup, SettingsRow} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {useAiContext, useSetAiContext} from '@/hooks/project/useAiContext';
-import type {
-  PicotsSlot,
-  PicotsSlots,
-  ProjectAiContextRead,
+import {
+  isStaleRevision,
+  type PicotsSlot,
+  type PicotsSlots,
+  type ProjectAiContextRead,
+  type ProjectAiContextUpdate,
 } from '@/services/aiContextService';
 import {PICOTSItemEditor} from './settings/PICOTSItemEditor';
 
@@ -55,7 +57,9 @@ const EMPTY_SLOT: PicotsSlot = {description: '', inclusion: [], exclusion: []};
 interface PicotsFormProps {
   initial: ProjectAiContextRead;
   pending: boolean;
-  onSave: (body: {picots: PicotsSlots; picots_enabled: boolean}) => void;
+  /** A save was refused as stale: Save stays disabled until Reload re-seeds. */
+  conflict: boolean;
+  onSave: (body: ProjectAiContextUpdate) => void;
   onCancel: () => void;
   onDirtyChange: (dirty: boolean) => void;
 }
@@ -63,15 +67,19 @@ interface PicotsFormProps {
 /**
  * The form, mounted only once the read has arrived.
  *
- * State is initialized FROM PROPS on mount rather than synced in an effect:
- * seeding via `useEffect` triggers a cascading render and is the pattern
- * `react-hooks/set-state-in-effect` rejects. The host re-seeds the form by
- * bumping a `key` (see `PicotsPane`), never by an effect here.
+ * The seed is captured ONCE at mount and everything reads from it: the draft,
+ * the dirty baseline and the `expected_revision` the save sends. A background
+ * refetch moves the live read (a details save invalidates it,
+ * `refetchOnReconnect` is on) but must not move the precondition under unsaved
+ * edits — that would turn a stale save into a silent overwrite. The host
+ * re-seeds by bumping a `key` (see `PicotsPane`), never by an effect here, and
+ * never by keying on the revision, which would wipe unsaved edits on a refetch.
  */
-function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsFormProps) {
-  const [draft, setDraft] = useState<PicotsSlots>(() => initial.picots);
-  const [enabled, setEnabled] = useState(() => initial.picots_enabled ?? true);
-  const baseline = JSON.stringify([initial.picots, initial.picots_enabled ?? true]);
+function PicotsForm({initial, pending, conflict, onSave, onCancel, onDirtyChange}: PicotsFormProps) {
+  const [seed] = useState(() => initial);
+  const [draft, setDraft] = useState<PicotsSlots>(() => seed.picots);
+  const [enabled, setEnabled] = useState(() => seed.picots_enabled ?? true);
+  const baseline = JSON.stringify([seed.picots, seed.picots_enabled ?? true]);
   const dirty = JSON.stringify([draft, enabled]) !== baseline;
 
   const commit = (nextDraft: PicotsSlots, nextEnabled: boolean) => {
@@ -160,7 +168,7 @@ function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsF
           <CollapsibleContent>
             <p className="mt-1 px-2 text-xs text-muted-foreground">{t('aiContext', 'previewHint')}</p>
             <pre className="mt-1.5 max-h-40 overflow-auto rounded-md bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">
-              {initial.preview ?? t('aiContext', 'previewEmpty')}
+              {seed.preview ?? t('aiContext', 'previewEmpty')}
             </pre>
           </CollapsibleContent>
         </Collapsible>
@@ -170,7 +178,7 @@ function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsF
         {SLOT_KEYS.map((key) => (
           <PICOTSItemEditor
             key={key}
-            label={initial.labels?.[key] ?? key}
+            label={seed.labels?.[key] ?? key}
             fieldKey={key}
             data={slots[key] ?? EMPTY_SLOT}
             hint={key === 'timing' ? t('aiContext', 'timingHint') : undefined}
@@ -189,8 +197,10 @@ function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsF
             </Button>
             <Button
               size="sm"
-              onClick={() => onSave({picots: draft, picots_enabled: enabled})}
-              disabled={pending}
+              onClick={() =>
+                onSave({picots: draft, picots_enabled: enabled, expected_revision: seed.revision})
+              }
+              disabled={pending || conflict}
             >
               {pending ? t('aiContext', 'saving') : t('aiContext', 'save')}
             </Button>
@@ -207,11 +217,12 @@ interface PicotsPaneProps {
 }
 
 export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
-  const {data, isError} = useAiContext(projectId);
+  const {data, isError, refetch} = useAiContext(projectId);
   const mutation = useSetAiContext(projectId);
-  // Bumped on Cancel and after a save: the form is keyed by it, so it
-  // re-seeds from the latest read without an effect.
+  // Bumped on Cancel, after a save and on Reload: the form is keyed by it, so
+  // it re-seeds from the latest read without an effect.
   const [formSeq, setFormSeq] = useState(0);
+  const [conflict, setConflict] = useState(false);
   const reportDirty = (dirty: boolean) => onDirtyChange?.(dirty);
 
   const reset = () => {
@@ -219,13 +230,25 @@ export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
     reportDirty(false);
   };
 
-  const save = (body: {picots: PicotsSlots; picots_enabled: boolean}) => {
+  const save = (body: ProjectAiContextUpdate) => {
     mutation.mutate(body, {
       onSuccess: () => {
         toast.success(t('aiContext', 'saveSuccess'));
         reset();
       },
-      onError: () => toast.error(t('aiContext', 'saveError')),
+      onError: (error) => {
+        if (isStaleRevision(error)) setConflict(true);
+        else toast.error(t('aiContext', 'saveError'));
+      },
+    });
+  };
+
+  // The fresh read must land before the re-seed, or the form would remount
+  // from the same stale revision and refuse again.
+  const reload = () => {
+    void refetch().then(() => {
+      setConflict(false);
+      reset();
     });
   };
 
@@ -248,14 +271,31 @@ export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
     );
   }
   return (
-    <PicotsForm
-      key={formSeq}
-      initial={data}
-      pending={mutation.isPending}
-      onSave={save}
-      onCancel={reset}
-      onDirtyChange={reportDirty}
-    />
+    <>
+      {conflict && (
+        // A flat line in its own group, not a framed alert box: settings
+        // surfaces carry no card or callout (check_ui_primitives settings-frame).
+        <SettingsGroup>
+          <div role="alert" className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px]">
+            <AlertTriangle className="size-4 shrink-0 text-warning" strokeWidth={1.5} aria-hidden />
+            {/* basis-56: on a narrow column the button wraps below instead of crushing the text. */}
+            <p className="min-w-0 flex-1 basis-56">{t('aiContext', 'conflictBanner')}</p>
+            <Button size="sm" onClick={reload}>
+              {t('aiContext', 'conflictReload')}
+            </Button>
+          </div>
+        </SettingsGroup>
+      )}
+      <PicotsForm
+        key={formSeq}
+        initial={data}
+        pending={mutation.isPending}
+        conflict={conflict}
+        onSave={save}
+        onCancel={reset}
+        onDirtyChange={reportDirty}
+      />
+    </>
   );
 }
 

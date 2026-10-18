@@ -235,6 +235,13 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 const isStringList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((s) => typeof s === 'string');
 
+const ELIGIBILITY_KEYS = ['inclusion', 'exclusion', 'notes'] as const;
+const STUDY_DESIGN_KEYS = ['types', 'notes'] as const;
+
+/** The keys of `value` in `keys` that are present; a partial value stays partial. */
+const knownKeys = (value: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> =>
+  Object.fromEntries(keys.filter((key) => key in value).map((key) => [key, value[key]]));
+
 /** The Supabase row's `Json` columns narrowed to the PATCH contract; null when a JSONB value has the wrong shape. */
 export function toDetailsFields(values: Partial<Project>): ProjectDetailsFields | null {
   const {eligibility_criteria, study_design, review_keywords} = values;
@@ -250,10 +257,11 @@ export function toDetailsFields(values: Partial<Project>): ProjectDetailsFields 
     review_rationale: values.review_rationale,
     search_strategy: values.search_strategy,
     review_context: values.review_context,
-    // Shape-checked as an object only: the server enforces the typed bounds (422)
-    // and fills the `notes` default the generated type marks as required.
-    eligibility_criteria: eligibility_criteria as ProjectDetailsFields['eligibility_criteria'],
-    study_design: study_design as ProjectDetailsFields['study_design'],
+    // Shape-checked as an object and narrowed to the known keys: the server
+    // refuses an unknown key (422), enforces the typed bounds and fills the
+    // `notes` default the generated type marks as required.
+    eligibility_criteria: eligibility_criteria && (knownKeys(eligibility_criteria, ELIGIBILITY_KEYS) as ProjectDetailsFields['eligibility_criteria']),
+    study_design: study_design && (knownKeys(study_design, STUDY_DESIGN_KEYS) as ProjectDetailsFields['study_design']),
     review_keywords,
   };
 }

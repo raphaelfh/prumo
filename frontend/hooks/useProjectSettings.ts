@@ -18,12 +18,14 @@ import {t} from '@/lib/copy';
 import {projectKeys} from '@/lib/query-keys';
 import {useAuth} from '@/contexts/AuthContext';
 import {projectsListKey} from '@/hooks/useProjectsQuery';
+import {runsKeys} from '@/hooks/runs/types';
 import type {Project} from '@/types/project';
 import {
     loadProjectForSettings,
     saveProjectSettings,
     staleValuesOf,
     toDetailsFields,
+    type ProjectDetailsFields,
 } from '@/services/projectSettingsService';
 
 /** The 11 columns PATCH /projects/{id}/details writes (backend ProjectDetailsFields). */
@@ -102,9 +104,12 @@ export function useProjectSettings(projectId: string) {
             setHasUnsavedChanges(false);
             return;
         }
+        // `fields` is narrowed to the contract (unknown eligibility/study-design
+        // keys dropped: the server refuses them with 422). `expected` stays the raw
+        // snapshot, so the server's canonical-JSON compare matches a legacy row.
         const fields = toDetailsFields(pick(edited, keys));
-        const expected = toDetailsFields(pick(snapshot, keys));
-        if (!fields || !expected) {
+        const expected = pick(snapshot, keys) as ProjectDetailsFields;
+        if (!fields) {
             toast.error(t('project', 'settingsSaveError'));
             return;
         }
@@ -125,6 +130,8 @@ export function useProjectSettings(projectId: string) {
         }
         toast.success(t('project', 'settingsSaveSuccess'));
         void queryClient.invalidateQueries({queryKey: projectKeys.aiContext(projectId)});
+        // Eligibility and study design are protocol: the run drift chip reads them.
+        void queryClient.invalidateQueries({queryKey: runsKeys.all});
         if (user?.id) void queryClient.invalidateQueries({queryKey: projectsListKey(user.id)});
         await loadProject();
     };

@@ -118,6 +118,7 @@ export const project = {
     advancedEligibilityNotesPlaceholder: 'Notes on eligibility criteria...',
     advancedCardStudyTypesTitle: 'Included study types',
     advancedCardStudyTypesDesc: 'Specify the study designs accepted in this review.',
+    advancedSentToAiHint: 'Sent to the AI with the review question.',
     advancedStudyTypesPlaceholder: 'e.g. Randomized controlled trial, Cohort',
     advancedDesignNotesLabel: 'Design notes',
     advancedDesignNotesPlaceholder: 'Notes on accepted study types...',

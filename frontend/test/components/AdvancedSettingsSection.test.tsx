@@ -135,3 +135,22 @@ describe('AdvancedSettingsSection — delete project through the API', () => {
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('AdvancedSettingsSection — rows sent to the AI say so', () => {
+  beforeEach(() => vi.mocked(fetchMyConnections).mockResolvedValue({ok: true, data: []}));
+
+  it('the hint reaches the inclusion and exclusion inputs', () => {
+    renderSection(true);
+    const hint = t('project', 'advancedSentToAiHint');
+    expect(hint).not.toBe('');
+    expect(screen.getByLabelText(t('project', 'advancedInclusionLabel'))).toHaveAccessibleDescription(hint);
+    expect(screen.getByLabelText(t('project', 'advancedExclusionLabel'))).toHaveAccessibleDescription(hint);
+  });
+
+  it('the study-types row keeps its text and appends the hint', () => {
+    renderSection(true);
+    expect(screen.getByLabelText(t('project', 'advancedCardStudyTypesTitle'))).toHaveAccessibleDescription(
+      `${t('project', 'advancedCardStudyTypesDesc')} ${t('project', 'advancedSentToAiHint')}`,
+    );
+  });
+});
