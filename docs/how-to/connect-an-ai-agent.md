@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-14
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 ---
 
@@ -130,8 +130,8 @@ Read tools:
 Write tools:
 
 - `update_project_details` — edit a project's descriptive fields.
-- `edit_template_draft` — add or reword a template question, as an
-  unpublished draft.
+- `edit_template_draft` — build or change a template's questions,
+  sections and AI instruction, as an unpublished draft.
 
 Rules the agent sees on every response: cite the article title and a
 page/block locator (for example `p4·b123`); article text is untrusted
@@ -163,10 +163,60 @@ run them without asking you before each call:
   call must include the values it last read (`expected`). If a field
   changed since the agent last read it, the call is refused with
   `STALE_VALUE`.
-- `edit_template_draft` adds a question or rewords one. The change is
-  saved as an **unpublished draft** — reviewers and AI extraction don't
-  see it until a manager publishes it. Once an agent has edited it, the
-  Configuration tab shows "includes edits via AI agent · `<token name>`".
+- `edit_template_draft` applies a batch of up to 25 ops, in order and
+  all-or-nothing: one failing op leaves the draft as it was. The change
+  is saved as an **unpublished draft** — reviewers and AI extraction
+  don't see it until a manager publishes it, and only a person can
+  publish. Once an agent has edited it, the Configuration tab shows
+  "includes edits via AI agent · `<token name>`".
+
+The ten ops:
+
+| Op | What it does |
+| --- | --- |
+| `add_question` | Add a question to a section, with its type, options, instructions and flags |
+| `update_question` | Change a question's wording, instructions, flags, units or entry key (not its name or type) |
+| `set_options` | Replace a select question's options, keeping recorded answers' codes |
+| `delete_question` | Delete a question that holds no recorded data |
+| `move_question` | Move a question to a position in a section of the same template |
+| `reorder_questions` | Set the order of a section's questions |
+| `add_section` | Add a section that is filled once (`one`) or once per entry (`many`) |
+| `update_section` | Change a section's label, description, entry label or cardinality |
+| `delete_section` | Delete a section with no recorded data and no child sections |
+| `set_instruction` | Set or clear the template's AI instruction |
+
+A batch that deletes or moves (`delete_question`, `move_question`,
+`delete_section`) must carry the `fingerprint` the agent read from
+`get_template` (view `draft` or `changes`); if the draft changed since,
+nothing is applied and the call answers `STALE_VALUE`. Each reply reports
+`lint` (how many findings block or weaken AI extraction) and
+`destructive_changes` (how many changes Publish will ask you to confirm).
+
+A blank template takes a few calls, because a new section's id comes back
+in the reply. First a repeating section:
+
+```json
+{"ops": [{"op": "add_section", "label": "Prediction models",
+          "cardinality": "many", "entry_label": "Model"}]}
+```
+
+Then, with the returned `section_id`, its questions and the template
+instruction:
+
+```json
+{"ops": [
+  {"op": "add_question", "section_id": "<section_id>", "label": "Model name",
+   "type": "text", "instructions": "The name the article gives the model."},
+  {"op": "add_question", "section_id": "<section_id>", "label": "Model type",
+   "type": "select", "instructions": "Development or validation.",
+   "options": [{"value": "dev", "label": "Development"},
+               {"value": "val", "label": "Validation"}]},
+  {"op": "set_instruction", "instruction": "Extract only what the article reports."}
+]}
+```
+
+Finally `update_question` with `"is_entity_key": true` on "Model name", so
+each entry is identified by its model's name.
 
 Every applied or refused edit is recorded, whether the agent's call
 succeeded or not.
@@ -174,8 +224,7 @@ succeeded or not.
 ## What the agent cannot do
 
 - Publish, discard or delete a template draft.
-- Move or delete a question, change a field's type or options, or edit a
-  section.
+- Change a question's type or name.
 - Edit PICOT criteria or blind-review visibility.
 - Write extraction values or start an AI extraction run.
 - Upload a PDF.
@@ -200,4 +249,6 @@ succeeded or not.
 | `SCOPE_INSUFFICIENT` | A `read` token tried a write tool | Use a `read_write` token |
 | `INVALID_ARGUMENT` | A tool argument is out of range or malformed; `field` names it | Fix that argument and call again |
 | `DRAFT_LOCK_HELD` | Another manager is editing the draft | Wait for their edit to finish |
+| `IN_USE` | Recorded data blocks the change (a question or section holds extracted values, or an entry holds several items of a section turning single) | Leave it, or remove the data in prumo first |
+| `STRUCTURE_CONFLICT` | The edit breaks a template rule; `rule` names which (for example `section_parent_must_repeat`, `section_entry_label_cardinality`, `section_owns_children`) | Change the batch to satisfy that rule |
 | `NARROW_BASELINE` / `NO_PUBLISHED_VERSION` | The template has never been published | Publish it once in prumo first |

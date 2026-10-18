@@ -16,21 +16,27 @@ from app.core.config import Settings
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
+    AddSectionOp,
     DeleteQuestionOp,
+    DeleteSectionOp,
     EditTemplateDraftResult,
+    McpLintCounts,
     MoveQuestionOp,
     OptionInput,
     ReorderQuestionsOp,
+    SetInstructionOp,
     SetOptionsOp,
     UpdateQuestionOp,
+    UpdateSectionOp,
 )
-from app.schemas.template_structure import OptionItem, TemplateFieldRead
+from app.schemas.template_structure import OptionItem, SectionRead, TemplateFieldRead
 from app.services.agent_template_draft_service import (
     AppliedDraftOp,
     OptionValueConflictError,
     _resolve_options,
 )
 from app.utils.compact_json import RESULT_CAP, compact_json
+from app.utils.text_caps import cap_text
 
 _SECTION_ID = uuid4()
 _FIELD_ID = uuid4()
@@ -334,6 +340,8 @@ def test_applied_reply_caps_every_text_leaf_so_a_full_batch_fits_the_result_cap(
         draft_fingerprint="f" * 64,
         editor_url="https://example.test/" + "p" * 200,
         next_step=_NEXT_STEP,
+        lint=McpLintCounts(block=0, warn=0),
+        destructive_changes=0,
     )
     assert len(compact_json(floor.model_dump(mode="json"))) <= RESULT_CAP
 
@@ -467,3 +475,120 @@ def test_resolve_options_collision_raises() -> None:
             [{"value": "y", "label": "Yes"}],
             [OptionInput(label="Yes"), OptionInput(value="y", label="Again")],
         )
+
+
+# --- section and instruction ops ---------------------------------------------
+
+
+def test_section_and_instruction_ops_validate() -> None:
+    add = AddSectionOp(op="add_section", label=" Models ", cardinality="many", entry_label="Model")
+    assert (add.label, add.parent_section_id, add.required) == ("Models", None, False)
+    update = UpdateSectionOp(op="update_section", section_id=_SECTION_ID, cardinality="one")
+    assert update.model_dump(exclude_unset=True) == {
+        "op": "update_section",
+        "section_id": _SECTION_ID,
+        "cardinality": "one",
+    }
+    assert DeleteSectionOp(op="delete_section", section_id=_SECTION_ID).section_id == _SECTION_ID
+    assert SetInstructionOp(op="set_instruction", instruction=None).instruction is None
+    assert SetInstructionOp(op="set_instruction", instruction="x" * 4000).instruction
+
+
+@pytest.mark.parametrize(
+    ("model", "payload", "loc"),
+    [
+        (AddSectionOp, {"op": "add_section", "label": "S", "cardinality": "few"}, ("cardinality",)),
+        (
+            UpdateSectionOp,
+            {"op": "update_section", "section_id": _SECTION_ID, "cardinality": "few"},
+            ("cardinality",),
+        ),
+        (AddSectionOp, {"op": "add_section", "label": "  ", "cardinality": "one"}, ("label",)),
+        (
+            AddSectionOp,
+            {"op": "add_section", "label": "S", "cardinality": "one", "description": "d" * 501},
+            ("description",),
+        ),
+        (
+            SetInstructionOp,
+            {"op": "set_instruction", "instruction": "x" * 4001},
+            ("instruction",),
+        ),
+        (SetInstructionOp, {"op": "set_instruction"}, ("instruction",)),
+        (
+            UpdateSectionOp,
+            {"op": "update_section", "section_id": _SECTION_ID, "label": None},
+            ("label",),
+        ),
+        (
+            DeleteSectionOp,
+            {"op": "delete_section", "section_id": _SECTION_ID, "cascade": True},
+            ("cascade",),
+        ),
+    ],
+    ids=[
+        "add-cardinality-few",
+        "update-cardinality-few",
+        "blank-label",
+        "long-description",
+        "instruction-4001",
+        "instruction-missing",
+        "update-label-null",
+        "delete-extra-key",
+    ],
+)
+def test_section_and_instruction_op_invalid_cases(
+    model: type, payload: dict[str, object], loc: tuple[object, ...]
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        model.model_validate(payload)
+    assert exc_info.value.errors()[0]["loc"] == loc
+
+
+def test_update_section_without_changes_names_the_rule() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        UpdateSectionOp.model_validate({"op": "update_section", "section_id": _SECTION_ID})
+    error = validation_failure(exc_info.value, op_index=0)
+    assert error.message == "name at least one field to change"
+    assert "field" not in error.extras
+
+
+def test_tool_description_lists_every_op_and_human_only_publish() -> None:
+    for op in ("add_section", "update_section", "delete_section", "set_instruction"):
+        assert op in _DESCRIPTION
+    assert "only a human" in _DESCRIPTION
+
+
+def test_section_and_instruction_replies_stay_bounded() -> None:
+    long_text = '"' * 1000
+    section = SectionRead(
+        id=_SECTION_ID,
+        project_template_id=uuid4(),
+        name="models",
+        label=long_text,
+        cardinality="many",
+        sort_order=1,
+        is_required=False,
+        created_at=datetime.now(UTC),
+    )
+    added = _applied_reply(AppliedDraftOp(op_index=0, op="add_section", section=section))
+    assert added.model_dump() == {
+        "op_index": 0,
+        "op": "add_section",
+        "section_id": _SECTION_ID,
+        "label": cap_text(long_text, LABEL_CAP)[0],
+        "cardinality": "many",
+    }
+    assert len(added.label or "") == LABEL_CAP
+    deleted = _applied_reply(
+        AppliedDraftOp(op_index=1, op="delete_section", before={"section_id": str(_SECTION_ID)})
+    )
+    assert deleted.model_dump() == {
+        "op_index": 1,
+        "op": "delete_section",
+        "section_id": _SECTION_ID,
+        "label": None,
+        "cardinality": None,
+    }
+    instruction = _applied_reply(AppliedDraftOp(op_index=2, op="set_instruction", changed=True))
+    assert instruction.model_dump() == {"op_index": 2, "op": "set_instruction", "changed": True}

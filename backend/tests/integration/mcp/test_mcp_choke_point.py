@@ -427,7 +427,7 @@ async def test_tools_list_advertises_argument_bounds(
             branch["properties"]["op"].get("enum", [branch["properties"]["op"].get("const")])
         )
     assert op_names == set(template_draft._ALLOWED_OPS)
-    assert len(op_names) == 6
+    assert len(op_names) == 10
 
     details = tools["update_project_details"].input_schema["properties"]
     for key in ("fields", "expected"):
@@ -559,6 +559,16 @@ _DRAFT_OP_CASES: dict[str, Callable[[IntegrationSeedIds], list[dict[str, Any]]]]
             "options": [{"value": "y", "label": "Yes"}],
         }
     ],
+    "add_section": lambda _seed: [
+        {"op": "add_section", "label": "Choke point S", "cardinality": "one"}
+    ],
+    "update_section": lambda seed: [
+        {"op": "update_section", "section_id": str(seed.primary_entity_type), "label": "Choke"}
+    ],
+    "delete_section": lambda seed: [
+        {"op": "delete_section", "section_id": str(seed.primary_entity_type)}
+    ],
+    "set_instruction": lambda _seed: [{"op": "set_instruction", "instruction": "Choke point"}],
 }
 
 
@@ -589,7 +599,28 @@ async def _template_state(db: AsyncSession) -> tuple[Any, frozenset[str]]:
             {"t": str(SEED.primary_template)},
         )
     ).all()
-    return holder, frozenset(f"{r.id}:{r.label}:{r.sort_order}:{r.entity_type_id}" for r in rows)
+    sections = (
+        await db.execute(
+            text(
+                "SELECT id, label, cardinality FROM public.extraction_entity_types "
+                "WHERE project_template_id = :t"
+            ),
+            {"t": str(SEED.primary_template)},
+        )
+    ).all()
+    instruction = (
+        await db.execute(
+            text(
+                "SELECT llm_template_instruction FROM public.project_extraction_templates "
+                "WHERE id = :t"
+            ),
+            {"t": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    return (holder, instruction), frozenset(
+        [f"{r.id}:{r.label}:{r.sort_order}:{r.entity_type_id}" for r in rows]
+        + [f"section:{r.id}:{r.label}:{r.cardinality}" for r in sections]
+    )
 
 
 def test_draft_op_cases_cover_every_allowed_op() -> None:

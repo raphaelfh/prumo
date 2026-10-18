@@ -1,6 +1,8 @@
 """Questionnaire edits the MCP agent may make (spec §5.2): add, edit, delete, move
-or reorder questions and replace a select's options. All stay invisible to reviewers and AI until a manager publishes, and only on a
-non-narrow active version. Flushes only; the MCP tool commits."""
+or reorder questions, replace a select's options, add, edit or delete sections
+and set the template instruction. All stay invisible to reviewers and AI until
+a manager publishes, and only on a non-narrow active version. Flushes only; the
+MCP tool commits."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -13,22 +15,34 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.claim_value import normalize_options
-from app.models.extraction import ExtractionField, ExtractionRun
+from app.models.extraction import (
+    ExtractionEntityType,
+    ExtractionField,
+    ExtractionRun,
+    ProjectExtractionTemplate,
+)
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
+    AddSectionOp,
     DeleteQuestionOp,
+    DeleteSectionOp,
     DraftOp,
     MoveQuestionOp,
     OptionInput,
     ReorderQuestionsOp,
+    SetInstructionOp,
     SetOptionsOp,
     UpdateQuestionOp,
+    UpdateSectionOp,
 )
 from app.schemas.template_structure import (
     OptionItem,
+    SectionCreateRequest,
+    SectionRead,
+    SectionUpdateRequest,
     TemplateFieldCreateRequest,
     TemplateFieldMoveRequest,
     TemplateFieldRead,
@@ -36,8 +50,8 @@ from app.schemas.template_structure import (
     TemplateFieldSortOrderUpdate,
     TemplateFieldUpdateRequest,
 )
-from app.services import template_field_naming, template_field_service
-from app.services.extraction_snapshot import baseline_isolated_for_agent
+from app.services import template_field_naming, template_field_service, template_section_service
+from app.services.extraction_snapshot import baseline_isolated_for_agent, live_entity_types
 from app.services.template_field_service import (
     CrossTemplateMoveError,
     DuplicateEntityKeyError,
@@ -46,7 +60,17 @@ from app.services.template_field_service import (
     FieldInUseError,
     FieldNotFoundError,
 )
-from app.services.template_section_service import SectionNotFoundError, owned_section
+from app.services.template_instruction_service import set_template_instruction
+from app.services.template_lint import lint_tree
+from app.services.template_section_service import (
+    SectionCardinalityInUseError,
+    SectionEntryLabelCardinalityError,
+    SectionInUseError,
+    SectionNotFoundError,
+    SectionOwnsChildrenError,
+    SectionParentMustRepeatError,
+    owned_section,
+)
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
 )
@@ -75,6 +99,11 @@ _OP_ERRORS = (
     ReorderMismatchError,
     OptionValueConflictError,
     OptionsNotApplicableError,
+    SectionInUseError,
+    SectionCardinalityInUseError,
+    SectionParentMustRepeatError,
+    SectionEntryLabelCardinalityError,
+    SectionOwnsChildrenError,
     ValidationError,
     DBAPIError,
 )
@@ -128,6 +157,10 @@ DraftOpName = Literal[
     "move_question",
     "reorder_questions",
     "set_options",
+    "add_section",
+    "update_section",
+    "delete_section",
+    "set_instruction",
 ]
 
 
@@ -137,12 +170,16 @@ class AppliedDraftOp:
 
     ``field`` is the question left in place (add, update, move); a delete
     leaves none. ``section_id``/``section_label`` name the section the op
-    landed in; ``field_ids`` is a reorder's new order. ``before``/``after``
-    are the op's own audit snapshots."""
+    landed in; ``field_ids`` is a reorder's new order. ``section`` is the
+    section an add or update section leaves; ``changed`` says whether a
+    set_instruction changed the stored text. ``before``/``after`` are the
+    op's own audit snapshots."""
 
     op_index: int
     op: DraftOpName
     field: TemplateFieldRead | None = None
+    section: SectionRead | None = None
+    changed: bool | None = None
     section_id: UUID | None = None
     section_label: str | None = None
     field_ids: list[UUID] | None = None
@@ -389,6 +426,119 @@ async def _reorder(
     )
 
 
+async def _add_section(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: AddSectionOp
+) -> AppliedDraftOp:
+    # Checked here, not left to SectionCreateRequest: its validator would
+    # surface the same rule as a bare validation error.
+    if (op.cardinality == "many") != (op.entry_label is not None):
+        raise SectionEntryLabelCardinalityError(
+            "a repeating section needs an entry_label and only a repeating section takes one"
+        )
+    taken = set(
+        (
+            await db.execute(
+                select(ExtractionEntityType.name).where(
+                    ExtractionEntityType.project_template_id == template_id
+                )
+            )
+        ).scalars()
+    )
+    section = await template_section_service.create_section(
+        db,
+        project_id=project_id,
+        template_id=template_id,
+        payload=SectionCreateRequest(
+            name=template_field_naming.derive_field_name(op.label, taken),
+            label=op.label,
+            description=op.description,
+            cardinality=op.cardinality,
+            parent_entity_type_id=op.parent_section_id,
+            entry_label=op.entry_label,
+            is_required=op.required,
+        ),
+    )
+    return AppliedDraftOp(op_index=index, op="add_section", section=section)
+
+
+async def _update_section(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: UpdateSectionOp
+) -> AppliedDraftOp:
+    sent = op.model_dump(exclude_unset=True, exclude={"op", "section_id"})
+    row = await owned_section(db, template_id=template_id, section_id=op.section_id)
+    before = {key: getattr(row, key) for key in sent}
+    section = await template_section_service.update_section(
+        db,
+        project_id=project_id,
+        template_id=template_id,
+        section_id=op.section_id,
+        payload=SectionUpdateRequest(**sent),
+    )
+    return AppliedDraftOp(
+        op_index=index,
+        op="update_section",
+        section=section,
+        before=before,
+        after={key: getattr(section, key) for key in sent},
+    )
+
+
+async def _delete_section(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: DeleteSectionOp
+) -> AppliedDraftOp:
+    row = await owned_section(db, template_id=template_id, section_id=op.section_id)
+    before = {"section_id": str(row.id), "label": row.label, "cardinality": row.cardinality}
+    # The REST delete cascades child sections; an agent deletes them one by one.
+    if await template_section_service.owns_children(db, section_id=op.section_id):
+        raise SectionOwnsChildrenError("delete or move the child sections first")
+    await template_section_service.delete_section(
+        db, project_id=project_id, template_id=template_id, section_id=op.section_id
+    )
+    return AppliedDraftOp(op_index=index, op="delete_section", before=before)
+
+
+async def _live_instruction(db: AsyncSession, template_id: UUID) -> str | None:
+    """The stored instruction, read from the row (not the identity map)."""
+    return (
+        await db.execute(
+            select(ProjectExtractionTemplate.llm_template_instruction).where(
+                ProjectExtractionTemplate.id == template_id
+            )
+        )
+    ).scalar_one()
+
+
+async def _set_instruction(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: SetInstructionOp
+) -> AppliedDraftOp:
+    old = await _live_instruction(db, template_id)
+    new = (
+        await set_template_instruction(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            llm_template_instruction=op.instruction,
+        )
+    ).llm_template_instruction
+    return AppliedDraftOp(
+        op_index=index,
+        op="set_instruction",
+        changed=new != old,
+        before={"instruction": old},
+        after={"instruction": new},
+    )
+
+
+async def draft_lint_counts(db: AsyncSession, *, template_id: UUID) -> tuple[int, int]:
+    """``(block, warn)`` lint finding counts over the live (draft) tree."""
+    findings = lint_tree(
+        await live_entity_types(db, template_id=template_id),
+        await _live_instruction(db, template_id),
+    )
+    block = sum(1 for finding in findings if finding.status == "block")
+    return block, len(findings) - block
+
+
 async def _dispatch(
     db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: DraftOp
 ) -> AppliedDraftOp:
@@ -405,6 +555,14 @@ async def _dispatch(
             return await _reorder(db, project_id, template_id, index, op)
         case SetOptionsOp():
             return await _set_options(db, project_id, template_id, index, op)
+        case AddSectionOp():
+            return await _add_section(db, project_id, template_id, index, op)
+        case UpdateSectionOp():
+            return await _update_section(db, project_id, template_id, index, op)
+        case DeleteSectionOp():
+            return await _delete_section(db, project_id, template_id, index, op)
+        case SetInstructionOp():
+            return await _set_instruction(db, project_id, template_id, index, op)
 
 
 async def apply_draft_ops(

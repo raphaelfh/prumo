@@ -13,10 +13,16 @@ from pydantic import (
     StringConstraints,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from app.schemas.mcp_templates import McpDraftDiff
-from app.schemas.template_structure import FieldType, OptionItem
+from app.schemas.template_structure import (
+    FieldType,
+    OptionItem,
+    SectionEntryLabel,
+    SectionLabel,
+)
 
 
 class OptionInput(BaseModel):
@@ -154,6 +160,65 @@ class SetOptionsOp(BaseModel):
     options: list[OptionInput] = Field(min_length=1, max_length=100)
 
 
+class AddSectionOp(BaseModel):
+    """Add a section at the end of the template, or under a repeating parent.
+    A repeating (``many``) section needs an ``entry_label``; a ``one`` section
+    takes none."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["add_section"]
+    label: SectionLabel
+    cardinality: Literal["one", "many"]
+    parent_section_id: UUID | None = None
+    entry_label: SectionEntryLabel | None = None
+    description: str | None = Field(default=None, max_length=500)
+    required: bool = False
+
+
+class UpdateSectionOp(BaseModel):
+    """Edit a section's label, AI description, entry label or cardinality;
+    only the sent keys change, and at least one must be sent."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["update_section"]
+    section_id: UUID
+    label: SectionLabel | None = None
+    description: str | None = Field(default=None, max_length=500)
+    entry_label: SectionEntryLabel | None = None
+    cardinality: Literal["one", "many"] | None = None
+
+    @field_validator("label", "description", "entry_label", "cardinality")
+    @classmethod
+    def _not_null(cls, value: object, info: ValidationInfo) -> object:
+        # Runs only when the key is sent; a blank description clears it.
+        if value is None:
+            raise ValueError(f"{info.field_name} may be omitted but not null")
+        return value
+
+    @model_validator(mode="after")
+    def _one_change(self) -> "UpdateSectionOp":
+        if not self.model_fields_set - {"op", "section_id"}:
+            raise ValueError("name at least one field to change")
+        return self
+
+
+class DeleteSectionOp(BaseModel):
+    """Delete a section and its questions; refused while it holds recorded data
+    or owns child sections."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["delete_section"]
+    section_id: UUID
+
+
+class SetInstructionOp(BaseModel):
+    """Set the template's general AI instruction; null or blank clears it."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["set_instruction"]
+    instruction: str | None = Field(max_length=4000)
+
+
 DraftOp = (
     AddQuestionOp
     | UpdateQuestionOp
@@ -161,6 +226,10 @@ DraftOp = (
     | MoveQuestionOp
     | ReorderQuestionsOp
     | SetOptionsOp
+    | AddSectionOp
+    | UpdateSectionOp
+    | DeleteSectionOp
+    | SetInstructionOp
 )
 
 
@@ -192,9 +261,41 @@ class AppliedReorderOp(BaseModel):
     """How many questions the section now orders; the ids are in the audit row."""
 
 
+class AppliedSectionOp(BaseModel):
+    """An applied section op; a delete carries the removed id only."""
+
+    op_index: int
+    op: Literal["add_section", "update_section", "delete_section"]
+    section_id: UUID
+    label: str | None
+    cardinality: Literal["one", "many"] | None
+
+
+class AppliedInstructionOp(BaseModel):
+    """An applied ``set_instruction``: whether the stored text changed (the
+    text itself is not echoed)."""
+
+    op_index: int
+    op: Literal["set_instruction"]
+    changed: bool
+
+
 AppliedOp = Annotated[
-    AppliedQuestionOp | AppliedDeleteOp | AppliedReorderOp, Field(discriminator="op")
+    AppliedQuestionOp
+    | AppliedDeleteOp
+    | AppliedReorderOp
+    | AppliedSectionOp
+    | AppliedInstructionOp,
+    Field(discriminator="op"),
 ]
+
+
+class McpLintCounts(BaseModel):
+    """How many lint findings the draft has after the ops, by status; the
+    findings themselves are in ``get_template`` view 'draft'."""
+
+    block: int
+    warn: int
 
 
 class EditTemplateDraftResult(BaseModel):
@@ -209,6 +310,9 @@ class EditTemplateDraftResult(BaseModel):
     draft_fingerprint: str | None
     editor_url: str
     next_step: str
+    lint: McpLintCounts
+    destructive_changes: int
+    """Changes Publish will ask a human to acknowledge (the destructive bucket)."""
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
         "project_name",

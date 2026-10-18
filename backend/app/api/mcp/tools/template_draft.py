@@ -36,17 +36,24 @@ from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import (
     AddQuestionOp,
+    AddSectionOp,
     AppliedDeleteOp,
+    AppliedInstructionOp,
     AppliedOp,
     AppliedQuestionOp,
     AppliedReorderOp,
+    AppliedSectionOp,
     DeleteQuestionOp,
+    DeleteSectionOp,
     DraftOp,
     EditTemplateDraftResult,
+    McpLintCounts,
     MoveQuestionOp,
     ReorderQuestionsOp,
+    SetInstructionOp,
     SetOptionsOp,
     UpdateQuestionOp,
+    UpdateSectionOp,
 )
 from app.services import agent_template_draft_service
 from app.services.agent_template_draft_service import (
@@ -71,7 +78,14 @@ from app.services.template_field_service import (
     FieldInUseError,
     FieldNotFoundError,
 )
-from app.services.template_section_service import SectionNotFoundError
+from app.services.template_section_service import (
+    SectionCardinalityInUseError,
+    SectionEntryLabelCardinalityError,
+    SectionInUseError,
+    SectionNotFoundError,
+    SectionOwnsChildrenError,
+    SectionParentMustRepeatError,
+)
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_template_config_diff,
@@ -83,24 +97,20 @@ from app.utils.text_caps import cap_text
 
 _TOOL = "edit_template_draft"
 MAX_OPS = 25
-_OPS: dict[
-    str,
-    type[AddQuestionOp]
-    | type[UpdateQuestionOp]
-    | type[DeleteQuestionOp]
-    | type[MoveQuestionOp]
-    | type[ReorderQuestionsOp]
-    | type[SetOptionsOp],
-] = {
+_OPS: dict[str, type[DraftOp]] = {
     "add_question": AddQuestionOp,
     "update_question": UpdateQuestionOp,
     "delete_question": DeleteQuestionOp,
     "move_question": MoveQuestionOp,
     "reorder_questions": ReorderQuestionsOp,
     "set_options": SetOptionsOp,
+    "add_section": AddSectionOp,
+    "update_section": UpdateSectionOp,
+    "delete_section": DeleteSectionOp,
+    "set_instruction": SetInstructionOp,
 }
 # Ops that need the draft fingerprint the agent last read.
-_FINGERPRINTED_OPS = frozenset({"delete_question", "move_question"})
+_FINGERPRINTED_OPS = frozenset({"delete_question", "move_question", "delete_section"})
 # Advertised only: `_parse_ops` still validates each op, so an empty list, too
 # many ops or a malformed op is an AUDITED refusal, not an SDK-level one.
 _OPS_SCHEMA = WithJsonSchema(
@@ -114,6 +124,21 @@ _ALLOWED_OPS = sorted(_OPS)
 _LOCKED_UPDATE_KEYS = frozenset({"type", "name", "options"})
 _EDITABLE_UPDATE_FIELDS = sorted(UpdateQuestionOp.model_fields.keys() - {"op", "field_id"})
 _ROW_GUARDS = (SectionNotFoundError, EntityTypeNotFoundError, FieldNotFoundError)
+# Section rule errors -> (message, rule); messages are static (the service's name the section).
+_SECTION_RULES: dict[type[Exception], tuple[str, str]] = {
+    SectionParentMustRepeatError: (
+        "A section's parent must be a repeating ('many') section.",
+        "section_parent_must_repeat",
+    ),
+    SectionEntryLabelCardinalityError: (
+        "A repeating section needs an entry_label, and only a repeating section takes one.",
+        "section_entry_label_cardinality",
+    ),
+    SectionOwnsChildrenError: (
+        "This section owns child sections; delete or move them first.",
+        "section_owns_children",
+    ),
+}
 _NOT_ALLOWED_MESSAGE = "This op can only be done in the prumo UI."
 # Locked key -> (message, next_step).
 _LOCKED_KEY_REFUSAL = {
@@ -144,26 +169,36 @@ _NEXT_STEP = (
     "reviewers or AI extraction see it."
 )
 _DESCRIPTION = (
-    "Edit a project template's unpublished draft: add_question adds a question to a "
-    "section; update_question edits one's wording, required flag, unit and allowed_units, "
-    "the not-applicable / not-evaluated / no-information / other flags and is_entity_key "
-    "(only the sent keys change; a name or type changes only in the prumo UI); "
-    "set_options replaces a select or multiselect question's options; delete_question "
-    "deletes one (refused while it holds recorded data); move_question moves one to a "
-    "section at a 0-based position; reorder_questions sets a section's order and must "
-    "name exactly its questions. "
-    "A batch with delete_question or move_question needs expected_fingerprint: the "
-    "fingerprint from get_template view 'draft' or 'changes'. "
-    "Never report a change as live -- it stays invisible "
-    "to reviewers and to AI extraction until a project manager clicks Publish in prumo. "
+    "Edit a project template's unpublished draft with a batch of ops, applied in order "
+    "and all-or-nothing:\n"
+    "- add_question: add a question to a section;\n"
+    "- update_question: edit a question's wording, instructions, required flag, unit and "
+    "allowed_units, the not-applicable / not-evaluated / no-information / other flags and "
+    "is_entity_key (only the sent keys change; a name or type changes only in the prumo UI);\n"
+    "- set_options: replace a select or multiselect question's options;\n"
+    "- delete_question: delete a question (refused while it holds recorded data);\n"
+    "- move_question: move a question to a section at a 0-based position;\n"
+    "- reorder_questions: set a section's order (must name exactly its questions);\n"
+    "- add_section: add a section (cardinality 'one' or 'many'; a 'many' section needs an "
+    "entry_label; parent_section_id must name a 'many' section);\n"
+    "- update_section: edit a section's label, description, entry_label or cardinality;\n"
+    "- delete_section: delete a section and its questions (refused while it holds recorded "
+    "data or owns child sections);\n"
+    "- set_instruction: set the template's AI instruction (null or blank clears it).\n"
+    "A batch with delete_question, move_question or delete_section needs "
+    "expected_fingerprint: the fingerprint from get_template view 'draft' or 'changes'. "
+    "Never report a change as live -- it stays invisible to reviewers and to AI extraction "
+    "until a project manager clicks Publish in prumo; only a human can publish. The reply "
+    "counts lint findings and the destructive changes Publish will ask the human to "
+    "acknowledge. "
     "A select or multiselect question takes options as [{value?, label}]; a missing value "
     "becomes the trimmed label, and values must be unique. In set_options an option sent "
     "without a value keeps the stored value of the option with the same trimmed label; to "
     "relabel an option and keep its recorded answers, resend its value with the new label. "
     "Removing an option is allowed in the draft; Publish asks for confirmation. "
     "After a RETRY or DUPLICATE_NAME error, call get_template before resending an "
-    "add_question: it is not idempotent and may have partially applied. At most 25 ops "
-    "per call."
+    "add_question or add_section: they are not idempotent and may have partially applied. "
+    "At most 25 ops per call."
 )
 
 
@@ -206,6 +241,7 @@ async def edit_template_draft(
         applied, diff = await _apply(db, scope, project_id, template_id, ops, expected_fingerprint)
     except McpToolError as error:
         await refuse(db, scope, with_names(error, **names))
+    block, warn = await agent_template_draft_service.draft_lint_counts(db, template_id=template_id)
 
     result = EditTemplateDraftResult(
         status="draft_saved_unpublished",
@@ -217,6 +253,8 @@ async def edit_template_draft(
         draft_fingerprint=diff.fingerprint,
         editor_url=link,
         next_step=_NEXT_STEP,
+        lint=McpLintCounts(block=block, warn=warn),
+        destructive_changes=len(diff.changes.destructive),
     )
     # The diff gets whatever the result cap leaves after everything else
     # (measured with the row-less diff above, whose own fixed part the
@@ -373,6 +411,23 @@ def _op_failure(exc: DraftOpError) -> McpToolError | None:
             "This question holds recorded data and cannot be deleted.",
             op_index=exc.op_index,
         )
+    if isinstance(cause, SectionInUseError):
+        return McpToolError(
+            McpErrorCode.IN_USE,
+            "This section holds recorded data and cannot be deleted.",
+            op_index=exc.op_index,
+        )
+    if isinstance(cause, SectionCardinalityInUseError):
+        return McpToolError(
+            McpErrorCode.IN_USE,
+            "An entry of this section holds more than one item; it cannot stop repeating.",
+            op_index=exc.op_index,
+        )
+    if type(cause) in _SECTION_RULES:
+        message, rule = _SECTION_RULES[type(cause)]
+        return McpToolError(
+            McpErrorCode.STRUCTURE_CONFLICT, message, rule=rule, op_index=exc.op_index
+        )
     if isinstance(cause, DuplicateEntityKeyError):
         return McpToolError(
             McpErrorCode.STRUCTURE_CONFLICT,
@@ -418,6 +473,26 @@ def _op_failure(exc: DraftOpError) -> McpToolError | None:
 def _applied_reply(a: AppliedDraftOp) -> AppliedOp:
     if a.op == "delete_question":
         return AppliedDeleteOp(op_index=a.op_index, op=a.op, field_id=_deleted_id(a))
+    if a.op == "set_instruction":
+        assert a.changed is not None
+        return AppliedInstructionOp(op_index=a.op_index, op=a.op, changed=a.changed)
+    if a.op == "delete_section":
+        return AppliedSectionOp(
+            op_index=a.op_index,
+            op=a.op,
+            section_id=_deleted_section_id(a),
+            label=None,
+            cardinality=None,
+        )
+    if a.op == "add_section" or a.op == "update_section":
+        assert a.section is not None
+        return AppliedSectionOp(
+            op_index=a.op_index,
+            op=a.op,
+            section_id=a.section.id,
+            label=cap_text(a.section.label, LABEL_CAP)[0],
+            cardinality=a.section.cardinality,
+        )
     assert a.section_id is not None and a.section_label is not None
     # Every text leaf is capped so 25 applied ops stay well inside RESULT_CAP.
     section_label = cap_text(a.section_label, LABEL_CAP)[0]
@@ -447,11 +522,33 @@ def _deleted_id(a: AppliedDraftOp) -> UUID:
     return UUID(a.before["field_id"])
 
 
+def _deleted_section_id(a: AppliedDraftOp) -> UUID:
+    assert a.before is not None
+    return UUID(a.before["section_id"])
+
+
 def _applied_json(a: AppliedDraftOp) -> dict[str, Any]:
     row: dict[str, Any] = {"op_index": a.op_index, "op": a.op}
     if a.op == "delete_question":
         row["field_id"] = str(_deleted_id(a))
         return row
+    if a.op == "delete_section":
+        row["section_id"] = str(_deleted_section_id(a))
+        return row
+    if a.section is not None:
+        row.update(
+            section_id=str(a.section.id),
+            name=a.section.name,
+            label=a.section.label,
+            cardinality=a.section.cardinality,
+            entry_label=a.section.entry_label,
+            description=a.section.description,
+            parent_section_id=(
+                str(a.section.parent_entity_type_id) if a.section.parent_entity_type_id else None
+            ),
+        )
+    if a.changed is not None:
+        row["changed"] = a.changed
     if a.section_id is not None:
         row["section_id"] = str(a.section_id)
     if a.field_ids is not None:

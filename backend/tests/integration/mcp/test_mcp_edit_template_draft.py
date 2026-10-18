@@ -47,11 +47,15 @@ from tests.integration.mcp.tool_calls import call_tool, error_payload, structure
 
 _ALLOWED = [
     "add_question",
+    "add_section",
     "delete_question",
+    "delete_section",
     "move_question",
     "reorder_questions",
+    "set_instruction",
     "set_options",
     "update_question",
+    "update_section",
 ]
 _EDITABLE = [
     "allow_other",
@@ -399,7 +403,7 @@ async def test_draft_lock_held_precedes_baseline_refusals(
     [
         {"op": "publish"},
         {"op": "clone_template"},
-        {"op": "add_section"},
+        {"op": "import_template"},
         {"op": "update_question", "type": "number"},
         {"op": "update_question", "options": ["a"]},
         {"op": "update_question", "name": "renamed"},
@@ -407,7 +411,7 @@ async def test_draft_lock_held_precedes_baseline_refusals(
     ids=[
         "publish",
         "clone_template",
-        "add_section",
+        "import_template",
         "update_type",
         "update_options",
         "update_name",
