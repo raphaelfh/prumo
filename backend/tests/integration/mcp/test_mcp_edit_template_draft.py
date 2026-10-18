@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import template_field_naming, template_field_service
 from app.services.pat_service import create_token, resolve_principal
+from app.services.template_versioning import TemplateVersionService
 from app.utils.compact_json import RESULT_CAP, compact_json
 from tests.integration.conftest import SEED, clean_project_clones, make_proposal, open_session
 from tests.integration.helpers.engine_setup import run_in_extract
@@ -34,8 +35,11 @@ from tests.integration.helpers.template_fixtures import (
     add_section,
     draft_lock_holder,
     entity_id,
+    entry_key_holders,
     force_narrow_baseline,
     fresh_charms,
+    set_entry_key,
+    set_options_silently,
 )
 from tests.integration.helpers.template_fixtures import field_id as fixture_field_id
 from tests.integration.mcp.conftest import SeededPat
@@ -46,7 +50,21 @@ _ALLOWED = [
     "delete_question",
     "move_question",
     "reorder_questions",
+    "set_options",
     "update_question",
+]
+_EDITABLE = [
+    "allow_other",
+    "allowed_units",
+    "allows_no_information",
+    "allows_not_applicable",
+    "allows_not_evaluated",
+    "description",
+    "instructions",
+    "is_entity_key",
+    "label",
+    "required",
+    "unit",
 ]
 
 
@@ -421,10 +439,18 @@ async def test_disallowed_op_refused(
     assert payload["allowed_ops"] == _ALLOWED
     blocked_key = {"name", "type", "options"} & bad.keys()
     if blocked_key:
-        assert payload["field"] == blocked_key.pop()
-        assert payload["editable_fields"] == ["description", "instructions", "label"]
-        assert "update_question" in payload["next_step"]
-        assert "prumo UI" in payload["next_step"]
+        key = blocked_key.pop()
+        assert payload["field"] == key
+        assert payload["editable_fields"] == _EDITABLE
+        if key == "options":
+            assert "set_options" in payload["message"]
+            assert "set_options" in payload["next_step"]
+        else:
+            assert payload["message"] == (
+                "A question's type or name can only be changed in the prumo UI."
+            )
+            assert "update_question" in payload["next_step"]
+            assert "prumo UI" in payload["next_step"]
     else:
         assert payload["next_step"] == "do this in the prumo UI"
         assert "field" not in payload
@@ -1658,3 +1684,375 @@ async def test_one_applied_row_covers_each_op(
     assert [op["op"] for op in row.after["ops"]] == expected
     assert row.after["ops"][3]["field_ids"] == list(reversed(remaining))
     assert row.before["ops"][2]["section_id"] == shrinking["id"]
+
+
+# --- richer add/update question and set_options ------------------------------
+
+_YES_NO_CODED = [{"value": "y", "label": "Yes"}, {"value": "n", "label": "No"}]
+
+
+async def _field_row(db: AsyncSession, field_id: str | UUID) -> Any:
+    return (
+        await db.execute(
+            text(
+                "SELECT is_required, unit, allowed_units, allowed_values, allow_other, "
+                "allows_not_applicable, allows_not_evaluated, allows_no_information, "
+                "is_entity_key FROM public.extraction_fields WHERE id = :id"
+            ),
+            {"id": str(field_id)},
+        )
+    ).one()
+
+
+async def _coded_select(db: AsyncSession, project_id: UUID, template_id: UUID) -> UUID:
+    """Publish a baseline whose ``outcome_to_be_predicted.outcome_assessed_blinded`` select
+    (a top-level section, so a session opens an instance of it) stores the
+    codes ``y``/``n`` behind the labels ``Yes``/``No``."""
+    target = await fixture_field_id(
+        db, template_id, "outcome_to_be_predicted", "outcome_assessed_blinded"
+    )
+    await set_options_silently(db, target, _YES_NO_CODED)
+    await TemplateVersionService(db).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    return target
+
+
+def _set_options(field_id: str | UUID, options: list[dict[str, str]]) -> list[dict[str, Any]]:
+    return [{"op": "set_options", "field_id": str(field_id), "options": options}]
+
+
+async def _option_rows(mcp_client, pat, project_id: UUID, template_id: UUID) -> list[str]:
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id), "view": "changes"},
+        )
+    )
+    return [row["variant"] for row in body["changes"] if row["attribute"] == "allowed_values"]
+
+
+async def test_add_question_with_flags_and_units(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "add_question",
+                    "section_id": section_id,
+                    "label": "Dose",
+                    "type": "number",
+                    "required": True,
+                    "unit": "mg",
+                    "allowed_units": ["mg", "g"],
+                    "allows_not_applicable": True,
+                    "allows_not_evaluated": True,
+                    "allows_no_information": False,
+                }
+            ],
+        )
+    )
+    row = await _field_row(db_session, body["applied"][0]["field_id"])
+    assert row.is_required is True
+    assert row.unit == "mg"
+    assert row.allowed_units == ["mg", "g"]
+    assert row.allows_not_applicable is True
+    assert row.allows_not_evaluated is True
+    assert row.allows_no_information is False
+    assert row.allow_other is False
+
+
+async def test_add_question_defaults_keep_no_information(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "add_question", "section_id": section_id, "label": "Plain", "type": "text"}],
+        )
+    )
+    row = await _field_row(db_session, body["applied"][0]["field_id"])
+    assert (row.is_required, row.allows_not_applicable, row.allows_no_information) == (
+        False,
+        False,
+        True,
+    )
+
+
+async def test_update_question_sets_entity_key_and_flags(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    holder = (await entry_key_holders(db_session, template_id)).get(UUID(section_id))
+    if holder is not None:
+        await set_entry_key(db_session, holder, False)
+    stored = await _field_row(db_session, field_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "update_question",
+                    "field_id": field_id,
+                    "is_entity_key": True,
+                    "required": True,
+                    "unit": "years",
+                    "allowed_units": ["years"],
+                    "allows_not_applicable": True,
+                    "allows_not_evaluated": True,
+                    "allows_no_information": False,
+                    "allow_other": True,
+                }
+            ],
+        )
+    )
+    assert body["applied"][0]["op"] == "update_question"
+    row = await _field_row(db_session, field_id)
+    assert row.is_entity_key is True
+    assert row.is_required is True
+    assert (row.unit, row.allowed_units) == ("years", ["years"])
+    assert (row.allows_not_applicable, row.allows_not_evaluated) == (True, True)
+    assert (row.allows_no_information, row.allow_other) == (False, True)
+    audit = (
+        await db_session.execute(
+            text(
+                "SELECT before FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert audit.before["ops"][0]["is_entity_key"] is False
+    assert audit.before["ops"][0]["required"] is stored.is_required
+    assert audit.before["ops"][0]["unit"] == stored.unit
+
+
+async def test_second_entity_key_is_structure_conflict(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section = _sections_with_fields(schema, minimum=2)[0]
+    first, second = (await _ordered_field_ids(db_session, section["id"]))[:2]
+    holder = (await entry_key_holders(db_session, template_id)).get(UUID(section["id"]))
+    if holder is not None and str(holder) != first:
+        await set_entry_key(db_session, holder, False)
+    await set_entry_key(db_session, UUID(first), True)
+    refused_before = await _audit_count(db_session, outcome="refused")
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "update_question", "field_id": second, "is_entity_key": True}],
+        )
+    )
+    assert payload["code"] == "STRUCTURE_CONFLICT"
+    assert payload["rule"] == "duplicate_entity_key"
+    assert payload["op_index"] == 0
+    assert (await _field_row(db_session, second)).is_entity_key is False
+    assert await _audit_count(db_session, outcome="refused") == refused_before + 1
+
+
+async def test_set_options_keeps_codes_and_derives_new(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"value": "y", "label": "Yes!"}, {"label": " Maybe "}]),
+        )
+    )
+    assert body["applied"][0]["op"] == "set_options"
+    assert body["applied"][0]["field_id"] == str(target)
+    assert (await _field_row(db_session, target)).allowed_values == [
+        {"value": "y", "label": "Yes!"},
+        {"value": "Maybe", "label": " Maybe "},
+    ]
+    audit = (
+        await db_session.execute(
+            text(
+                "SELECT before, after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert audit.before["ops"][0] == {"options": _YES_NO_CODED}
+    assert audit.after["ops"][0]["options"] == [
+        {"value": "y", "label": "Yes!"},
+        {"value": "Maybe", "label": " Maybe "},
+    ]
+
+
+@pytest.mark.parametrize("label", ["Yes", " Yes "], ids=["exact", "padded"])
+async def test_set_options_label_match_keeps_stored_code(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, label: str
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+
+    structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"label": label}, {"label": "No"}]),
+        )
+    )
+    assert (await _field_row(db_session, target)).allowed_values == [
+        {"value": "y", "label": label},
+        {"value": "n", "label": "No"},
+    ]
+    variants = await _option_rows(mcp_client, pat_primary_rw, project_id, template_id)
+    assert "field_option_removed" not in variants
+    assert "field_option_added" not in variants
+    if label == "Yes":
+        assert variants == []
+
+
+async def test_set_options_collision_is_structure_conflict(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+    refused_before = await _audit_count(db_session, outcome="refused")
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"value": "a", "label": "A"}, {"label": "a"}]),
+        )
+    )
+    assert payload["code"] == "STRUCTURE_CONFLICT"
+    assert payload["rule"] == "option_value_conflict"
+    assert payload["op_index"] == 0
+    assert (await _field_row(db_session, target)).allowed_values == _YES_NO_CODED
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == refused_before + 1
+
+
+async def test_set_options_on_a_text_question_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await fixture_field_id(
+        db_session, template_id, "sample_size", "number_of_participants"
+    )
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"label": "A"}]),
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "options"
+    assert payload["op_index"] == 0
+    assert payload["message"] == "set_options applies to select and multiselect questions"
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_add_question_duplicate_options_stays_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "add_question",
+                    "section_id": section_id,
+                    "label": "Dup",
+                    "type": "select",
+                    "options": [{"value": "a", "label": "A"}, {"label": "a"}],
+                }
+            ],
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "options"
+    assert "rule" not in payload
+
+
+async def test_set_options_removing_value_with_data_shows_destructive_row(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+    owner = await entity_id(db_session, template_id, "outcome_to_be_predicted")
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+        value="n",
+    )
+
+    structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"value": "y", "label": "Yes"}]),
+        )
+    )
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id), "view": "changes"},
+        )
+    )
+    removed = [r for r in body["changes"] if r["variant"] == "field_option_removed"]
+    assert len(removed) == 1
+    assert removed[0]["tier"] == "destructive"
+    assert removed[0]["affects_recorded_data"] is True

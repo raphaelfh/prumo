@@ -427,7 +427,7 @@ async def test_tools_list_advertises_argument_bounds(
             branch["properties"]["op"].get("enum", [branch["properties"]["op"].get("const")])
         )
     assert op_names == set(template_draft._ALLOWED_OPS)
-    assert len(op_names) == 5
+    assert len(op_names) == 6
 
     details = tools["update_project_details"].input_schema["properties"]
     for key in ("fields", "expected"):
@@ -550,6 +550,13 @@ _DRAFT_OP_CASES: dict[str, Callable[[IntegrationSeedIds], list[dict[str, Any]]]]
             "op": "reorder_questions",
             "section_id": str(seed.primary_entity_type),
             "field_ids": [str(seed.primary_field)],
+        }
+    ],
+    "set_options": lambda seed: [
+        {
+            "op": "set_options",
+            "field_id": str(seed.primary_field),
+            "options": [{"value": "y", "label": "Yes"}],
         }
     ],
 }

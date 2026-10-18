@@ -19,11 +19,17 @@ from app.schemas.mcp_template_draft import (
     DeleteQuestionOp,
     EditTemplateDraftResult,
     MoveQuestionOp,
+    OptionInput,
     ReorderQuestionsOp,
+    SetOptionsOp,
     UpdateQuestionOp,
 )
 from app.schemas.template_structure import OptionItem, TemplateFieldRead
-from app.services.agent_template_draft_service import AppliedDraftOp
+from app.services.agent_template_draft_service import (
+    AppliedDraftOp,
+    OptionValueConflictError,
+    _resolve_options,
+)
 from app.utils.compact_json import RESULT_CAP, compact_json
 
 _SECTION_ID = uuid4()
@@ -330,3 +336,134 @@ def test_applied_reply_caps_every_text_leaf_so_a_full_batch_fits_the_result_cap(
         next_step=_NEXT_STEP,
     )
     assert len(compact_json(floor.model_dump(mode="json"))) <= RESULT_CAP
+
+
+def test_set_options_op_validates() -> None:
+    op = SetOptionsOp(
+        op="set_options",
+        field_id=_FIELD_ID,
+        options=[{"value": "y", "label": "Yes"}, {"label": " Maybe "}],
+    )
+    assert [o.value for o in op.options] == ["y", None]
+
+
+@pytest.mark.parametrize(
+    ("options", "loc"),
+    [([], ("options",)), ([{"label": "a", "x": 1}], ("options", 0, "x"))],
+    ids=["empty", "extra-key"],
+)
+def test_set_options_op_invalid_cases(options: list[object], loc: tuple[object, ...]) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        SetOptionsOp.model_validate(
+            {"op": "set_options", "field_id": _FIELD_ID, "options": options}
+        )
+    assert exc_info.value.errors()[0]["loc"] == loc
+
+
+def test_add_question_op_flags_and_units_validate() -> None:
+    op = AddQuestionOp(
+        **_base_add(
+            type="number",
+            required=True,
+            unit="mg",
+            allowed_units=["mg", "g"],
+            allows_not_applicable=True,
+            allows_not_evaluated=True,
+            allows_no_information=False,
+            allow_other=True,
+        )
+    )
+    assert (op.required, op.unit, op.allowed_units) == (True, "mg", ["mg", "g"])
+    assert (op.allows_not_applicable, op.allows_no_information, op.allow_other) == (
+        True,
+        False,
+        True,
+    )
+
+
+def test_add_question_op_flag_defaults_match_the_rest_api() -> None:
+    op = AddQuestionOp(**_base_add())
+    assert (op.required, op.allows_not_applicable, op.allows_not_evaluated) == (False, False, False)
+    assert (op.allows_no_information, op.allow_other, op.unit, op.allowed_units) == (
+        True,
+        False,
+        None,
+        None,
+    )
+
+
+def test_add_question_op_allowed_unit_over_50_chars_is_invalid() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AddQuestionOp(**_base_add(type="number", allowed_units=["x" * 51]))
+    assert exc_info.value.errors()[0]["loc"] == ("allowed_units", 0)
+
+
+def test_update_question_op_allowed_unit_over_50_chars_is_invalid() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        UpdateQuestionOp(op="update_question", field_id=_FIELD_ID, allowed_units=["x" * 51])
+    assert exc_info.value.errors()[0]["loc"] == ("allowed_units", 0)
+
+
+def test_update_question_op_name_is_refused_by_the_schema() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        UpdateQuestionOp.model_validate(
+            {"op": "update_question", "field_id": _FIELD_ID, "name": "renamed"}
+        )
+    assert exc_info.value.errors()[0]["loc"] == ("name",)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "required",
+        "allows_not_applicable",
+        "allows_not_evaluated",
+        "allows_no_information",
+        "is_entity_key",
+        "allow_other",
+    ],
+)
+def test_update_question_op_flag_null_is_invalid(key: str) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        UpdateQuestionOp.model_validate({"op": "update_question", "field_id": _FIELD_ID, key: None})
+    assert exc_info.value.errors()[0]["loc"] == (key,)
+
+
+def test_update_question_op_sends_only_set_keys() -> None:
+    op = UpdateQuestionOp(op="update_question", field_id=_FIELD_ID, is_entity_key=True, unit=None)
+    assert op.model_dump(exclude_unset=True, exclude={"op", "field_id"}) == {
+        "is_entity_key": True,
+        "unit": None,
+    }
+
+
+def test_tool_description_names_set_options() -> None:
+    assert "set_options" in _DESCRIPTION
+
+
+def test_resolve_options_first_stored_label_wins_and_new_derive() -> None:
+    stored = [
+        {"value": "a1", "label": "A"},
+        {"value": "a2", "label": " A "},
+        {"value": "b", "label": "B"},
+    ]
+    sent = [OptionInput(label="A "), OptionInput(value="z", label="B"), OptionInput(label=" C ")]
+    assert _resolve_options(stored, sent) == [
+        OptionItem(value="a1", label="A "),
+        OptionItem(value="z", label="B"),
+        OptionItem(value="C", label=" C "),
+    ]
+
+
+def test_resolve_options_legacy_bare_strings_keep_their_codes() -> None:
+    assert _resolve_options(["Yes", "No"], [OptionInput(label=" Yes ")]) == [
+        OptionItem(value="Yes", label=" Yes ")
+    ]
+
+
+def test_resolve_options_collision_raises() -> None:
+    with pytest.raises(OptionValueConflictError):
+        _resolve_options(
+            [{"value": "y", "label": "Yes"}],
+            [OptionInput(label="Yes"), OptionInput(value="y", label="Again")],
+        )

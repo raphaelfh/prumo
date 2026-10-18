@@ -45,6 +45,7 @@ from app.schemas.mcp_template_draft import (
     EditTemplateDraftResult,
     MoveQuestionOp,
     ReorderQuestionsOp,
+    SetOptionsOp,
     UpdateQuestionOp,
 )
 from app.services import agent_template_draft_service
@@ -52,6 +53,8 @@ from app.services.agent_template_draft_service import (
     AppliedDraftOp,
     DraftOpError,
     NarrowBaselineError,
+    OptionsNotApplicableError,
+    OptionValueConflictError,
     ReorderMismatchError,
 )
 from app.services.project_read_service import project_name
@@ -62,6 +65,7 @@ from app.services.project_template_active_service import (
 from app.services.template_draft_lock_service import DraftLockHeldError, claim_draft_lock
 from app.services.template_field_service import (
     CrossTemplateMoveError,
+    DuplicateEntityKeyError,
     DuplicateFieldNameError,
     EntityTypeNotFoundError,
     FieldInUseError,
@@ -85,13 +89,15 @@ _OPS: dict[
     | type[UpdateQuestionOp]
     | type[DeleteQuestionOp]
     | type[MoveQuestionOp]
-    | type[ReorderQuestionsOp],
+    | type[ReorderQuestionsOp]
+    | type[SetOptionsOp],
 ] = {
     "add_question": AddQuestionOp,
     "update_question": UpdateQuestionOp,
     "delete_question": DeleteQuestionOp,
     "move_question": MoveQuestionOp,
     "reorder_questions": ReorderQuestionsOp,
+    "set_options": SetOptionsOp,
 }
 # Ops that need the draft fingerprint the agent last read.
 _FINGERPRINTED_OPS = frozenset({"delete_question", "move_question"})
@@ -104,16 +110,24 @@ _OPS_SCHEMA = WithJsonSchema(
     }
 )
 _ALLOWED_OPS = sorted(_OPS)
-# update_question rewords only; a name, type or options change goes through the UI.
-_LOCKED_UPDATE_KEYS = frozenset({"name", "type", "options"})
+# update_question never changes a name or type (prumo UI only) or options (set_options).
+_LOCKED_UPDATE_KEYS = frozenset({"type", "name", "options"})
 _EDITABLE_UPDATE_FIELDS = sorted(UpdateQuestionOp.model_fields.keys() - {"op", "field_id"})
 _ROW_GUARDS = (SectionNotFoundError, EntityTypeNotFoundError, FieldNotFoundError)
 _NOT_ALLOWED_MESSAGE = "This op can only be done in the prumo UI."
-_LOCKED_KEY_MESSAGE = "A question's name, type or options can only be changed in the prumo UI."
-_LOCKED_KEY_NEXT_STEP = (
-    "resend update_question with only the editable_fields listed here; "
-    "change name, type or options in the prumo UI"
-)
+# Locked key -> (message, next_step).
+_LOCKED_KEY_REFUSAL = {
+    "type": (
+        "A question's type or name can only be changed in the prumo UI.",
+        "resend update_question with only the editable_fields listed here; "
+        "change a name or type in the prumo UI",
+    ),
+    "options": (
+        "Change options with set_options.",
+        "resend the options change as a set_options op",
+    ),
+}
+_LOCKED_KEY_REFUSAL["name"] = _LOCKED_KEY_REFUSAL["type"]
 # NarrowBaselineError.reason -> (message, next_step): each names its own fix.
 _NARROW_BASELINE = {
     "pinned_empty_version": (
@@ -131,15 +145,22 @@ _NEXT_STEP = (
 )
 _DESCRIPTION = (
     "Edit a project template's unpublished draft: add_question adds a question to a "
-    "section; update_question rewords one; delete_question deletes one (refused while it "
-    "holds recorded data); move_question moves one to a section at a 0-based position; "
-    "reorder_questions sets a section's order and must name exactly its questions. "
+    "section; update_question edits one's wording, required flag, unit and allowed_units, "
+    "the not-applicable / not-evaluated / no-information / other flags and is_entity_key "
+    "(only the sent keys change; a name or type changes only in the prumo UI); "
+    "set_options replaces a select or multiselect question's options; delete_question "
+    "deletes one (refused while it holds recorded data); move_question moves one to a "
+    "section at a 0-based position; reorder_questions sets a section's order and must "
+    "name exactly its questions. "
     "A batch with delete_question or move_question needs expected_fingerprint: the "
     "fingerprint from get_template view 'draft' or 'changes'. "
     "Never report a change as live -- it stays invisible "
     "to reviewers and to AI extraction until a project manager clicks Publish in prumo. "
     "A select or multiselect question takes options as [{value?, label}]; a missing value "
-    "becomes the trimmed label, and values must be unique. "
+    "becomes the trimmed label, and values must be unique. In set_options an option sent "
+    "without a value keeps the stored value of the option with the same trimmed label; to "
+    "relabel an option and keep its recorded answers, resend its value with the new label. "
+    "Removing an option is allowed in the draft; Publish asks for confirmation. "
     "After a RETRY or DUPLICATE_NAME error, call get_template before resending an "
     "add_question: it is not idempotent and may have partially applied. At most 25 ops "
     "per call."
@@ -289,10 +310,11 @@ def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
             )
         locked = sorted(_LOCKED_UPDATE_KEYS & raw.keys()) if model is UpdateQuestionOp else []
         if locked:
+            message, next_step = _LOCKED_KEY_REFUSAL[locked[0]]
             raise McpToolError(
                 McpErrorCode.OP_NOT_ALLOWED_VIA_AGENT,
-                _LOCKED_KEY_MESSAGE,
-                next_step=_LOCKED_KEY_NEXT_STEP,
+                message,
+                next_step=next_step,
                 op_index=index,
                 allowed_ops=_ALLOWED_OPS,
                 field=locked[0],
@@ -350,6 +372,25 @@ def _op_failure(exc: DraftOpError) -> McpToolError | None:
             McpErrorCode.IN_USE,
             "This question holds recorded data and cannot be deleted.",
             op_index=exc.op_index,
+        )
+    if isinstance(cause, DuplicateEntityKeyError):
+        return McpToolError(
+            McpErrorCode.STRUCTURE_CONFLICT,
+            "This section already has an entry key; clear it on the other question first.",
+            rule="duplicate_entity_key",
+            op_index=exc.op_index,
+        )
+    if isinstance(cause, OptionValueConflictError):
+        return McpToolError(
+            McpErrorCode.STRUCTURE_CONFLICT,
+            "Two options would share one stored value.",
+            next_step="give each option a distinct value, then resend",
+            rule="option_value_conflict",
+            op_index=exc.op_index,
+        )
+    if isinstance(cause, OptionsNotApplicableError):
+        return McpToolError(
+            McpErrorCode.INVALID_ARGUMENT, str(cause), field="options", op_index=exc.op_index
         )
     if isinstance(cause, CrossTemplateMoveError):
         return McpToolError(

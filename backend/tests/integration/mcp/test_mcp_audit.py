@@ -26,7 +26,7 @@ from app.services.template_field_service import (
 from app.utils.rate_limiter import limiter
 from tests.integration.conftest import SEED, get_config_draft_marker, set_config_draft_marker
 from tests.integration.helpers.engine_setup import run_in_extract
-from tests.integration.helpers.template_fixtures import fresh_charms
+from tests.integration.helpers.template_fixtures import field_id, fresh_charms
 from tests.integration.mcp.rpc import rpc
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 
@@ -609,3 +609,39 @@ async def test_set_review_question_writes_one_row(
         + await _audit_count(db_session, outcome="refused", tool="set_review_question")
         == 1
     )
+
+
+async def test_option_value_conflict_writes_one_refused_row(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await field_id(db_session, template_id, "model_development", "shrinkage")
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "set_options",
+                    "field_id": str(target),
+                    "options": [{"value": "a", "label": "A"}, {"label": "a"}],
+                }
+            ],
+        },
+    )
+    payload = error_payload(result)
+    assert (payload["code"], payload["rule"]) == ("STRUCTURE_CONFLICT", "option_value_conflict")
+    assert (
+        await _audit_count(
+            db_session,
+            outcome="refused",
+            error_code="STRUCTURE_CONFLICT",
+            tool="edit_template_draft",
+        )
+        == 1
+    )
+    assert await _audit_count(db_session, outcome="applied", tool="edit_template_draft") == 0

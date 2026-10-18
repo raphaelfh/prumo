@@ -6,7 +6,14 @@ reports an empty loc)."""
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+)
 
 from app.schemas.mcp_templates import McpDraftDiff
 from app.schemas.template_structure import FieldType, OptionItem
@@ -24,6 +31,11 @@ class OptionInput(BaseModel):
         return OptionItem(value=self.value or self.label.strip(), label=self.label)
 
 
+Unit = Annotated[str, StringConstraints(min_length=1, max_length=50)]
+# Mirrors TemplateFieldCreateRequest.allowed_units (at most 20, unique).
+AllowedUnits = Annotated[list[Unit], Field(min_length=1, max_length=20)]
+
+
 class AddQuestionOp(BaseModel):
     """Append a new question to a section of the active draft."""
 
@@ -37,6 +49,14 @@ class AddQuestionOp(BaseModel):
         default=None, min_length=1, max_length=100, validate_default=True
     )
     instructions: str | None = Field(default=None, max_length=1000)
+    required: bool = False
+    unit: str | None = Field(default=None, max_length=50)
+    allowed_units: AllowedUnits | None = None
+    allows_not_applicable: bool = False
+    allows_not_evaluated: bool = False
+    # TRUE by default, as on the REST create: the marker was universal.
+    allows_no_information: bool = True
+    allow_other: bool = False
 
     @field_validator("options")
     @classmethod
@@ -59,7 +79,8 @@ class AddQuestionOp(BaseModel):
 
 
 class UpdateQuestionOp(BaseModel):
-    """Reword an existing question; never changes ``name``, ``type`` or options."""
+    """Edit an existing question's wording, flags and units; only the sent keys
+    change. Never changes ``name``, ``type`` or options (``set_options``)."""
 
     model_config = ConfigDict(extra="forbid")
     op: Literal["update_question"]
@@ -67,14 +88,30 @@ class UpdateQuestionOp(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     instructions: str | None = Field(default=None, max_length=1000)
+    required: bool | None = None
+    unit: str | None = Field(default=None, max_length=50)
+    allowed_units: AllowedUnits | None = None
+    allows_not_applicable: bool | None = None
+    allows_not_evaluated: bool | None = None
+    allows_no_information: bool | None = None
+    is_entity_key: bool | None = None
+    allow_other: bool | None = None
 
-    @field_validator("label")
+    @field_validator(
+        "label",
+        "required",
+        "allows_not_applicable",
+        "allows_not_evaluated",
+        "allows_no_information",
+        "is_entity_key",
+        "allow_other",
+    )
     @classmethod
-    def _label_not_null(cls, value: str | None) -> str | None:
-        # Runs only when the key is sent: omitted keeps the label, null is refused
-        # (extraction_fields.label is NOT NULL).
+    def _not_null(cls, value: object, info: ValidationInfo) -> object:
+        # Runs only when the key is sent: omitted keeps the column, null is refused
+        # (each of these extraction_fields columns is NOT NULL).
         if value is None:
-            raise ValueError("label may be omitted but not null")
+            raise ValueError(f"{info.field_name} may be omitted but not null")
         return value
 
 
@@ -106,14 +143,33 @@ class ReorderQuestionsOp(BaseModel):
     field_ids: list[UUID] = Field(min_length=1, max_length=500)
 
 
-DraftOp = AddQuestionOp | UpdateQuestionOp | DeleteQuestionOp | MoveQuestionOp | ReorderQuestionsOp
+class SetOptionsOp(BaseModel):
+    """Replace a select or multiselect question's options. A sent ``value`` is
+    kept; an option without one keeps the stored code of the option with the
+    same trimmed label, else its code is the trimmed label."""
+
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["set_options"]
+    field_id: UUID
+    options: list[OptionInput] = Field(min_length=1, max_length=100)
+
+
+DraftOp = (
+    AddQuestionOp
+    | UpdateQuestionOp
+    | DeleteQuestionOp
+    | MoveQuestionOp
+    | ReorderQuestionsOp
+    | SetOptionsOp
+)
 
 
 class AppliedQuestionOp(BaseModel):
-    """An applied op that leaves one question in place: added, reworded or moved."""
+    """An applied op that leaves one question in place: added, edited, moved or
+    given new options."""
 
     op_index: int
-    op: Literal["add_question", "update_question", "move_question"]
+    op: Literal["add_question", "update_question", "move_question", "set_options"]
     field_id: UUID
     section_id: UUID
     section_label: str

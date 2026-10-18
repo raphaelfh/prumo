@@ -1,5 +1,5 @@
-"""Questionnaire edits the MCP agent may make (spec §5.2): add, reword, delete, move
-or reorder questions. All stay invisible to reviewers and AI until a manager publishes, and only on a
+"""Questionnaire edits the MCP agent may make (spec §5.2): add, edit, delete, move
+or reorder questions and replace a select's options. All stay invisible to reviewers and AI until a manager publishes, and only on a
 non-narrow active version. Flushes only; the MCP tool commits."""
 
 from collections.abc import Sequence
@@ -12,6 +12,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.claim_value import normalize_options
 from app.models.extraction import ExtractionField, ExtractionRun
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
@@ -21,10 +22,13 @@ from app.schemas.mcp_template_draft import (
     DeleteQuestionOp,
     DraftOp,
     MoveQuestionOp,
+    OptionInput,
     ReorderQuestionsOp,
+    SetOptionsOp,
     UpdateQuestionOp,
 )
 from app.schemas.template_structure import (
+    OptionItem,
     TemplateFieldCreateRequest,
     TemplateFieldMoveRequest,
     TemplateFieldRead,
@@ -36,6 +40,7 @@ from app.services import template_field_naming, template_field_service
 from app.services.extraction_snapshot import baseline_isolated_for_agent
 from app.services.template_field_service import (
     CrossTemplateMoveError,
+    DuplicateEntityKeyError,
     DuplicateFieldNameError,
     EntityTypeNotFoundError,
     FieldInUseError,
@@ -51,22 +56,46 @@ class ReorderMismatchError(Exception):
     """A reorder's ``field_ids`` do not name exactly the section's questions, once each."""
 
 
+class OptionValueConflictError(Exception):
+    """Two options of a ``set_options`` would share one stored code."""
+
+
+class OptionsNotApplicableError(ValueError):
+    """``set_options`` names a question that is not a select or multiselect."""
+
+
 _OP_ERRORS = (
     SectionNotFoundError,
     EntityTypeNotFoundError,
     FieldNotFoundError,
     DuplicateFieldNameError,
+    DuplicateEntityKeyError,
     FieldInUseError,
     CrossTemplateMoveError,
     ReorderMismatchError,
+    OptionValueConflictError,
+    OptionsNotApplicableError,
     ValidationError,
     DBAPIError,
 )
 
 # Op-model attr -> ExtractionField column, for the "before" snapshot and the
 # TemplateFieldUpdateRequest payload. ``instructions`` is user-facing for the
-# field's ``llm_description`` column.
-_UPDATE_COLUMN = {"label": "label", "description": "description", "instructions": "llm_description"}
+# field's ``llm_description`` column; ``required`` for ``is_required``.
+_UPDATE_COLUMN = {
+    "label": "label",
+    "description": "description",
+    "instructions": "llm_description",
+    "required": "is_required",
+    "unit": "unit",
+    "allowed_units": "allowed_units",
+    "allows_not_applicable": "allows_not_applicable",
+    "allows_not_evaluated": "allows_not_evaluated",
+    "allows_no_information": "allows_no_information",
+    "is_entity_key": "is_entity_key",
+    "allow_other": "allow_other",
+}
+_OPTION_TYPES = frozenset({"select", "multiselect"})
 
 
 NarrowBaselineReason = Literal["pinned_empty_version", "legacy_snapshot"]
@@ -93,7 +122,12 @@ class DraftOpError(Exception):
 
 
 DraftOpName = Literal[
-    "add_question", "update_question", "delete_question", "move_question", "reorder_questions"
+    "add_question",
+    "update_question",
+    "delete_question",
+    "move_question",
+    "reorder_questions",
+    "set_options",
 ]
 
 
@@ -162,6 +196,13 @@ async def _add(
         field_type=op.type,
         allowed_values=[o.to_option_item() for o in op.options] if op.options else None,
         llm_description=op.instructions,
+        is_required=op.required,
+        unit=op.unit,
+        allowed_units=op.allowed_units,
+        allows_not_applicable=op.allows_not_applicable,
+        allows_not_evaluated=op.allows_not_evaluated,
+        allows_no_information=op.allows_no_information,
+        allow_other=op.allow_other,
         sort_order=sort_order,
     )
     field = await template_field_service.create_field(
@@ -199,6 +240,54 @@ async def _update(
         section_id=field.entity_type_id,
         section_label=section_label,
         before=before,
+    )
+
+
+def _resolve_options(stored: Any, sent: Sequence[OptionInput]) -> list[OptionItem]:
+    """The options a ``set_options`` stores: a sent value is kept; a value-less
+    option keeps the stored code of the first stored option with the same
+    trimmed label; only a new option's code is its trimmed label."""
+    by_label: dict[str, str] = {}
+    for option in normalize_options(stored):
+        by_label.setdefault(option["label"].strip(), option["value"])
+    final = [
+        OptionItem(value=by_label[o.label.strip()], label=o.label)
+        if o.value is None and o.label.strip() in by_label
+        else o.to_option_item()
+        for o in sent
+    ]
+    if len({o.value for o in final}) != len(final):
+        raise OptionValueConflictError("two options would share one stored value")
+    return final
+
+
+async def _set_options(
+    db: AsyncSession, project_id: UUID, template_id: UUID, index: int, op: SetOptionsOp
+) -> AppliedDraftOp:
+    row = await template_field_service.owned_field(
+        db, template_id=template_id, field_id=op.field_id
+    )
+    if row.field_type not in _OPTION_TYPES:
+        raise OptionsNotApplicableError("set_options applies to select and multiselect questions")
+    before = {"options": normalize_options(row.allowed_values)}
+    final = _resolve_options(row.allowed_values, op.options)
+    section = await owned_section(db, template_id=template_id, section_id=row.entity_type_id)
+    section_label = section.label
+    field = await template_field_service.update_field(
+        db,
+        project_id=project_id,
+        template_id=template_id,
+        field_id=op.field_id,
+        payload=TemplateFieldUpdateRequest(allowed_values=final),
+    )
+    return AppliedDraftOp(
+        op_index=index,
+        op="set_options",
+        field=field,
+        section_id=field.entity_type_id,
+        section_label=section_label,
+        before=before,
+        after={"options": [o.model_dump() for o in final]},
     )
 
 
@@ -314,6 +403,8 @@ async def _dispatch(
             return await _move(db, project_id, template_id, index, op)
         case ReorderQuestionsOp():
             return await _reorder(db, project_id, template_id, index, op)
+        case SetOptionsOp():
+            return await _set_options(db, project_id, template_id, index, op)
 
 
 async def apply_draft_ops(
