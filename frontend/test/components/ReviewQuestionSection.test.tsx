@@ -263,7 +263,8 @@ describe('ReviewQuestionSection footer', () => {
 });
 
 describe('ReviewQuestionSection — flat layout (spec 2026-09-13 §4.3, §10)', () => {
-  const INTRO = 'What this review is asking. Sent to the AI with every extraction and quality assessment.';
+  const INTRO =
+    'What this review is asking. Sent to the AI with every extraction and quality assessment, together with the eligibility criteria and study designs from the project details.';
   const groupOf = (el: Element | null) => el?.closest('.border-t') as HTMLElement | null;
 
   it('renders the intro line in place of the section heading', () => {

@@ -7,7 +7,8 @@ carry no slot asking the manager to retype it.
 
 Two halves, split so the rendering is testable without a database:
 
-* ``render_picots_block`` — pure, and where every shape decision lives.
+* ``render_review_question`` — pure, and where every shape decision lives:
+  the PICOTS slots, then the project's eligibility and eligible study designs.
 * ``build_review_context`` — reads the project + the one toggle.
 
 The column's writer is ``PUT /api/v1/projects/{project_id}/ai-context``
@@ -20,7 +21,8 @@ exists because one of those shapes is reachable, not defensively.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import status
@@ -29,6 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_handler import AppError
 from app.repositories.project_repository import ProjectRepository
 from app.services.project_protocol import bump_protocol_revision
+
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 #: Ceiling on the rendered block. Mirrors ``llm_template_instruction``'s
 #: ``max_length=4000`` (``schemas/hitl_session.py``). The cap lives in the
@@ -131,8 +136,8 @@ def _timing_texts(raw: Any) -> tuple[str, list[str], list[str]]:
     )
 
 
-def render_picots_block(picots: Any, review_type: str | None) -> str | None:
-    """The review question as prompt text, or ``None`` when there is none.
+def _picots_lines(picots: Any, review_type: str | None) -> list[str]:
+    """The PICOTS half of the review question, one slot per line group.
 
     Empty slots are OMITTED, not padded: a line reading
     ``- Comparator model(s): (not specified)`` would be read by the model as a
@@ -143,7 +148,7 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
     still gets them, which a description-only test would silently drop.
     """
     if not isinstance(picots, Mapping):
-        return None
+        return []
     labels = labels_for(review_type)
     lines: list[str] = []
     for key in _SLOT_KEYS:
@@ -156,6 +161,41 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
             lines.append(f"  Include: {'; '.join(inclusion)}")
         if exclusion:
             lines.append(f"  Exclude: {'; '.join(exclusion)}")
+    return lines
+
+
+def _protocol_lines(eligibility: Any, study_design: Any) -> list[str]:
+    """Project eligibility and eligible study designs; ``notes`` never render.
+
+    Both columns predate the bounded write shapes (``schemas/project_protocol``)
+    and were never migrated, so a legacy dict or junk items read as empty.
+    """
+    eligibility = eligibility if isinstance(eligibility, Mapping) else {}
+    inclusion = _string_list(eligibility.get("inclusion"))
+    exclusion = _string_list(eligibility.get("exclusion"))
+    designs = _string_list(study_design.get("types")) if isinstance(study_design, Mapping) else []
+    lines: list[str] = []
+    if inclusion or exclusion:
+        lines.append("Eligibility:")
+        if inclusion:
+            lines.append(f"  Include: {'; '.join(inclusion)}")
+        if exclusion:
+            lines.append(f"  Exclude: {'; '.join(exclusion)}")
+    if designs:
+        lines.append(f"Eligible study designs: {'; '.join(designs)}")
+    return lines
+
+
+def render_review_question(
+    picots: Any, review_type: str | None, eligibility: Any, study_design: Any
+) -> str | None:
+    """The review question as prompt text, or ``None`` when there is none.
+
+    PICOTS first, then the project's eligibility and eligible study designs,
+    under ONE cap: an empty eligibility/design leaves the PICOTS bytes exactly
+    as they were before those joined the prompt (ADR 0023).
+    """
+    lines = _picots_lines(picots, review_type) + _protocol_lines(eligibility, study_design)
     if not lines:
         return None
     block = "\n".join(lines)
@@ -164,25 +204,42 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
     return block
 
 
+def _render_for(project: Project) -> str | None:
+    """The one place a project row becomes the review question."""
+    return render_review_question(
+        project.picots_config_ai_review,
+        project.review_type,
+        project.eligibility_criteria,
+        project.study_design,
+    )
+
+
 def _picots_enabled(settings: Any) -> bool:
     """``settings.ai_context.picots`` — an absent key is the default, ON."""
     ai_context = (settings or {}).get("ai_context") if isinstance(settings, Mapping) else None
     return bool((ai_context or {}).get("picots", True)) if isinstance(ai_context, Mapping) else True
 
 
-async def build_review_context(db: AsyncSession, project_id: UUID) -> str | None:
-    """The project's review question, or ``None`` when it says nothing.
+@dataclass(frozen=True, slots=True)
+class ReviewQuestion:
+    """The rendered question for a project that exists; ``text`` is ``None`` when muted or empty."""
 
-    ``settings.ai_context.picots`` is the off switch, defaulting to ON: an
-    absent key is the default state, and an empty PICOT renders nothing, so
-    every project that has not filled the editor keeps a byte-identical prompt.
+    text: str | None
+
+
+async def build_review_context(db: AsyncSession, project_id: UUID) -> ReviewQuestion | None:
+    """The project's review question, or ``None`` when the project is missing.
+
+    ``settings.ai_context.picots`` is the off switch for the WHOLE block,
+    defaulting to ON: an absent key is the default state, and an empty protocol
+    renders nothing, so every project that has not filled the editor keeps a
+    byte-identical prompt.
     """
     project = await ProjectRepository(db).get_by_id(project_id)
     if project is None:
         return None
-    if not _picots_enabled(project.settings):
-        return None
-    return render_picots_block(project.picots_config_ai_review, project.review_type)
+    text = _render_for(project) if _picots_enabled(project.settings) else None
+    return ReviewQuestion(text=text)
 
 
 class ProjectNotFoundError(Exception):
@@ -232,9 +289,7 @@ async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
         "labels": labels_for(project.review_type),
         "review_type": project.review_type,
         "picots_enabled": enabled,
-        "preview": render_picots_block(project.picots_config_ai_review, project.review_type)
-        if enabled
-        else None,
+        "preview": _render_for(project) if enabled else None,
         "revision": project.protocol_revision,
     }
 

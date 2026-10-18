@@ -67,10 +67,11 @@ async def resolve_run_prompt_context(db: AsyncSession, run: ExtractionRun) -> Ru
     """
     pinned = read_pinned_review_context(run.results)
     if pinned is None:
+        question = await build_review_context(db, run.project_id)
         stored = await ExtractionRunRepository(db).freeze_provenance_key(
             run.id,
             _PIN_KEY,
-            ReviewContextPin(text=await build_review_context(db, run.project_id)).model_dump(),
+            ReviewContextPin(text=question.text if question else None).model_dump(),
         )
         pinned = ReviewContextPin.model_validate(stored) if stored else ReviewContextPin()
     return RunPromptContext(

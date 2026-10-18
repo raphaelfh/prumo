@@ -121,3 +121,57 @@ async def test_a_project_with_no_picot_sends_no_block_at_all(
     await db_session.refresh(run)
     assert ((run.results or {}).get("provenance") or {})["review_context"] == {"text": None}
     await db_session.rollback()
+
+
+_ELIGIBILITY_LINES = "Eligibility:\n  Include: English language\nEligible study designs: cohort"
+
+
+async def _set_eligibility(db: AsyncSession, project_id: UUID) -> None:
+    await db.execute(
+        text(
+            "UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb), "
+            "study_design = CAST(:d AS jsonb) WHERE id = :pid"
+        ),
+        {
+            "e": json.dumps({"inclusion": ["English language"], "notes": "internal note"}),
+            "d": json.dumps({"types": ["cohort"]}),
+            "pid": str(project_id),
+        },
+    )
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_eligibility_and_designs_reach_a_new_runs_prompt(
+    db_session: AsyncSession,
+) -> None:
+    run = await engine_setup.run_in_extract(db_session)
+    await _set_picots(db_session, run.project_id, _PICOT)
+    await _set_eligibility(db_session, run.project_id)
+
+    user_prompt = await _extract_once(db_session, run)
+
+    expected = f"{_EXPECTED_BLOCK}\n{_ELIGIBILITY_LINES}"
+    assert user_prompt.startswith(f"Review question and scope:\n{expected}\n\n")
+    assert "internal note" not in user_prompt
+    await db_session.refresh(run)
+    assert (run.results or {})["provenance"]["review_context"] == {"text": expected}
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_run_pinned_before_the_eligibility_edit_keeps_its_question(
+    db_session: AsyncSession,
+) -> None:
+    run = await engine_setup.run_in_extract(db_session)
+    await _set_picots(db_session, run.project_id, _PICOT)
+    await _extract_once(db_session, run)
+
+    await _set_eligibility(db_session, run.project_id)
+    user_prompt = await _extract_once(db_session, run)
+
+    assert user_prompt.startswith(f"Review question and scope:\n{_EXPECTED_BLOCK}\n\n")
+    assert "Eligibility:" not in user_prompt
+    await db_session.refresh(run)
+    assert (run.results or {})["provenance"]["review_context"] == {"text": _EXPECTED_BLOCK}
+    await db_session.rollback()
