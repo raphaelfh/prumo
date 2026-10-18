@@ -22,6 +22,7 @@ from app.api.mcp.errors import (
     NOT_FOUND_MESSAGE,
     McpErrorCode,
     McpToolError,
+    error_result,
     reject_nul,
     validation_failure,
     with_names,
@@ -38,11 +39,16 @@ from app.services.project_ai_context import (
     set_ai_context,
 )
 from app.services.project_read_service import project_name
+from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.json_schema import inline_json_schema
+from app.utils.text_caps import cap_json_weight
 
 _TOOL = "set_review_question"
 _SLOT_KEYS = frozenset(get_args(PicotsSlotKey))
 _EMPTY_NOTE = "No review question yet"
+_TRUNCATED_NEXT_STEP = (
+    "call get_review_question for the full current values, then confirm with the user"
+)
 _APPLIED_NOTE = (
     "Runs that already made their first AI call keep the review question they started with."
 )
@@ -115,7 +121,7 @@ async def set_review_question(
     try:
         await _apply(db, scope, expected_revision, slots, picots_enabled)
     except McpToolError as error:
-        await refuse(db, scope, with_names(error, project_name=name))
+        await refuse(db, scope, _fit_current(with_names(error, project_name=name)))
     view = await get_review_question_view(db, project_id)
     return view.model_copy(update={"note": _APPLIED_NOTE})
 
@@ -191,6 +197,54 @@ def _parse_slots(
         except ValidationError as exc:
             raise validation_failure(exc, prefix=f"slots.{key}") from exc
     return updates
+
+
+def _fit_current(error: McpToolError) -> McpToolError:
+    """A STALE_VALUE refusal with ``current`` cut until the rendered error fits
+    ``RESULT_CAP``, flagged ``current_truncated``; any other error untouched.
+
+    Slots at their write bounds render far past the cap. The preview goes
+    first (derived from the rest), then trailing list items -- study design,
+    eligibility, then slots, so the slots the write targets survive longest --
+    then the free-text fields. A cut ``current`` is not safe to write back, so
+    ``next_step`` points to the uncapped ``get_review_question``."""
+    if error.code is not McpErrorCode.STALE_VALUE:
+        return error
+    error.extras["current_truncated"] = False
+    if _rendered_len(error) <= RESULT_CAP:
+        return error
+    error.extras["current_truncated"] = True
+    error.next_step = _TRUNCATED_NEXT_STEP
+    over = _rendered_len(error) - RESULT_CAP
+    current = error.extras["current"]  # a fresh model_dump: ours to cut
+    if current["preview"] is not None:
+        over -= _json_len(current["preview"]) - _json_len(None)
+        current["preview"] = None
+    slots = list(current["slots"].values())
+    eligibility, design = current["eligibility"], current["study_design"]
+    lists = [s[part] for s in slots for part in ("inclusion", "exclusion")]
+    lists += [eligibility["inclusion"], eligibility["exclusion"], design["types"]]
+    for items in reversed(lists):
+        while over > 0 and items:
+            item = items.pop()
+            over -= _json_len(item) + (2 if items else 0)  # its ", " separator
+    texts = [(s, "description") for s in slots] + [(eligibility, "notes"), (design, "notes")]
+    for holder, key in reversed(texts):
+        if over <= 0:
+            break
+        weight = _json_len(holder[key])
+        holder[key], _ = cap_json_weight(holder[key], max(2, weight - over))
+        over -= weight - _json_len(holder[key])
+    return error
+
+
+def _rendered_len(error: McpToolError) -> int:
+    """Measured as the dispatcher renders it: the error result's compact JSON."""
+    return _json_len(error_result(error).structured_content)
+
+
+def _json_len(value: object) -> int:
+    return len(compact_json(value))
 
 
 def _audit_view(model: dict[str, Any], updates: dict[str, dict[str, Any]] | None) -> dict[str, Any]:

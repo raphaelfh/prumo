@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.tools import review_question as review_question_tool
 from app.services.project_ai_context import get_review_question_view
+from app.utils.compact_json import RESULT_CAP, compact_json
 from tests.integration.conftest import SEED
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 
@@ -188,8 +189,72 @@ async def test_stale_revision_is_refused(
     assert error["current"]["slots"]["population"]["description"] == "Adults"
     assert error["untrusted_content"] is True
     assert error["untrusted_fields"] == ["current", "project_name"]
+    assert error["current_truncated"] is False
     assert await _row(db_session) == before
     assert await _audit_count(db_session, outcome="refused", error_code="STALE_VALUE") == 1
+
+
+async def test_stale_refusal_caps_current_at_write_bounds(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    # Every slot, the eligibility and the design at their write bounds, with
+    # quotes so JSON escaping doubles some characters' weight.
+    slot = {
+        "description": '"' * 2000,
+        "inclusion": ["i" * 500] * 50,
+        "exclusion": ["e" * 500] * 50,
+    }
+    await _set_protocol(
+        db_session,
+        picots=dict.fromkeys(review_question_tool._SLOT_KEYS, slot),
+        eligibility={"inclusion": ["c" * 500] * 50, "exclusion": [], "notes": "n" * 2000},
+        study_design={"types": ["t" * 100] * 30, "notes": "s" * 2000},
+    )
+    full = await _read(mcp_client, pat_primary_rw)
+    assert len(compact_json(full)) > 10 * RESULT_CAP  # precondition: far over the cap
+
+    result = await _write(
+        mcp_client, pat_primary_rw, expected_revision=full["revision"] + 7, picots_enabled=False
+    )
+    error = error_payload(result)
+
+    assert error["code"] == "STALE_VALUE"
+    assert len(compact_json(error)) <= RESULT_CAP
+    assert result.content[0].text == compact_json(error)
+    assert error["current_truncated"] is True
+    assert error["current"]["revision"] == full["revision"]
+    assert error["current_revision"] == full["revision"]
+    assert "get_review_question" in error["next_step"]
+    assert await _audit_count(db_session, outcome="refused", error_code="STALE_VALUE") == 1
+
+
+async def test_stale_refusal_cuts_escaped_text_when_no_list_is_left(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    # No list items to drop: only escape-heavy free text puts it over the cap.
+    slot = {"description": '"' * 2000, "inclusion": [], "exclusion": []}
+    await _set_protocol(
+        db_session,
+        picots=dict.fromkeys(review_question_tool._SLOT_KEYS, slot),
+        eligibility={"inclusion": [], "exclusion": [], "notes": "\x01" * 2000},
+        study_design={"types": [], "notes": "\x01" * 2000},
+    )
+    full = await _read(mcp_client, pat_primary_rw)
+    assert len(compact_json(full)) > RESULT_CAP  # precondition
+
+    error = error_payload(
+        await _write(
+            mcp_client, pat_primary_rw, expected_revision=full["revision"] + 7, picots_enabled=True
+        )
+    )
+
+    assert len(compact_json(error)) <= RESULT_CAP
+    assert error["current_truncated"] is True
+    current = error["current"]
+    assert current["preview"] is None
+    assert current["study_design"]["notes"] == ""  # cut first
+    first_slot = next(iter(current["slots"]))
+    assert current["slots"][first_slot]["description"] == '"' * 2000  # kept whole
 
 
 async def test_partial_slots_leave_others_alone(
