@@ -18,8 +18,12 @@ class McpExtractionQuestion(BaseModel):
 
 
 class McpRunRef(BaseModel):
+    """`review_question_drift`: null until an AI call pinned the review question;
+    true when the project's protocol changed since (new runs use the current one)."""
+
     run_id: UUID
     stage: str
+    review_question_drift: bool | None
 
 
 class McpEvidence(BaseModel):

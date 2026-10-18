@@ -26,10 +26,13 @@ under the previous text — the unattributable claim the pin exists to prevent
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun
+from app.models.project import Project
 from app.repositories import ExtractionRunRepository
 from app.schemas.run_prompt_context import ReviewQuestionPin, RunPromptContext
 from app.services.extraction_snapshot import general_instructions_for_version
@@ -42,7 +45,7 @@ _PIN_KEY: Literal["review_context"] = "review_context"
 
 
 def read_pinned_review_question(results: dict[str, Any] | None) -> ReviewQuestionPin | None:
-    """The run's pinned review context, or ``None`` — a pure READ.
+    """The run's pinned review question, or ``None`` — a pure READ.
 
     ``None`` means no LLM call has run on this run yet, which is a different
     fact from a pin whose ``text`` is ``None`` (resolved, and the review says
@@ -53,6 +56,37 @@ def read_pinned_review_question(results: dict[str, Any] | None) -> ReviewQuestio
     if isinstance(pinned, dict) and pinned:
         return ReviewQuestionPin.model_validate(pinned)
     return None
+
+
+async def current_protocol_revision(db: AsyncSession, project_id: UUID) -> int | None:
+    """The project's ``protocol_revision`` now, or ``None`` when the row is gone.
+
+    Callers pass the run's own ``project_id``, never a caller-supplied one.
+    """
+    stmt = select(Project.protocol_revision).where(Project.id == project_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+def review_question_drift(
+    pin: ReviewQuestionPin | None, current_revision: int | None
+) -> bool | None:
+    """Whether the project's protocol moved since the run pinned its question.
+
+    ``None`` when nothing is pinned yet. A legacy pin (no revision) or an
+    unknown current revision never reports drift: there is nothing to compare.
+    """
+    if pin is None:
+        return None
+    if pin.revision is None or current_revision is None:
+        return False
+    return pin.revision != current_revision
+
+
+def pinned_question_drift(
+    results: dict[str, Any] | None, current_revision: int | None
+) -> bool | None:
+    """:func:`review_question_drift` for a run's raw ``results``."""
+    return review_question_drift(read_pinned_review_question(results), current_revision)
 
 
 async def resolve_run_prompt_context(db: AsyncSession, run: ExtractionRun) -> RunPromptContext:
@@ -71,7 +105,10 @@ async def resolve_run_prompt_context(db: AsyncSession, run: ExtractionRun) -> Ru
         stored = await ExtractionRunRepository(db).freeze_provenance_key(
             run.id,
             _PIN_KEY,
-            ReviewQuestionPin(text=question.text if question else None).model_dump(),
+            ReviewQuestionPin(
+                text=question.text if question else None,
+                revision=question.revision if question else None,
+            ).model_dump(),
         )
         pinned = ReviewQuestionPin.model_validate(stored) if stored else ReviewQuestionPin()
     return RunPromptContext(

@@ -248,3 +248,33 @@ describe("RunScreenShell — the kind-specific palette", () => {
     expect(within(palette).queryByText(/reopen for revision/i) !== null).toBe(offered);
   });
 });
+
+describe("RunScreenShell — review question drift chip", () => {
+  it("shows no chip when the run's review question matches the protocol", () => {
+    renderShell("extraction", {
+      view: makeRunView({
+        review_question: "- Population: adults",
+        review_question_revision: 2,
+        project_protocol_revision: 2,
+        review_question_drift: false,
+      }),
+    });
+    expect(screen.queryByText("Review question changed")).not.toBeInTheDocument();
+  });
+
+  it("shows a chip whose tooltip names the pinned and current revisions", async () => {
+    renderShell("extraction", {
+      view: makeRunView({
+        review_question: "- Population: adults",
+        review_question_revision: 1,
+        project_protocol_revision: 3,
+        review_question_drift: true,
+      }),
+    });
+    const chip = screen.getByText("Review question changed");
+    await userEvent.hover(chip);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "This run keeps the review question from its first AI call (revision 1). New runs use revision 3.",
+    );
+  });
+});

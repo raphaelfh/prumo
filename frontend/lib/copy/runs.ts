@@ -65,6 +65,10 @@ export const runs = {
   worklistPositionLabel: 'Article {{n}} of {{m}}',
   aiPendingSuggestions: '{{n}} AI suggestions pending',
   compareToggleLabel: 'Compare',
+  // Review question drift (header chip)
+  reviewQuestionChanged: 'Review question changed',
+  reviewQuestionChangedTooltip:
+    'This run keeps the review question from its first AI call (revision {{pinned}}). New runs use revision {{current}}.',
   // CommandPalette
   commandTitle: 'Command palette',
   commandPlaceholder: 'Type a command or search…',

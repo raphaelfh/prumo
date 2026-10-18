@@ -13,6 +13,8 @@ from app.models.extraction import ExtractionEvidence
 from app.models.extraction_workflow import ExtractionReviewerDecisionType
 from app.schemas.mcp_extractions import McpExtractionsPage
 from app.services.extraction_review_service import ExtractionReviewService
+from app.services.project_ai_context import set_ai_context
+from app.services.run_prompt_context import resolve_run_prompt_context
 from app.utils.compact_json import RESULT_CAP, compact_json
 from tests.integration.conftest import SEED
 from tests.integration.helpers.engine_setup import run_in_extract
@@ -354,3 +356,27 @@ async def test_concise_values_truncate_on_many_instances(mcp_client, pat_primary
     assert [v["value"][:2] for v in cell["values"]] == [
         f"{position:02d}" for position in range(len(cell["values"]))
     ]
+
+
+async def test_run_reports_review_question_drift(mcp_client, pat_primary_rw, db_session):
+    """`run.review_question_drift`: null before any AI call pinned the review
+    question, false right after the pin, true once the protocol moved."""
+    run = await run_in_extract(db_session)
+
+    async def drift() -> bool | None:
+        body = await _get(mcp_client, pat_primary_rw, SEED.primary_template, "concise")
+        return body["articles"][0]["run"]["review_question_drift"]
+
+    assert await drift() is None
+    await resolve_run_prompt_context(db_session, run)
+    assert await drift() is False
+    await set_ai_context(
+        db_session,
+        SEED.primary_project,
+        picots=None,
+        picots_enabled=None,
+        slot_updates={
+            "population": {"description": "A changed population", "inclusion": [], "exclusion": []}
+        },
+    )
+    assert await drift() is True

@@ -222,9 +222,13 @@ def _picots_enabled(settings: Any) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class ReviewQuestion:
-    """The rendered question for a project that exists; ``text`` is ``None`` when muted or empty."""
+    """The rendered question for a project that exists; ``text`` is ``None`` when muted or empty.
+
+    ``revision`` is the project's ``protocol_revision`` the text was built from.
+    """
 
     text: str | None
+    revision: int
 
 
 async def build_review_question(db: AsyncSession, project_id: UUID) -> ReviewQuestion | None:
@@ -239,7 +243,7 @@ async def build_review_question(db: AsyncSession, project_id: UUID) -> ReviewQue
     if project is None:
         return None
     text = _render_for(project) if _picots_enabled(project.settings) else None
-    return ReviewQuestion(text=text)
+    return ReviewQuestion(text=text, revision=project.protocol_revision)
 
 
 class ProjectNotFoundError(Exception):

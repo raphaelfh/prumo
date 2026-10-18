@@ -63,6 +63,7 @@ from app.services.extraction_run_read_service import (
 )
 from app.services.extraction_snapshot import live_entity_types
 from app.services.mcp_value_render import McpFieldInfo, capped_values, mcp_value
+from app.services.run_prompt_context import current_protocol_revision, pinned_question_drift
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
@@ -540,6 +541,7 @@ async def list_agent_extractions(
         db, project_id=project_id, user_id=caller_id, kind=template_kind
     )
     is_arb = await is_run_arbitrator(db, project_id, caller_id)
+    protocol_revision = await current_protocol_revision(db, project_id)
 
     details: dict[UUID, RunDetailResponse] = {}
     for current_run in current_by_article.values():
@@ -638,7 +640,11 @@ async def list_agent_extractions(
         article_meta[article_pk] = {
             "title": title,
             "title_truncated": title_truncated,
-            "run": McpRunRef(run_id=run.id, stage=run.stage),
+            "run": McpRunRef(
+                run_id=run.id,
+                stage=run.stage,
+                review_question_drift=pinned_question_drift(run.results, protocol_revision),
+            ),
             "reason": "blind_review" if peer_hidden else None,
             "peer_values_hidden": peer_hidden,
         }

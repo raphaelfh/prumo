@@ -412,7 +412,24 @@ class RunViewResponse(RunDetailResponse):
     # both blocks reach every prompt, so shipping only one of them would make
     # this response lie by omission. None when no AI call has run yet, or when
     # the review says nothing.
-    review_context: str | None = None
+    review_question: str | None = None
+    review_question_revision: int | None = Field(
+        default=None,
+        description=(
+            "Protocol revision the pinned review question was built from; null when "
+            "nothing is pinned yet or the pin predates revisions."
+        ),
+    )
+    project_protocol_revision: int | None = Field(
+        default=None, description="The project's protocol revision now."
+    )
+    review_question_drift: bool = Field(
+        default=False,
+        description=(
+            "True when the project's protocol changed since this run pinned its review "
+            "question; new runs use the current one."
+        ),
+    )
 
 
 class RunReviewerProfile(BaseModel):

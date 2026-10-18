@@ -95,6 +95,10 @@ function makeRunViewResponse(
     entity_types: entityTypes,
     current_values: [],
     instances,
+    review_question: null,
+    review_question_revision: null,
+    project_protocol_revision: null,
+    review_question_drift: false,
     ...overrides,
   };
 }

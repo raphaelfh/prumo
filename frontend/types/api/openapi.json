@@ -10255,6 +10255,18 @@
             "title": "Peers Revealed",
             "type": "boolean"
           },
+          "project_protocol_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's protocol revision now.",
+            "title": "Project Protocol Revision"
+          },
           "proposals": {
             "items": {
               "$ref": "#/components/schemas/ProposalRecordResponse"
@@ -10274,7 +10286,7 @@
             "title": "Ready Count",
             "type": "integer"
           },
-          "review_context": {
+          "review_question": {
             "anyOf": [
               {
                 "type": "string"
@@ -10283,7 +10295,25 @@
                 "type": "null"
               }
             ],
-            "title": "Review Context"
+            "title": "Review Question"
+          },
+          "review_question_drift": {
+            "default": false,
+            "description": "True when the project's protocol changed since this run pinned its review question; new runs use the current one.",
+            "title": "Review Question Drift",
+            "type": "boolean"
+          },
+          "review_question_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Protocol revision the pinned review question was built from; null when nothing is pinned yet or the pin predates revisions.",
+            "title": "Review Question Revision"
           },
           "reviewer_count": {
             "default": 0,

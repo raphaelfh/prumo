@@ -6408,6 +6408,11 @@ export interface components {
              * @default false
              */
             peers_revealed: boolean;
+            /**
+             * Project Protocol Revision
+             * @description The project's protocol revision now.
+             */
+            project_protocol_revision?: number | null;
             /** Proposals */
             proposals: components["schemas"]["ProposalRecordResponse"][];
             /** Published States */
@@ -6417,8 +6422,19 @@ export interface components {
              * @default 0
              */
             ready_count: number;
-            /** Review Context */
-            review_context?: string | null;
+            /** Review Question */
+            review_question?: string | null;
+            /**
+             * Review Question Drift
+             * @description True when the project's protocol changed since this run pinned its review question; new runs use the current one.
+             * @default false
+             */
+            review_question_drift: boolean;
+            /**
+             * Review Question Revision
+             * @description Protocol revision the pinned review question was built from; null when nothing is pinned yet or the pin predates revisions.
+             */
+            review_question_revision?: number | null;
             /**
              * Reviewer Count
              * @default 0

@@ -24,9 +24,14 @@ class ReviewQuestionPin(BaseModel):
     from an ABSENT key, which means no LLM call has run on this run yet.
     ``{"text": None}`` is still a truthy dict, which is what keeps
     ``freeze_provenance_key``'s first-writer-wins guard working.
+
+    ``revision`` is the project's ``protocol_revision`` the text was built
+    from. Pins written before it existed hold ``{"text": ...}`` only and read
+    with ``revision=None``.
     """
 
     text: str | None = None
+    revision: int | None = None
 
 
 class RunPromptContext(BaseModel):
