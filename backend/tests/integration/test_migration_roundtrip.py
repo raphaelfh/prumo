@@ -1331,7 +1331,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0087_template_instrument"
+    expected_head = "0088_protocol_revision"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2276,3 +2276,40 @@ async def test_migration_0087_template_instrument_roundtrip(
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert "(head)" in _run_alembic("current", database_url=migration_db_url)
     assert await schema() == at_head
+
+
+@pytest.mark.asyncio
+async def test_migration_0088_protocol_revision_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``projects`` gains a checked ``protocol_revision`` counter; the
+    downgrade drops column and CHECK, the re-upgrade restores both.
+    ``alembic check`` ignores CHECKs, so the name is asserted here."""
+    session = migration_session
+
+    async def schema() -> tuple[bool, bool]:
+        column = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns"
+                    " WHERE table_schema = 'public' AND table_name = 'projects'"
+                    " AND column_name = 'protocol_revision'"
+                )
+            )
+        ).scalar_one_or_none() is not None
+        check = (
+            await session.execute(
+                text("SELECT 1 FROM pg_constraint WHERE conname = 'ck_projects_protocol_revision'")
+            )
+        ).scalar_one_or_none() is not None
+        await session.rollback()
+        return column, check
+
+    assert await schema() == (True, True)
+    try:
+        _run_alembic("downgrade", "0087_template_instrument", database_url=migration_db_url)
+        assert await schema() == (False, False)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    assert await schema() == (True, True)

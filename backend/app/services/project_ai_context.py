@@ -26,6 +26,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.project_repository import ProjectRepository
+from app.services.project_protocol import bump_protocol_revision
 
 #: Ceiling on the rendered block. Mirrors ``llm_template_instruction``'s
 #: ``max_length=4000`` (``schemas/hitl_session.py``). The cap lives in the
@@ -241,6 +242,8 @@ async def set_ai_context(
     project = await projects.lock_for_update(project_id)
     if project is None:
         raise ProjectNotFoundError(f"Project {project_id} not found")
+    old_enabled = _picots_enabled(project.settings)
+    old_picots = project.picots_config_ai_review
 
     # Switch first, question second. ``update_settings_key`` re-reads the
     # locked row with ``populate_existing``, and with ``autoflush=False`` that
@@ -251,5 +254,11 @@ async def set_ai_context(
         )
     if picots is not None:
         project.picots_config_ai_review = picots
+    # After ``update_settings_key`` for the same reason: its re-read would
+    # discard an earlier unflushed bump. One bump per call, real changes only.
+    if (picots_enabled is not None and picots_enabled != old_enabled) or (
+        picots is not None and picots != old_picots
+    ):
+        bump_protocol_revision(project)
     await db.flush()
     return await get_ai_context(db, project_id)

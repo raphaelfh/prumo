@@ -26,6 +26,7 @@ from app.schemas.project_details import (
     ProjectDetailsRead,
     ProjectDetailsRefusalCode,
 )
+from app.services.project_protocol import PROTOCOL_DETAIL_KEYS, bump_protocol_revision
 
 
 class StaleProjectValueError(AppError):
@@ -81,6 +82,9 @@ async def update_details(
     for key, value in changes.items():
         # A new object per JSONB column: plain JSONB tracks reassignment only.
         setattr(project, key, value)
+    changed = {key for key, value in changes.items() if before[key] != value}
+    if changed & PROTOCOL_DETAIL_KEYS:
+        bump_protocol_revision(project)
     await db.flush()
     await db.refresh(project)
     details = ProjectDetailsRead.model_validate(
