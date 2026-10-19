@@ -27,6 +27,7 @@ from app.services.extraction_batch_service import (
     BatchAlreadyActiveError,
     BatchScopeError,
     QueueUnavailableError,
+    StartResult,
 )
 
 _start = getattr(ep.start_extraction_batch, "__wrapped__", ep.start_extraction_batch)
@@ -80,12 +81,14 @@ class _World:
             def __init__(self, db: object) -> None:
                 self.db = db
 
-            async def start(self, owner_id: UUID, request: CreateExtractionBatchRequest) -> UUID:
+            async def start(
+                self, owner_id: UUID, request: CreateExtractionBatchRequest
+            ) -> StartResult:
                 world.calls.append("start")
                 world.started.append((owner_id, request))
                 if start_error is not None:
                     raise start_error
-                return BATCH
+                return StartResult(batch_id=BATCH, replayed=False)
 
             async def cancel(self, owner_id: UUID, batch_id: UUID, *, now: datetime) -> None:  # noqa: ARG002
                 world.calls.append("cancel")

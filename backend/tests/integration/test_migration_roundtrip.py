@@ -1332,7 +1332,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0092_pat_ai_run"
+    expected_head = "0093_batch_agent_origin"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2506,6 +2506,7 @@ _LEDGER_INDEXES = {
     "ix_ai_usage_ledger_attempt_id",
     "ix_ai_usage_ledger_batch_id",
 }
+_LEDGER_INDEXES_AFTER_0091 = {"ix_ai_usage_ledger_agent_token_id"}  # 0093
 _LEDGER_CHECKS = {
     "ck_ai_usage_ledger_key_scope",
     "ck_ai_usage_ledger_pass_kind",
@@ -2576,7 +2577,9 @@ async def test_migration_0091_ai_usage_ledger_roundtrip(
         await session.rollback()
         return found
 
-    at_head = _LedgerPosture(True, True, {"deny_all"}, _LEDGER_INDEXES, _LEDGER_CHECKS)
+    at_head = _LedgerPosture(
+        True, True, {"deny_all"}, _LEDGER_INDEXES | _LEDGER_INDEXES_AFTER_0091, _LEDGER_CHECKS
+    )
     assert await posture() == at_head
     try:
         _run_alembic("downgrade", "0090_entity_key_unique", database_url=migration_db_url)
@@ -2679,3 +2682,92 @@ async def test_migration_0092_pat_ai_run_roundtrip(
                 text(sql), {"u": str(user_id), "c": str(client_id), "id": str(connection_id)}
             )
         await session.commit()
+
+
+# --- 0093: agent-origin batches ---------------------------------------------
+_AGENT_BATCH_COLUMNS = {
+    ("extraction_batches", "agent_token_id"),
+    ("extraction_batches", "agent_engine"),
+    ("extraction_batches", "agent_plan_digest"),
+    ("ai_usage_ledger", "agent_token_id"),
+}
+_AGENT_BATCH_INDEXES = {
+    "uq_extraction_batches_agent_plan_digest",
+    "ix_extraction_batches_agent_token_id",
+    "ix_extraction_batches_agent_project_created",
+    "ix_ai_usage_ledger_agent_token_id",
+}
+_AGENT_BATCH_CONSTRAINTS = {
+    ("ck_extraction_batches_agent_fields_check", "c", " "),
+    ("extraction_batches_agent_token_id_fkey", "f", "n"),
+    ("ai_usage_ledger_agent_token_id_fkey", "f", "n"),
+}
+
+
+@pytest.mark.asyncio
+async def test_migration_0093_batch_agent_origin_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The agent columns, the CHECK, the three batch indexes (one unique),
+    the ledger column and its index, and both SET NULL foreign keys exist at
+    head, go with the downgrade to 0092 and come back with the re-upgrade."""
+    session = migration_session
+
+    async def schema() -> tuple[set[tuple[str, str]], set[str], set[tuple[str, str, str]]]:
+        columns = {
+            (row[0], row[1])
+            for row in (
+                await session.execute(
+                    text(
+                        "SELECT table_name, column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' "
+                        "AND table_name IN ('extraction_batches', 'ai_usage_ledger') "
+                        "AND column_name LIKE 'agent_%'"
+                    )
+                )
+            ).all()
+        }
+        indexes = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' "
+                        "AND tablename IN ('extraction_batches', 'ai_usage_ledger') "
+                        "AND indexname LIKE '%agent%'"
+                    )
+                )
+            ).scalars()
+        )
+        constraints = {
+            (row[0], row[1], row[2])
+            for row in (
+                await session.execute(
+                    text(
+                        "SELECT conname, contype::text, confdeltype::text FROM pg_constraint "
+                        "WHERE conrelid IN (to_regclass('public.extraction_batches'), "
+                        "to_regclass('public.ai_usage_ledger')) AND conname LIKE '%agent%'"
+                    )
+                )
+            ).all()
+        }
+        await session.rollback()
+        return columns, indexes, constraints
+
+    at_head = (_AGENT_BATCH_COLUMNS, _AGENT_BATCH_INDEXES, _AGENT_BATCH_CONSTRAINTS)
+    assert await schema() == at_head
+    unique = (
+        await session.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE indexname = 'uq_extraction_batches_agent_plan_digest'"
+            )
+        )
+    ).scalar_one()
+    await session.rollback()
+    assert "UNIQUE" in unique and "agent_plan_digest IS NOT NULL" in unique
+    try:
+        _run_alembic("downgrade", "0092_pat_ai_run", database_url=migration_db_url)
+        assert await schema() == (set(), set(), set())
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await schema() == at_head

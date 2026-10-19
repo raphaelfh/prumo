@@ -14,7 +14,7 @@ other cannot be reproduced.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class LlmTarget(BaseModel):
@@ -51,3 +51,18 @@ class LlmTarget(BaseModel):
     mode_executed: str = "fast"
     connection_id: str | None = None
     deviation: bool = False
+
+
+class EngineIdentity(BaseModel):
+    """Which engine an agent-started batch was approved to run on.
+
+    Compared as a typed value, never by string keys: the approved engine and
+    the project's current one are the same engine only when all four match.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str
+    model: str
+    mode: str  # LlmTarget.mode_requested
+    connection_id: str | None  # LlmTarget.connection_id

@@ -43,6 +43,34 @@ class ExtractionBatchRepository:
             )
         ).scalar_one_or_none()
 
+    async def owned_by_plan_digest(
+        self, owner_id: UUID, plan_digest: str, *, project_id: UUID
+    ) -> UUID | None:
+        return (
+            await self.db.execute(
+                select(ExtractionBatch.id).where(
+                    ExtractionBatch.owner_id == owner_id,
+                    ExtractionBatch.project_id == project_id,
+                    ExtractionBatch.agent_plan_digest == plan_digest,
+                    _member(owner_id),
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def agent_articles_since(self, project_id: UUID, *, since: datetime) -> int:
+        """Articles in the project's agent batches since ``since``, cancelled included."""
+        return (
+            await self.db.execute(
+                select(func.count(ExtractionBatchItem.id))
+                .join(ExtractionBatch, ExtractionBatch.id == ExtractionBatchItem.batch_id)
+                .where(
+                    ExtractionBatch.project_id == project_id,
+                    ExtractionBatch.agent_plan_digest.is_not(None),
+                    ExtractionBatch.created_at >= since,
+                )
+            )
+        ).scalar_one()
+
     async def list_owned(
         self, owner_id: UUID, *, since: datetime, project_id: UUID | None
     ) -> list[ExtractionBatch]:

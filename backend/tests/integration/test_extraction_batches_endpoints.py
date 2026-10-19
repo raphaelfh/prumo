@@ -404,9 +404,11 @@ async def test_service_start_checks_engine_then_queue_then_creates(
     queue: MagicMock,  # noqa: ARG001
 ) -> None:
     a = await make_article(db_session, SEED.primary_project)
-    batch_id = await ExtractionBatchService(db_session).start(
+    started = await ExtractionBatchService(db_session).start(
         SEED.primary_profile, _request_for([a])
     )
+    assert started.replayed is False
+    batch_id = started.batch_id
     count = (
         await db_session.execute(
             text("SELECT count(*) FROM public.extraction_batch_items WHERE batch_id=:id"),

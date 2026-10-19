@@ -41,6 +41,9 @@ class AiUsageLedger(Base, UUIDMixin):
     batch_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("public.extraction_batches.id", ondelete="SET NULL")
     )
+    agent_token_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("public.personal_access_tokens.id", ondelete="SET NULL")
+    )
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(Text, nullable=False)
     # NULL: an env-default call made before credentials resolve has no scope.
@@ -81,6 +84,11 @@ class AiUsageLedger(Base, UUIDMixin):
             "ix_ai_usage_ledger_batch_id",
             "batch_id",
             postgresql_where=sql_text("batch_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_ai_usage_ledger_agent_token_id",
+            "agent_token_id",
+            postgresql_where=sql_text("agent_token_id IS NOT NULL"),
         ),
         {"schema": "public"},
     )

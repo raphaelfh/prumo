@@ -72,14 +72,14 @@ async def start_extraction_batch(
     trace_id = _trace_id(request)
     await ensure_project_reviewer(db, payload.project_id, current_user_sub)
     try:
-        batch_id = await ExtractionBatchService(db).start(current_user_sub, payload)
+        started = await ExtractionBatchService(db).start(current_user_sub, payload)
     except QueueUnavailableError:
         return _queue_unavailable(trace_id)
     except BatchScopeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await db.commit()
-    kick_batch(batch_id)
-    detail = await _detail(db, current_user_sub, batch_id)
+    kick_batch(started.batch_id)
+    detail = await _detail(db, current_user_sub, started.batch_id)
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content=ApiResponse.success(detail, trace_id=trace_id).model_dump(mode="json"),
