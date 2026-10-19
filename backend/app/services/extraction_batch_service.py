@@ -261,6 +261,19 @@ class ExtractionBatchService:
         await self.batches.add(batch, article_ids)
         return batch.id
 
+    async def stop_agent_batches(
+        self, token_id: UUID, *, code: str = "AGENT_TOKEN_INACTIVE"
+    ) -> list[UUID]:
+        """Stop the active agent batches ``token_id`` started; queued articles become
+        not-run, in-flight ones finish. Idempotent; flush only."""
+        stopped = await self.batches.stop_active_agent_batches(
+            token_id, code, "The access token that started this run was revoked."
+        )
+        for batch_id in stopped:
+            await self.batches.cancel_queued(batch_id, "STOPPED_AGENT_GUARD")
+        await self.db.flush()
+        return stopped
+
     async def cancel(self, owner_id: UUID, batch_id: UUID, *, now: datetime) -> None:
         """Queued articles become not-run; in-flight ones finish (spec §7.1)."""
         batch = await owned_batch(self.db, owner_id=owner_id, batch_id=batch_id)

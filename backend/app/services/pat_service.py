@@ -56,6 +56,7 @@ from app.schemas.personal_access_token import (
     PersonalAccessTokenRead,
     PersonalAccessTokenRefusalCode,
 )
+from app.services.extraction_batch_service import ExtractionBatchService
 
 PAT_PREFIX = "prumo_pat_"
 MAX_ACTIVE_TOKENS = 10
@@ -128,13 +129,17 @@ def usable_clause() -> ColumnElement[bool]:
     return and_(active_clause(), ~user_locked_out())
 
 
-async def token_is_usable(db: AsyncSession, token_id: UUID | None) -> bool:
-    """Whether the credential ``token_id`` may still act; ``False`` for ``None``."""
+async def token_is_usable(db: AsyncSession, token_id: UUID | None, *, ai_run: bool = False) -> bool:
+    """Whether the credential ``token_id`` may still act; ``False`` for ``None``.
+
+    ``ai_run=True`` also requires the row to carry the AI-run grant.
+    """
     if token_id is None:
         return False
-    return bool(
-        await db.scalar(select(exists().where(PersonalAccessToken.id == token_id, usable_clause())))
-    )
+    usable = usable_clause()
+    if ai_run:
+        usable = and_(usable, PersonalAccessToken.ai_run.is_(True))
+    return bool(await db.scalar(select(exists().where(PersonalAccessToken.id == token_id, usable))))
 
 
 def new_secret(prefix: str) -> str:
@@ -187,12 +192,16 @@ async def revoke_credential(db: AsyncSession, token_id: UUID) -> None:
     id-only WHERE: the caller has already proven ownership (``owned_token``)
     or holds a capability for the row — never re-state ``user_id`` here, or
     check_scope_guards would count a second predicate.
+
+    Cascade (ADR 0021): in the same transaction, the credential's active
+    agent-started batches stop — even when the row was already revoked.
     """
     await db.execute(
         update(PersonalAccessToken)
         .where(PersonalAccessToken.id == token_id, PersonalAccessToken.revoked_at.is_(None))
         .values(revoked_at=func.now())
     )
+    await ExtractionBatchService(db).stop_agent_batches(token_id)
 
 
 async def revoke_owned(

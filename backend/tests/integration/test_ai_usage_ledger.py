@@ -39,6 +39,7 @@ from tests.fakes.usage_sink import RecordingUsageSink
 from tests.integration.conftest import SEED
 from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
 from tests.integration.helpers.engine_setup import run_in_extract
+from tests.integration.helpers.pat_rows import insert_pat_row
 from tests.integration.test_ai_extraction_flows import (
     _entry_with_children,
     _no_live_run,
@@ -580,6 +581,50 @@ async def test_batch_id_resolved_from_attempt(
     rows = await _rows(_engine, parents.project_id)
     assert [r.batch_id for r in rows] == [parents.batch_id, parents.batch_id]
     assert len(lookups) == 1
+
+
+@pytest.mark.parametrize("origin", ["agent", "ui", "no_attempt"])
+async def test_agent_token_id_follows_the_batch_origin(
+    committed_ledger_parents: _Parents, _engine: AsyncEngine, origin: str
+) -> None:
+    parents = committed_ledger_parents
+    async with async_sessionmaker(_engine)() as s:
+        token_id = await insert_pat_row(s, "ledger-origin", ai_run=True)
+        if origin == "agent":
+            await s.execute(
+                text(
+                    "UPDATE public.extraction_batches SET agent_token_id = :t, "
+                    "agent_engine = CAST(:e AS jsonb), agent_plan_digest = :d WHERE id = :b"
+                ),
+                {
+                    "t": token_id,
+                    "e": '{"provider": "openai", "model": "m", "mode": "fast"}',
+                    "d": uuid4().hex,
+                    "b": parents.batch_id,
+                },
+            )
+        await s.commit()
+    attempt = {"attempt_id": None} if origin == "no_attempt" else {}
+    llm = metered(
+        _recorded(),
+        LedgerSink(create_ledger_session_factory(_engine)),
+        lambda: _ctx(parents, **attempt),
+    )
+    try:
+        await _ask(llm, section_extraction.NAME)
+        (row,) = await _rows(_engine, parents.project_id)
+    finally:
+        async with async_sessionmaker(_engine)() as s:
+            await s.execute(
+                text("DELETE FROM public.personal_access_tokens WHERE id = :t"), {"t": token_id}
+            )
+            await s.commit()
+
+    assert (row.batch_id, row.agent_token_id) == {
+        "agent": (parents.batch_id, token_id),
+        "ui": (parents.batch_id, None),
+        "no_attempt": (None, None),
+    }[origin]
 
 
 async def test_run_delete_nulls_run_id(

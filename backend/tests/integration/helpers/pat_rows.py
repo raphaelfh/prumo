@@ -25,17 +25,25 @@ from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
 
 
-async def insert_pat_row(db: AsyncSession, name: str = "audit-probe") -> UUID:
+async def insert_pat_row(
+    db: AsyncSession, name: str = "audit-probe", *, ai_run: bool = False
+) -> UUID:
     """Insert a throwaway, valid ``personal_access_tokens`` row and return its id."""
     token_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.personal_access_tokens "
-            "(id, user_id, name, token_prefix, token_hash, scope, expires_at) "
+            "(id, user_id, name, token_prefix, token_hash, scope, ai_run, expires_at) "
             "VALUES (:id, :uid, :name, 'prumo_pat_abcdef', :hash, "
-            "'read_write', now() + interval '30 days')"
+            "'read_write', :ai_run, now() + interval '30 days')"
         ),
-        {"id": str(token_id), "uid": str(SEED.primary_profile), "name": name, "hash": uuid4().hex},
+        {
+            "id": str(token_id),
+            "uid": str(SEED.primary_profile),
+            "name": name,
+            "hash": uuid4().hex,
+            "ai_run": ai_run,
+        },
     )
     return token_id
 

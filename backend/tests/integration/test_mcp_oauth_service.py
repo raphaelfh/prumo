@@ -6,6 +6,7 @@ exchange, refresh rotation, access-token lookup, revocation and pruning."""
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -29,6 +30,7 @@ from app.models.personal_access_token import PersonalAccessToken
 from app.services import mcp_oauth_service as svc
 from app.services.pat_service import TokenNotFoundError, hash_secret, revoke_credential
 from tests.integration.conftest import SEED
+from tests.integration.helpers.batch_fixtures import batch_halt, make_agent_batch
 from tests.integration.helpers.pat_rows import (
     insert_oauth_client,
     insert_oauth_connection,
@@ -1123,3 +1125,85 @@ async def test_revoke_connection_refuses_a_foreign_row_and_a_pat(
 
     assert (await _connection(db_session, foreign)).revoked_at is None
     assert (await _connection(db_session, pat)).revoked_at is None
+
+
+# --------------------------------------------------------------------------- revocation cascade
+
+Revoker = Callable[[], Awaitable[object]]
+
+
+async def _by_token(db: AsyncSession) -> tuple[UUID, Revoker]:
+    _, access, _, connection_id = await _issued(db)
+    return connection_id, lambda: svc.revoke_connection_by_token(db, access)
+
+
+async def _connected_apps(db: AsyncSession) -> tuple[UUID, Revoker]:
+    _, _, _, connection_id = await _issued(db)
+    return connection_id, lambda: svc.revoke_connection(
+        db, user_id=SEED.primary_profile, connection_id=connection_id
+    )
+
+
+async def _re_consent(db: AsyncSession) -> tuple[UUID, Revoker]:
+    client_id = await insert_oauth_client(db)
+    previous = await insert_oauth_connection(db, user_id=SEED.primary_profile, client_id=client_id)
+    request_id = await insert_oauth_request(db, client_id=client_id)
+    return previous, lambda: svc.decide_request(
+        db, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+    )
+
+
+async def _code_reuse(db: AsyncSession) -> tuple[UUID, Revoker]:
+    client_id, code, request_id = await _code(db)
+    await svc.exchange_code(db, client_id=str(client_id), code=code)
+    connection_id = (await _request(db, request_id)).connection_id
+    assert connection_id is not None
+
+    async def reuse() -> None:
+        with pytest.raises(TokenError):
+            await svc.exchange_code(db, client_id=str(client_id), code=code)
+
+    return connection_id, reuse
+
+
+async def _refresh_replay(db: AsyncSession) -> tuple[UUID, Revoker]:
+    client_id, _, refresh, connection_id = await _issued(db)
+    await svc.rotate_refresh(db, client_id=str(client_id), token=refresh)
+
+    async def replay() -> None:
+        with pytest.raises(TokenError):
+            await svc.rotate_refresh(db, client_id=str(client_id), token=refresh)
+
+    return connection_id, replay
+
+
+_REVOCATIONS = {
+    "revoke_by_token": _by_token,
+    "connected_apps": _connected_apps,
+    "re_consent": _re_consent,
+    "code_reuse": _code_reuse,
+    "refresh_replay": _refresh_replay,
+}
+
+
+@pytest.mark.parametrize("path", list(_REVOCATIONS), ids=list(_REVOCATIONS))
+async def test_every_connection_revocation_stops_its_agent_batches(
+    db_session: AsyncSession, path: str
+) -> None:
+    connection_id, revoke = await _REVOCATIONS[path](db_session)
+    batch_id = await make_agent_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        token_id=connection_id,
+    )
+    assert await batch_halt(db_session, batch_id) == (None, [("queued", None)] * 2)
+
+    await revoke()
+
+    assert (await _connection(db_session, connection_id)).revoked_at is not None
+    assert await batch_halt(db_session, batch_id) == (
+        "AGENT_TOKEN_INACTIVE",
+        [("cancelled", "STOPPED_AGENT_GUARD")] * 2,
+    )

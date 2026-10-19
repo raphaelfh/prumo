@@ -616,7 +616,7 @@ async def _start(db: AsyncSession, *, agent: bool) -> tuple[UUID, UUID]:
     if agent:
         await _set_policy(db, "reviewers")
         origin = AgentRunOrigin(
-            token_id=await insert_pat_row(db, "agent-key-probe"),
+            token_id=await insert_pat_row(db, "agent-key-probe", ai_run=True),
             engine=EngineIdentity(provider=provider, model=model, mode="fast", connection_id=None),
             plan_digest=uuid4().hex,
             daily_cap=100,
@@ -734,7 +734,7 @@ async def _set_policy(db: AsyncSession, agent_runs: str) -> None:
 
 
 async def _agent_batch(
-    db: AsyncSession, count: int, *, owner: UUID = SEED.primary_profile
+    db: AsyncSession, count: int, *, owner: UUID = SEED.primary_profile, ai_run: bool = True
 ) -> tuple[UUID, UUID]:
     """An agent-started batch whose token, policy and engine all still allow it."""
     from app.schemas.llm_target import EngineIdentity
@@ -743,7 +743,7 @@ async def _agent_batch(
 
     await set_project_engine(db, _AGENT_PROVIDER, _AGENT_MODEL)
     await _set_policy(db, "reviewers")
-    token_id = await insert_pat_row(db, "agent-guard")
+    token_id = await insert_pat_row(db, "agent-guard", ai_run=ai_run)
     engine = EngineIdentity(
         provider=_AGENT_PROVIDER, model=_AGENT_MODEL, mode="fast", connection_id=None
     )
@@ -817,6 +817,16 @@ async def test_inactive_token_stops_agent_batch(db_session: AsyncSession, kill: 
         "The access token that started this run was revoked or expired."
     )
     assert await _state(db_session, batch_id) == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_token_without_the_ai_run_grant_stops_agent_batch(db_session: AsyncSession) -> None:
+    batch_id, _ = await _agent_batch(db_session, 2, ai_run=False)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_TOKEN_INACTIVE", 2)
 
 
 @pytest.mark.asyncio

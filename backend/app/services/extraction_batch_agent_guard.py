@@ -1,7 +1,7 @@
 """Kill switches for an agent-started batch (ADR 0021), checked before each advance.
 
 An agent batch keeps running only while three things still hold: the
-credential that started it is usable, the project policy still lets its
+credential that started it is usable and still carries the AI-run grant, the project policy still lets its
 owner start agent runs, and the project's engine is the one the human
 approved. In-flight items always finish; only queued ones are withheld.
 """
@@ -32,7 +32,7 @@ async def agent_stop_reason(db: AsyncSession, batch: ExtractionBatch) -> tuple[s
 
     Order: token -> policy -> engine. Only called when batch.agent_plan_digest is not None.
     """
-    if not await token_is_usable(db, batch.agent_token_id):
+    if not await token_is_usable(db, batch.agent_token_id, ai_run=True):
         return TOKEN_INACTIVE
 
     policy = await ai_policy_service.read(db, batch.project_id)

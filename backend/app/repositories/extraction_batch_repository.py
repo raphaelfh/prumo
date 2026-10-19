@@ -198,6 +198,35 @@ class ExtractionBatchRepository:
         )
         return stopped.first() is not None
 
+    async def stop_active_agent_batches(
+        self, token_id: UUID, stop_code: str, stop_message: str
+    ) -> list[UUID]:
+        """Stop every un-halted batch ``token_id`` started that still has queued items.
+
+        id-only on the token: every caller proved ownership of the credential
+        or holds it. Conditional like :meth:`stop`, so a cancel is never overwritten.
+        """
+        queued = (
+            select(ExtractionBatchItem.id)
+            .where(
+                ExtractionBatchItem.batch_id == ExtractionBatch.id,
+                ExtractionBatchItem.status == "queued",
+            )
+            .exists()
+        )
+        stopped = await self.db.execute(
+            update(ExtractionBatch)
+            .where(
+                ExtractionBatch.agent_token_id == token_id,
+                ExtractionBatch.cancelled_at.is_(None),
+                ExtractionBatch.stop_code.is_(None),
+                queued,
+            )
+            .values(stop_code=stop_code, stop_message=stop_message)
+            .returning(ExtractionBatch.id)
+        )
+        return list(stopped.scalars())
+
     async def cancel_queued(self, batch_id: UUID, reason_code: str) -> None:
         await self.db.execute(
             update(ExtractionBatchItem)
