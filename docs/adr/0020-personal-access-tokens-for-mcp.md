@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 adr_number: '0020'
 ---
@@ -8,7 +8,7 @@ adr_number: '0020'
 # Personal access tokens as a second auth carrier for `/mcp`
 
 > **Status:** Accepted · Date: 2026-09-24 · Deciders: @raphaelfh
-> **Supersedes:** N/A · **Superseded by:** N/A
+> **Supersedes:** N/A · **Superseded by:** N/A · **Amended by:** ADR 0021
 
 ## Context and Problem Statement
 
@@ -63,6 +63,11 @@ long-lived-credential goal with the shape those clients already expect
 refresh loop avoids inventing agent-side session renewal.
 
 **Amended by ADR 0022 (2026-10):** OAuth is now accepted for /mcp, with prumo as the authorization server; PATs remain the credential for header-capable agents.
+
+**Amended by ADR 0021 (2026-10):** a credential may also carry the optional
+`ai_run` grant, off by default, which lets the agent plan and start an AI
+extraction run the user approved; without it the AI-run tools are hidden and
+refused.
 
 Reusing the JWT unmodified was rejected: it is short-lived by design (session
 security for the browser), and widening its lifetime for MCP would weaken it

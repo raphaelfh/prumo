@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 ---
 
@@ -299,13 +299,16 @@ last transport outcome was uncertain.
 **The server-side AI kickoff gate.** Every endpoint that queues AI work runs
 `api/deps/scope.assert_ai_kickoff` before any work is queued: the section
 kickoff reaches it through `assert_kickoff_scope`, which first binds the
-request coordinate (project, article, template, run) to the caller; the batch
-kickoff (`extraction_batches.py`) calls it directly on its project. The gate
+request coordinate (project, article, template, run) to the caller. The gate
 checks, in order, the reviewer role (403 for a viewer or non-member), then the
 engine-credential check (`engine_credentials.assert_engine_ready`, 409 when
 no usable credential is configured), so a caller without the role never learns
-the project's engine configuration. The worker re-resolves the engine at
-execution time; the gate only fails fast.
+the project's engine configuration. The batch kickoff (`extraction_batches.py`)
+does not call the gate: it runs `ensure_project_reviewer`, then
+`ExtractionBatchService.start` (engine check → queue probe → flush-only
+create), commits, and only then calls `kick_batch`. The MCP `start_ai_run`
+tool reaches the same `start` behind its own `@agent_tool` role check. The
+worker re-resolves the engine at execution time; both checks only fail fast.
 
 After the gate, `ExtractionAttemptService.prepare_request` does the following:
 
@@ -449,7 +452,7 @@ runner for the whole run.
   consensus). QA's `FieldInput` subscribes, but the QA screen never
   dispatches, so it does not light.
 
-### AI batch runs (0076)
+### AI batch runs (0076, 0093)
 
 Migration `0076_extraction_batches` (down revision `0075_extraction_attempts`).
 Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
@@ -464,6 +467,28 @@ Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
   `UNIQUE (batch_id, article_id)`; `status` `queued` / `dispatched` /
   `skipped` / `failed` / `cancelled`, `reason_code`, `attempt_id`
   (`ON DELETE SET NULL`). A dispatched item's outcome is its attempt's.
+- **Agent origin (0093, ADR 0021).** `extraction_batches` gains
+  `agent_token_id` (FK to `personal_access_tokens`, `ON DELETE SET NULL`),
+  `agent_engine` (JSONB, the approved `EngineIdentity`: provider, model, mode, connection,
+  endpoint hash and payer) and `agent_plan_digest` (TEXT, the approved plan).
+  CHECK `agent_fields_check`: engine and digest are set together, and a token
+  never without them. Indexes: unique partial
+  `uq_extraction_batches_agent_plan_digest` (one batch per approved plan, so a
+  repeated start replays), partial `ix_extraction_batches_agent_token_id`
+  (revocation lookup) and partial `ix_extraction_batches_agent_project_created`
+  `(project_id, created_at)` (the per-project daily agent cap).
+  `ai_usage_ledger` gains `agent_token_id` with the same key and a partial
+  index. A batch with a digest is agent-started (`started_by_agent`).
+- **Agent stop codes.** Before each advance an agent batch re-checks
+  `extraction_batch_agent_guard.agent_stop_reason`, in order:
+  `AGENT_TOKEN_INACTIVE` (token revoked, expired or without the `ai_run`
+  grant; revocation also stops it in the same transaction),
+  `AGENT_RUNS_DISABLED` (the project policy no longer lets the owner start
+  agent runs), `ENGINE_RETIRED`, then `AGENT_ENGINE_CHANGED` (engine,
+  endpoint or payer differ from the approved identity). Queued items of a
+  guard-stopped batch take reason `STOPPED_AGENT_GUARD`; an engine-failure
+  stop uses `STOPPED_ENGINE_ERROR`; a cancel uses `CANCELLED`. In-flight
+  items always finish. UI batches never run the guard.
 - Backend-only: RLS enabled, `anon`/`authenticated` revoked.
 - Execution: `advance_extraction_batch` (queue `extractions`) keeps at most 2
   articles in flight, opens the owner's session run
