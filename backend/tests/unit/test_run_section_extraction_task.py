@@ -707,6 +707,10 @@ def test_durable_delivery_uses_recorded_owner_payload_and_separate_session():
         patch("app.core.factories.create_storage_adapter"),
         patch("app.services.engine_credentials.resolve_engine_credentials", new=AsyncMock()),
         patch(
+            "app.services.extraction_batch_service.agent_batch_for_attempt",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
             "app.services.llm_engine_service.resolve_engine",
             new=AsyncMock(return_value=_PROJECT_ENGINE),
         ),
@@ -743,3 +747,55 @@ def test_terminal_attempt_replay_preserves_classified_error():
             kwargs={"payload_json": {}, "user_id": str(uuid4()), "attempt_id": str(uuid4())}
         ).get(timeout=5)
     assert error.value.error_code == "PDF_NOT_FOUND"
+
+
+def _apply_batch_attempt(agent_batch: UUID | None) -> tuple[AsyncMock, MagicMock, AsyncMock]:
+    """Run one batch attempt; return (credential resolver, service ctor, origin probe)."""
+    from types import SimpleNamespace
+
+    attempt_id, owner = uuid4(), uuid4()
+    stored = {
+        "projectId": str(uuid4()),
+        "articleId": str(uuid4()),
+        "templateId": str(uuid4()),
+        "runId": str(uuid4()),
+    }
+    session = _FakeSession()
+    session.get.return_value = SimpleNamespace(
+        id=attempt_id, engine={"provider": "openai"}, status="pending", owner_id=owner
+    )
+
+    async def execute(_aid: UUID, operation: Any, **_kw: Any) -> dict:
+        return await operation(SimpleNamespace(owner_id=owner, request_payload=stored))
+
+    service = MagicMock()
+    service.run_from_request = AsyncMock(return_value=_single_result(stored["runId"], str(uuid4())))
+    credentials = AsyncMock()
+    probe = AsyncMock(return_value=agent_batch)
+    with (
+        patch("app.worker._session.worker_session", _session_factory(session)),
+        patch("app.services.extraction_attempt_service.ExtractionAttemptService") as attempts,
+        patch("app.services.ai_extraction.AiExtraction", return_value=service) as domain,
+        patch("app.core.deps.get_supabase_client"),
+        patch("app.core.factories.create_storage_adapter"),
+        patch("app.services.engine_credentials.resolve_engine_credentials", new=credentials),
+        patch("app.services.extraction_batch_service.agent_batch_for_attempt", new=probe),
+    ):
+        attempts.return_value.execute_attempt = AsyncMock(side_effect=execute)
+        run_section_extraction_task.apply(
+            kwargs={"payload_json": {}, "user_id": str(owner), "attempt_id": str(attempt_id)}
+        ).get(timeout=5)
+    assert probe.await_args.args[1] == attempt_id
+    return credentials, domain, probe
+
+
+def test_agent_batch_attempt_refuses_the_deployment_key() -> None:
+    credentials, domain, _ = _apply_batch_attempt(uuid4())
+    assert credentials.await_args.kwargs["allow_global_key"] is False
+    assert domain.call_args.kwargs["allow_global_key"] is False
+
+
+def test_ui_batch_attempt_keeps_the_ladder() -> None:
+    credentials, domain, _ = _apply_batch_attempt(None)
+    assert credentials.await_args.kwargs["allow_global_key"] is True
+    assert domain.call_args.kwargs["allow_global_key"] is True

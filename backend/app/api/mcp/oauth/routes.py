@@ -36,7 +36,7 @@ from app.api.mcp.oauth.asgi import (
 )
 from app.api.mcp.oauth.provider import PrumoOAuthProvider
 from app.core.config import settings
-from app.services.mcp_oauth_service import OAUTH_SCOPES, OFFLINE_ACCESS
+from app.services.mcp_oauth_service import DEFAULT_OAUTH_SCOPES, OAUTH_SCOPES, OFFLINE_ACCESS
 
 PRM_PATH = "/.well-known/oauth-protected-resource/mcp"
 AS_METADATA_PATH = "/.well-known/oauth-authorization-server"
@@ -60,8 +60,12 @@ def build_oauth_routes() -> list[Route]:
     validate_issuer_url(issuer)
     scopes = list(OAUTH_SCOPES)
     # offline_access: accepted no-op marker (listed in AS metadata, never granted).
+    # A client that names no scope registers for read and write only: ai_run
+    # is requested only by a client that names it.
     registration = ClientRegistrationOptions(
-        enabled=True, valid_scopes=[*scopes, OFFLINE_ACCESS], default_scopes=scopes
+        enabled=True,
+        valid_scopes=[*scopes, OFFLINE_ACCESS],
+        default_scopes=list(DEFAULT_OAUTH_SCOPES),
     )
     revocation = RevocationOptions(enabled=True)
     # Public clients only: the SDK hardcodes the client-secret methods.

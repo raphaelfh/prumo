@@ -36,9 +36,19 @@ export const aiBatch = {
   bellFinished: '{{done}} done',
   bellNeedsAttention: '{{n}} need attention',
   bellNeedsAttentionOne: '1 needs attention',
-  bellStoppedEngine: 'Stopped: engine problem',
+  bellStoppedMissingKey: 'Stopped: the AI engine has no API key',
+  bellStoppedEngineRetired: 'Stopped: the AI engine is no longer available',
+  bellStoppedEndpoint: 'Stopped: the AI endpoint could not be reached',
+  bellStoppedTokenInactive: "Stopped: the agent's access token was revoked or expired",
+  bellStoppedAgentRunsDisabled: 'Stopped: agent-started runs were turned off for this project',
+  bellStoppedEngineChanged: "Stopped: the project's AI engine changed after approval",
+  bellStoppedUnknown: 'Stopped for an unexpected reason',
   bellCancelled: 'Cancelled: {{done}} done, {{notRun}} not run',
   bellStalled: 'No progress for 15 minutes',
+
+  // Origin of an agent-started batch (bell and details sheet)
+  startedByAgent: 'Started by agent',
+  startedByAgentNamed: 'Started by agent · {{name}}',
 
   // Details sheet
   sheetTitle: 'AI batch',
@@ -61,10 +71,11 @@ export const aiBatch = {
   reasonNoLongerAvailable: 'The tool, article or run is no longer available',
   reasonCancelled: 'Not run',
   reasonStoppedEngineError: 'Not run — the batch stopped',
+  reasonStoppedAgentGuard: 'Not run — the agent run was stopped',
   reasonPdfNotFound: 'No PDF',
   reasonExtractionFailed: 'Extraction failed',
   reasonSectionsFailed: '{{failed}} of {{total}} sections failed',
-  reasonUnknown: 'Unavailable',
+  reasonUnknown: 'Not completed for an unexpected reason',
 
   // Row status
   rowQueued: 'Queued for AI',

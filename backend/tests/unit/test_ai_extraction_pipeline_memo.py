@@ -34,6 +34,7 @@ def _pipeline_on(db: Any) -> Pipeline:
         owns_transactions=False,
         llm=MagicMock(),
         usage_sink=RecordingUsageSink(),
+        allow_global_key=True,
     )
 
 

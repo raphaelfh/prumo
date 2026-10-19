@@ -20,8 +20,10 @@ __all__ = [
     "STALL_AFTER",
     "ItemRow",
     "BatchDerivation",
+    "BatchWork",
     "item_outcome",
     "derive_batch",
+    "batch_work",
 ]
 
 STALL_AFTER = timedelta(minutes=15)
@@ -121,3 +123,28 @@ def derive_batch(
         counts=counts,
         items=items,
     )
+
+
+@dataclass(frozen=True)
+class BatchWork:
+    """What the batch's finished attempts produced."""
+
+    suggestions_created: int
+    tokens_used: int | None  # None: no attempt reported per-section token usage
+
+
+def batch_work(rows: list[ItemRow]) -> BatchWork:
+    """Sum the attempts' results: ``total_suggestions_created`` (all-sections
+    mode) or ``suggestions_created`` (single section), and each section's
+    ``tokens_used``."""
+    suggestions = 0
+    tokens: int | None = None
+    for row in rows:
+        result = row.attempt_result or {}
+        created = result.get("total_suggestions_created", result.get("suggestions_created"))
+        suggestions += int(created or 0)
+        for section in result.get("sections") or []:
+            used = section.get("tokens_used")
+            if isinstance(used, int):
+                tokens = (tokens or 0) + used
+    return BatchWork(suggestions_created=suggestions, tokens_used=tokens)

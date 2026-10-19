@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,10 +23,13 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.models.extraction import ExtractionRunStage
+from app.services import extraction_batch_dispatcher as dispatcher_module
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher, batch_request_id
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.fakes.recorded_llm import RecordedLlm
+from tests.fakes.usage_sink import RecordingUsageSink
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
 
@@ -246,10 +251,10 @@ async def test_owner_already_running_ai_on_the_run_is_skipped(db_session: AsyncS
 async def test_existing_ai_suggestions_skip_only_when_asked(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def has_ai(self, run_id):  # noqa: ANN001, ANN202, ARG001
-        return True
+    async def has_ai(_db, run_ids):  # noqa: ANN001, ANN202
+        return set(run_ids)
 
-    monkeypatch.setattr(ExtractionBatchDispatcher, "_run_has_ai_suggestions", has_ai)
+    monkeypatch.setattr(dispatcher_module, "runs_with_ai_suggestions", has_ai)
     skip_on, _ = await _batch(db_session, 1)
     skip_off, _ = await _batch(db_session, 1, skip_articles_with_ai_suggestions=False)
     queue = FakeQueue()
@@ -501,3 +506,654 @@ async def test_a_rolled_back_skip_does_not_break_the_next_claimed_item(
         assert statuses[0] == ("skipped", "NO_LONGER_AVAILABLE")
         assert statuses[1][0] == "dispatched", "the second claimed item never dispatched"
         assert len(queue.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Execution never reaches the deployment key for an agent batch.
+#
+# The attempt runs through the REAL task body: ``run_task`` is captured so its
+# coroutine runs on the test loop, and every ``worker_session()`` is a fresh
+# session on the test connection (its own SAVEPOINT), so the preparation, the
+# ownership and the domain sessions stay separate as in the worker. Only the
+# model call (``RecordedLlm``), the usage sink and storage are faked; the
+# credential ladder, ``build_model`` and the dispatcher are real.
+# ---------------------------------------------------------------------------
+
+
+def _run_attempt_body(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: RecordedLlm, sink: RecordingUsageSink
+):  # noqa: ANN202
+    from app.services import ai_extraction
+    from app.worker.tasks import extraction_tasks
+
+    connection = db.bind
+
+    @asynccontextmanager
+    async def worker_session(_engine: object = None) -> AsyncIterator[AsyncSession]:
+        async with AsyncSession(
+            bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+        ) as session:
+            yield session
+
+    @asynccontextmanager
+    async def worker_engine() -> AsyncIterator[object]:
+        yield connection
+
+    real_service = ai_extraction.AiExtraction
+
+    def with_fakes(**kwargs):  # noqa: ANN003, ANN202
+        return real_service(**{**kwargs, "llm": llm, "usage_sink": sink})
+
+    captured: list = []
+    monkeypatch.setattr("app.worker._session.worker_session", worker_session)
+    monkeypatch.setattr("app.worker._session.worker_engine", worker_engine)
+    monkeypatch.setattr(ai_extraction, "AiExtraction", with_fakes)
+    monkeypatch.setattr("app.core.deps.get_supabase_client", lambda: None)
+    monkeypatch.setattr("app.core.factories.create_storage_adapter", lambda _c: None)
+    monkeypatch.setattr(extraction_tasks, "run_task", captured.append)
+
+    async def run(attempt_id: UUID) -> None:
+        extraction_tasks.run_section_extraction_task.apply(
+            kwargs={
+                "payload_json": {},
+                "user_id": str(SEED.primary_profile),
+                "attempt_id": str(attempt_id),
+            }
+        )
+        (body,) = captured
+        captured.clear()
+        # The attempt row records the outcome; a failed attempt re-raises here.
+        with contextlib.suppress(Exception):
+            await body()
+
+    return run
+
+
+def _deployment_key_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.llm import provider
+    from app.services import llm_connection_service
+    from app.worker import queue_health
+
+    monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
+    monkeypatch.setattr(provider, "global_key_for", lambda _p: "sk-test")
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
+
+
+async def _attempt_outcome(db: AsyncSession, attempt_id: UUID) -> tuple[str, str | None]:
+    row = (
+        await db.execute(
+            text("SELECT status, error_code FROM public.extraction_attempts WHERE id=:id"),
+            {"id": str(attempt_id)},
+        )
+    ).one()
+    return row[0], row[1]
+
+
+async def _start(db: AsyncSession, *, agent: bool) -> tuple[UUID, UUID]:
+    """A one-article batch started through the real start path, on a user key
+    that is then deleted: the deployment key is the only key left."""
+    from pydantic import SecretStr
+
+    from app.schemas.extraction_batch import CreateExtractionBatchRequest
+    from app.schemas.llm_connection import UserConnectionCreateRequest
+    from app.schemas.llm_target import EngineIdentity
+    from app.services.extraction_batch_service import AgentRunOrigin, ExtractionBatchService
+    from app.services.llm_connection_service import LlmConnectionService, availability_map
+    from tests.integration.helpers.ai_extraction import seed_article_text
+    from tests.integration.helpers.engine_setup import set_project_engine
+    from tests.integration.helpers.pat_rows import insert_pat_row
+
+    provider, model = settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL
+    await set_project_engine(db, provider, model)
+    article = await make_article(db, SEED.primary_project, "deployment-key probe")
+    await seed_article_text(db, "ARTICLE BODY", article_id=article)
+    key = await LlmConnectionService(db).create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider=provider, label="own key", api_key=SecretStr("sk-own")
+        ),
+    )
+    origin = None
+    if agent:
+        await _set_policy(db, "reviewers")
+        origin = AgentRunOrigin(
+            token_id=await insert_pat_row(db, "agent-key-probe", ai_run=True),
+            engine=EngineIdentity(provider=provider, model=model, mode="fast", connection_id=None),
+            plan_digest=uuid4().hex,
+            daily_cap=100,
+        )
+    started = await ExtractionBatchService(db).start(
+        SEED.primary_profile,
+        CreateExtractionBatchRequest(
+            project_id=SEED.primary_project,
+            template_id=SEED.primary_template,
+            article_ids=[article],
+            skip_articles_with_ai_suggestions=False,
+        ),
+        agent=origin,
+    )
+    await db.execute(text("DELETE FROM public.llm_connections WHERE id=:id"), {"id": str(key.id)})
+    available = await availability_map(
+        db, project_id=SEED.primary_project, user_id=SEED.primary_profile, providers=[provider]
+    )
+    assert available == {provider: "global"}, "precondition: only the deployment key is left"
+    await db.commit()
+    return started.batch_id, article
+
+
+@pytest.mark.asyncio
+async def test_agent_batch_with_only_the_deployment_key_stops_before_any_model_call(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _deployment_key_only(monkeypatch)
+    llm, sink = RecordedLlm(), RecordingUsageSink()
+    run_attempt = _run_attempt_body(db_session, monkeypatch, llm, sink)
+    batch_id, _ = await _start(db_session, agent=True)
+    dispatcher = ExtractionBatchDispatcher(db_session, enqueue=FakeQueue())
+    await dispatcher.advance(batch_id)
+    ((_, _, attempt_id),) = await _items(db_session, batch_id)
+
+    await run_attempt(attempt_id)
+
+    assert await _attempt_outcome(db_session, attempt_id) == ("failed", "MISSING_API_KEY")
+    assert llm.calls == [] and sink.entries == []
+    await dispatcher.advance(batch_id)
+    stop_code = (
+        await db_session.execute(
+            text("SELECT stop_code FROM public.extraction_batches WHERE id=:b"),
+            {"b": str(batch_id)},
+        )
+    ).scalar_one()
+    assert stop_code == "MISSING_API_KEY"
+
+
+@pytest.mark.asyncio
+async def test_ui_batch_with_only_the_deployment_key_runs_on_it(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _deployment_key_only(monkeypatch)
+    llm, sink = RecordedLlm(), RecordingUsageSink()
+    run_attempt = _run_attempt_body(db_session, monkeypatch, llm, sink)
+    batch_id, _ = await _start(db_session, agent=False)
+    await ExtractionBatchDispatcher(db_session, enqueue=FakeQueue()).advance(batch_id)
+    ((_, _, attempt_id),) = await _items(db_session, batch_id)
+
+    await run_attempt(attempt_id)
+
+    assert await _attempt_outcome(db_session, attempt_id) == ("completed", None)
+    assert llm.calls, "the UI batch never reached the model"
+    assert {e.ctx.key_scope for e in sink.entries} == {"global_service"}
+
+
+@pytest.mark.asyncio
+async def test_keyless_host_row_passes_the_start_rung_but_never_unlocks_the_deployment_key(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A user host row with a base_url and no key counts as the caller's own
+    credential at start; at execution the ladder skips it (a host's row is
+    never a bare provider key), and an agent batch still gets no deployment key."""
+    from app.schemas.llm_target import LlmTarget
+    from app.services.engine_credentials import resolve_engine_credentials
+    from app.services.llm_connection_service import KeyScope, availability_map
+    from tests.integration.helpers.engine_setup import make_host_connection
+
+    monkeypatch.setattr("app.services.llm_connection_service.global_key_for", lambda _p: "sk-test")
+    await make_host_connection(db_session, api_key=None)
+    engine = LlmTarget(provider="openai_compatible", model="endpoint-model-x")
+    ids = {"user_id": SEED.primary_profile, "project_id": SEED.primary_project}
+
+    available = await availability_map(db_session, providers=[engine.provider], **ids)
+    refused = await resolve_engine_credentials(
+        db_session, engine=engine, allow_global_key=False, **ids
+    )
+    default = await resolve_engine_credentials(db_session, engine=engine, **ids)
+
+    assert available == {engine.provider: "user"}
+    assert (refused.api_key, refused.key_scope) == (None, None)
+    assert default.key_scope is KeyScope.GLOBAL_SERVICE, "the ladder would have fallen through"
+
+
+# --- agent guards (ADR 0021): token, policy, engine, before each advance ------
+
+_AGENT_PROVIDER, _AGENT_MODEL = settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL
+
+
+async def _set_policy(db: AsyncSession, agent_runs: str) -> None:
+    from app.schemas.ai_policy import AiPolicyUpdateRequest
+    from app.services import ai_policy_service
+
+    await ai_policy_service.set_for_project(
+        db,
+        project_id=SEED.primary_project,
+        update=AiPolicyUpdateRequest(
+            agent_runs=agent_runs,  # type: ignore[arg-type]
+            max_articles_per_run=25,
+            daily_agent_article_cap=100,
+        ),
+        user_id=SEED.primary_profile,
+    )
+
+
+async def _agent_batch(
+    db: AsyncSession,
+    count: int,
+    *,
+    owner: UUID = SEED.primary_profile,
+    ai_run: bool = True,
+    engine: Any = None,
+) -> tuple[UUID, UUID]:
+    """An agent-started batch whose token, policy and engine all still allow it.
+    ``engine``: the approved identity (default: the project engine, no own key)."""
+    from app.schemas.llm_target import EngineIdentity
+    from tests.integration.helpers.engine_setup import set_project_engine
+    from tests.integration.helpers.pat_rows import insert_pat_row
+
+    await set_project_engine(db, _AGENT_PROVIDER, _AGENT_MODEL)
+    await _set_policy(db, "reviewers")
+    token_id = await insert_pat_row(db, "agent-guard", ai_run=ai_run)
+    engine = engine or EngineIdentity(
+        provider=_AGENT_PROVIDER, model=_AGENT_MODEL, mode="fast", connection_id=None
+    )
+    articles = [await make_article(db, SEED.primary_project, f"G{i}") for i in range(count)]
+    batch_id = await make_batch(
+        db,
+        owner_id=owner,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=articles,
+        agent_token_id=str(token_id),
+        agent_engine=engine.model_dump_json(),
+        agent_plan_digest=uuid4().hex,
+    )
+    await db.commit()
+    return batch_id, token_id
+
+
+async def _stop(db: AsyncSession, batch_id: UUID) -> tuple[str | None, str | None]:
+    row = (
+        await db.execute(
+            text("SELECT stop_code, stop_message FROM public.extraction_batches WHERE id=:b"),
+            {"b": str(batch_id)},
+        )
+    ).one()
+    return row[0], row[1]
+
+
+async def _state(db: AsyncSession, batch_id: UUID, owner: UUID = SEED.primary_profile) -> str:
+    from app.services.extraction_batch_service import ExtractionBatchService
+
+    detail = await ExtractionBatchService(db).detail(owner, batch_id, now=datetime.now(UTC))
+    return detail.state
+
+
+async def _assert_guard_stop(
+    db: AsyncSession, batch_id: UUID, queue: FakeQueue, code: str, count: int
+) -> None:
+    assert (await _stop(db, batch_id))[0] == code
+    assert [(s, r) for s, r, _ in await _items(db, batch_id)] == [
+        ("cancelled", "STOPPED_AGENT_GUARD")
+    ] * count
+    assert queue.calls == []
+
+
+_TOKEN_KILLS = {
+    "revoked": "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid",
+    "expired": (
+        "UPDATE public.personal_access_tokens "
+        "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 minute' "
+        "WHERE id = :tid"
+    ),
+    "banned": "UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :uid",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kill", list(_TOKEN_KILLS), ids=list(_TOKEN_KILLS))
+async def test_inactive_token_stops_agent_batch(db_session: AsyncSession, kill: str) -> None:
+    batch_id, token_id = await _agent_batch(db_session, 2)
+    await db_session.execute(
+        text(_TOKEN_KILLS[kill]), {"tid": str(token_id), "uid": str(SEED.primary_profile)}
+    )
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_TOKEN_INACTIVE", 2)
+    assert (await _stop(db_session, batch_id))[1] == (
+        "The access token that started this run was revoked or expired."
+    )
+    assert await _state(db_session, batch_id) == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_token_without_the_ai_run_grant_stops_agent_batch(db_session: AsyncSession) -> None:
+    batch_id, _ = await _agent_batch(db_session, 2, ai_run=False)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_TOKEN_INACTIVE", 2)
+
+
+@pytest.mark.asyncio
+async def test_deleted_token_row_leaves_agent_token_id_null_and_stops(
+    db_session: AsyncSession,
+) -> None:
+    batch_id, token_id = await _agent_batch(db_session, 1)
+    await db_session.execute(
+        text("DELETE FROM public.personal_access_tokens WHERE id = :tid"), {"tid": str(token_id)}
+    )
+    token_after = (
+        await db_session.execute(
+            text("SELECT agent_token_id FROM public.extraction_batches WHERE id=:b"),
+            {"b": str(batch_id)},
+        )
+    ).scalar_one()
+    assert token_after is None, "precondition: the FK nulls the column"
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_TOKEN_INACTIVE", 1)
+
+
+@pytest.mark.asyncio
+async def test_policy_off_stops_agent_batch(db_session: AsyncSession) -> None:
+    batch_id, _ = await _agent_batch(db_session, 2)
+    await _set_policy(db_session, "off")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_RUNS_DISABLED", 2)
+    assert (await _stop(db_session, batch_id))[1] == (
+        "A project manager turned off agent-started runs."
+    )
+
+
+@pytest.mark.asyncio
+async def test_policy_managers_stops_reviewer_owned_agent_batch(db_session: AsyncSession) -> None:
+    batch_id, _ = await _agent_batch(db_session, 1, owner=SEED.reviewer_profile)
+    await _set_policy(db_session, "managers")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_RUNS_DISABLED", 1)
+
+
+@pytest.mark.asyncio
+async def test_policy_managers_keeps_manager_owned_agent_batch_running(
+    db_session: AsyncSession,
+) -> None:
+    batch_id, _ = await _agent_batch(db_session, 1)
+    await _set_policy(db_session, "managers")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert await _stop(db_session, batch_id) == (None, None)
+    assert len(queue.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_engine_change_stops_agent_batch(db_session: AsyncSession) -> None:
+    from tests.integration.helpers.engine_setup import set_project_engine
+
+    batch_id, _ = await _agent_batch(db_session, 2)
+    await set_project_engine(db_session, _AGENT_PROVIDER, _AGENT_MODEL, mode="verified")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_ENGINE_CHANGED", 2)
+    assert (await _stop(db_session, batch_id))[1] == (
+        "The project's AI engine, its endpoint or the key that pays for it changed "
+        "after this run was approved."
+    )
+
+
+async def _approved_identity(db: AsyncSession) -> Any:
+    """The identity a start would capture now, for the primary manager."""
+    from app.services.engine_identity import engine_identity
+    from app.services.llm_engine_service import resolve_engine
+
+    target = await resolve_engine(db, SEED.primary_project, SEED.primary_profile)
+    return await engine_identity(
+        db, target, project_id=SEED.primary_project, owner_id=SEED.primary_profile
+    )
+
+
+async def _advance_twice_around(
+    db: AsyncSession, batch_id: UUID, change: Any
+) -> tuple[FakeQueue, list[tuple[str, str | None, UUID | None]]]:
+    """Advance (every guard passes), apply ``change``, advance again."""
+    queue = FakeQueue()
+    dispatcher = ExtractionBatchDispatcher(db, enqueue=queue)
+    await dispatcher.advance(batch_id)
+    assert [s for s, _, _ in await _items(db, batch_id)] == [
+        "dispatched",
+        "dispatched",
+        "queued",
+    ], "precondition: the approved identity still holds"
+    await change()
+    await db.commit()
+    await dispatcher.advance(batch_id)
+    return queue, await _items(db, batch_id)
+
+
+@pytest.mark.asyncio
+async def test_payer_change_stops_agent_batch(db_session: AsyncSession) -> None:
+    """The owner's key is deleted mid-run: the run must not fall back to
+    another payer (the project's key) the human never approved."""
+    from pydantic import SecretStr
+
+    from app.schemas.llm_connection import UserConnectionCreateRequest
+    from app.services.llm_connection_service import LlmConnectionService
+    from tests.integration.helpers.engine_setup import set_project_engine
+
+    await set_project_engine(db_session, _AGENT_PROVIDER, _AGENT_MODEL)
+    key = await LlmConnectionService(db_session).create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider=_AGENT_PROVIDER, label="own key", api_key=SecretStr("sk-own")
+        ),
+    )
+    approved = await _approved_identity(db_session)
+    assert approved.payer == "your_key", "precondition: the owner's own key pays"
+    batch_id, _ = await _agent_batch(db_session, 3, engine=approved)
+
+    async def delete_key() -> None:
+        await db_session.execute(
+            text("DELETE FROM public.llm_connections WHERE id = :id"), {"id": str(key.id)}
+        )
+
+    _queue, items = await _advance_twice_around(db_session, batch_id, delete_key)
+
+    assert await _stop(db_session, batch_id) == (
+        "AGENT_ENGINE_CHANGED",
+        "The project's AI engine, its endpoint or the key that pays for it changed "
+        "after this run was approved.",
+    )
+    assert items[2][:2] == ("cancelled", "STOPPED_AGENT_GUARD")
+
+
+@pytest.mark.asyncio
+async def test_endpoint_change_behind_the_same_connection_stops_agent_batch(
+    db_session: AsyncSession,
+) -> None:
+    from app.services.user_engine_service import set_user_engine
+    from tests.integration.helpers.engine_setup import make_host_connection, set_project_engine
+
+    await set_project_engine(db_session, _AGENT_PROVIDER, _AGENT_MODEL)
+    cid = await make_host_connection(db_session, label="guard-host")
+    await set_user_engine(
+        db_session,
+        user_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        provider="openai_compatible",
+        model="endpoint-model-x",
+        mode="fast",
+        connection_id=cid,
+        is_manager=True,
+    )
+    approved = await _approved_identity(db_session)
+    assert approved.connection_id == str(cid) and approved.endpoint_sha256 is not None
+    batch_id, _ = await _agent_batch(db_session, 3, engine=approved)
+
+    async def move_endpoint() -> None:
+        await db_session.execute(
+            text(
+                "UPDATE public.llm_connections SET base_url = 'https://1.1.1.1/v1' WHERE id = :id"
+            ),
+            {"id": str(cid)},
+        )
+
+    _queue, items = await _advance_twice_around(db_session, batch_id, move_endpoint)
+
+    assert (await _stop(db_session, batch_id))[0] == "AGENT_ENGINE_CHANGED"
+    assert items[2][:2] == ("cancelled", "STOPPED_AGENT_GUARD")
+
+
+@pytest.mark.asyncio
+async def test_retired_engine_stops_agent_batch_as_engine_retired(
+    db_session: AsyncSession,
+) -> None:
+    batch_id, _ = await _agent_batch(db_session, 1)
+    await db_session.execute(
+        text(
+            "UPDATE public.projects SET settings = COALESCE(settings, '{}'::jsonb) "
+            '|| CAST(\'{"llm_engine": {"provider": "openai", "model": "gpt-long-gone"}}\' '
+            "AS jsonb) WHERE id = :pid"
+        ),
+        {"pid": str(SEED.primary_project)},
+    )
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    code, message = await _stop(db_session, batch_id)
+    assert code == "ENGINE_RETIRED" and message and "gpt-long-gone" in message
+    assert [(s, r) for s, r, _ in await _items(db_session, batch_id)] == [
+        ("cancelled", "STOPPED_AGENT_GUARD")
+    ]
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_in_flight_items_finish_after_a_guard_stop(db_session: AsyncSession) -> None:
+    batch_id, token_id = await _agent_batch(db_session, 3)
+    queue = FakeQueue()
+    dispatcher = ExtractionBatchDispatcher(db_session, enqueue=queue)
+    await dispatcher.advance(batch_id)
+    assert [s for s, _, _ in await _items(db_session, batch_id)] == [
+        "dispatched",
+        "dispatched",
+        "queued",
+    ], "precondition: every guard passed and two items are in flight"
+    await db_session.execute(
+        text("UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid"),
+        {"tid": str(token_id)},
+    )
+    await db_session.commit()
+
+    await dispatcher.advance(batch_id)
+
+    items = await _items(db_session, batch_id)
+    assert [(s, r) for s, r, _ in items] == [
+        ("dispatched", None),
+        ("dispatched", None),
+        ("cancelled", "STOPPED_AGENT_GUARD"),
+    ]
+    live = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_attempts WHERE id = ANY(:ids)"),
+            {"ids": [items[0][2], items[1][2]]},
+        )
+    ).scalar_one()
+    assert live == 2 and len(queue.calls) == 2
+    assert await _state(db_session, batch_id) == "active", "in-flight items still run"
+
+
+@pytest.mark.asyncio
+async def test_ui_batch_ignores_agent_guards(db_session: AsyncSession) -> None:
+    await _set_policy(db_session, "off")
+    batch_id, _ = await _batch(db_session, 2)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert await _stop(db_session, batch_id) == (None, None)
+    assert [s for s, _, _ in await _items(db_session, batch_id)] == ["dispatched"] * 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stop_code", "item_reason"),
+    [
+        ("MISSING_API_KEY", "STOPPED_ENGINE_ERROR"),
+        ("ENGINE_RETIRED", "STOPPED_ENGINE_ERROR"),
+        ("AGENT_TOKEN_INACTIVE", "STOPPED_AGENT_GUARD"),
+        ("AGENT_RUNS_DISABLED", "STOPPED_AGENT_GUARD"),
+        ("AGENT_ENGINE_CHANGED", "STOPPED_AGENT_GUARD"),
+    ],
+    ids=["missing-key", "retired", "token", "policy", "engine"],
+)
+async def test_a_stopped_batch_cancels_queued_items_with_the_reason_of_its_stop(
+    db_session: AsyncSession, stop_code: str, item_reason: str
+) -> None:
+    batch_id, _ = await _batch(db_session, 1, stop_code=stop_code)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert [(s, r) for s, r, _ in await _items(db_session, batch_id)] == [
+        ("cancelled", item_reason)
+    ]
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_landing_during_the_guard_check_is_not_overwritten(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop is a conditional write: a cancel that lands between the batch
+    read and the stop keeps the batch cancelled, never also stopped."""
+    batch_id, token_id = await _agent_batch(db_session, 1)
+    real_guard = dispatcher_module.agent_stop_reason
+
+    async def cancel_then_check(db: AsyncSession, batch):  # noqa: ANN001, ANN202
+        await db.execute(
+            text("UPDATE public.extraction_batches SET cancelled_at = now() WHERE id = :b"),
+            {"b": str(batch_id)},
+        )
+        await db.execute(
+            text(
+                "UPDATE public.extraction_batch_items SET status = 'cancelled', "
+                "reason_code = 'CANCELLED' WHERE batch_id = :b AND status = 'queued'"
+            ),
+            {"b": str(batch_id)},
+        )
+        await db.execute(
+            text("UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid"),
+            {"tid": str(token_id)},
+        )
+        return await real_guard(db, batch)
+
+    monkeypatch.setattr(dispatcher_module, "agent_stop_reason", cancel_then_check)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert await _stop(db_session, batch_id) == (None, None)
+    assert [(s, r) for s, r, _ in await _items(db_session, batch_id)] == [
+        ("cancelled", "CANCELLED")
+    ]
+    assert await _state(db_session, batch_id) == "cancelled"
+    assert queue.calls == []

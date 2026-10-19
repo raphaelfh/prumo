@@ -11,8 +11,10 @@ import {Sheet, SheetContent, SheetHeader, SheetTitle} from '@/components/ui/shee
 import {useBatchDetail, useCancelBatch, useResumeBatch} from '@/hooks/extraction/useExtractionBatches';
 import {extractionErrorToast} from '@/lib/ai-extraction/extractionErrorToast';
 import {t} from '@/lib/copy';
+import type {aiBatch} from '@/lib/copy/aiBatch';
 import type {ExtractionBatchDetail, ExtractionBatchItem} from '@/types/extraction-batch';
 
+import {agentOriginLabel, stopCodeMessage} from './aiBatchCopy';
 import {RunAIBatchDialog} from './RunAIBatchDialog';
 
 interface BatchDetailsSheetProps {
@@ -51,7 +53,7 @@ function groupFor(outcome: ExtractionBatchItem['outcome']): Group | null {
 // extraction_batch_service.py) mapped to their `aiBatch` copy key. A code not
 // mapped here, or not mapped by `extractionErrorToast`, falls back to `reasonUnknown`
 // — never a raw code.
-const REASON_COPY_KEY: Record<string, string> = {
+const REASON_COPY_KEY: Record<string, keyof typeof aiBatch> = {
   RUN_FINALIZED: 'reasonRunFinalized',
   RUN_NOT_EDITABLE: 'reasonRunNotEditable',
   ALREADY_HAS_AI_SUGGESTIONS: 'reasonAlreadyHasAiSuggestions',
@@ -59,6 +61,7 @@ const REASON_COPY_KEY: Record<string, string> = {
   NO_LONGER_AVAILABLE: 'reasonNoLongerAvailable',
   CANCELLED: 'reasonCancelled',
   STOPPED_ENGINE_ERROR: 'reasonStoppedEngineError',
+  STOPPED_AGENT_GUARD: 'reasonStoppedAgentGuard',
   PDF_NOT_FOUND: 'reasonPdfNotFound',
   EXTRACTION_FAILED: 'reasonExtractionFailed',
 };
@@ -72,17 +75,7 @@ function reasonLine(item: ExtractionBatchItem): string | null {
   if (item.reason_code == null) return null;
   const mapped = extractionErrorToast(item.reason_code, item.message ?? '');
   if (mapped) return mapped.title;
-  const copyKey = REASON_COPY_KEY[item.reason_code];
-  if (copyKey === 'reasonRunFinalized') return t('aiBatch', 'reasonRunFinalized');
-  if (copyKey === 'reasonRunNotEditable') return t('aiBatch', 'reasonRunNotEditable');
-  if (copyKey === 'reasonAlreadyHasAiSuggestions') return t('aiBatch', 'reasonAlreadyHasAiSuggestions');
-  if (copyKey === 'reasonAiAlreadyRunning') return t('aiBatch', 'reasonAiAlreadyRunning');
-  if (copyKey === 'reasonNoLongerAvailable') return t('aiBatch', 'reasonNoLongerAvailable');
-  if (copyKey === 'reasonCancelled') return t('aiBatch', 'reasonCancelled');
-  if (copyKey === 'reasonStoppedEngineError') return t('aiBatch', 'reasonStoppedEngineError');
-  if (copyKey === 'reasonPdfNotFound') return t('aiBatch', 'reasonPdfNotFound');
-  if (copyKey === 'reasonExtractionFailed') return t('aiBatch', 'reasonExtractionFailed');
-  return t('aiBatch', 'reasonUnknown');
+  return t('aiBatch', REASON_COPY_KEY[item.reason_code] ?? 'reasonUnknown');
 }
 
 function articleHref(item: ExtractionBatchItem, detail: ExtractionBatchDetail): string {
@@ -112,12 +105,18 @@ export function BatchDetailsSheet({batchId, onOpenChange}: BatchDetailsSheetProp
 
   const isActive = detail?.state === 'active';
   const isStalled = detail?.stalled === true;
+  const originLabel = detail ? agentOriginLabel(detail.started_by_agent, detail.agent_token_name) : null;
 
   return (
     <Sheet open={batchId !== null} onOpenChange={onOpenChange}>
       <SheetContent size="default">
         <SheetHeader>
           <SheetTitle>{t('aiBatch', 'sheetTitle')}</SheetTitle>
+          {originLabel && (
+            <p className="min-w-0 truncate text-[13px] text-muted-foreground" title={originLabel}>
+              {originLabel}
+            </p>
+          )}
         </SheetHeader>
         {detail && (
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
@@ -126,6 +125,9 @@ export function BatchDetailsSheet({batchId, onOpenChange}: BatchDetailsSheetProp
                 .replace('{{done}}', String(detail.counts.done + detail.counts.done_with_issues))
                 .replace('{{total}}', String(detail.counts.total))}
             </p>
+            {detail.state === 'stopped' && (
+              <p className="text-[13px] text-foreground">{stopCodeMessage(detail.stop_code)}</p>
+            )}
             {GROUP_ORDER.map((group) => {
               const groupItems = groups.get(group);
               if (!groupItems || groupItems.length === 0) return null;

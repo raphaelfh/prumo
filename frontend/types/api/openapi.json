@@ -268,6 +268,103 @@
         "title": "AdvanceStageRequest",
         "type": "object"
       },
+      "AiPolicyRead": {
+        "description": "The project's AI agents policy, as any member sees it.",
+        "properties": {
+          "agent_runs": {
+            "default": "off",
+            "description": "Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.",
+            "enum": [
+              "off",
+              "managers",
+              "reviewers"
+            ],
+            "title": "Agent Runs",
+            "type": "string"
+          },
+          "daily_agent_article_cap": {
+            "default": 100,
+            "description": "Most articles agent-started runs may cover in this project per day.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Daily Agent Article Cap",
+            "type": "integer"
+          },
+          "max_articles_per_run": {
+            "default": 25,
+            "description": "Most articles one agent-started run may cover.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Articles Per Run",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the policy last changed.",
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Manager who last changed the policy.",
+            "title": "Updated By"
+          }
+        },
+        "title": "AiPolicyRead",
+        "type": "object"
+      },
+      "AiPolicyUpdateRequest": {
+        "additionalProperties": false,
+        "description": "A manager's full replacement of the project's AI agents policy.",
+        "properties": {
+          "agent_runs": {
+            "description": "Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.",
+            "enum": [
+              "off",
+              "managers",
+              "reviewers"
+            ],
+            "title": "Agent Runs",
+            "type": "string"
+          },
+          "daily_agent_article_cap": {
+            "description": "Most articles agent-started runs may cover in this project per day.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Daily Agent Article Cap",
+            "type": "integer"
+          },
+          "max_articles_per_run": {
+            "description": "Most articles one agent-started run may cover.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Articles Per Run",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_runs",
+          "max_articles_per_run",
+          "daily_agent_article_cap"
+        ],
+        "title": "AiPolicyUpdateRequest",
+        "type": "object"
+      },
       "ApiResponse": {
         "description": "Response padronizado da API.\n\nMantem compatibilidade with formato usado nas Edge Functions:\n``{ ok: boolean, data?: T, error?: { code, message }, trace_id?: string }``\n\nSee module docstring for HTTP-status vs envelope semantics.",
         "properties": {
@@ -362,6 +459,54 @@
           "ok"
         ],
         "title": "ApiResponse[AISuggestionsResponse]",
+        "type": "object"
+      },
+      "ApiResponse_AiPolicyRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiPolicyRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[AiPolicyRead]",
         "type": "object"
       },
       "ApiResponse_ApproveFinalizeResponse_": {
@@ -5385,6 +5530,17 @@
       },
       "ExtractionBatchDetail": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "counts": {
             "$ref": "#/components/schemas/ExtractionBatchCounts"
           },
@@ -5432,6 +5588,10 @@
           },
           "stalled": {
             "title": "Stalled",
+            "type": "boolean"
+          },
+          "started_by_agent": {
+            "title": "Started By Agent",
             "type": "boolean"
           },
           "state": {
@@ -5490,6 +5650,8 @@
           "stop_code",
           "stop_message",
           "counts",
+          "started_by_agent",
+          "agent_token_name",
           "items"
         ],
         "title": "ExtractionBatchDetail",
@@ -5578,6 +5740,17 @@
       },
       "ExtractionBatchSummary": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "counts": {
             "$ref": "#/components/schemas/ExtractionBatchCounts"
           },
@@ -5618,6 +5791,10 @@
           },
           "stalled": {
             "title": "Stalled",
+            "type": "boolean"
+          },
+          "started_by_agent": {
+            "title": "Started By Agent",
             "type": "boolean"
           },
           "state": {
@@ -5675,7 +5852,9 @@
           "stalled",
           "stop_code",
           "stop_message",
-          "counts"
+          "counts",
+          "started_by_agent",
+          "agent_token_name"
         ],
         "title": "ExtractionBatchSummary",
         "type": "object"
@@ -7180,6 +7359,11 @@
       "OAuthConnectionRead": {
         "description": "An app the user connected through OAuth; never carries a token.",
         "properties": {
+          "ai_run": {
+            "description": "Whether the user let the app start AI extraction runs.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
           "client_name": {
             "description": "The name the app registered with.",
             "title": "Client Name",
@@ -7238,6 +7422,7 @@
           "id",
           "client_name",
           "scope",
+          "ai_run",
           "status",
           "created_at",
           "last_used_at",
@@ -7265,6 +7450,12 @@
         "additionalProperties": false,
         "description": "Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.",
         "properties": {
+          "ai_run": {
+            "default": false,
+            "description": "Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
           "approve": {
             "description": "True to connect the app, false to deny it.",
             "title": "Approve",
@@ -7351,6 +7542,11 @@
             "title": "Expires At",
             "type": "string"
           },
+          "offers_ai_run": {
+            "description": "True when the app asked for `ai_run`, so the page may offer it (a separate box, unchecked by default).",
+            "title": "Offers Ai Run",
+            "type": "boolean"
+          },
           "offers_write": {
             "description": "True when the app asked for `write`, so the page may offer it.",
             "title": "Offers Write",
@@ -7375,6 +7571,7 @@
           "redirect_host",
           "requested_scopes",
           "offers_write",
+          "offers_ai_run",
           "expires_at"
         ],
         "title": "OAuthConsentRequestRead",
@@ -7555,6 +7752,12 @@
         "additionalProperties": false,
         "description": "Body of ``POST /api/v1/me/tokens``.",
         "properties": {
+          "ai_run": {
+            "default": false,
+            "description": "Allow this token to start AI extraction runs in projects whose manager allowed agent runs. At most 30 days.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
           "expires_in_days": {
             "description": "Token lifetime, in days, from creation.",
             "maximum": 365.0,
@@ -7627,6 +7830,11 @@
       "PersonalAccessTokenRead": {
         "description": "A token row, never including the secret.",
         "properties": {
+          "ai_run": {
+            "description": "Whether the token may start AI extraction runs.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -7714,6 +7922,7 @@
           "name",
           "token_prefix",
           "scope",
+          "ai_run",
           "status",
           "project_ids",
           "expires_at",
@@ -15226,6 +15435,117 @@
           }
         ],
         "summary": "Update Ai Context",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ai-policy": {
+      "get": {
+        "description": "The project's AI agents policy; an unset policy reads as the defaults.",
+        "operationId": "read_ai_policy_api_v1_projects__project_id__ai_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AiPolicyRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not a member of the project"
+          },
+          "404": {
+            "description": "The project row is missing"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Read Ai Policy",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Replace the project's AI agents policy and return what was stored.",
+        "operationId": "update_ai_policy_api_v1_projects__project_id__ai_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiPolicyUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AiPolicyRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not a manager of the project"
+          },
+          "404": {
+            "description": "The project row is missing"
+          },
+          "422": {
+            "description": "Unknown field, or a value out of bounds"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Ai Policy",
         "tags": [
           "projects"
         ]

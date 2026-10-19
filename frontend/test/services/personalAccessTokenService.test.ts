@@ -30,11 +30,11 @@ describe('personalAccessTokenService', () => {
     const created = {token: {id: 't1'}, secret: 'prumo_pat_x'};
     apiClientMock.mockResolvedValue(created);
 
-    const result = await createMyToken({name: 'cli', scope: 'read', expires_in_days: 90});
+    const result = await createMyToken({name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false});
 
     expect(apiClientMock).toHaveBeenCalledWith('/api/v1/me/tokens', {
       method: 'POST',
-      body: {name: 'cli', scope: 'read', expires_in_days: 90},
+      body: {name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false},
     });
     expect(result).toEqual({ok: true, data: created});
   });
@@ -66,11 +66,11 @@ describe('personalAccessTokenService', () => {
     apiClientMock.mockResolvedValue({token: {id: 't1'}, secret: 's'});
     const ids = ['11111111-1111-4111-8111-111111111111'];
 
-    await createMyToken({name: 'cli', scope: 'read', expires_in_days: 90, project_ids: ids});
+    await createMyToken({name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false, project_ids: ids});
 
     expect(apiClientMock).toHaveBeenCalledWith('/api/v1/me/tokens', {
       method: 'POST',
-      body: {name: 'cli', scope: 'read', expires_in_days: 90, project_ids: ids},
+      body: {name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false, project_ids: ids},
     });
   });
 

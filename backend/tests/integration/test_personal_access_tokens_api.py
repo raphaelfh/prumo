@@ -112,6 +112,45 @@ async def test_expires_in_days_bounds(
 
 
 @pytest.mark.asyncio
+async def test_ai_run_is_off_by_default_and_at_most_30_days(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    plain = await client_as_reviewer.post(
+        _BASE, json={"name": "plain", "scope": "read_write", "expires_in_days": 90}
+    )
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["data"]["token"]["ai_run"] is False
+
+    too_long = await client_as_reviewer.post(
+        _BASE,
+        json={"name": "agent", "scope": "read_write", "expires_in_days": 31, "ai_run": True},
+    )
+    assert too_long.status_code == 422, too_long.text
+    assert too_long.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    granted = await client_as_reviewer.post(
+        _BASE,
+        json={"name": "agent", "scope": "read_write", "expires_in_days": 30, "ai_run": True},
+    )
+    assert granted.status_code == 201, granted.text
+    token = granted.json()["data"]["token"]
+    assert token["ai_run"] is True
+    stored = (
+        await db_session.execute(
+            text("SELECT ai_run FROM public.personal_access_tokens WHERE id = :id"),
+            {"id": token["id"]},
+        )
+    ).scalar_one()
+    assert stored is True
+
+    listed = (await client_as_reviewer.get(_BASE)).json()["data"]
+    assert {r["id"]: r["ai_run"] for r in listed} == {
+        plain.json()["data"]["token"]["id"]: False,
+        token["id"]: True,
+    }
+
+
+@pytest.mark.asyncio
 async def test_cap_is_409_with_code(client_as_reviewer: AsyncClient) -> None:
     for i in range(10):
         resp = await client_as_reviewer.post(
@@ -300,6 +339,7 @@ _CONNECTION_FIELDS = {
     "id",
     "client_name",
     "scope",
+    "ai_run",
     "status",
     "created_at",
     "last_used_at",

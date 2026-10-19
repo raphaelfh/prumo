@@ -38,6 +38,8 @@ function detail(overrides: Partial<Record<string, unknown>> = {}) {
     stalled: true,
     stop_code: null,
     stop_message: null,
+    started_by_agent: false,
+    agent_token_name: null,
     created_at: '2026-09-15T00:00:00Z',
     finished_at: null,
     counts: {
@@ -160,5 +162,88 @@ describe('BatchDetailsSheet', () => {
     expect(lastDialogProps?.open).toBe(true);
     expect(lastDialogProps?.articleIds).toEqual(['a-needs-attention']);
     expect(lastDialogProps?.defaultSkipExisting).toBe(false);
+  });
+
+  it('labels an agent-started batch with its token name', () => {
+    useBatchDetailMock.mockReturnValue({data: detail({started_by_agent: true, agent_token_name: 'CLI token'})});
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Started by agent · CLI token')).toBeInTheDocument();
+  });
+
+  it('labels an agent-started batch whose token name is gone without a name', () => {
+    useBatchDetailMock.mockReturnValue({data: detail({started_by_agent: true, agent_token_name: null})});
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Started by agent')).toBeInTheDocument();
+  });
+
+  it('shows no agent label on a batch started in the app', () => {
+    useBatchDetailMock.mockReturnValue({data: detail()});
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.queryByText(/Started by agent/)).not.toBeInTheDocument();
+  });
+
+  it('explains why a stopped batch stopped', () => {
+    useBatchDetailMock.mockReturnValue({
+      data: detail({state: 'stopped', stalled: false, stop_code: 'AGENT_RUNS_DISABLED'}),
+    });
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Stopped: agent-started runs were turned off for this project')).toBeInTheDocument();
+  });
+
+  it('explains an unknown stop code without showing it', () => {
+    useBatchDetailMock.mockReturnValue({
+      data: detail({state: 'stopped', stalled: false, stop_code: 'SOMETHING_NEW'}),
+    });
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Stopped for an unexpected reason')).toBeInTheDocument();
+    expect(screen.queryByText(/SOMETHING_NEW/)).not.toBeInTheDocument();
+  });
+
+  it('gives a queued item withheld by an agent guard its own reason', () => {
+    useBatchDetailMock.mockReturnValue({
+      data: detail({
+        items: [
+          {
+            article_id: 'a-guard',
+            title: 'Guarded article',
+            outcome: 'not_run',
+            reason_code: 'STOPPED_AGENT_GUARD',
+            message: null,
+            failed_sections: null,
+            total_sections: null,
+          },
+        ],
+      }),
+    });
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Not run — the agent run was stopped')).toBeInTheDocument();
+  });
+
+  it('never shows an unknown reason code', () => {
+    useBatchDetailMock.mockReturnValue({
+      data: detail({
+        items: [
+          {
+            article_id: 'a-unknown',
+            title: 'Unknown article',
+            outcome: 'not_run',
+            reason_code: 'SOMETHING_NEW',
+            message: null,
+            failed_sections: null,
+            total_sections: null,
+          },
+        ],
+      }),
+    });
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Not completed for an unexpected reason')).toBeInTheDocument();
+    expect(screen.queryByText(/SOMETHING_NEW/)).not.toBeInTheDocument();
   });
 });

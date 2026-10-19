@@ -39,7 +39,8 @@ async def list_projects(db: AsyncSession) -> McpProjectList:
     return McpProjectList(
         projects=rows,
         caller_name=names.get(principal.user_sub),
-        token_scope=principal.scope,
+        token_scope="read_write" if "write" in principal.scopes else "read",
+        token_ai_run="ai_run" in principal.scopes,
         token_expires_at=principal.token_expires_at,
         token_project_ids=None if principal.project_ids is None else sorted(principal.project_ids),
         note=None if rows else "This token's user belongs to no project.",

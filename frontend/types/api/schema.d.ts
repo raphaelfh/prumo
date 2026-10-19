@@ -742,6 +742,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/ai-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ai Policy
+         * @description The project's AI agents policy; an unset policy reads as the defaults.
+         */
+        get: operations["read_ai_policy_api_v1_projects__project_id__ai_policy_get"];
+        /**
+         * Update Ai Policy
+         * @description Replace the project's AI agents policy and return what was stored.
+         */
+        put: operations["update_ai_policy_api_v1_projects__project_id__ai_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/archive": {
         parameters: {
             query?: never;
@@ -2086,6 +2110,63 @@ export interface components {
             target_stage: string;
         };
         /**
+         * AiPolicyRead
+         * @description The project's AI agents policy, as any member sees it.
+         */
+        AiPolicyRead: {
+            /**
+             * Agent Runs
+             * @description Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.
+             * @default off
+             * @enum {string}
+             */
+            agent_runs: "off" | "managers" | "reviewers";
+            /**
+             * Daily Agent Article Cap
+             * @description Most articles agent-started runs may cover in this project per day.
+             * @default 100
+             */
+            daily_agent_article_cap: number;
+            /**
+             * Max Articles Per Run
+             * @description Most articles one agent-started run may cover.
+             * @default 25
+             */
+            max_articles_per_run: number;
+            /**
+             * Updated At
+             * @description When the policy last changed.
+             */
+            updated_at?: string | null;
+            /**
+             * Updated By
+             * @description Manager who last changed the policy.
+             */
+            updated_by?: string | null;
+        };
+        /**
+         * AiPolicyUpdateRequest
+         * @description A manager's full replacement of the project's AI agents policy.
+         */
+        AiPolicyUpdateRequest: {
+            /**
+             * Agent Runs
+             * @description Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.
+             * @enum {string}
+             */
+            agent_runs: "off" | "managers" | "reviewers";
+            /**
+             * Daily Agent Article Cap
+             * @description Most articles agent-started runs may cover in this project per day.
+             */
+            daily_agent_article_cap: number;
+            /**
+             * Max Articles Per Run
+             * @description Most articles one agent-started run may cover.
+             */
+            max_articles_per_run: number;
+        };
+        /**
          * ApiResponse
          * @description Response padronizado da API.
          *
@@ -2117,6 +2198,23 @@ export interface components {
         ApiResponse_AISuggestionsResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["AISuggestionsResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[AiPolicyRead] */
+        ApiResponse_AiPolicyRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["AiPolicyRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4166,6 +4264,8 @@ export interface components {
         };
         /** ExtractionBatchDetail */
         ExtractionBatchDetail: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4192,6 +4292,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4234,6 +4336,8 @@ export interface components {
         };
         /** ExtractionBatchSummary */
         ExtractionBatchSummary: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4258,6 +4362,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4971,6 +5077,11 @@ export interface components {
          */
         OAuthConnectionRead: {
             /**
+             * Ai Run
+             * @description Whether the user let the app start AI extraction runs.
+             */
+            ai_run: boolean;
+            /**
              * Client Name
              * @description The name the app registered with.
              */
@@ -5025,6 +5136,12 @@ export interface components {
          * @description Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.
          */
         OAuthConsentDecisionRequest: {
+            /**
+             * Ai Run
+             * @description Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it.
+             * @default false
+             */
+            ai_run: boolean;
             /**
              * Approve
              * @description True to connect the app, false to deny it.
@@ -5083,6 +5200,11 @@ export interface components {
              * @description When the request stops accepting a decision.
              */
             expires_at: string;
+            /**
+             * Offers Ai Run
+             * @description True when the app asked for `ai_run`, so the page may offer it (a separate box, unchecked by default).
+             */
+            offers_ai_run: boolean;
             /**
              * Offers Write
              * @description True when the app asked for `write`, so the page may offer it.
@@ -5188,6 +5310,12 @@ export interface components {
          */
         PersonalAccessTokenCreateRequest: {
             /**
+             * Ai Run
+             * @description Allow this token to start AI extraction runs in projects whose manager allowed agent runs. At most 30 days.
+             * @default false
+             */
+            ai_run: boolean;
+            /**
              * Expires In Days
              * @description Token lifetime, in days, from creation.
              */
@@ -5229,6 +5357,11 @@ export interface components {
          * @description A token row, never including the secret.
          */
         PersonalAccessTokenRead: {
+            /**
+             * Ai Run
+             * @description Whether the token may start AI extraction runs.
+             */
+            ai_run: boolean;
             /**
              * Created At
              * Format: date-time
@@ -9145,6 +9278,98 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    read_ai_policy_api_v1_projects__project_id__ai_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AiPolicyRead_"];
+                };
+            };
+            /** @description Not a member of the project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The project row is missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ai_policy_api_v1_projects__project_id__ai_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiPolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AiPolicyRead_"];
+                };
+            };
+            /** @description Not a manager of the project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The project row is missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown field, or a value out of bounds */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

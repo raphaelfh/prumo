@@ -93,6 +93,17 @@ describe('ConnectedAppsGroup', () => {
     expect(within(row).getByText('Last used 1/1/2025')).toBeInTheDocument();
   });
 
+  it('shows the AI runs badge only on a connection that carries the ai_run grant', async () => {
+    const AI_RUN = {...BASE, id: 'c-ai', client_name: 'Agent app', scope: 'read', status: 'active', ai_run: true} as never;
+    const NO_AI_RUN = {...BASE, id: 'c-no-ai', client_name: 'Plain app', scope: 'read', status: 'active', ai_run: false} as never;
+    vi.mocked(svc.fetchMyConnections).mockResolvedValue({ok: true, data: [AI_RUN, NO_AI_RUN]});
+    renderGroup();
+    await screen.findByText('Agent app');
+
+    expect(within(rowFor('Agent app')).getByText(t('connectedApps', 'badgeAiRuns'))).toBeInTheDocument();
+    expect(within(rowFor('Plain app')).queryByText(t('connectedApps', 'badgeAiRuns'))).not.toBeInTheDocument();
+  });
+
   it('revoked and expired rows show their status badge, are muted, and offer no revoke', async () => {
     vi.mocked(svc.fetchMyConnections).mockResolvedValue({ok: true, data: [REVOKED, EXPIRED]});
     renderGroup();

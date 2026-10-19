@@ -3,9 +3,14 @@
 Backend-only (RLS on, client roles revoked). The batch has no status column:
 its state is derived from ``cancelled_at``/``stop_code`` and its items, and a
 dispatched item's outcome is its attempt's, so nothing can drift.
+
+An agent-started batch (ADR 0021) also records the credential that started
+it, the approved engine identity and the approved plan digest; REST batches
+leave all three NULL.
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -18,6 +23,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
@@ -41,9 +47,38 @@ class ExtractionBatch(BaseModel):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stop_code: Mapped[str | None] = mapped_column(Text)
     stop_message: Mapped[str | None] = mapped_column(Text)
+    # Agent origin (0093): all-or-nothing, one batch per plan digest.
+    agent_token_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("public.personal_access_tokens.id", ondelete="SET NULL")
+    )
+    # none_as_null: a REST batch passes None, which must be SQL NULL, not JSON null.
+    agent_engine: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    agent_plan_digest: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         Index("ix_extraction_batches_owner_created", "owner_id", "created_at"),
+        CheckConstraint(
+            "(agent_engine IS NULL) = (agent_plan_digest IS NULL) "
+            "AND (agent_token_id IS NULL OR agent_plan_digest IS NOT NULL)",
+            name="agent_fields_check",
+        ),
+        Index(
+            "uq_extraction_batches_agent_plan_digest",
+            "agent_plan_digest",
+            unique=True,
+            postgresql_where=text("agent_plan_digest IS NOT NULL"),
+        ),
+        Index(
+            "ix_extraction_batches_agent_token_id",
+            "agent_token_id",
+            postgresql_where=text("agent_token_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_extraction_batches_agent_project_created",
+            "project_id",
+            "created_at",
+            postgresql_where=text("agent_plan_digest IS NOT NULL"),
+        ),
         {"schema": "public"},
     )
 

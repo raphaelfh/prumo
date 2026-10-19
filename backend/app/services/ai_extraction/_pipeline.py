@@ -73,6 +73,7 @@ class Pipeline:
         owns_transactions: bool,
         llm: StructuredCall,
         usage_sink: UsageSink,
+        allow_global_key: bool,
     ) -> None:
         self.db = db
         self.user_id = user_id
@@ -89,6 +90,8 @@ class Pipeline:
         self._key_provider = key_provider
         self._repin = repin
         self._owns_transactions = owns_transactions
+        #: False for an agent-started batch: no rung reaches the deployment key.
+        self._allow_global_key = allow_global_key
         self.article_files = ArticleFileRepository(db)
         self.entity_types = ExtractionEntityTypeRepository(db)
         self.instances = ExtractionInstanceRepository(db)
@@ -177,6 +180,7 @@ class Pipeline:
             engine=self.engine,
             current=self.credentials,
             keyed_for=self._key_provider,
+            allow_global_key=self._allow_global_key,
         )
         if rekeyed is not None:
             self.credentials = rekeyed
@@ -188,6 +192,12 @@ class Pipeline:
                 connection_id=self.engine.connection_id,
                 key_scope=rekeyed.key_scope.value if rekeyed.key_scope is not None else None,
             )
+        if not self._allow_global_key:
+            # Agent batch: build the model now, so a refused deployment key
+            # fails the whole request (MISSING_API_KEY stops the batch) before
+            # any external work — the section loops would record it per
+            # section and report a generic failure.
+            self.wire_model()
         return self.engine.model
 
     async def before_external_work(self) -> None:
@@ -208,6 +218,7 @@ class Pipeline:
             api_key=self.credentials.api_key,
             base_url=self.credentials.base_url,
             output_mode=self.credentials.output_mode,
+            allow_global_key=self._allow_global_key,
         )
 
     async def assemble_prompt_text(self, article_id: UUID, model: str) -> str:

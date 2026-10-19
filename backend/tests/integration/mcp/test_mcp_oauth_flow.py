@@ -111,7 +111,7 @@ async def test_register_refuses_a_confidential_client(
 
 
 async def test_register_refuses_an_unknown_scope(oauth_http_client: AsyncClient) -> None:
-    r = await register(oauth_http_client, scope="read ai_run")
+    r = await register(oauth_http_client, scope="read admin")
     assert r.status_code == 400
     assert r.json()["error"] == "invalid_client_metadata"
 
