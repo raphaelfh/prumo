@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-24
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 adr_number: '0011'
 ---
@@ -309,3 +309,26 @@ Concretely, respecting the existing layering:
   HITL in clinical NLP (<https://www.nature.com/articles/s41746-025-01840-7>).
 - Related: ADR 0003 (HITL unification), ADR 0007 (single API read path),
   ADR 0009 (finalize completeness gate), ADR 0010 (REVIEW stage).
+
+## Amendment (2026-10): PyMuPDF vs Docling bake-off
+
+**Run.** `docs/superpowers/quality-runs/2026-10-18-2106-pymupdf-vs-docling/`
+compares the two self-hosted parsers as ingest runs them (PyMuPDF 1.27.2.3
+with chrome typing and column-aware order; Docling 2.104.0, OCR off) on 14 PMC
+open-access CC BY papers, 9 of them two-column, with gold built from JATS.
+
+**Result.** Docling recovers tables on every paper (table-cell F1 0.866 vs
+0.364; PyMuPDF's `find_tables` finds no table on 7 of 14), headings (section
+recall 0.734 vs 0.373) and paragraph starts (85% vs 44% of gold paragraphs),
+and breaks reading order less often (5 backward jumps vs 19). PyMuPDF is about
+4× faster (median 1.4 s vs 5.4 s per paper) and uses ~16× less memory (356 MB
+vs 5.7 GB peak). Both leave no page chrome typed as body and no invisible
+characters. Bbox, reference recall and scanned inputs are not measured.
+
+**Decision: pending.** The parser policy is the maintainer's call and is not
+yet made. The options on the table are (a) Docling as the default parser,
+(b) Docling for some cases only (for example papers where PyMuPDF finds no
+table), or (c) the status quo, PyMuPDF as the default with Docling opt-in. Until
+the ruling, the Decision Outcome above stands unchanged: the per-project
+setting defaults to `pymupdf`, and no parser selection code changes with this
+run.
