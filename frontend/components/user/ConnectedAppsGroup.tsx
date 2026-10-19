@@ -64,6 +64,9 @@ function ConnectionRow({row}: {row: OAuthConnectionRead}) {
         {row.scope === 'read_write' && (
           <Badge variant="secondary" className="shrink-0">{t('connectedApps', 'badgeEdits')}</Badge>
         )}
+        {row.ai_run && (
+          <Badge variant="secondary" className="shrink-0">{t('connectedApps', 'badgeAiRuns')}</Badge>
+        )}
         {row.status !== 'active' && (
           <Badge variant="outline" className="shrink-0">{t('connectedApps', STATUS_BADGE[row.status])}</Badge>
         )}

@@ -21,6 +21,7 @@ const REQUEST = {
   client_name: 'Claude',
   redirect_host: 'claude.ai:8443',
   offers_write: true,
+  offers_ai_run: false,
   requested_scopes: ['read', 'write'],
   expires_at: '2026-10-15T12:10:00Z',
 };
@@ -141,6 +142,53 @@ describe('OAuthConsent', () => {
 
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
     await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: false}]));
+  });
+
+  it('renders no AI runs box when the app did not ask for ai_run', async () => {
+    renderAt(`?request=${ID}`);
+
+    expect(await screen.findByRole('checkbox', {name: t('oauthConsent', 'editLabel')})).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')})).toBeNull();
+    expect(screen.queryByText(t('oauthConsent', 'aiRunHint'))).toBeNull();
+  });
+
+  describe('when the app asks for ai_run', () => {
+    const AI_REQUEST = {...REQUEST, offers_ai_run: true, requested_scopes: ['read', 'write', 'ai_run']};
+
+    it('shows a separate AI runs box, unchecked, and Allow posts ai_run: false', async () => {
+      stubGet(() => ok(AI_REQUEST));
+      const user = userEvent.setup();
+      renderAt(`?request=${ID}`);
+
+      const box = await screen.findByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')});
+      expect(box).not.toBeChecked();
+      expect(box).toHaveAccessibleDescription(t('oauthConsent', 'aiRunHint'));
+      await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
+
+      await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: false}]));
+    });
+
+    it('ticking the AI runs box posts ai_run: true without ticking edits', async () => {
+      stubGet(() => ok(AI_REQUEST));
+      const user = userEvent.setup();
+      renderAt(`?request=${ID}`);
+
+      await user.click(await screen.findByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')}));
+      await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
+
+      await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: true}]));
+    });
+
+    it('Deny posts ai_run: false even with the box ticked', async () => {
+      stubGet(() => ok(AI_REQUEST));
+      const user = userEvent.setup();
+      renderAt(`?request=${ID}`);
+
+      await user.click(await screen.findByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')}));
+      await user.click(screen.getByRole('button', {name: t('oauthConsent', 'deny')}));
+
+      await waitFor(() => expect(posts).toEqual([{approve: false, write: false, ai_run: false}]));
+    });
   });
 
   it('GET 404 shows the expired state', async () => {

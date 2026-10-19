@@ -52,6 +52,8 @@ import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
 const EXPIRY_OPTIONS = [30, 90, 365] as const;
+/** A token that may start AI runs lives at most 30 days (the backend refuses longer). */
+const AI_RUN_EXPIRY_OPTIONS = [30] as const;
 const SCOPE_COPY = {read: 'scopeRead', read_write: 'scopeReadWrite'} as const;
 
 function formatDate(iso: string): string {
@@ -122,6 +124,9 @@ function TokenRow({row, projects}: {row: PersonalAccessTokenRead; projects: Proj
         <span className="min-w-[12ch] max-w-full truncate font-medium">{row.name}</span>
         <code className="shrink-0 text-[12px] text-muted-foreground">{row.token_prefix}…</code>
         <Badge variant="secondary" className="shrink-0">{t('personalAccessTokens', SCOPE_COPY[row.scope])}</Badge>
+        {row.ai_run && (
+          <Badge variant="secondary" className="shrink-0">{t('personalAccessTokens', 'aiRunsBadge')}</Badge>
+        )}
         <ProjectsBadge ids={row.project_ids} projects={projects} />
         {row.status === 'expired' && (
           <Badge variant="outline" className="shrink-0">{t('personalAccessTokens', 'expiredBadge').replace('{{date}}', formatDate(row.expires_at))}</Badge>
@@ -171,11 +176,14 @@ const createSchema = z.object({
   name: z.string().trim(),
   scope: z.enum(['read', 'read_write']),
   expires_in_days: z.union([z.literal(30), z.literal(90), z.literal(365)]),
+  ai_run: z.boolean(),
   projectMode: z.enum(['all', 'only']),
   project_ids: z.array(z.string().uuid()).max(MAX_PROJECTS, t('personalAccessTokens', 'projectsTooMany')).optional(),
 });
 type CreateValues = z.infer<typeof createSchema>;
-const CREATE_DEFAULTS: CreateValues = {name: '', scope: 'read', expires_in_days: 90, projectMode: 'all', project_ids: []};
+const CREATE_DEFAULTS: CreateValues = {
+  name: '', scope: 'read', expires_in_days: 90, ai_run: false, projectMode: 'all', project_ids: [],
+};
 
 function createErrorMessage(error: Error): string {
   if (isTokenLimitError(error)) return t('personalAccessTokens', 'createLimitError');
@@ -289,6 +297,8 @@ function CreateDialog({
   const form = useForm<CreateValues>({mode: 'onChange', resolver: zodResolver(createSchema), defaultValues: CREATE_DEFAULTS});
   const [formError, setFormError] = useState<string | null>(null);
   const name = useWatch({control: form.control, name: 'name'});
+  const aiRun = useWatch({control: form.control, name: 'ai_run'});
+  const expiryOptions = aiRun ? AI_RUN_EXPIRY_OPTIONS : EXPIRY_OPTIONS;
   const mode = useWatch({control: form.control, name: 'projectMode'});
   const selectedCount = useWatch({control: form.control, name: 'project_ids'})?.length ?? 0;
   const projectsInvalid = mode === 'only' && (selectedCount === 0 || selectedCount > MAX_PROJECTS);
@@ -311,10 +321,10 @@ function CreateDialog({
     reset();
     onOpenChange(false);
   };
-  const submit = ({name: tokenName, scope, expires_in_days, projectMode, project_ids}: CreateValues) => {
+  const submit = ({name: tokenName, scope, expires_in_days, ai_run, projectMode, project_ids}: CreateValues) => {
     setFormError(null);
     create.mutate(
-      {name: tokenName, scope, expires_in_days, ai_run: false, ...(projectMode === 'only' ? {project_ids} : {})},
+      {name: tokenName, scope, expires_in_days, ai_run, ...(projectMode === 'only' ? {project_ids} : {})},
       {
         onSuccess: (data) => {
           reset();
@@ -380,11 +390,36 @@ function CreateDialog({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {EXPIRY_OPTIONS.map((days) => (
+                        {expiryOptions.map((days) => (
                           <SelectItem key={days} value={String(days)}>{t('personalAccessTokens', 'expiryDays').replace('{{n}}', String(days))}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </SettingsRow>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="ai_run"
+                render={({field}) => (
+                  <SettingsRow label={t('personalAccessTokens', 'aiRunRowLabel')} align="start">
+                    <div className="flex items-start gap-2 py-1">
+                      <Checkbox
+                        id="pat-ai-run"
+                        checked={field.value}
+                        onCheckedChange={(checked) => {
+                          const next = checked === true;
+                          field.onChange(next);
+                          if (next && form.getValues('expires_in_days') !== 30) form.setValue('expires_in_days', 30);
+                        }}
+                        aria-describedby="pat-ai-run-hint"
+                        className="mt-0.5"
+                      />
+                      <div className="min-w-0 space-y-0.5">
+                        <label htmlFor="pat-ai-run" className="text-[13px]">{t('personalAccessTokens', 'aiRunLabel')}</label>
+                        <p id="pat-ai-run-hint" className="text-[12px] text-muted-foreground">{t('personalAccessTokens', 'aiRunHint')}</p>
+                      </div>
+                    </div>
                   </SettingsRow>
                 )}
               />
