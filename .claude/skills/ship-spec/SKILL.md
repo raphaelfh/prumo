@@ -156,8 +156,12 @@ Then, in order:
    the implementers edit. Isolating first makes this one call. If you did it
    the other way round, re-run the same `init` with `--worktree` — same
    basename from the same checkout updates the run rather than refusing.
-3. If **subject** is not a written, agreed spec, run `superpowers:brainstorming`.
-   This is the one phase designed to talk to the user; surface ambiguity here.
+3. If **subject** is not a written, agreed spec, run `superpowers:brainstorming`
+   at its "project with a written design" size — it may offer a smaller size;
+   /ship-spec needs the committed `docs/superpowers/specs/…-design.md`. Stop it
+   before it hands off to `superpowers:writing-plans`: the spec gate (step 4)
+   comes first. This is the one phase designed to talk to the user; surface
+   ambiguity here.
 4. **Spec gate — before any plan.** Dispatch one read-only `Explore` seat over
    the spec with the checklist below; it returns a `## Spec reconciliation` list
    you ledger verbatim. Brainstorming ends when that list is **empty**, not when

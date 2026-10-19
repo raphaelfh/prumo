@@ -31,7 +31,7 @@ sake of concision.
 ## Skills
 
 Project skills live in `.claude/skills/` and trigger on their descriptions.
-Requires the **superpowers** plugin (6.x, declared in `.claude/settings.json`);
+Requires the **superpowers** plugin (7.x, declared in `.claude/settings.json`);
 prumo skills defer generic process to it.
 
 ## Stack
