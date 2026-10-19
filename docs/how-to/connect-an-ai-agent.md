@@ -10,8 +10,10 @@ owner: '@raphaelfh'
 
 prumo serves a remote MCP server at `<api-url>/mcp`. Header-capable agents
 (Claude Code, Cursor, VS Code / Copilot, Gemini CLI, Codex, Windsurf) connect
-with a personal access token. Web chat apps (claude.ai connectors, ChatGPT)
-need OAuth and are not supported.
+with a personal access token. claude.ai and Claude Desktop connect through
+OAuth instead: you add prumo as a custom connector and approve access on a
+prumo page, with no token to copy. See
+[Connect from claude.ai or Claude Desktop](#connect-from-claudeai-or-claude-desktop).
 
 ## Create a token
 
@@ -112,6 +114,46 @@ Authorization = "Bearer <token>"
   }
 }
 ```
+
+## Connect from claude.ai or Claude Desktop
+
+1. In claude.ai, open Settings → Connectors → **Add custom connector**,
+   name it "prumo" and paste `<api-url>/mcp` as the URL. The "Connect an AI
+   agent (MCP)" card in Settings → Integrations shows this URL under
+   **claude.ai**. On a Team or Enterprise plan, an owner adds the connector
+   for the organization first.
+2. Click **Connect**. Claude opens prumo's consent page; sign in if asked.
+3. The page names the app and the address it returns you to. Choose what
+   it may do:
+   - **Read your projects** is always granted: every read tool, in every
+     project you belong to. Your project role still applies.
+   - **Edit project setup** (unchecked by default) adds the configuration
+     tools and the guided prompts. Edits are manager-only and stay in a
+     draft until a manager publishes in prumo.
+   - **Start AI extraction runs** (unchecked by default) adds the AI-run
+     tools; see [AI extraction runs](#ai-extraction-runs).
+4. Click **Allow**. Claude lists prumo's tools.
+
+The connection lasts 90 days, or 30 days with **Start AI extraction runs**.
+Connecting the same app again replaces its previous connection. Connectors
+you add on claude.ai also appear in Claude Desktop and the mobile apps
+signed in to the same account, so you connect once.
+
+**Permissions.** Reads and configuration edits are marked non-destructive,
+so Claude runs them under your connector's tool permissions without a
+prompt per call. `start_ai_run` is the only tool marked as needing your
+approval, and Claude asks before each start.
+
+**Prompts and cards.** With **Edit project setup**, the prompt menu offers
+*Set up the review question*, *Build the extraction form* and *Review the
+draft before publishing* (see
+[Configure a project with an agent](#configure-a-project-with-an-agent)).
+`get_template` shows the draft-review card, and with **Start AI extraction
+runs** `plan_ai_run` and `get_ai_runs` show their run cards.
+
+**Revoke.** In prumo, open Settings → Integrations → Connected apps and
+click the app's **Revoke access** (trash) button. The next call from Claude fails with HTTP 401.
+Then remove the connector in Claude, or connect it again to start over.
 
 ## What the agent can do
 
@@ -428,7 +470,11 @@ stopped.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | HTTP 401 | Token missing, mistyped, expired or revoked | Create a new token |
+| claude.ai: prumo stopped working, or Claude offers to reconnect | The connection expired or was revoked | Connect the connector again in Claude and approve |
+| Consent page: "Request expired" | The request is older than 10 minutes | Start again from Claude (**Connect**) |
+| claude.ai fails before the consent page opens; registration answers `invalid_client_metadata` naming `redirect_uris` | The host registered a callback URL the server does not allow | Operator fix: add the exact callback to `MCP_OAUTH_REDIRECT_URIS` |
 | HTTP 421 | The server's `MCP_ALLOWED_HOSTS` does not list the host you connected to | Operator fix: add the host to `MCP_ALLOWED_HOSTS` |
+| HTTP 403 "Invalid Origin header" | The client sent an `Origin` header the server does not list | Operator fix: add the origin to `MCP_ALLOWED_ORIGINS` |
 | HTTP 429 | Rate limit hit | Wait and retry |
 | HTTP 429 with `Retry-After: 1` | Too many simultaneous calls on one token (more than 4 at once by default) | Lower the agent's parallelism |
 | HTTP 503 with `Retry-After` | The database is busy | Retry after the given seconds |

@@ -1,10 +1,20 @@
 import {describe, expect, it} from 'vitest';
 
-import {buildClientSnippet, TOKEN_PLACEHOLDER} from '@/lib/mcp/clientSnippets';
+import {buildClientSnippet, CLIENT_IDS, TOKEN_CLIENT_IDS, TOKEN_PLACEHOLDER} from '@/lib/mcp/clientSnippets';
 
 const params = {url: 'https://api.test/mcp', token: 'prumo_pat_SECRET'};
 
 describe('buildClientSnippet', () => {
+  it('claude-ai: the bare connector URL, never the token (OAuth connects it)', () => {
+    expect(buildClientSnippet('claude-ai', params)).toBe('https://api.test/mcp');
+  });
+
+  it('claude-ai is offered with the other clients but not where a token is the credential', () => {
+    expect(CLIENT_IDS).toContain('claude-ai');
+    expect(TOKEN_CLIENT_IDS).not.toContain('claude-ai');
+    expect(TOKEN_CLIENT_IDS).toEqual(CLIENT_IDS.filter((id) => id !== 'claude-ai'));
+  });
+
   it('claude-code: a CLI command with a Bearer header', () => {
     expect(buildClientSnippet('claude-code', params)).toBe(
       'claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"',
