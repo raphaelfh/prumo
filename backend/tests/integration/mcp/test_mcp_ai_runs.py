@@ -702,6 +702,35 @@ async def test_cancel_deadlock_is_an_audited_retry(
     assert refused == 1
 
 
+async def test_cancel_that_loses_to_a_stop_reports_the_state_after_the_stop(
+    mcp_client,
+    pat_primary_rw_ai_run,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop lands between the first read and the conditional cancel: the reply
+    is read again, never the pre-stop snapshot, and nothing is audited."""
+    batch_id = await _ui_batch(db_session)
+    original = ExtractionBatchService.cancel
+
+    async def stop_wins_first(self: ExtractionBatchService, *args: Any, **kwargs: Any) -> Any:
+        assert await self.batches.stop(batch_id, "MISSING_API_KEY", None)
+        await self.batches.cancel_queued(batch_id, "STOPPED_MISSING_API_KEY")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ExtractionBatchService, "cancel", stop_wins_first)
+
+    body = structured(
+        await call_tool(
+            mcp_client, pat_primary_rw_ai_run, "cancel_ai_run", _project(batch_id=str(batch_id))
+        )
+    )
+
+    assert body["already_finished"] is True and body["cancelled_queued"] == 0
+    assert body["state"] == "stopped"  # not the pre-stop "active"
+    assert await _applied(db_session, batch_id) == []
+
+
 @pytest.mark.mcp_real_sessions
 async def test_concurrent_cancels_write_one_applied_row(mcp_client) -> None:
     async with mcp_session.session_factory() as db:

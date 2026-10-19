@@ -165,6 +165,17 @@ async def get_ai_runs(
     )
 
 
+def _cancelled(detail: ExtractionBatchDetail, cancelled: int | None) -> McpAiRunCancelled:
+    """``cancelled`` is ``None`` when this call cancelled nothing."""
+    return McpAiRunCancelled(
+        batch_id=detail.id,
+        already_finished=cancelled is None,
+        state=detail.state,
+        cancelled_queued=cancelled or 0,
+        in_flight_finishing=_in_flight(detail),
+    )
+
+
 async def _cancel(
     db: AsyncSession,
     svc: ExtractionBatchService,
@@ -173,29 +184,17 @@ async def _cancel(
     now: datetime,
 ) -> McpAiRunCancelled:
     """The conditional cancel, its applied row and the commit; a run that
-    already ended (or that a concurrent halt won) writes nothing."""
+    already ended (or that a concurrent halt won) writes nothing. Every
+    reply after the conditional write reads the run again."""
     owner = current_principal().user_sub
-    already = McpAiRunCancelled(
-        batch_id=first.id,
-        already_finished=True,
-        state=first.state,
-        cancelled_queued=0,
-        in_flight_finishing=_in_flight(first),
-    )
     if first.state == "finished":
-        return already
+        return _cancelled(first, None)
     try:
         cancelled = await svc.cancel(owner, first.id, now=now, project_id=scope.project_id)
-        if cancelled is None:
-            return already
         after = await svc.detail(owner, first.id, now=now, project_id=scope.project_id)
-        reply = McpAiRunCancelled(
-            batch_id=first.id,
-            already_finished=False,
-            state=after.state,
-            cancelled_queued=cancelled,
-            in_flight_finishing=_in_flight(after),
-        )
+        if cancelled is None:  # a concurrent cancel or stop won the row
+            return _cancelled(after, None)
+        reply = _cancelled(after, cancelled)
         await record_applied_write(
             db,
             scope,

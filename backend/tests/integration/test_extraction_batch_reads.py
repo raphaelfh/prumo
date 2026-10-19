@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_batch_service import (
@@ -142,6 +142,46 @@ async def test_list_is_seven_days_newest_first_and_filters_active(db_session: As
         )
         == []
     )
+
+
+@pytest.mark.asyncio
+async def test_list_reads_labels_in_one_statement_whatever_the_count(
+    db_session: AsyncSession,
+) -> None:
+    """Three batches cost the same statements as one: no per-batch label read."""
+    a = await make_article(db_session, SEED.primary_project)
+    for _ in range(3):
+        batch_id = await make_batch(
+            db_session,
+            owner_id=SEED.primary_profile,
+            project_id=SEED.primary_project,
+            template_id=SEED.primary_template,
+            article_ids=[a],
+        )
+        await db_session.execute(
+            text("UPDATE public.extraction_batch_items SET status='skipped' WHERE batch_id=:b"),
+            {"b": str(batch_id)},
+        )
+    service = ExtractionBatchService(db_session)
+    now = datetime.now(UTC)
+    await service.list_for_owner(SEED.primary_profile, project_id=None, active_only=False, now=now)
+    statements: list[str] = []
+
+    def listener(_conn, _cursor, statement, _params, _context, _many) -> None:
+        statements.append(statement)
+
+    conn = (await db_session.connection()).sync_connection
+    event.listen(conn, "before_cursor_execute", listener)
+    try:
+        summaries = await service.list_for_owner(
+            SEED.primary_profile, project_id=None, active_only=False, now=now
+        )
+    finally:
+        event.remove(conn, "before_cursor_execute", listener)
+
+    assert len(summaries) >= 3
+    assert all(s.template_name and s.project_name for s in summaries)
+    assert len(statements) == 3  # batches, items, labels
 
 
 client_as_manager = engine_setup.client_as_manager

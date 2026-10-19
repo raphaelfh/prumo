@@ -132,7 +132,8 @@ class ExtractionBatchService:
             self.db, owner_id=owner_id, batch_id=batch_id, project_id=project_id
         )
         rows = (await self.batches.item_rows([batch.id]))[batch.id]
-        summary = await self._summary(batch, rows, now)
+        labels = (await self.batches.labels([batch]))[batch.id]
+        summary = self._summary(batch, rows, labels, now)
         items = derive_batch(
             cancelled_at=batch.cancelled_at,
             stop_code=batch.stop_code,
@@ -149,11 +150,16 @@ class ExtractionBatchService:
             owner_id, since=now - LIST_WINDOW, project_id=project_id
         )
         rows = await self.batches.item_rows([b.id for b in batches])
-        summaries = [await self._summary(b, rows[b.id], now) for b in batches]
+        labels = await self.batches.labels(batches)
+        summaries = [self._summary(b, rows[b.id], labels[b.id], now) for b in batches]
         return [s for s in summaries if s.state == "active"] if active_only else summaries
 
-    async def _summary(
-        self, batch: ExtractionBatch, rows: list[ItemRow], now: datetime
+    @staticmethod
+    def _summary(
+        batch: ExtractionBatch,
+        rows: list[ItemRow],
+        labels: tuple[str, str, str, str | None],
+        now: datetime,
     ) -> ExtractionBatchSummary:
         view = derive_batch(
             cancelled_at=batch.cancelled_at,
@@ -162,7 +168,7 @@ class ExtractionBatchService:
             rows=rows,
             now=now,
         )
-        project_name, template_name, kind, token_name = await self.batches.labels(batch)
+        project_name, template_name, kind, token_name = labels
         return ExtractionBatchSummary(
             id=batch.id,
             project_id=batch.project_id,

@@ -128,26 +128,36 @@ class ExtractionBatchRepository:
             )
         return rows
 
-    async def labels(self, batch: ExtractionBatch) -> tuple[str, str, str, str | None]:
-        """Project name, template name, kind and the starting credential's name
-        (``None``: a UI batch, or the token row is gone)."""
-        project_name, template_name, kind, token_name = (
-            await self.db.execute(
-                select(
-                    Project.name,
-                    ProjectExtractionTemplate.name,
-                    ProjectExtractionTemplate.kind,
-                    PersonalAccessToken.name,
-                )
-                .join(ProjectExtractionTemplate, ProjectExtractionTemplate.project_id == Project.id)
-                .outerjoin(PersonalAccessToken, PersonalAccessToken.id == batch.agent_token_id)
-                .where(
-                    Project.id == batch.project_id,
-                    ProjectExtractionTemplate.id == batch.template_id,
-                )
+    async def labels(
+        self, batches: list[ExtractionBatch]
+    ) -> dict[UUID, tuple[str, str, str, str | None]]:
+        """Per batch id: project name, template name, kind and the starting
+        credential's name (``None``: a UI batch, or the token row is gone).
+        One statement for any number of batches."""
+        if not batches:
+            return {}
+        rows = await self.db.execute(
+            select(
+                ExtractionBatch.id,
+                Project.name,
+                ProjectExtractionTemplate.name,
+                ProjectExtractionTemplate.kind,
+                PersonalAccessToken.name,
             )
-        ).one()
-        return project_name, template_name, str(kind), token_name
+            .join(Project, Project.id == ExtractionBatch.project_id)
+            .join(
+                ProjectExtractionTemplate,
+                ProjectExtractionTemplate.id == ExtractionBatch.template_id,
+            )
+            .outerjoin(
+                PersonalAccessToken, PersonalAccessToken.id == ExtractionBatch.agent_token_id
+            )
+            .where(ExtractionBatch.id.in_([b.id for b in batches]))
+        )
+        return {
+            batch_id: (project_name, template_name, str(kind), token_name)
+            for batch_id, project_name, template_name, kind, token_name in rows.all()
+        }
 
     async def add(self, batch: ExtractionBatch, article_ids: list[UUID]) -> None:
         self.db.add(batch)
