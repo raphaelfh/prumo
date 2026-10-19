@@ -9,7 +9,7 @@ import {ExternalLink} from 'lucide-react';
 
 import {SettingsGroup} from '@/components/settings';
 import {McpClientSnippetSelector} from '@/components/user/McpClientSnippetSelector';
-import {TOKEN_PLACEHOLDER} from '@/lib/mcp/clientSnippets';
+import {CLIENT_IDS, TOKEN_PLACEHOLDER} from '@/lib/mcp/clientSnippets';
 import {t} from '@/lib/copy';
 
 export function McpClientConfigCard() {
@@ -26,7 +26,7 @@ export function McpClientConfigCard() {
           {t('personalAccessTokens', 'docsLink')}<ExternalLink className="h-3 w-3" strokeWidth={1.5} />
         </a>
       </div>
-      <McpClientSnippetSelector token={TOKEN_PLACEHOLDER} />
+      <McpClientSnippetSelector token={TOKEN_PLACEHOLDER} clients={CLIENT_IDS} />
     </SettingsGroup>
   );
 }

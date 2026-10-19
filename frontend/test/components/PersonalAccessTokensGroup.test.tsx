@@ -80,7 +80,10 @@ describe('PersonalAccessTokensGroup', () => {
     await waitFor(() => expect(screen.getByText(t('personalAccessTokens', 'listEmpty'))).toBeInTheDocument());
     expect(screen.getByRole('button', {name: t('personalAccessTokens', 'createButton')})).not.toBeDisabled();
     expect(screen.getByText(t('personalAccessTokens', 'readRecommendation'))).toBeInTheDocument();
-    expect(screen.getByText(t('personalAccessTokens', 'clientsNote'))).toBeInTheDocument();
+    const note = screen.getByText(t('personalAccessTokens', 'clientsNote'));
+    expect(note).toBeInTheDocument();
+    expect(note.textContent).toMatch(/claude\.ai/);
+    expect(note.textContent).not.toMatch(/not supported/i);
   });
 
   it('list error: shows the error and retry; retry refetches and the create button stays enabled', async () => {
@@ -244,6 +247,7 @@ describe('PersonalAccessTokensGroup', () => {
     for (const key of ['chipClaudeCode', 'chipCursor', 'chipVsCode', 'chipGeminiCli', 'chipCodex', 'chipWindsurf'] as const) {
       expect(screen.getByRole('radio', {name: t('personalAccessTokens', key)})).toBeInTheDocument();
     }
+    expect(screen.queryByRole('radio', {name: t('personalAccessTokens', 'chipClaudeAi')})).not.toBeInTheDocument();
     expect(screen.getByText('claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('radio', {name: t('personalAccessTokens', 'chipCursor')}));
