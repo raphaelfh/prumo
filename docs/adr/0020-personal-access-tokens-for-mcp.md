@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-10-15
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 adr_number: '0020'
 ---
@@ -176,7 +176,7 @@ through `RequestIdMiddleware`, which runs on every request regardless of
 downstream framework, so `/mcp` calls remain traceable in logs even though
 their wire format is not `ApiResponse`.
 
-### Migration 0077
+### Migration 0078_personal_access_tokens
 
 `personal_access_tokens` follows the 0072 (`llm_connections`) posture
 exactly: RLS enabled, a single `deny_all USING (false)` policy, and every
