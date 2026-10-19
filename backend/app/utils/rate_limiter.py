@@ -6,7 +6,8 @@ SlowAPI configuration for rate limiting.
 The key function prefers the authenticated principal (Authorization bearer
 token) over the remote IP, so multiple users behind the same proxy or local
 test workers do not share a single bucket. Falls back to remote IP for
-unauthenticated requests.
+unauthenticated requests. Every per-IP key reads ``client_ip``, which honours
+``settings.TRUSTED_CLIENT_IP_HEADER`` behind the hosting proxy.
 
 Counters live in ``settings.RATE_LIMIT_STORAGE_URI`` (Redis in production),
 so budgets hold across processes and restarts; unset means per-process
@@ -17,13 +18,14 @@ per-process memory limiter, failing open across processes during an outage.
 """
 
 import hashlib
+import ipaddress
 import time
 from math import ceil
 
 from limits import RateLimitItem
 from limits.storage import MemoryStorage
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import Scope
@@ -49,7 +51,7 @@ def _principal_key(request: Request) -> str:
         if token:
             digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
             return f"token:{digest[:16]}"
-    return f"ip:{get_remote_address(request)}"
+    return f"ip:{client_ip(request.scope)}"
 
 
 _REDIS_TIMEOUTS = {"socket_connect_timeout": 0.5, "socket_timeout": 0.5}
@@ -130,7 +132,15 @@ def retry_after(limit: RateLimitItem, *keys: str) -> int:
 
 
 def client_ip(scope: Scope) -> str:
-    """The ASGI scope's client host, or ``"unknown"`` when the server gave none."""
+    """The caller's IP: the ``TRUSTED_CLIENT_IP_HEADER`` value when that setting
+    is on and the header holds one IP literal, else the ASGI scope's client
+    host, or ``"unknown"`` when the server gave none."""
+    name = (settings.TRUSTED_CLIENT_IP_HEADER or "").strip()
+    if name:
+        try:
+            return str(ipaddress.ip_address(Headers(scope=scope).get(name, "").strip()))
+        except ValueError:
+            pass  # absent or not one IP literal: never an attacker-chosen key
     client = scope.get("client")
     return client[0] if client else "unknown"
 

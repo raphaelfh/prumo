@@ -144,9 +144,13 @@ Live-only facts to verify when OAuth is first enabled:
 - Whether the host sends `offline_access` and how it behaves without a
   refresh token when `scopes_supported` omits it.
 - The production value of `PUBLIC_API_URL`.
-- Before enabling, that the server sees real client IPs behind the hosting
-  proxy (forwarded-IP trust is configured). Otherwise every request carries
-  the proxy's address and the per-IP OAuth limits act as one global limit.
+- That the server sees real client IPs behind the hosting proxy. Found
+  failing at enablement (2026-10-19): gunicorn trusts forwarded headers only
+  from 127.0.0.1, so every request carried the proxy's address and the per-IP
+  limits acted as one global limit (availability only). Fixed by
+  `TRUSTED_CLIENT_IP_HEADER=X-Real-IP` on `web`: `client_ip` keys every
+  per-IP bucket on that header, set by Railway's edge, which overwrites a
+  caller's copy (docs/reference/deployment.md § Service-level overrides).
 
 ## Validation
 
