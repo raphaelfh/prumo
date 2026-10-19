@@ -262,11 +262,15 @@ async def _cancel(open_client: OpenClient, project_id: UUID, batch_ids: list[str
     for batch_id in batch_ids:
         try:
             async with open_client("ai_run") as client:
-                await client.call_tool(
+                result = await client.call_tool(
                     "cancel_ai_run", {"project_id": str(project_id), "batch_id": batch_id}
                 )
         except Exception as exc:  # noqa: BLE001 - reported; teardown still runs
             print(f"mcp-chat-eval: could not cancel batch {batch_id}: {exc}", file=sys.stderr)
+            continue
+        if result.is_error:
+            detail = " ".join(getattr(c, "text", "") for c in result.content)
+            print(f"mcp-chat-eval: could not cancel batch {batch_id}: {detail}", file=sys.stderr)
 
 
 async def main_async(args: argparse.Namespace, *, deps: RunnerDeps | None = None) -> int:
@@ -278,12 +282,12 @@ async def main_async(args: argparse.Namespace, *, deps: RunnerDeps | None = None
     async with deps.session_factory() as s:
         fx = await deps.build(s, user_id=args.user_id, model_key=key, storage=storage)
         await s.commit()
-    open_client = deps.open_client_factory(args.mcp_url, fx)
-    model = deps.model_factory(args.model, key)
     transcripts: dict[str, Transcript] = {}
     batch_ids: list[str] = []
     facts: Any = dict(fx.facts)
     try:
+        open_client = deps.open_client_factory(args.mcp_url, fx)
+        model = deps.model_factory(args.model, key)
         async with open_client("ai_run") as client:
             listed = (await client.list_tools()).tools
         available = {t.name for t in listed}
@@ -317,7 +321,8 @@ async def main_async(args: argparse.Namespace, *, deps: RunnerDeps | None = None
                 if c.name == "start_ai_run" and c.result and c.result.get("batch_id")
             ]
     finally:
-        await _cancel(open_client, fx.project_id, batch_ids)
+        if batch_ids:  # only filled after open_client exists
+            await _cancel(open_client, fx.project_id, batch_ids)
         async with deps.session_factory() as s:
             await deps.teardown(s, fx, storage=storage)
             await s.commit()

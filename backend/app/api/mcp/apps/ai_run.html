@@ -30,6 +30,7 @@
 (function () {
   "use strict";
   var REFRESH_MS = 30000;
+  var TIMEOUT_MS = 15000;
   var root = document.getElementById("root");
   var host = window.parent;
   var nextId = 1;
@@ -45,6 +46,7 @@
     var id = nextId++;
     if (onReply) { pending[id] = onReply; }
     send({ jsonrpc: "2.0", id: id, method: method, params: params });
+    return id;
   }
 
   function notify(method, params) { send({ jsonrpc: "2.0", method: method, params: params || {} }); }
@@ -196,7 +198,8 @@
   function callRuns(args, onBody) {
     var mine = generation;
     inFlight = true;
-    request("tools/call", { name: "get_ai_runs", arguments: args }, function (result, error) {
+    var id = request("tools/call", { name: "get_ai_runs", arguments: args }, function (result, error) {
+      clearTimeout(deadline);
       inFlight = false;
       if (mine !== generation) { return; }
       if (error !== undefined) { stop(); renderError(error); return; }
@@ -204,6 +207,13 @@
       if (!result || result.isError || !body) { stop(); renderError(body || {}); return; }
       onBody(body);
     });
+    var deadline = setTimeout(function () {
+      delete pending[id];
+      inFlight = false;
+      if (mine !== generation) { return; }
+      stop();
+      renderError({ code: "TIMEOUT", message: "The host did not answer." });
+    }, TIMEOUT_MS);
   }
 
   function tick() {

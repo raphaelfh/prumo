@@ -145,120 +145,127 @@ async def build(
     except Exception as exc:
         raise EvalFixtureError(f"could not upload the eval PDF to local storage: {exc}") from exc
 
-    charms = await clone_template(
-        db,
-        project_id=project_id,
-        global_template_id=CHARMS_GLOBAL_ID,
-        user_id=user_id,
-        kind=TemplateKind.EXTRACTION,
-    )
-    await clone_template(
-        db,
-        project_id=project_id,
-        global_template_id=PROBAST_GLOBAL_ID,
-        user_id=user_id,
-        kind=TemplateKind.QUALITY_ASSESSMENT,
-    )
-    fields = await text_fields(db, charms.project_template_id)
-    if len(fields) < 4:
-        raise EvalFixtureError("the CHARMS template has too few text fields for the eval")
-    target, other_extracted, *empty = fields
-    values = {MAIN_TITLE: "Adults starting statins", SECOND_TITLE: "Registry patients"}
-    await _record(
-        db,
-        project_id=project_id,
-        article_id=articles[MAIN_TITLE],
-        template_id=charms.project_template_id,
-        user_id=user_id,
-        decisions=[
-            (target, user_id, values[MAIN_TITLE]),
-            (other_extracted, user_id, "Prospective cohort"),
-            (target, peer, "Peer value"),
-        ],
-    )
-    await _record(
-        db,
-        project_id=project_id,
-        article_id=articles[SECOND_TITLE],
-        template_id=charms.project_template_id,
-        user_id=user_id,
-        decisions=[(target, user_id, values[SECOND_TITLE])],
-    )
-
-    await ai_policy_service.set_for_project(
-        db,
-        project_id=project_id,
-        update=AiPolicyUpdateRequest(
-            agent_runs="managers", max_articles_per_run=25, daily_agent_article_cap=100
-        ),
-        user_id=user_id,
-    )
-    connection = await connections.create_user(
-        user_id=user_id,
-        payload=UserConnectionCreateRequest(
-            provider=PROVIDER, label="mcp-chat-eval", api_key=SecretStr(model_key)
-        ),
-    )
-    model = next(e.model for e in selectable_catalog() if e.provider == PROVIDER)
-    await set_user_engine(
-        db,
-        user_id=user_id,
-        project_id=project_id,
-        provider=PROVIDER,
-        model=model,
-        mode="fast",
-        connection_id=None,
-        is_manager=True,
-    )
-
-    pats: dict[PatKind, tuple[UUID, str]] = {}
-    for kind, spec in PAT_SPECS.items():
-        created = await pat_service.create_token(
+    try:
+        charms = await clone_template(
             db,
+            project_id=project_id,
+            global_template_id=CHARMS_GLOBAL_ID,
             user_id=user_id,
-            payload=PersonalAccessTokenCreateRequest(
-                name=f"mcp-chat-eval-{kind}",
-                expires_in_days=1,
-                project_ids=[project_id, other_id],
-                **spec,
+            kind=TemplateKind.EXTRACTION,
+        )
+        await clone_template(
+            db,
+            project_id=project_id,
+            global_template_id=PROBAST_GLOBAL_ID,
+            user_id=user_id,
+            kind=TemplateKind.QUALITY_ASSESSMENT,
+        )
+        fields = await text_fields(db, charms.project_template_id)
+        if len(fields) < 4:
+            raise EvalFixtureError("the CHARMS template has too few text fields for the eval")
+        target, other_extracted, *empty = fields
+        values = {MAIN_TITLE: "Adults starting statins", SECOND_TITLE: "Registry patients"}
+        await _record(
+            db,
+            project_id=project_id,
+            article_id=articles[MAIN_TITLE],
+            template_id=charms.project_template_id,
+            user_id=user_id,
+            decisions=[
+                (target, user_id, values[MAIN_TITLE]),
+                (other_extracted, user_id, "Prospective cohort"),
+                (target, peer, "Peer value"),
+            ],
+        )
+        await _record(
+            db,
+            project_id=project_id,
+            article_id=articles[SECOND_TITLE],
+            template_id=charms.project_template_id,
+            user_id=user_id,
+            decisions=[(target, user_id, values[SECOND_TITLE])],
+        )
+
+        await ai_policy_service.set_for_project(
+            db,
+            project_id=project_id,
+            update=AiPolicyUpdateRequest(
+                agent_runs="managers", max_articles_per_run=25, daily_agent_article_cap=100
+            ),
+            user_id=user_id,
+        )
+        connection = await connections.create_user(
+            user_id=user_id,
+            payload=UserConnectionCreateRequest(
+                provider=PROVIDER, label="mcp-chat-eval", api_key=SecretStr(model_key)
             ),
         )
-        pats[kind] = (created.token.id, created.secret)
-    await db.flush()
+        model = next(e.model for e in selectable_catalog() if e.provider == PROVIDER)
+        await set_user_engine(
+            db,
+            user_id=user_id,
+            project_id=project_id,
+            provider=PROVIDER,
+            model=model,
+            mode="fast",
+            connection_id=None,
+            is_manager=True,
+        )
 
-    template_names = list(
-        (
-            await exec_sql(
+        pats: dict[PatKind, tuple[UUID, str]] = {}
+        for kind, spec in PAT_SPECS.items():
+            created = await pat_service.create_token(
                 db,
-                "SELECT name FROM public.project_extraction_templates "
-                "WHERE project_id = :p AND is_active ORDER BY name",
-                p=project_id,
+                user_id=user_id,
+                payload=PersonalAccessTokenCreateRequest(
+                    name=f"mcp-chat-eval-{kind}",
+                    expires_in_days=1,
+                    project_ids=[project_id, other_id],
+                    **spec,
+                ),
             )
-        ).scalars()
-    )
-    facts: Any = {
-        "project_name": PROJECT_NAME,
-        "most_articles_project": PROJECT_NAME,
-        "article_title": MAIN_TITLE,
-        "phrase": PHRASE,
-        "phrase_article_titles": [MAIN_TITLE, SECOND_TITLE],
-        "sample_size": SAMPLE_SIZE,
-        "sample_size_page": SAMPLE_SIZE_PAGE,
-        "extracted_fields": [target[1], other_extracted[1]],
-        "empty_fields": [f[1] for f in empty],
-        "field_label": target[1],
-        "field_values": values,
-        "section_name": target[3],
-        "template_names": template_names,
-    }
-    return EvalFixture(
-        project_id=project_id,
-        other_project_id=other_id,
-        pats=pats,
-        facts=facts,
-        llm_connection_id=connection.id,
-        pdf_storage_key=pdf_key,
-    )
+            pats[kind] = (created.token.id, created.secret)
+        await db.flush()
+
+        template_names = list(
+            (
+                await exec_sql(
+                    db,
+                    "SELECT name FROM public.project_extraction_templates "
+                    "WHERE project_id = :p AND is_active ORDER BY name",
+                    p=project_id,
+                )
+            ).scalars()
+        )
+        facts: Any = {
+            "project_name": PROJECT_NAME,
+            "most_articles_project": PROJECT_NAME,
+            "article_title": MAIN_TITLE,
+            "phrase": PHRASE,
+            "phrase_article_titles": [MAIN_TITLE, SECOND_TITLE],
+            "sample_size": SAMPLE_SIZE,
+            "sample_size_page": SAMPLE_SIZE_PAGE,
+            "extracted_fields": [target[1], other_extracted[1]],
+            "empty_fields": [f[1] for f in empty],
+            "field_label": target[1],
+            "field_values": values,
+            "section_name": target[3],
+            "template_names": template_names,
+        }
+        return EvalFixture(
+            project_id=project_id,
+            other_project_id=other_id,
+            pats=pats,
+            facts=facts,
+            llm_connection_id=connection.id,
+            pdf_storage_key=pdf_key,
+        )
+    except BaseException:
+        try:
+            await storage.delete(BUCKET, pdf_key)
+        except Exception as exc:  # noqa: BLE001 - the build error is the one raised
+            print(f"mcp-chat-eval: could not delete the eval PDF object: {exc}", file=sys.stderr)
+        raise
 
 
 async def concurrent_description_change(db: AsyncSession, fixture: EvalFixture) -> None:

@@ -207,7 +207,7 @@ describe('AI-run card', () => {
       const c = open();
       c.toolResult(ok(detail()));
       vi.advanceTimersByTime(30_000);
-      vi.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(14_999);
       expect(calls(c)).toHaveLength(1);
 
       c.reply(calls(c)[0].id as number, ok(detail()));
@@ -241,6 +241,32 @@ describe('AI-run card', () => {
       expect(c.text()).toContain('-32000');
       vi.advanceTimersByTime(120_000);
       expect(calls(c)).toHaveLength(1);
+    });
+
+    it('times out a silent host after 15 s, shows the error and stops', () => {
+      const c = open();
+      c.toolResult(ok(detail()));
+      vi.advanceTimersByTime(30_000);
+      expect(calls(c)).toHaveLength(1);
+      vi.advanceTimersByTime(14_999);
+      expect(c.text()).not.toContain('TIMEOUT');
+      vi.advanceTimersByTime(1);
+      expect(c.text()).toContain('TIMEOUT');
+      expect(c.text()).toContain('The host did not answer.');
+      c.reply(calls(c)[0].id as number, ok(detail()));
+      expect(c.text()).toContain('TIMEOUT');
+      vi.advanceTimersByTime(120_000);
+      expect(calls(c)).toHaveLength(1);
+    });
+
+    it('a timely reply cancels the timeout', () => {
+      const c = open();
+      c.toolResult(ok(detail()));
+      vi.advanceTimersByTime(30_000);
+      c.reply(calls(c)[0].id as number, ok(detail({state: 'finished', finished_at: '2026-10-19T11:00:00Z'})));
+      vi.advanceTimersByTime(60_000);
+      expect(c.text()).toContain('Finished');
+      expect(c.text()).not.toContain('TIMEOUT');
     });
 
     it('stops after an error result', () => {

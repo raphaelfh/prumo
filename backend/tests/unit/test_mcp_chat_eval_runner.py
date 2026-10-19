@@ -106,9 +106,16 @@ def test_ensure_local_refuses_a_remote_host(db: str, mcp: str) -> None:
 class _FakeClient:
     instructions = "server instructions"
 
-    def __init__(self, tools: list[str], log: list[tuple[str, dict[str, Any]]]) -> None:
+    def __init__(
+        self,
+        tools: list[str],
+        log: list[tuple[str, dict[str, Any]]],
+        *,
+        cancel_error: bool = False,
+    ) -> None:
         self._tools = tools
         self._log = log
+        self._cancel_error = cancel_error
 
     async def list_tools(self) -> Any:
         return SimpleNamespace(
@@ -128,10 +135,13 @@ class _FakeClient:
         body: dict[str, Any] = {"ok": True}
         if name == "start_ai_run":
             body = {"batch_id": "b-1"}
+        is_error = name == "cancel_ai_run" and self._cancel_error
+        if is_error:
+            body = {"code": "NOT_FOUND", "message": "batch not found"}
         return SimpleNamespace(
             structured_content=body,
             content=[SimpleNamespace(type="text", text=json.dumps(body))],
-            is_error=False,
+            is_error=is_error,
         )
 
     async def get_prompt(self, _name: str, _arguments: dict[str, str]) -> Any:
@@ -162,6 +172,7 @@ def _deps(
     *,
     tools: list[str],
     database_url: str = LOCAL_DB,
+    cancel_error: bool = False,
 ) -> RunnerDeps:
     record.setdefault("build", 0)
     record.setdefault("teardown", 0)
@@ -186,7 +197,7 @@ def _deps(
     def open_client_factory(_url: str, _fx: Any) -> Any:
         @asynccontextmanager
         async def open_client(_kind: str) -> AsyncIterator[_FakeClient]:
-            yield _FakeClient(tools, record["calls"])
+            yield _FakeClient(tools, record["calls"], cancel_error=cancel_error)
 
         return open_client
 
@@ -248,6 +259,34 @@ async def test_main_async_skips_survives_cancels_and_tears_down(
     cancels = [a for n, a in record["calls"] if n == "cancel_ai_run"]
     assert [a["batch_id"] for a in cancels] == ["b-1"]
     assert record["build"] == 1 and record["teardown"] == 1
+
+
+async def test_main_async_tears_down_when_the_model_factory_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(ENV_KEY, "k")
+    record: dict[str, Any] = {}
+
+    def broken_model(_model: str, _key: str) -> Any:
+        raise RuntimeError("model init failed")
+
+    deps = replace(_deps(record, tools=[]), model_factory=broken_model)
+    with pytest.raises(RuntimeError, match="model init failed"):
+        await runner.main_async(_args(tmp_path, "--only", "E1"), deps=deps)
+    assert record["build"] == 1 and record["teardown"] == 1
+
+
+async def test_main_async_reports_a_cancel_that_returns_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(ENV_KEY, "k")
+    record: dict[str, Any] = {}
+    deps = _deps(record, tools=["plan_ai_run", "start_ai_run", "cancel_ai_run"], cancel_error=True)
+    await runner.main_async(_args(tmp_path, "--only", "E14"), deps=deps)
+    assert [a["batch_id"] for n, a in record["calls"] if n == "cancel_ai_run"] == ["b-1"]
+    err = capsys.readouterr().err
+    assert "could not cancel batch b-1" in err and "batch not found" in err
+    assert record["teardown"] == 1
 
 
 async def test_main_async_tears_down_once_when_a_task_raises_outside_the_model(

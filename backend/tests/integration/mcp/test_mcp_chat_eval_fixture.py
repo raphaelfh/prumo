@@ -137,6 +137,22 @@ async def test_a_second_build_for_the_same_user_refuses_before_minting(
     assert after == before
 
 
+async def test_a_build_failing_after_the_upload_deletes_the_uploaded_object(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def broken_clone(*_a: Any, **_kw: Any) -> Any:
+        raise RuntimeError("clone failed")
+
+    monkeypatch.setattr(eval_fixture, "clone_template", broken_clone)
+    rec = _RecordingStorage()
+    with pytest.raises(RuntimeError, match="clone failed"):
+        await eval_fixture.build(
+            db_session, user_id=SEED.primary_profile, model_key="k", storage=rec
+        )
+    assert len(rec.uploads) == 1
+    assert rec.deletes == [(rec.uploads[0][0], rec.uploads[0][1])]
+
+
 async def test_teardown_revokes_deletes_and_is_idempotent(
     db_session: AsyncSession, built: tuple[EvalFixture, _RecordingStorage]
 ) -> None:
