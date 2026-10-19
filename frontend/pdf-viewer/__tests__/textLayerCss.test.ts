@@ -23,6 +23,21 @@ const pdfjs = readFileSync(
   'utf8',
 );
 
+/**
+ * pdf.js's own `.textLayer` rule block, up to its nested `.highlight` rule.
+ * Whitespace-agnostic: pdf.js has shipped this stylesheet both minified
+ * (`.textLayer{`) and formatted (`.textLayer {`). Throws rather than returning
+ * an empty slice, so a format change cannot make the guard vacuous.
+ */
+function pdfjsTextLayerBlock(css: string): string {
+  const start = css.search(/(^|[}\s])\.textLayer\s*\{/);
+  if (start < 0) throw new Error('pdf_viewer.css: no `.textLayer {` rule found');
+  const rest = css.slice(start);
+  const end = rest.search(/\.highlight\s*\{/);
+  if (end < 0) throw new Error('pdf_viewer.css: no `.highlight {` rule after `.textLayer`');
+  return rest.slice(0, end);
+}
+
 /** The `--foo` names read (not merely declared) inside `.textLayer`'s rules. */
 function consumedProperties(css: string): Set<string> {
   return new Set([...css.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
@@ -32,13 +47,14 @@ describe('the text-layer stylesheet', () => {
   it('guards the precondition: pdf.js really does hand sizing to the app stylesheet', () => {
     // If pdf.js ever sizes spans itself, `--font-height` disappears and this
     // whole test becomes vacuous rather than protective.
-    const textLayer = pdfjs.slice(pdfjs.indexOf('.textLayer{'));
+    const textLayer = pdfjsTextLayerBlock(pdfjs);
     expect(textLayer).toContain('--font-height');
     expect(textLayer).toContain('--scale-x');
   });
 
   it('consumes every custom property pdf.js expects the app to consume', () => {
-    const theirs = consumedProperties(pdfjs.slice(pdfjs.indexOf('.textLayer{'), pdfjs.indexOf('.highlight{')));
+    const theirs = consumedProperties(pdfjsTextLayerBlock(pdfjs));
+    expect(theirs.size).toBeGreaterThan(0);
     const mine = consumedProperties(ours);
     const missing = [...theirs].filter((p) => !mine.has(p));
     expect(missing).toEqual([]);
