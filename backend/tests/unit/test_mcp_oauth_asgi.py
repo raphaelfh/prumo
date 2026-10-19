@@ -20,6 +20,7 @@ from app.api.mcp.oauth.asgi import (
     read_body,
     replay,
 )
+from app.core.config import settings
 from app.core.middleware import PathScopedCORSMiddleware
 
 _TWO_PER_MINUTE = parse("2/minute")
@@ -419,3 +420,19 @@ async def test_any_other_path_is_answered_by_cors() -> None:
     assert inner.calls == 0
     assert sent.status == 400
     assert b"access-control-allow-origin" not in sent.headers
+
+
+_REAL_IP = [(b"x-real-ip", b"203.0.113.7")]
+
+
+def test_ip_key_honours_the_trusted_header(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    assert ip_key(_scope(headers=_REAL_IP), b"") == "203.0.113.7"
+
+
+def test_client_id_key_fallback_honours_the_trusted_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    scope = {**_scope(headers=_REAL_IP), "query_string": b""}
+    assert client_id_key(scope, b"") == "ip:203.0.113.7"
