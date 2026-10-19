@@ -17,6 +17,7 @@ from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher
 from app.services.extraction_errors import ExtractionTaskError
 from app.services.extraction_run_write import RunWriteError, open_run_for_write
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.worker import queue_health
 from tests.integration.conftest import SEED
 from tests.integration.test_extraction_attempt_repository import graph as attempt_graph
 
@@ -57,7 +58,7 @@ async def test_kickoff_on_consensus_run_is_409_run_busy(graph, monkeypatch, with
             aal="aal1",
         )
 
-    monkeypatch.setattr(endpoint, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
     # The credential precheck runs before the run-state check; a deployment
     # key makes it pass whatever the developer's or CI's environment holds.
     monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")

@@ -10,6 +10,7 @@ from app.core.error_handler import ConflictError
 from app.schemas.extraction import SectionExtractionRequest
 from app.services import llm_connection_service
 from app.services.extraction_attempt_service import ExtractionAttemptService
+from app.worker import queue_health
 from tests.integration.conftest import SEED
 from tests.integration.test_extraction_attempt_repository import graph as attempt_graph
 from tests.integration.test_extraction_attempt_repository import proposal
@@ -115,7 +116,7 @@ async def test_http_replay_enqueue_failure_and_revoked_membership(graph, monkeyp
             aal="aal1",
         )
 
-    monkeypatch.setattr(endpoint, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
     monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
     monkeypatch.setattr(endpoint, "_remember_job_owner", lambda *args: owners.append(args))
     monkeypatch.setattr(endpoint.run_section_extraction_task, "apply_async", enqueue)
@@ -211,7 +212,7 @@ async def test_legacy_stored_article_text_key_replays_over_http(graph, monkeypat
         )
 
     enqueued = []
-    monkeypatch.setattr(endpoint, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
     monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
     monkeypatch.setattr(endpoint, "_remember_job_owner", lambda *_args: None)
     monkeypatch.setattr(
