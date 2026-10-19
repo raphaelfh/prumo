@@ -17,7 +17,8 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionField, ExtractionInstance
+from app.models.extraction import ExtractionField
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionProposalRecord,

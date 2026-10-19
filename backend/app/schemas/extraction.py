@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 # Mirrors ``ExtractionFramework`` (app.models.extraction) — declared once in the
 # schema layer so request/response models never import the ORM enum.
@@ -624,3 +624,15 @@ def parse_position(
     if raw is None:
         return None
     return PositionV1.model_validate(raw)
+
+
+def stored_anchor(raw: dict[str, Any] | None) -> PositionV1 | None:
+    """The anchor a stored position parses to, or ``None`` for a missing,
+    empty or invalid one. ``grounded`` on every evidence read is exactly
+    ``stored_anchor(position) is not None``."""
+    if not raw:
+        return None
+    try:
+        return parse_position(raw)
+    except (ValidationError, ValueError):
+        return None

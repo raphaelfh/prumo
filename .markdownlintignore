@@ -28,3 +28,6 @@ CLAUDE.md
 
 # Snapshot artefacts inside docs/ that are not actively maintained
 docs/superpowers/design-system/sidebar-and-panels.md
+
+# Byte-exact golden test fixtures — their bytes are the assertion
+backend/tests/fixtures/**/*.md

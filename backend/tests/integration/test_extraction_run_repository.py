@@ -13,7 +13,7 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun
@@ -89,3 +89,38 @@ async def test_merge_provenance_section_preserves_flat_legacy_keys(
     assert provenance["model"] == "legacy"
     assert provenance["prompt_text"] == "SYS"
     assert provenance["sections"][str(et)] == {"model": "sectioned"}
+
+
+@pytest.mark.asyncio
+async def test_add_tokens_sums_onto_the_row_not_a_stale_copy(db_session: AsyncSession) -> None:
+    """Another writer (a sibling chunk) added tokens after this session loaded
+    the run: the row-locked re-read sums onto the row's value, so neither
+    write is lost, and sibling keys survive."""
+    repo = ExtractionRunRepository(db_session)
+    run = await _seed_run(db_session)
+    assert run.results == {}, "precondition: the identity-mapped copy is empty"
+    await db_session.execute(
+        text(
+            "UPDATE extraction_runs SET results = "
+            """'{"tokens": {"prompt": 5, "completion": 1, "total": 6}, "kind": "x"}'::jsonb """
+            "WHERE id = :id"
+        ),
+        {"id": run.id},
+    )
+
+    await repo.add_tokens(run.id, prompt=10, completion=2)
+
+    results = await _reread_results(db_session, run.id)
+    assert results["tokens"] == {"prompt": 15, "completion": 3, "total": 18}
+    assert results["kind"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_add_tokens_starts_from_zero(db_session: AsyncSession) -> None:
+    repo = ExtractionRunRepository(db_session)
+    run = await _seed_run(db_session)
+
+    await repo.add_tokens(run.id, prompt=4, completion=3)
+
+    results = await _reread_results(db_session, run.id)
+    assert results["tokens"] == {"prompt": 4, "completion": 3, "total": 7}

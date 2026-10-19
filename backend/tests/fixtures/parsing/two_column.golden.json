@@ -1,0 +1,218 @@
+[
+  {
+    "page": 1,
+    "block_index": 0,
+    "block_type": "header",
+    "text": "Short Title et al."
+  },
+  {
+    "page": 1,
+    "block_index": 1,
+    "block_type": "heading",
+    "text": "A Two Column Golden Fixture Title For Reading Order"
+  },
+  {
+    "page": 1,
+    "block_index": 2,
+    "block_type": "paragraph",
+    "text": "ABSTRACT This full-width abstract spans both columns and must be read before either column of the first page\nbegins."
+  },
+  {
+    "page": 1,
+    "block_index": 3,
+    "block_type": "paragraph",
+    "text": "LEFT-1-a This sentence belongs to the left column of\npage 1, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 1,
+    "block_index": 4,
+    "block_type": "paragraph",
+    "text": "LEFT-1-b This sentence belongs to the left column of\npage 1, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 1,
+    "block_index": 5,
+    "block_type": "paragraph",
+    "text": "LEFT-1-c This sentence belongs to the left column of\npage 1, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 1,
+    "block_index": 6,
+    "block_type": "paragraph",
+    "text": "doi:10.1000/test"
+  },
+  {
+    "page": 1,
+    "block_index": 7,
+    "block_type": "paragraph",
+    "text": "Age 54"
+  },
+  {
+    "page": 1,
+    "block_index": 8,
+    "block_type": "footer",
+    "text": "1"
+  },
+  {
+    "page": 1,
+    "block_index": 9,
+    "block_type": "paragraph",
+    "text": "RIGHT-1-a This sentence belongs to the right column\nof page 1, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 1,
+    "block_index": 10,
+    "block_type": "paragraph",
+    "text": "RIGHT-1-b This sentence belongs to the right column\nof page 1, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 1,
+    "block_index": 11,
+    "block_type": "paragraph",
+    "text": "RIGHT-1-c This sentence belongs to the right column\nof page 1, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 2,
+    "block_index": 0,
+    "block_type": "header",
+    "text": "J Test Med 2026"
+  },
+  {
+    "page": 2,
+    "block_index": 1,
+    "block_type": "paragraph",
+    "text": "LEFT-2-a This sentence belongs to the left column of\npage 2, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 2,
+    "block_index": 2,
+    "block_type": "paragraph",
+    "text": "LEFT-2-b This sentence belongs to the left column of\npage 2, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 2,
+    "block_index": 3,
+    "block_type": "paragraph",
+    "text": "LEFT-2-c This sentence belongs to the left column of\npage 2, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 2,
+    "block_index": 4,
+    "block_type": "footer",
+    "text": "2"
+  },
+  {
+    "page": 2,
+    "block_index": 5,
+    "block_type": "paragraph",
+    "text": "RIGHT-2-a This sentence belongs to the right column\nof page 2, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 2,
+    "block_index": 6,
+    "block_type": "paragraph",
+    "text": "RIGHT-2-b This sentence belongs to the right column\nof page 2, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 2,
+    "block_index": 7,
+    "block_type": "paragraph",
+    "text": "RIGHT-2-c This sentence belongs to the right column\nof page 2, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 3,
+    "block_index": 0,
+    "block_type": "header",
+    "text": "Short Title et al."
+  },
+  {
+    "page": 3,
+    "block_index": 1,
+    "block_type": "paragraph",
+    "text": "LEFT-3-a This sentence belongs to the left column of\npage 3, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 3,
+    "block_index": 2,
+    "block_type": "paragraph",
+    "text": "LEFT-3-b This sentence belongs to the left column of\npage 3, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 3,
+    "block_index": 3,
+    "block_type": "paragraph",
+    "text": "LEFT-3-c This sentence belongs to the left column of\npage 3, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 3,
+    "block_index": 4,
+    "block_type": "footer",
+    "text": "3"
+  },
+  {
+    "page": 3,
+    "block_index": 5,
+    "block_type": "paragraph",
+    "text": "RIGHT-3-a This sentence belongs to the right column\nof page 3, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 3,
+    "block_index": 6,
+    "block_type": "paragraph",
+    "text": "RIGHT-3-b This sentence belongs to the right column\nof page 3, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 3,
+    "block_index": 7,
+    "block_type": "paragraph",
+    "text": "RIGHT-3-c This sentence belongs to the right column\nof page 3, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 4,
+    "block_index": 0,
+    "block_type": "header",
+    "text": "J Test Med 2026"
+  },
+  {
+    "page": 4,
+    "block_index": 1,
+    "block_type": "paragraph",
+    "text": "LEFT-4-a This sentence belongs to the left column of\npage 4, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 4,
+    "block_index": 2,
+    "block_type": "paragraph",
+    "text": "LEFT-4-b This sentence belongs to the left column of\npage 4, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 4,
+    "block_index": 3,
+    "block_type": "paragraph",
+    "text": "LEFT-4-c This sentence belongs to the left column of\npage 4, slot c, and reads as one paragraph."
+  },
+  {
+    "page": 4,
+    "block_index": 4,
+    "block_type": "footer",
+    "text": "4"
+  },
+  {
+    "page": 4,
+    "block_index": 5,
+    "block_type": "paragraph",
+    "text": "RIGHT-4-a This sentence belongs to the right column\nof page 4, slot a, and reads as one paragraph."
+  },
+  {
+    "page": 4,
+    "block_index": 6,
+    "block_type": "paragraph",
+    "text": "RIGHT-4-b This sentence belongs to the right column\nof page 4, slot b, and reads as one paragraph."
+  },
+  {
+    "page": 4,
+    "block_index": 7,
+    "block_type": "paragraph",
+    "text": "RIGHT-4-c This sentence belongs to the right column\nof page 4, slot c, and reads as one paragraph."
+  }
+]

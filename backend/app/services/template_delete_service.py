@@ -30,10 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_handler import AppError
 from app.core.integrity import violates_constraint
 from app.models.extraction import (
-    ExtractionInstance,
     ExtractionRun,
     ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.schemas.hitl_session import (
     TemplateDeleteRefusalCode,
     TemplateDeleteRefusalDetails,

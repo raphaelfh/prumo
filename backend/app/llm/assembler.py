@@ -5,7 +5,9 @@ Converts a flat list of ``ArticleTextBlock`` (or ``ParsedBlock``) objects into
 a structured prompt text that:
 
 1. Preserves reading order (page_number asc, block_index asc).
-2. Emits ``## <heading>`` markers from ``heading`` blocks (IMRaD-aware).
+2. Emits ``## <heading>`` markers from ``heading`` blocks (IMRaD-aware) and
+   prefixes every kept block with its citation ref (``[p3·b12] ``, or
+   ``[p3·b12–b18] `` above a table) — prompt-only, ADR-0013 Amendment 2026-10.
 3. Coalesces contiguous ``table_cell`` runs into a reconstructed markdown
    table instead of emitting one cell per line.
 4. When the serialised text exceeds ``budget`` chars, drops WHOLE sections
@@ -149,6 +151,7 @@ class _Section:
     title: str  # "" for pre-heading preamble
     rank: int
     blocks: list[_Block] = field(default_factory=list)
+    heading: _Block | None = None  # the heading block that opened the section
 
 
 # ---------------------------------------------------------------------------
@@ -157,14 +160,11 @@ class _Section:
 
 
 def _serialize_section(section: _Section) -> str:
-    """Serialise a section: ``## title`` marker + body via render_blocks_to_markdown."""
-    parts: list[str] = []
-    if section.title:
-        parts.append(f"## {section.title}")
-    body = render_blocks_to_markdown(section.blocks)
-    if body:
-        parts.append(body)
-    return "\n".join(parts)
+    """Serialise a section's heading block and body through
+    render_blocks_to_markdown with block refs, so the title line carries its
+    heading block's ref (``## [p1·b0] Methods``) like every body block."""
+    head = [section.heading] if section.heading is not None else []
+    return render_blocks_to_markdown([*head, *section.blocks], block_refs=True)
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,7 @@ def _segment_into_sections(
                 title=block.text,
                 rank=_section_rank(block.text, focus),
                 blocks=[],
+                heading=block,
             )
         else:
             current.blocks.append(block)

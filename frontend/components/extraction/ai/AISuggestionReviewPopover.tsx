@@ -25,14 +25,15 @@ import {Separator} from '@/components/ui/separator';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
+import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
-import {formatFullSuggestionValue, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, valuelessProposalKind, valuelessProposalLabel} from '@/lib/ai-extraction/suggestionUtils';
 import {adoptionWording, type PeerAdoptionMark} from '@/lib/runs/adoption';
 import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
-import {AISuggestionEvidence} from './AISuggestionEvidence';
+import {AISuggestionEvidence, citationLocateArgs} from './AISuggestionEvidence';
 
 // Lazy-loaded: the generation dialog pulls the article-content service → the
 // shared apiClient (which imports the Supabase client at module scope). Loading
@@ -87,8 +88,10 @@ function EvidenceSection({evidence}: EvidenceSectionProps) {
   const onLocate = isAvailable
     ? (rank: number) => {
         const citation = evidence.find((e) => e.rank === rank) ?? evidence[0];
+        const args = citationLocateArgs(citation);
+        if (!args) return;
         setActiveRank(rank);
-        locate(citation.text, citation.pageNumber ?? null, citation.blockIds ?? []);
+        locate(...args);
       }
     : undefined;
 
@@ -184,8 +187,16 @@ function VersionRow({version, ranByName, isSelected, selectedChipLabel, marks, o
   }
 
   // Both valueless kinds suppress the confidence badge; only a `'marker'`
-  // claims a recorded "No information" answer (see `valuelessProposalKind`).
+  // claims a recorded answer (see `valuelessProposalKind`).
   const valueless = valuelessProposalKind(version.value);
+  // Only the two "nothing found" shapes carry an explanation; another marker
+  // (e.g. not_applicable) is self-explanatory through its label.
+  const valuelessDesc =
+    valueless === 'unmarked'
+      ? 'reviewNoValueDesc'
+      : valueAbsentReason(version.value) === 'no_information'
+        ? 'reviewNoInformationDesc'
+        : null;
   const hasReasoning = !!version.reasoning?.trim();
   const evidence = version.evidence ?? [];
   const hasEvidence = evidence.length > 0 && !!evidence[0]?.text?.trim();
@@ -205,11 +216,11 @@ function VersionRow({version, ranByName, isSelected, selectedChipLabel, marks, o
           {valueless ? (
             <div>
               <p className="text-[13px] font-medium text-foreground/90">
-                {t('extraction', valueless === 'marker' ? 'reviewNoInformation' : 'reviewNoValue')}
+                {valuelessProposalLabel(version.value)}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('extraction', valueless === 'marker' ? 'reviewNoInformationDesc' : 'reviewNoValueDesc')}
-              </p>
+              {valuelessDesc && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{t('extraction', valuelessDesc)}</p>
+              )}
             </div>
           ) : (
             <p
@@ -348,7 +359,8 @@ interface AISuggestionReviewPopoverProps {
   fieldType?: string | null;
   allowedValues?: unknown;
   /** Threaded to the generation dialog so it can lazily fetch the stored
-   *  markdown the LLM received. Omit to hide the "view text sent" expand. */
+   *  article markdown the prompt was built from. Omit to hide the "view text
+   *  sent" expand. */
   articleId?: string;
 }
 

@@ -14,11 +14,11 @@ from sqlalchemy.orm import selectinload
 from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionEntityType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionTemplateGlobal,
     ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.repositories.base import BaseRepository
 
 logger = get_logger(__name__)

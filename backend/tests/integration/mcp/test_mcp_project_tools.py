@@ -18,6 +18,16 @@ async def test_list_projects_tool(mcp_client, pat_primary_read):
     }
 
 
+async def test_list_projects_reports_token_ai_run(
+    mcp_client, pat_primary_read, pat_primary_read_ai_run
+):
+    without = structured(await call_tool(mcp_client, pat_primary_read, "list_projects", {}))
+    granted = structured(await call_tool(mcp_client, pat_primary_read_ai_run, "list_projects", {}))
+
+    assert (without["token_ai_run"], granted["token_ai_run"]) == (False, True)
+    assert (without["token_scope"], granted["token_scope"]) == ("read", "read")
+
+
 async def test_list_projects_empty_state(mcp_client, pat_outsider_rw):
     body = structured(await call_tool(mcp_client, pat_outsider_rw, "list_projects", {}))
     assert body["projects"] == []

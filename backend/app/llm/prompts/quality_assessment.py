@@ -23,10 +23,19 @@ _SYSTEM_TEMPLATE = (
     "Be conservative: when the article gives only a weak or indirect "
     "signal, prefer the allowed value that captures uncertainty "
     "(e.g., 'PN' or 'Unclear') over guessing. "
-    'If the article does not contain the value, set status="not_found", value=null, and evidence=null'
-    ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
+    "When the article is silent about a field: if the field's allowed values include a"
+    " no-information answer (for example NI), return it as the value; otherwise, if"
+    " absent_reason offers no_information, set it; otherwise return value=null with"
+    ' status="not_found". Never invent a value or a quote.'
+    ' When a criterion does not apply to this study, set absent_reason="not_applicable"'
+    " where it is offered."
+    " A domain judgment is never 'not found': when the article does not permit judging,"
+    " answer Unclear."
+    ' Use status="ambiguous" when the value is present but'
     ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
-    " the value."
+    " the value. The article text marks each block with a citation ref such as [p3·b12]"
+    " (page 3, block 12) or [p3·b12\u2013b18] for a table; refs are not part of the"
+    " article's words."
 )
 
 _USER_TEMPLATE = """{review_context_section}{general_instructions_section}Assess the following domain of {framework_label} for the study below.
@@ -41,7 +50,7 @@ For EACH field in the response schema, return an object with:
 - "value": one of the field's allowed values
 - "confidence": number between 0 and 1 (1 = very confident in the judgment, 0 = no signal in the article)
 - "reasoning": 1-2 sentences justifying the judgment against the {framework_label} criterion
-- "evidence": an object with "text" (short quoted passage supporting the judgment) and "page_number" (integer, if known), or null
+- "evidence": a list of up to 3 objects {{"block_ref": the ref shown before the quoted block, e.g. "p3·b12", "quote": a short verbatim passage from that block}}; [] when status is not_found
 """
 
 # Canary: hashes the shared block renderer's literal prefix (see

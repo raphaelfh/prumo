@@ -45,6 +45,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import is_project_manager
+from app.api.mcp.apps import DRAFT_REVIEW_URI
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.draft_diff import capped_diff
 from app.api.mcp.errors import McpErrorCode, McpToolError
@@ -68,6 +69,7 @@ from app.services.template_versioning import (
     get_active_version_tree,
     get_template_config_diff,
 )
+from app.utils import app_urls
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.opaque_cursor import (
     CURSOR_RESERVE,
@@ -110,6 +112,7 @@ _MANAGER_ONLY = "Only a project manager can read the draft."
     requires="read",
     project_arg="project_id",
     title="Get template",
+    ui_resource=DRAFT_REVIEW_URI,
     destructive=False,
     description=(
         "Return a questionnaire: the template instruction (and whether it is still the "
@@ -164,6 +167,7 @@ async def get_template(
         sections=[],
         draft_diff=None,
         next_cursor=None,
+        editor_url=app_urls.editor_url(project_id, template.kind) if is_manager else None,
     )
     if view == "changes":
         return await changes_view(

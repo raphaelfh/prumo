@@ -31,6 +31,8 @@ class GoldLabels:
     tables: list[list[str]] = field(default_factory=list)
     sections: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
+    #: Body paragraphs in logical reading order (column-inversion gold).
+    paragraphs: list[str] = field(default_factory=list)
     #: Gold table/figure regions (PDF user space) for bbox correctness.
     regions: list[Box] = field(default_factory=list)
 
@@ -87,6 +89,7 @@ def _gold_from(raw: Any, where: str) -> GoldLabels:
         tables=[[str(c) for c in table] for table in tables],
         sections=[str(s) for s in raw.get("sections", [])],
         references=[str(r) for r in raw.get("references", [])],
+        paragraphs=[str(p) for p in raw.get("paragraphs", [])],
         regions=[_box_from(b, where) for b in raw.get("regions", [])],
     )
 

@@ -32,12 +32,12 @@ from typing import Any, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.claim_value import option_label_map
 from app.models.article import Article
-from app.models.extraction import ExtractionEvidence, ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalSource, ExtractionReviewerDecisionType
 from app.schemas.extraction_run import (
     ProposalRecordResponse,
@@ -49,13 +49,19 @@ from app.schemas.extraction_run import (
 from app.schemas.mcp_extractions import (
     McpConciseCell,
     McpDetailedRow,
-    McpEvidence,
     McpExtractionArticle,
     McpExtractionQuestion,
     McpExtractionsPage,
     McpRunRef,
 )
 from app.services.current_run import CurrentRunResolver
+from app.services.extraction_agent_evidence import (
+    EvidenceBatch,
+    evidence_for,
+    load_evidence_batch,
+    provenance_batch,
+    provenance_for,
+)
 from app.services.extraction_run_read_service import (
     caller_can_see_peers,
     get_run_with_workflow_history,
@@ -81,8 +87,6 @@ from app.utils.text_caps import cap_text
 _PAGE_BUDGET = 28_000
 _CONCISE_VALUE_CAP = 80
 _DETAILED_VALUE_CAP = 1_000
-_EVIDENCE_QUOTE_CAP = 300
-_EVIDENCE_PER_ROW_CAP = 3
 _CONCISE_CELL_CAP = 1_000  # one value per instance: the cell is bounded too (F4)
 #: Reserved for `next_cursor` itself, same reasoning as `templates.py`: the
 #: envelope is measured with it `None`, but a non-last page replaces that
@@ -352,34 +356,6 @@ def _concise_cell(resolveds: list[_Resolved]) -> _Resolved:
     return chosen
 
 
-def _evidence_for(
-    resolved: _Resolved,
-    *,
-    evidence_by_proposal: dict[UUID, list[ExtractionEvidence]],
-    evidence_by_decision: dict[UUID, list[ExtractionEvidence]],
-) -> list[McpEvidence]:
-    """Evidence for a resolved value's own source row (its decision, or, when
-    that decision carries none itself, the proposal it accepted / the AI
-    proposal it came from) -- never a second lookup by (instance, field),
-    which would surface a DIFFERENT reviewer's evidence at the same
-    coordinate."""
-    rows = evidence_by_decision.get(resolved.decision_id, []) if resolved.decision_id else []
-    if not rows and resolved.proposal_id is not None:
-        rows = evidence_by_proposal.get(resolved.proposal_id, [])
-    out: list[McpEvidence] = []
-    for ev in rows[:_EVIDENCE_PER_ROW_CAP]:
-        if not ev.text_content:
-            continue
-        out.append(
-            McpEvidence(
-                quote=ev.text_content[:_EVIDENCE_QUOTE_CAP],
-                quote_truncated=len(ev.text_content) > _EVIDENCE_QUOTE_CAP,
-                locator=f"p{ev.page_number}" if ev.page_number is not None else None,
-            )
-        )
-    return out
-
-
 def _flatten_tree(
     tree: list[RunViewEntityType],
 ) -> tuple[dict[UUID, int], list[McpFieldInfo], dict[UUID, list[McpFieldInfo]]]:
@@ -574,48 +550,12 @@ async def list_agent_extractions(
             if inst.article_id is not None:
                 instances_by_article[inst.article_id].append(inst)
 
-    evidence_by_proposal: dict[UUID, list[ExtractionEvidence]] = defaultdict(list)
-    evidence_by_decision: dict[UUID, list[ExtractionEvidence]] = defaultdict(list)
-    if response_format == "detailed" and details:
-        visible_proposal_ids = {p.id for d in details.values() for p in d.proposals}
-        visible_decision_ids = {rd.id for d in details.values() for rd in d.decisions}
-        # M1 (fix round 1): a row can carry BOTH a proposal_record_id and a
-        # reviewer_decision_id (the CHECK constraint permits it) -- must
-        # never surface via a visible proposal id when its decision id
-        # belongs to a hidden peer, so a SET decision id alone decides
-        # visibility; only a row with none falls back to the proposal id
-        # (an AI proposal's own evidence never carries a decision id).
-        conditions = []
-        if visible_proposal_ids:
-            conditions.append(
-                and_(
-                    ExtractionEvidence.reviewer_decision_id.is_(None),
-                    ExtractionEvidence.proposal_record_id.in_(visible_proposal_ids),
-                )
-            )
-        if visible_decision_ids:
-            conditions.append(ExtractionEvidence.reviewer_decision_id.in_(visible_decision_ids))
-        if conditions:
-            ev_rows = (
-                (
-                    await db.execute(
-                        select(ExtractionEvidence)
-                        .where(
-                            ExtractionEvidence.project_id == project_id,
-                            ExtractionEvidence.run_id.in_(list(details.keys())),
-                            or_(*conditions),
-                        )
-                        .order_by(ExtractionEvidence.rank)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for ev in ev_rows:
-                if ev.proposal_record_id is not None:
-                    evidence_by_proposal[ev.proposal_record_id].append(ev)
-                if ev.reviewer_decision_id is not None:
-                    evidence_by_decision[ev.reviewer_decision_id].append(ev)
+    batch = (
+        await load_evidence_batch(db, project_id=project_id, details=details)
+        if response_format == "detailed" and details
+        else EvidenceBatch()
+    )
+    provenance = provenance_batch(details) if response_format == "detailed" else {}
 
     article_meta: dict[UUID, dict[str, Any]] = {}
     items_by_article: list[tuple[UUID, list[Any]]] = []
@@ -724,12 +664,9 @@ async def list_agent_extractions(
                                 value=mcp_value(resolved.value, info, text_cap=_DETAILED_VALUE_CAP),
                                 decider=resolved.decider,
                                 reviewer=resolved.reviewer,
-                                evidence=_evidence_for(
-                                    resolved,
-                                    evidence_by_proposal=evidence_by_proposal,
-                                    evidence_by_decision=evidence_by_decision,
-                                ),
+                                evidence=evidence_for(resolved, batch),
                                 run_stage=run.stage,
+                                provenance=provenance_for(resolved, provenance),
                             )
                         )
             items_by_article.append((article_pk, d_items))

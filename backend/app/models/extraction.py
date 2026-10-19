@@ -32,7 +32,7 @@ from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
 from app.models.extraction_versioning import TemplateKind
 
 if TYPE_CHECKING:
-    pass
+    from app.models.extraction_instance import ExtractionInstance
 
 
 class ExtractionFramework(str, PyEnum):
@@ -481,86 +481,6 @@ class ExtractionField(BaseModel):
         return f"<ExtractionField {self.name}>"
 
 
-class ExtractionInstance(BaseModel):
-    """
-    Instancia especifica de entidade for cada article.
-
-    Indices:
-    - project_id, article_id, template_id: FKs indexadas
-    - (article_id, entity_type_id, sort_order): busca ordenada
-    - metadata: GIN for busca em JSONB
-    """
-
-    __tablename__ = "extraction_instances"
-
-    project_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.projects.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    article_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.articles.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
-    template_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.project_extraction_templates.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-
-    entity_type_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_entity_types.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
-    parent_instance_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-
-    label: Mapped[str] = mapped_column(String, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default={}, nullable=False)
-
-    created_by: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
-    is_template: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
-
-    # Relationships
-    template: Mapped["ProjectExtractionTemplate"] = relationship(
-        "ProjectExtractionTemplate",
-        back_populates="instances",
-    )
-
-    __table_args__ = (
-        # Indice composto for busca ordenada por article
-        Index(
-            "idx_extraction_instances_article_entity_sort",
-            "article_id",
-            "entity_type_id",
-            "sort_order",
-        ),
-        # Indice GIN for metadata
-        Index("idx_extraction_instances_metadata_gin", "metadata", postgresql_using="gin"),
-        {"schema": "public"},
-    )
-
-    def __repr__(self) -> str:
-        return f"<ExtractionInstance {self.label}>"
-
-
 class ExtractionEvidence(BaseModel):
     """
     Evidencias que suportam valores extraidos or instances.
@@ -622,6 +542,8 @@ class ExtractionEvidence(BaseModel):
     attribution_label: Mapped[str | None] = mapped_column(Text, nullable=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # order of an evidence span within its proposal (0 = primary/first; LLM order)
+    # article_files.content_version the position was anchored against; NULL = unknown
+    content_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -638,6 +560,11 @@ class ExtractionEvidence(BaseModel):
         Index("idx_extraction_evidence_proposal_record_id", "proposal_record_id"),
         Index("idx_extraction_evidence_reviewer_decision_id", "reviewer_decision_id"),
         Index("idx_extraction_evidence_consensus_decision_id", "consensus_decision_id"),
+        Index(  # the per-file reparse read (0089)
+            "idx_extraction_evidence_article_file_id",
+            "article_file_id",
+            postgresql_where=text("article_file_id IS NOT NULL"),
+        ),
         CheckConstraint(
             """
             run_id IS NOT NULL

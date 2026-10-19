@@ -8,6 +8,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+McpScope = Literal["read", "write", "ai_run"]
+
+
+def scope_set(scope: Literal["read", "read_write"], ai_run: bool) -> frozenset[McpScope]:
+    """THE principal's scope set from a credential row: ``read`` always,
+    ``write`` for a ``read_write`` row, ``ai_run`` only when the row holds
+    that separate grant (ADR 0021)."""
+    scopes: set[McpScope] = {"read"}
+    if scope == "read_write":
+        scopes.add("write")
+    if ai_run:
+        scopes.add("ai_run")
+    return frozenset(scopes)
+
 
 class McpPrincipal(BaseModel):
     """The verified principal for one ``/mcp`` request: a PAT or an OAuth
@@ -23,7 +37,8 @@ class McpPrincipal(BaseModel):
 
     user_sub: UUID
     token_id: UUID
-    scope: Literal["read", "read_write"]
+    scopes: frozenset[McpScope]
+    """Built by ``scope_set`` from the credential row's ``scope`` and ``ai_run``."""
     token_expires_at: datetime
     project_ids: frozenset[UUID] | None
     """The token's project restriction; ``None`` = every project of its user.

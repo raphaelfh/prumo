@@ -91,7 +91,7 @@ async def _call_async(payload: ExtractionExportRequest) -> MagicMock:
     with (
         patch(f"{_EP}.ExtractionExportService", return_value=service),
         patch(f"{_EP}.create_storage_adapter", return_value=MagicMock()),
-        patch(f"{_EP}._is_queue_available", return_value=True),
+        patch("app.worker.queue_health.is_queue_available", return_value=True),
         patch(f"{_EP}._remember_export_owner"),
         patch(f"{_EP}.export_extraction_task") as task,
     ):

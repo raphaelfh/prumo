@@ -12,6 +12,9 @@
  *   neutral → null / legacy
  * - A "Locate in document" button when `onLocate` is provided (passed per
  *   citation as `onLocate(rank)` so each row targets its own span).
+ * - One of three location states (`citationState`): current (page chip, Locate
+ *   with page and block hints), stale (muted chip, "Location may have moved",
+ *   Locate by text only) or ungrounded (no chip, "Verify manually", no Locate).
  * - A copy-to-clipboard button.
  *
  * Legacy compatibility: a length-1 array with `attributionLabel: null`
@@ -43,6 +46,23 @@ const ATTRIBUTION_COPY: Record<
   unsupported: {copy: 'attributionUnsupported', tooltip: 'attributionTooltipUnsupported'},
   ungroundable: {copy: 'attributionUngroundable', tooltip: 'attributionTooltipUngroundable'},
 };
+
+type CitationState = 'current' | 'stale' | 'ungrounded';
+
+function citationState(c: EvidenceCitation): CitationState {
+  return !c.grounded ? 'ungrounded' : c.stale ? 'stale' : 'current';
+}
+
+/**
+ * Arguments for `useReaderLocate().locate` for one citation, or `null` when it
+ * has no location to search. A stale citation's page and block hints predate
+ * the re-parse, so it is searched by its text only.
+ */
+export function citationLocateArgs(c: EvidenceCitation): [string, number | null, number[]] | null {
+  const state = citationState(c);
+  if (state === 'ungrounded') return null;
+  return state === 'stale' ? [c.text, null, []] : [c.text, c.pageNumber ?? null, c.blockIds];
+}
 
 // =================== INTERFACES ===================
 
@@ -78,7 +98,11 @@ interface CitationRowProps {
 function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive, minimal}: CitationRowProps) {
   const {copied, copy} = useCopyToClipboard();
 
-  const label = citation.attributionLabel;
+  const state = citationState(citation);
+  // An ungrounded quote has no location: it always reads "Verify manually",
+  // whatever label it was stored with, and offers no Locate.
+  const label = state === 'ungrounded' ? 'ungroundable' : citation.attributionLabel;
+  const canLocate = onLocate !== undefined && state !== 'ungrounded';
   const isEntailed = label === 'entailed';
   const isUngroundable = label === 'ungroundable';
   const isAmber = label === 'weak' || label === 'unsupported' || isUngroundable;
@@ -104,10 +128,31 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive, m
         <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           <FileText className="h-4 w-4 shrink-0" />
           <span className="font-medium">{t('extraction', 'evidenceCited')}</span>
-          {citation.pageNumber !== null && citation.pageNumber !== undefined && (
-            <span className="px-2 py-1 bg-background rounded text-xs shrink-0">
+          {state !== 'ungrounded' && citation.pageNumber !== null && citation.pageNumber !== undefined && (
+            <span
+              className={cn(
+                'px-2 py-1 rounded text-xs shrink-0',
+                state === 'stale' ? 'border border-dashed border-border text-muted-foreground' : 'bg-background',
+              )}
+            >
               {t('extraction', 'pageLabel').replace('{{n}}', String(citation.pageNumber))}
             </span>
+          )}
+          {state === 'stale' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  role="note"
+                  className="text-xs text-muted-foreground shrink-0 rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {t('extraction', 'evidenceStale')}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p>{t('extraction', 'evidenceStaleTooltip')}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
           {badgeCopy !== null && (
             <Tooltip>
@@ -139,7 +184,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive, m
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {minimal && onLocate && <IconButton label={t('extraction', 'evidenceLocate')} icon={<MapPin />} aria-pressed={isActive} onClick={() => onLocate(citation.rank)} />}
+          {minimal && canLocate && <IconButton label={t('extraction', 'evidenceLocate')} icon={<MapPin />} aria-pressed={isActive} onClick={() => onLocate(citation.rank)} />}
           {showCopyButton && (
             <IconButton
               className="shrink-0"
@@ -161,7 +206,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive, m
       {/* Cited passage — the jump target when locate is available. Clicking it
           locates the passage in the reader; the popover stays open and the
           located citation keeps an active ring. */}
-      {onLocate && !minimal ? (
+      {canLocate && !minimal ? (
         <button
           type="button"
           data-active-citation={isActive ? 'true' : undefined}

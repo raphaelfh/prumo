@@ -37,11 +37,11 @@ from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
     ExtractionFieldType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.models.project import ProjectMemberRole

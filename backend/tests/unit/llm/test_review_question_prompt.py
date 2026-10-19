@@ -22,6 +22,7 @@ from app.llm.prompts import (
 )
 
 # --- goldens: the exact prompts this repo shipped before the block existed ---
+# (the "evidence" line is the one later edit: evidence became {block_ref, quote}).
 
 GOLDEN_SECTION_EXTRACTION = (
     "Extract the following information from the scientific article:\n"
@@ -39,8 +40,9 @@ GOLDEN_SECTION_EXTRACTION = (
     " (1 = very confident, 0 = not found/uncertain)\n"
     '- "reasoning": a brief explanation (1-2 sentences) of why you extracted this value or'
     " why you're uncertain\n"
-    '- "evidence": an object with "text" (short quoted passage from the article supporting'
-    ' the value) and "page_number" (integer, if known), or null\n'
+    '- "evidence": a list of up to 3 objects {"block_ref": the ref shown before the quoted'
+    ' block, e.g. "p3·b12", "quote": a short verbatim passage from that block}; [] when'
+    " status is not_found\n"
 )
 
 GOLDEN_QUALITY_ASSESSMENT = (
@@ -57,8 +59,9 @@ GOLDEN_QUALITY_ASSESSMENT = (
     '- "confidence": number between 0 and 1 (1 = very confident in the judgment, 0 = no'
     " signal in the article)\n"
     '- "reasoning": 1-2 sentences justifying the judgment against the F criterion\n'
-    '- "evidence": an object with "text" (short quoted passage supporting the judgment)'
-    ' and "page_number" (integer, if known), or null\n'
+    '- "evidence": a list of up to 3 objects {"block_ref": the ref shown before the quoted'
+    ' block, e.g. "p3·b12", "quote": a short verbatim passage from that block}; [] when'
+    " status is not_found\n"
 )
 
 #: ``entry_identification`` post-dates the review-context block, so its golden
@@ -73,11 +76,26 @@ GOLDEN_ENTRY_IDENTIFICATION = 'Analyze the following scientific article and iden
 #: that module's last version: a parameterized prompt is a different
 #: prompt), and the three on ``dev`` ``bf93a278`` before the trees train's B1
 #: gave a singleton under an entry the scope block and made the parent
-#: clause a chain. §IX: a changed prompt is a new version, so VERSION may
-#: equal none of these.
+#: clause a chain, and the two article-text prompts before block citation
+#: refs were explained in their system prompts, and the two before evidence
+#: became ``{block_ref, quote}``, and the two before the absent-reason rules
+#: replaced the bare not_found instruction. §IX: a changed prompt is a
+#: new version, so VERSION may equal none of these.
 RETIRED_VERSIONS = {
-    "section_extraction": {"d1d4d2483a3b", "bb62071982f1"},
-    "quality_assessment": {"6f04461c6f23", "19018644da80"},
+    "section_extraction": {
+        "d1d4d2483a3b",
+        "bb62071982f1",
+        "76166aeb85bc",
+        "44b61dd14d96",
+        "6381d05671f7",
+    },
+    "quality_assessment": {
+        "6f04461c6f23",
+        "19018644da80",
+        "95fca9f91a55",
+        "a4a2f3a7a04f",
+        "122e6e10fa62",
+    },
     "entry_identification": {"046fd17ca366", "f7cacd2a4efb"},
 }
 
@@ -159,8 +177,8 @@ def test_version_moved_from_every_retired_hash(module) -> None:
 #: recorded prompt version alone too; the template's format placeholders are
 #: hashed into VERSION, which is why they keep their names.
 CURRENT_VERSIONS = {
-    "section_extraction": "76166aeb85bc",
-    "quality_assessment": "95fca9f91a55",
+    "section_extraction": "3ce3d11a33ef",
+    "quality_assessment": "a62f2639cd9d",
     "entry_identification": "1e461aa1faeb",
 }
 

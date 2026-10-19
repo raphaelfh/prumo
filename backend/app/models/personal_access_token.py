@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Text, func, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,9 +42,13 @@ class PersonalAccessToken(Base, UUIDMixin):
     token_prefix: Mapped[str | None] = mapped_column(Text)
     token_hash: Mapped[str | None] = mapped_column(Text, unique=True)
     # Literal, not str: strict mypy (no pydantic plugin) rejects a str passed to the
-    # Literal-typed PersonalAccessTokenRead.scope / McpPrincipal.scope. Explicit Text
+    # Literal-typed PersonalAccessTokenRead.scope / scope_set(). Explicit Text
     # keeps the DDL a plain text column (verified: no alembic drift, mypy clean).
     scope: Mapped[Literal["read", "read_write"]] = mapped_column(Text, nullable=False)
+    # The separate grant to start AI extraction runs (ADR 0021); off by default.
+    ai_run: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -61,6 +65,10 @@ class PersonalAccessToken(Base, UUIDMixin):
         CheckConstraint(
             "expires_at > created_at AND expires_at <= created_at + interval '365 days'",
             name="expires_at_check",
+        ),
+        CheckConstraint(
+            "NOT ai_run OR expires_at <= created_at + interval '30 days'",
+            name="ai_run_lifetime_check",
         ),
         CheckConstraint(
             "project_ids IS NULL OR cardinality(project_ids) BETWEEN 1 AND 20",

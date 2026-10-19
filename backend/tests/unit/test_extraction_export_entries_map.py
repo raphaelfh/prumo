@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.services.exports.descriptors import build_entries
 
 

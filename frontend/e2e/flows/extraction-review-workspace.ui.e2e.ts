@@ -11,7 +11,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {expect, test as base, type Page} from '@playwright/test';
 import {loginViaUi} from '../_fixtures/auth';
 import {adminSelect} from '../_fixtures/supabase-admin';
-import {createReviewWorkspace, REVIEW_QUOTES, REVIEW_VALUE, SECONDARY_VALUE} from '../_fixtures/extraction-review-workspace';
+import {createReviewWorkspace, REVIEW_QUOTES, REVIEW_VALUE, SECONDARY_VALUE, UNAVAILABLE_QUOTE} from '../_fixtures/extraction-review-workspace';
 
 type Workspace = Awaited<ReturnType<typeof createReviewWorkspace>>;
 const test = base.extend<{workspace: Workspace}>({
@@ -153,7 +153,7 @@ test('two generations compare side by side, each source locates, unavailable anc
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   expect(axe.violations.map(violation => `${violation.id}: ${violation.nodes.map(node => `${node.target.join(' ')} — ${node.failureSummary ?? ''}`).join(' | ')}`)).toEqual([]);
 
-  // An anchor the reader cannot resolve: no flash, card and disclosure stay open, no alarm.
+  // A quote stored without an anchor is ungrounded: no Locate, "Verify manually", the card stays, no alarm.
   await rowFor(page, second.label).getByRole('button', {name: SECONDARY_VALUE, exact: true}).click();
   const secondDisclosure = disclosureFor(page, second);
   const latest = secondDisclosure.getByRole('article');
@@ -164,21 +164,14 @@ test('two generations compare side by side, each source locates, unavailable anc
   await expect(latest).toHaveCount(1);
   await expect(flashed).toHaveCount(0, {timeout: 4000});
   const secondSources = latest.getByRole('button', {name: 'Locate in document', exact: true});
-  await secondSources.nth(1).click();
-  const flashesAfterUnavailable = await page.evaluate(() => new Promise<number>(resolve => {
-    let seen = 0;
-    const count = () => document.querySelectorAll('[data-block-id].ring-1').length;
-    const observer = new MutationObserver(() => {seen += count();});
-    observer.observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']});
-    setTimeout(() => {observer.disconnect(); resolve(seen + count());}, 1000);
-  }));
-  expect(flashesAfterUnavailable).toBe(0);
-  await expect(latest).toBeVisible();
-  await expect(secondSources.nth(1)).toHaveAttribute('aria-pressed', 'true');
-  await expect(secondDisclosure.getByRole('alert')).toHaveCount(0);
-  await secondSources.nth(0).click();
-  await expect(flashed).toContainText(REVIEW_QUOTES[0]);
+  await expect(latest.getByText(UNAVAILABLE_QUOTE)).toBeVisible();
+  await expect(secondSources, 'only the grounded source offers Locate').toHaveCount(1);
   await expect(latest.getByText('Verify manually', {exact: true})).toBeVisible();
+  await expect(secondDisclosure.getByRole('alert')).toHaveCount(0);
+  await secondSources.click();
+  await expect(secondSources).toHaveAttribute('aria-pressed', 'true');
+  await expect(flashed).toContainText(REVIEW_QUOTES[0]);
+  await expect(latest).toBeVisible();
   await expect(latest.getByText('Verified', {exact: true})).toBeVisible();
   await scrollReviewPaneToTop(page);
   const scanDisclosure = async () => (await new AxeBuilder({page}).include('[role="toolbar"][aria-label="Review suggestion"]').include('table').include('[id^="review-disclosure-"]')

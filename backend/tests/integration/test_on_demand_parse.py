@@ -103,7 +103,7 @@ async def test_unparsed_article_parses_once_then_reuses(
     db_session_real: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """First call triggers parse (call count = 1); second call reuses stored markdown (count stays 1)."""
+    """First call triggers parse (call count = 1); second call reuses the persisted blocks (count stays 1)."""
     calls: dict[str, int] = {"n": 0}
     real_parse = pymupdf_parser.PymupdfParser.parse
 

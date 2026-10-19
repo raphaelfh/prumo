@@ -31,7 +31,7 @@ def _kickoff_stubs() -> Iterator[MagicMock]:
         )
 
     with (
-        patch(f"{_SE}._is_queue_available", return_value=True),
+        patch("app.worker.queue_health.is_queue_available", return_value=True),
         patch(f"{_SE}._check_request_scope", new=AsyncMock()),
         patch(
             f"{_SE}.ExtractionAttemptService.prepare_request", new=AsyncMock(side_effect=prepare)

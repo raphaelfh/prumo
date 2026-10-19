@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-06-24
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 adr_number: '0013'
 ---
@@ -37,6 +37,30 @@ superseding the "canvas-only" caveat for the markdown reader.
 
 The enriched tier (vision-enriched blocks + stored `markdown_enriched`) has not
 yet been built.
+
+## Amendment (2026-10)
+
+**Block refs in the prompt projection.** The extraction prompt's article text
+prefixes every kept block with its citation ref and a space: `[p{page}·b{block}]` before a
+paragraph or caption, after the marker of a heading (`## [p1·b0] Methods`) or a
+list item (`- [p2·b2] item`), and a range ref `[p{page}·b{first}–b{last}]` on
+its own line above a coalesced table. This is the same locator vocabulary
+`get_article_text` already prints and evidence cites, from one formatter
+(`chunk_locator_prefix`, with `block_range_prefix` as its table form).
+
+**Prompt-only.** The refs exist only in the prompt. `content_markdown` and the
+reader are byte-identical to before; a golden test pins the reader projection.
+
+**Still one serializer.** `render_blocks_to_markdown` takes a `block_refs`
+flag (off by default) rather than a second codepath, so the prompt's tables and
+the reader's tables stay the same GFM. The refs count against the assembly
+budget because the budget measures the serialized text.
+
+**Every prompt is assembled from blocks.** The shortcut that sent the stored
+`content_markdown` as the prompt when it fit the token budget is removed; the
+prompt is always built by the section-aware assembler over the persisted
+blocks. The system prompts say what a ref is; prompt versions change
+accordingly.
 
 ## Context and Problem Statement
 

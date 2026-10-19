@@ -78,6 +78,8 @@ class ExtractionBatchSummary(BaseModel):
     stop_code: str | None
     stop_message: str | None
     counts: ExtractionBatchCounts
+    started_by_agent: bool
+    agent_token_name: str | None
 
 
 class ExtractionBatchItemView(BaseModel):

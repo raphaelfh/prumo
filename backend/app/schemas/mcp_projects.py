@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.extraction import InstrumentCode
 from app.schemas.project_details import ProjectDetailsValues
@@ -29,6 +29,7 @@ class McpProjectList(BaseModel):
     projects: list[McpProjectListItem]
     caller_name: str | None
     token_scope: Literal["read", "read_write"]
+    token_ai_run: bool = Field(description="false: this token cannot start AI extraction runs.")
     token_expires_at: datetime
     token_project_ids: list[UUID] | None = None  # None = every project of the token's user
     note: str | None = None

@@ -1,6 +1,7 @@
 /**
- * Lazily fetches the stored block-projection markdown for an article — the exact
- * text the LLM received (ADR-0013). Powers the "view text sent" expand inside the
+ * Lazily fetches the stored block-projection markdown for an article — the text
+ * the extraction prompt is built from; the prompt adds block refs, which this
+ * markdown omits (ADR-0013). Powers the "view text sent" expand inside the
  * review popover's generation-details dialog, so it only fetches when the user
  * opens that block (`enabled`).
  */

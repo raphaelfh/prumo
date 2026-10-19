@@ -2,7 +2,7 @@
 
 A select/multiselect field stores the option CODE (e.g. "Y"), because the
 extraction output schema constrains the LLM to ``opt["value"]`` (see
-``app.llm.schema._enum_values`` / ``_value_type``). Handing that bare code to
+``app.llm.schema.option_codes`` / ``_value_type``). Handing that bare code to
 the entailment judge as ``CLAIM: "<field> = Y"`` is near-uninterpretable
 against prose, biasing coded select/boolean fields toward ``weak`` /
 ``unsupported`` regardless of the citation quality. Resolve the code to its
