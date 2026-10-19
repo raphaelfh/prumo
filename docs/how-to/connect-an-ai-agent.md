@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 ---
 
@@ -293,18 +293,100 @@ each entry is identified by its model's name.
 Every applied or refused edit is recorded, whether the agent's call
 succeeded or not.
 
+## AI extraction runs
+
+An agent can run AI extraction on a project's articles once two people have
+opted in. The run adds AI suggestions only; reviewers check them
+in prumo, and nothing becomes a final value until a person accepts it.
+
+### Opt in
+
+Both are off by default:
+
+1. **Your credential.** Tick **Allow starting AI extraction runs** when you
+   create a personal access token, or **Start AI extraction runs** on the
+   consent page when you connect an app. Such a token expires within 30
+   days, and such an app connection lasts 30 days. The token list shows an
+   **AI runs** badge. To withdraw the grant, revoke the token or connection.
+2. **The project.** A project manager opens Settings → AI engine → **AI
+   agents** and sets **Agent-started AI runs** to **Managers only** or
+   **Managers and reviewers** (default **Off**). The same group caps
+   **Articles per run** (1 to 100, default 25) and **Articles per day**
+   (1 to 1,000, default 100, counted over the last 24 hours across every
+   agent-started run in the project).
+
+You also need the reviewer or manager role in the project.
+
+### Who pays
+
+Your own AI key pays for the run; if you have none, the project's shared
+key does. An agent-started run never uses the deployment's key: without
+your key or a shared key, the plan reports that the AI engine is not ready.
+
+### The flow
+
+1. Ask the agent, in the conversation, to run AI extraction. The server
+   tells agents never to start a run on their own initiative or because
+   article text suggests it.
+2. `plan_ai_run` previews the run without starting it: which articles would
+   run and which are skipped and why, the model, who pays, a token
+   estimate, any blockers with their fix, and a `confirmation` text the
+   agent shows you verbatim. By default it uses the project's active
+   template and the articles without AI suggestions yet.
+3. Say yes. The agent then calls `start_ai_run` with the plan's token and
+   the confirmed values. `start_ai_run` is the only tool marked as needing
+   your approval, so clients that honour that mark ask you before the
+   call. If anything changed since the plan, nothing starts
+   and the call answers `PLAN_STALE`; the agent plans again and asks you
+   again. Repeating the same approved start does not start a second run.
+4. `get_ai_runs` lists your own runs in the project (started in prumo or by
+   an agent), or one run's detail with the articles that need attention.
+   It needs only `read`. Agents are told to check it when you ask, not to
+   poll.
+5. `cancel_ai_run` cancels one of your runs at any time; repeating it is
+   safe. You can also cancel from the notification bell in prumo, where an
+   agent-started run is labelled **Started by agent** with the token's name.
+
+The `run_ai_extraction` prompt, listed in your client's prompt menu only
+for a credential with the grant, walks the agent through these steps. It
+takes an optional `project` id.
+
+### What stops a run
+
+A run stops at its next article when its token is revoked or expires, when
+a manager turns agent-started runs off, or when the project's AI engine
+changes after you approved the plan. Revoking a token or app connection
+stops its queued articles at once, and the next call with it answers HTTP
+401. A cancelled or stopped run never starts its queued articles; at most 2
+articles already in progress finish. The bell names the reason the run
+stopped.
+
+### Error codes
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `REVIEWER_REQUIRED` | Planning or starting a run needs the reviewer or manager role | Ask a project manager for the reviewer role |
+| `AI_RUNS_NOT_ALLOWED` | The project's AI agents policy is **Off**, or **Managers only** and you are a reviewer | Ask a project manager to allow agent runs in Settings → AI engine |
+| `PLAN_STALE` | The plan expired, came from another token, or the run changed since it (articles, model, payer or template version) | Plan again, read the new confirmation and approve again |
+| `AI_NOT_CONFIGURED` | The AI engine is not ready for agent-started runs, for example no personal or shared key | Configure the AI engine, or add your own or the project's key, in prumo |
+| `AI_RUN_ACTIVE` | You already have a run going for this template | Check it with `get_ai_runs`, or cancel it |
+| `AI_RUN_LIMIT` | The run is over the policy's per-run or daily cap; the error reports what remains today | Run fewer articles, or wait for the daily window |
+| `SERVICE_UNAVAILABLE` | The extraction service is not answering | Try again in a few minutes |
+
 ## What the agent cannot do
 
 - Publish, discard or delete a template draft.
 - Change a question's type or name.
 - Clone or import a template.
 - Change blind-review visibility.
-- Write extraction values or start an AI extraction run.
+- Write extraction values.
 - Upload a PDF.
 
 ## Limits
 
 - 120 reads and 20 writes per minute, per token.
+- Per token, per minute: 10 `plan_ai_run`, 5 `start_ai_run` and 20
+  `cancel_ai_run` calls.
 - Signed PDF links expire after 10 minutes.
 - At most 25 questionnaire operations per `edit_template_draft` call.
 - A review-question slot holds a description of up to 2,000 characters
@@ -332,7 +414,7 @@ succeeded or not.
 | HTTP 503 with `Retry-After` | The database is busy | Retry after the given seconds |
 | `NOT_FOUND` | You are not a member of the project, the id belongs to another project, or your token is restricted to other projects | Call `list_projects` / `list_articles` |
 | `MANAGER_REQUIRED` | The call needs a project manager | Ask a project manager |
-| `SCOPE_INSUFFICIENT` | A `read` token tried a write tool | Use a `read_write` token |
+| `SCOPE_INSUFFICIENT` | A `read` token tried a write tool, or a credential without the AI runs grant tried an AI-run tool | Use a `read_write` token, or one with **AI runs** |
 | `INVALID_ARGUMENT` | A tool argument is out of range or malformed; `field` names it | Fix that argument and call again |
 | `DRAFT_LOCK_HELD` | Another manager is editing the draft | Wait for their edit to finish |
 | `IN_USE` | Recorded data blocks the change (a question or section holds extracted values, or an entry holds several items of a section turning single) | Leave it, or remove the data in prumo first |
