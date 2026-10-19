@@ -40,10 +40,11 @@ class _PgLike(Exception):
 
 
 def test_every_code_renders_with_its_retryability() -> None:
-    assert len(McpErrorCode) == 17
+    assert len(McpErrorCode) == 24
     assert {c.value for c in McpErrorCode} == {
         "NOT_FOUND",
         "MANAGER_REQUIRED",
+        "REVIEWER_REQUIRED",
         "SCOPE_INSUFFICIENT",
         "INVALID_ARGUMENT",
         "DRAFT_LOCK_HELD",
@@ -59,6 +60,12 @@ def test_every_code_renders_with_its_retryability() -> None:
         "RETRY",
         "RATE_LIMITED",
         "INTERNAL_ERROR",
+        "AI_RUNS_NOT_ALLOWED",
+        "PLAN_STALE",
+        "AI_NOT_CONFIGURED",
+        "AI_RUN_ACTIVE",
+        "AI_RUN_LIMIT",
+        "SERVICE_UNAVAILABLE",
     }
     for code in McpErrorCode:
         r = error_result(McpToolError(code, "m"))
@@ -66,7 +73,13 @@ def test_every_code_renders_with_its_retryability() -> None:
         assert r.structured_content is not None
         assert r.structured_content["code"] == code.value
         assert r.structured_content["retryable"] is (
-            code in {McpErrorCode.DUPLICATE_NAME, McpErrorCode.RETRY, McpErrorCode.RATE_LIMITED}
+            code
+            in {
+                McpErrorCode.DUPLICATE_NAME,
+                McpErrorCode.RETRY,
+                McpErrorCode.RATE_LIMITED,
+                McpErrorCode.SERVICE_UNAVAILABLE,
+            }
         )
         assert isinstance(r.structured_content["next_step"], str)
         assert r.structured_content["next_step"] != ""

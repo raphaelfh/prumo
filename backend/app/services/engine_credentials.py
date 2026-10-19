@@ -81,8 +81,15 @@ def _unavailable(connection_id: str) -> ConnectionUnavailableError:
 
 
 async def resolve_engine_credentials(
-    db: AsyncSession, *, user_id: UUID | str, project_id: UUID, engine: LlmTarget
+    db: AsyncSession,
+    *,
+    user_id: UUID | str,
+    project_id: UUID,
+    engine: LlmTarget,
+    allow_global_key: bool = True,
 ) -> EngineCredentials:
+    """``allow_global_key=False`` (agent-started batches): a catalogue engine
+    never resolves to the deployment key; host engines never use it anyway."""
     caller = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
     if engine.connection_id is not None:
         try:
@@ -101,7 +108,11 @@ async def resolve_engine_credentials(
             output_mode=capabilities_of(row).output_mode,
         )
     resolved = await resolve_provider_key(
-        db, provider=engine.provider, project_id=project_id, user_id=caller
+        db,
+        provider=engine.provider,
+        project_id=project_id,
+        user_id=caller,
+        allow_global=allow_global_key,
     )
     return EngineCredentials(
         api_key=resolved.key if resolved is not None else None,
@@ -120,6 +131,7 @@ async def rekey_for_adopted_engine(
     engine: LlmTarget,
     current: EngineCredentials,
     keyed_for: str | None,
+    allow_global_key: bool = True,
 ) -> EngineCredentials | None:
     """Credentials for ``engine`` when ``current`` was resolved for another
     engine — ``None`` when they still fit. The identity is the PAIR
@@ -132,15 +144,25 @@ async def rekey_for_adopted_engine(
     elif keyed_for == engine.provider and current.connection_id == engine.connection_id:
         return None
     return await resolve_engine_credentials(
-        db, user_id=user_id, project_id=project_id, engine=engine
+        db,
+        user_id=user_id,
+        project_id=project_id,
+        engine=engine,
+        allow_global_key=allow_global_key,
     )
 
 
-async def assert_engine_ready(db: AsyncSession, *, project_id: UUID, user_id: UUID) -> LlmTarget:
+async def assert_engine_ready(
+    db: AsyncSession, *, project_id: UUID, user_id: UUID, allow_global: bool = True
+) -> LlmTarget:
     """The ONE kickoff precheck: the engine resolves and a credential exists.
 
+    ``allow_global=False`` refuses a catalogue engine whose only credential is
+    the deployment key (agent-started runs); host engines never use it.
+
     Read-only: no decryption, no ``last_used_at`` write, no provider call. The
-    worker's execution-time :func:`resolve_engine_credentials` is unchanged.
+    worker refuses the deployment key again at execution
+    (:func:`resolve_engine_credentials` with ``allow_global_key=False``).
     """
     engine = await resolve_engine(db, project_id, user_id)
     if engine.connection_id is not None:
@@ -154,6 +176,9 @@ async def assert_engine_ready(db: AsyncSession, *, project_id: UUID, user_id: UU
     available = await availability_map(
         db, project_id=project_id, user_id=user_id, providers=[engine.provider]
     )
-    if available[engine.provider] is None:
+    rung = available[engine.provider]
+    if rung is None:
         raise MissingCredentialError(engine.provider)
+    if rung == "global" and not allow_global:
+        raise MissingCredentialError(engine.provider, reason="DEPLOYMENT_KEY_NOT_ALLOWED")
     return engine

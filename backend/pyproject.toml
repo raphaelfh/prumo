@@ -34,7 +34,7 @@ dependencies = [
     "supabase>=2.0.0",
     # AI/LLM
     "openai>=1.0.0",
-    "pydantic-ai-slim[openai,anthropic,google]>=1.107.0,<2.0.0",
+    "pydantic-ai-slim[openai,anthropic,google]>=1.107.7,<2.0.0",
     "logfire[fastapi,celery]>=3.0.0",
     "pyyaml>=6.0",
     # PDF Processing
@@ -43,7 +43,7 @@ dependencies = [
     # 3.9 (PP-OCRv6) broke prod via docling's OCR default. OCR is now disabled in
     # DoclingParser so rapidocr drift is harmless, but pinning docling itself
     # stops its own API/model drift. Bump deliberately and re-test.
-    "docling==2.104.0",
+    "docling==2.132.0",
     # Observability
     "structlog>=24.0.0",
     # Rate Limiting
@@ -202,6 +202,7 @@ ignore_decorators = [
     "@event.listens_for",
     "@*.connect",
     "@agent_tool",
+    "@agent_prompt",
 ]
 # `cls` is the classmethod receiver Pydantic's @field_validator mandates —
 # a validator that ignores it still cannot drop the parameter, so the

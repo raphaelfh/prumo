@@ -49,6 +49,15 @@ def advance_extraction_batch(
     run_task(run)
 
 
+def kick_batch(batch_id: UUID, *, reenqueue_stale: bool = False) -> None:
+    """Enqueue one advance of a COMMITTED batch. Never raises: a failed kick
+    leaves the batch reading stalled, and Resume recovers it."""
+    try:
+        advance_extraction_batch.delay(str(batch_id), reenqueue_stale)
+    except Exception:
+        logger.exception("extraction_batch.kick_failed", batch_id=str(batch_id))
+
+
 # ``rate_limit=None`` in the decorator CANNOT express "no rate limit":
 # ``Task.bind()`` walks ``Task.from_config`` and replaces every attribute that
 # is still None with the app default — here ``task_default_rate_limit``

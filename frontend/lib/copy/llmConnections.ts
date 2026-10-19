@@ -91,4 +91,21 @@ export const llmConnections = {
     sharedRemoveError: 'Failed to remove the shared key',
     servesLlm: 'LLM',
     servesParsing: 'parsing',
+
+    // --- Project Settings → AI engine → AI agents policy ---
+    agentsTitle: 'AI agents',
+    agentsHint: 'What a connected AI agent (MCP) may start in this project for a member who allowed it on their token or app.',
+    agentsLoadError: "Couldn't load the AI agents policy.",
+    agentRunsLabel: 'Agent-started AI runs',
+    agentRunsOff: 'Off',
+    agentRunsManagers: 'Managers only',
+    agentRunsReviewers: 'Managers and reviewers',
+    maxArticlesLabel: 'Articles per run',
+    maxArticlesRange: 'Enter a whole number from 1 to 100.',
+    dailyCapLabel: 'Articles per day',
+    dailyCapHint: 'Across every agent-started run in this project.',
+    dailyCapRange: 'Enter a whole number from 1 to 1000.',
+    agentsSaveButton: 'Save policy',
+    agentsSaveSuccess: 'AI agents policy updated.',
+    agentsSaveError: 'Failed to update the AI agents policy',
 } as const;

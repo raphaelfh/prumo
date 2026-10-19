@@ -52,6 +52,11 @@ export const personalAccessTokens = {
     neverUsed: 'Never used',
     expiredBadge: 'Expired {{date}}',
     revokedBadge: 'Revoked {{date}}',
+    aiRunsBadge: 'AI runs',
+    aiRunRowLabel: 'AI runs',
+    aiRunLabel: 'Allow starting AI extraction runs',
+    aiRunHint:
+        "Your own AI key pays for these runs, or else the project's shared key does. Reviewers of those articles see the AI suggestions. Works only in projects whose manager allowed agent runs. Expires within 30 days.",
     revokeAria: 'Revoke token',
     revokeTitle: 'Revoke token?',
     revokeDescription: '"{{name}}" stops working immediately. Agents using it lose access.',

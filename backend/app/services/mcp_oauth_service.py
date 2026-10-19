@@ -54,7 +54,7 @@ from app.core.error_handler import AppError, NotFoundError
 from app.core.integrity import violates_constraint
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
-from app.schemas.mcp_auth import McpPrincipal
+from app.schemas.mcp_auth import McpPrincipal, scope_set
 from app.schemas.mcp_oauth import (
     OAuthConnectionRead,
     OAuthConsentRefusalCode,
@@ -71,8 +71,11 @@ from app.services.pat_service import (
     user_locked_out,
 )
 
-# The granting scopes: what a connection can hold (``read`` / ``read_write``).
-OAUTH_SCOPES: tuple[str, ...] = ("read", "write")
+# The granting scopes: what a connection can hold (``read`` / ``read_write``,
+# plus the separate ``ai_run`` grant).
+OAUTH_SCOPES: tuple[str, ...] = ("read", "write", "ai_run")
+# What a client that names no scope registers for: never ``ai_run``.
+DEFAULT_OAUTH_SCOPES: tuple[str, ...] = ("read", "write")
 
 # A no-op marker: accepted at registration and authorize so hosts that ask for
 # refresh tokens by scope can connect; never granted (refresh tokens are always
@@ -85,6 +88,8 @@ REQUEST_TTL = timedelta(minutes=10)
 CODE_TTL = timedelta(minutes=5)
 # How long a connection lives before the user must approve the app again.
 CONNECTION_TTL = timedelta(days=90)
+# An ``ai_run`` connection's lifetime (``ai_run_lifetime_check``).
+AI_RUN_CONNECTION_TTL = timedelta(days=30)
 # How long an access token is valid; a refresh token lives as long as its connection.
 ACCESS_TTL = timedelta(hours=1)
 ACCESS_PREFIX = "prumo_oat_"
@@ -156,7 +161,7 @@ async def register_client(db: AsyncSession, info: OAuthClientInformationFull) ->
             redirect_uris=redirect_uris,
             # The SDK applies the default scopes when none was sent; an empty
             # one reaches us as None.
-            scope=info.scope or " ".join(OAUTH_SCOPES),
+            scope=info.scope or " ".join(DEFAULT_OAUTH_SCOPES),
         )
     )
     await db.flush()
@@ -212,7 +217,8 @@ async def create_request(
             code_challenge=params.code_challenge,
             state=params.state,
             # Granting scopes only, in canonical order: read always (the fixed
-            # consent box), write when asked; offline_access is never stored.
+            # consent box), write and ai_run when asked; offline_access is
+            # never stored.
             requested_scopes=[s for s in OAUTH_SCOPES if s == _ALWAYS_GRANTED or s in asked],
             resource=resource,
             expires_at=datetime.now(UTC) + REQUEST_TTL,
@@ -263,6 +269,7 @@ async def get_consent_request(db: AsyncSession, *, request_id: UUID) -> OAuthCon
         redirect_host=urlsplit(row.redirect_uri).netloc,
         requested_scopes=list(row.requested_scopes),
         offers_write="write" in row.requested_scopes,
+        offers_ai_run="ai_run" in row.requested_scopes,
         expires_at=row.expires_at,
     )
 
@@ -275,14 +282,22 @@ async def _update_request(db: AsyncSession, request_id: UUID, **values: object) 
 
 
 async def decide_request(
-    db: AsyncSession, *, request_id: UUID, user_id: UUID, approve: bool, write: bool
+    db: AsyncSession,
+    *,
+    request_id: UUID,
+    user_id: UUID,
+    approve: bool,
+    write: bool,
+    ai_run: bool,
 ) -> str:
     """Record ``user_id``'s decision; the redirect back to the app.
 
     A deny redirects with ``error=access_denied``. An approval replaces the
     user's previous connection to the app (one unrevoked per user and app),
     creates the new one and mints a single-use authorization code, stored
-    only as its hash. Never commits.
+    only as its hash. ``write`` and ``ai_run`` are granted only when the
+    request asked for them; an ``ai_run`` connection lives 30 days. The grant
+    is fixed here, at insert, and never updated. Never commits.
     """
     row = await _undecided_request(db, request_id, lock=True)
     now = datetime.now(UTC)
@@ -304,6 +319,7 @@ async def decide_request(
         await revoke_credential(db, previous)
 
     granted = "read_write" if write and "write" in row.requested_scopes else "read"
+    grant_ai_run = ai_run and "ai_run" in row.requested_scopes
     name = await _client_name(db, row.client_id)
     try:
         connection_id = (
@@ -315,7 +331,9 @@ async def decide_request(
                     oauth_client_id=row.client_id,
                     name=name,
                     scope=granted,
-                    expires_at=func.now() + CONNECTION_TTL,
+                    ai_run=grant_ai_run,
+                    expires_at=func.now()
+                    + (AI_RUN_CONNECTION_TTL if grant_ai_run else CONNECTION_TTL),
                     project_ids=None,
                 )
                 .returning(PersonalAccessToken.id)
@@ -347,6 +365,7 @@ def _connection_read(row: PersonalAccessToken, status: TokenStatus) -> OAuthConn
         id=row.id,
         client_name=row.name,
         scope=row.scope,
+        ai_run=row.ai_run,
         status=status,
         created_at=row.created_at,
         last_used_at=row.last_used_at,
@@ -384,9 +403,15 @@ async def revoke_connection(
 # --------------------------------------------------------------------------- tokens
 
 
-def granted_scopes(scope: str) -> list[str]:
-    """A connection's ``scope`` (``read`` / ``read_write``) as OAuth scopes."""
-    return list(OAUTH_SCOPES) if scope == "read_write" else [_ALWAYS_GRANTED]
+def granted_scopes(scope: str, ai_run: bool) -> list[str]:
+    """A connection's ``scope`` (``read`` / ``read_write``) and ``ai_run``
+    grant as OAuth scopes: ``ai_run`` only when the row holds it."""
+    scopes = [_ALWAYS_GRANTED]
+    if scope == "read_write":
+        scopes.append("write")
+    if ai_run:
+        scopes.append("ai_run")
+    return scopes
 
 
 def _invalid_grant() -> TokenError:
@@ -442,7 +467,7 @@ async def _issue_pair(
         token_type="Bearer",
         expires_in=int(ACCESS_TTL.total_seconds()),
         refresh_token=refresh,
-        scope=" ".join(granted_scopes(connection.scope)),
+        scope=" ".join(granted_scopes(connection.scope, connection.ai_run)),
     )
 
 
@@ -457,19 +482,19 @@ async def load_code(db: AsyncSession, *, client_id: str, code: str) -> Authoriza
         return None
     found = (
         await db.execute(
-            select(McpOAuthRequest, PersonalAccessToken.scope)
+            select(McpOAuthRequest, PersonalAccessToken.scope, PersonalAccessToken.ai_run)
             .join(PersonalAccessToken, PersonalAccessToken.id == McpOAuthRequest.connection_id)
             .where(McpOAuthRequest.code_hash == hash_secret(code), McpOAuthRequest.client_id == key)
         )
     ).one_or_none()
     if found is None:
         return None
-    row, scope = found
+    row, scope, ai_run = found
     # decide_request writes the hash, its expiry and the user together.
     assert row.code_expires_at is not None and row.user_id is not None
     return AuthorizationCode(
         code=code,
-        scopes=granted_scopes(scope),
+        scopes=granted_scopes(scope, ai_run),
         expires_at=row.code_expires_at.timestamp(),
         client_id=str(row.client_id),
         code_challenge=row.code_challenge,
@@ -544,7 +569,7 @@ async def load_refresh(db: AsyncSession, *, client_id: str, token: str) -> Refre
         client_id=str(connection.oauth_client_id),
         # offline_access listed so a refresh repeating it passes the SDK's
         # subset check; it is never echoed back.
-        scopes=[*granted_scopes(connection.scope), OFFLINE_ACCESS],
+        scopes=[*granted_scopes(connection.scope, connection.ai_run), OFFLINE_ACCESS],
         expires_at=int(row.expires_at.timestamp()),
         resource=row.resource,
         subject=str(connection.user_id),
@@ -618,7 +643,7 @@ async def load_access(db: AsyncSession, token: str) -> AccessToken | None:
     return AccessToken(
         token=token,
         client_id=str(connection.oauth_client_id),
-        scopes=granted_scopes(connection.scope),
+        scopes=granted_scopes(connection.scope, connection.ai_run),
         expires_at=int(row.expires_at.timestamp()),
         resource=row.resource,
         subject=str(connection.user_id),
@@ -641,7 +666,7 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
     return McpPrincipal(
         user_sub=connection.user_id,
         token_id=connection.id,
-        scope=connection.scope,
+        scopes=scope_set(connection.scope, connection.ai_run),
         token_expires_at=connection.expires_at,
         project_ids=None if connection.project_ids is None else frozenset(connection.project_ids),
     )

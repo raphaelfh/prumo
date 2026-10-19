@@ -128,6 +128,7 @@ def test_score_doc_carries_reading_order_chrome_zw_and_timing() -> None:
     s = score_doc(_doc(), _metric_run())
     assert s.column_inversions == 1
     assert s.paragraphs_matched == 2
+    assert s.order_breaks == 1
     assert s.chrome_leakage == 3
     assert s.zw_chars == 2
     assert s.parse_seconds == 1.25
@@ -145,6 +146,7 @@ def test_markdown_carries_the_new_metric_columns() -> None:
     header = next(line for line in md.splitlines() if line.startswith("| Parser |"))
     for col in (
         "Column inversions",
+        "Order breaks",
         "Chrome leakage",
         "ZW chars",
         "p95 parse (s)",
@@ -152,7 +154,7 @@ def test_markdown_carries_the_new_metric_columns() -> None:
     ):
         assert col in header
     row = next(line for line in md.splitlines() if line.startswith("| pymupdf |"))
-    assert "| 2 | 6 | 4 | 1.25 | 123.4 |" in row
+    assert "| 2 | 2 | 6 | 4 | 1.25 | 123.4 |" in row
 
 
 def test_csv_has_one_row_per_parser_and_paper_with_new_metrics(tmp_path: Path) -> None:
@@ -161,6 +163,7 @@ def test_csv_has_one_row_per_parser_and_paper_with_new_metrics(tmp_path: Path) -
     assert [(r["parser"], r["doc_id"]) for r in rows] == [("pymupdf", "d1"), ("pymupdf", "d2")]
     assert rows[0]["column_inversions"] == "1"
     assert rows[0]["paragraphs_matched"] == "2"
+    assert rows[0]["order_breaks"] == "1"
     assert rows[0]["chrome_leakage"] == "3"
     assert rows[0]["zw_chars"] == "2"
     assert rows[0]["parse_seconds"] == "1.250"

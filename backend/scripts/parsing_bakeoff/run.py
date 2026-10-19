@@ -37,6 +37,7 @@ from parsing_bakeoff.scoring import (
     column_inversions,
     match_boxes,
     maxrss_to_mb,
+    order_breaks,
     recall_set,
     zw_char_count,
 )
@@ -59,6 +60,7 @@ def score_doc(doc: EvalDoc, run: ParseRun) -> DocScore:
         reference_recall=recall_set(run.pred_references, doc.gold.references),
         column_inversions=inversions,
         paragraphs_matched=matched,
+        order_breaks=order_breaks(run.blocks, doc.gold.paragraphs),
         chrome_leakage=chrome_leakage(run.blocks, run.page_heights),
         zw_chars=zw_char_count(run.blocks),
         parse_seconds=run.elapsed_s,
@@ -142,10 +144,10 @@ def format_markdown(eval_set_name: str, reports: list[ParserReport]) -> str:
         "Quality means exclude errored docs; cost/latency include them.",
         "",
         "| Parser | Docs | Errors | Table F1 | Bbox F1 | Section recall | Ref recall "
-        "| Mean latency (s) | Total cost (USD) | Column inversions | Chrome leakage "
-        "| ZW chars | p95 parse (s) | Peak RSS (MB) |",
+        "| Mean latency (s) | Total cost (USD) | Column inversions | Order breaks "
+        "| Chrome leakage | ZW chars | p95 parse (s) | Peak RSS (MB) |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: "
-        "| ---: | ---: | ---: | ---: | ---: |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for r in _ranked(reports):
         rss = "n/a" if r.peak_rss_mb is None else f"{r.peak_rss_mb:.1f}"
@@ -153,7 +155,7 @@ def format_markdown(eval_set_name: str, reports: list[ParserReport]) -> str:
             f"| {r.parser} | {r.n_docs} | {r.n_errors} | {r.mean_table_f1:.3f} | "
             f"{r.mean_bbox_f1:.3f} | {r.mean_section_recall:.3f} | "
             f"{r.mean_reference_recall:.3f} | {r.mean_latency_s:.2f} | "
-            f"{r.total_cost_usd:.4f} | {r.total_column_inversions} | "
+            f"{r.total_cost_usd:.4f} | {r.total_column_inversions} | {r.total_order_breaks} | "
             f"{r.total_chrome_leakage} | {r.total_zw_chars} | "
             f"{r.p95_parse_seconds:.2f} | {rss} |"
         )
@@ -176,6 +178,7 @@ def write_outputs(
         "reference_recall",
         "column_inversions",
         "paragraphs_matched",
+        "order_breaks",
         "chrome_leakage",
         "zw_chars",
         "parse_seconds",
@@ -197,6 +200,7 @@ def write_outputs(
                         f"{d.reference_recall:.4f}",
                         d.column_inversions,
                         d.paragraphs_matched,
+                        d.order_breaks,
                         d.chrome_leakage,
                         d.zw_chars,
                         f"{d.parse_seconds:.3f}",

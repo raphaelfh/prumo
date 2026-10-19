@@ -48,6 +48,7 @@ from app.services.extraction_export_service import (
     ExtractionExportService,
 )
 from app.utils.rate_limiter import limiter
+from app.worker import queue_health
 from app.worker.tasks.extraction_export_tasks import export_extraction_task
 
 router = APIRouter()
@@ -70,18 +71,6 @@ _EXPORT_OWNER_TTL_SECONDS = 3600
 # Redis helpers — mirror articles_export so cancel/status can resolve
 # ownership without trusting the caller-supplied job id alone.
 # ----------------------------------------------------------------------
-
-
-def _is_queue_available() -> bool:
-    try:
-        Redis.from_url(
-            settings.REDIS_URL,
-            socket_connect_timeout=0.25,
-            socket_timeout=0.25,
-        ).ping()
-        return True
-    except Exception:
-        return False
 
 
 def _remember_export_owner(job_id: str, user_id: str) -> None:
@@ -261,7 +250,7 @@ async def start_extraction_export(
         )
 
     # --- async path -------------------------------------------------------
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return _envelope_failure(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             code="SERVICE_UNAVAILABLE",

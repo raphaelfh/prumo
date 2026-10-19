@@ -6,6 +6,7 @@ exchange, refresh rotation, access-token lookup, revocation and pruning."""
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -29,6 +30,7 @@ from app.models.personal_access_token import PersonalAccessToken
 from app.services import mcp_oauth_service as svc
 from app.services.pat_service import TokenNotFoundError, hash_secret, revoke_credential
 from tests.integration.conftest import SEED
+from tests.integration.helpers.batch_fixtures import batch_halt, make_agent_batch
 from tests.integration.helpers.pat_rows import (
     insert_oauth_client,
     insert_oauth_connection,
@@ -40,6 +42,7 @@ from tests.integration.mcp.oauth_flow import approve
 BASE_URL = "http://localhost:8000"
 MCP_URL = BASE_URL + "/mcp"
 CLAUDE_CB = "https://claude.ai/api/mcp/auth_callback"
+_ASKS_AI_RUN = ("read", "write", "ai_run")
 
 
 @pytest.fixture(autouse=True)
@@ -150,6 +153,29 @@ async def test_register_client_stores_the_client(db_session: AsyncSession) -> No
     assert row.client_name == "Claude"
     assert row.scope == "read write"
     assert row.redirect_uris == [CLAUDE_CB, "http://localhost:1/cb"]
+
+
+async def test_register_client_without_scope_stores_read_write(db_session: AsyncSession) -> None:
+    info = _info(scope=None)
+    await svc.register_client(db_session, info)
+
+    row = await db_session.get(McpOAuthClient, UUID(info.client_id))
+    assert row is not None
+    assert row.scope == "read write"
+
+
+async def test_create_request_stores_ai_run_only_when_asked(db_session: AsyncSession) -> None:
+    client = await _registered(db_session, scope="read write ai_run")
+    asked = await svc.create_request(
+        db_session, client=client, params=_params(scopes=["read", "write", "ai_run"])
+    )
+    not_asked = await svc.create_request(db_session, client=client, params=_params())
+
+    assert (await db_session.get(McpOAuthRequest, asked)).requested_scopes == list(_ASKS_AI_RUN)  # type: ignore[union-attr]
+    assert (await db_session.get(McpOAuthRequest, not_asked)).requested_scopes == [  # type: ignore[union-attr]
+        "read",
+        "write",
+    ]
 
 
 async def test_register_client_defaults_and_caps_the_name(db_session: AsyncSession) -> None:
@@ -330,7 +356,12 @@ async def test_decide_request_approve_creates_the_connection_and_a_code(
     request_id = await insert_oauth_request(db_session, client_id=client_id)
 
     url = await svc.decide_request(
-        db_session, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=True
+        db_session,
+        request_id=request_id,
+        user_id=SEED.primary_profile,
+        approve=True,
+        write=True,
+        ai_run=False,
     )
 
     assert url.startswith(CLAUDE_CB + "?")
@@ -361,7 +392,12 @@ async def test_decide_request_deny_redirects_with_access_denied(db_session: Asyn
     request_id = await insert_oauth_request(db_session, client_id=client_id)
 
     url = await svc.decide_request(
-        db_session, request_id=request_id, user_id=SEED.primary_profile, approve=False, write=False
+        db_session,
+        request_id=request_id,
+        user_id=SEED.primary_profile,
+        approve=False,
+        write=False,
+        ai_run=False,
     )
 
     assert url.startswith(CLAUDE_CB + "?")
@@ -394,7 +430,12 @@ async def test_decide_request_approve_revokes_the_previous_connection(
     request_id = await insert_oauth_request(db_session, client_id=client_id)
 
     await svc.decide_request(
-        db_session, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+        db_session,
+        request_id=request_id,
+        user_id=SEED.primary_profile,
+        approve=True,
+        write=False,
+        ai_run=False,
     )
 
     assert (await _connection(db_session, previous)).revoked_at is not None
@@ -408,7 +449,12 @@ async def _decided(db: AsyncSession) -> UUID:
     client_id = await insert_oauth_client(db)
     request_id = await insert_oauth_request(db, client_id=client_id)
     await svc.decide_request(
-        db, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+        db,
+        request_id=request_id,
+        user_id=SEED.primary_profile,
+        approve=True,
+        write=False,
+        ai_run=False,
     )
     await db.flush()
     return request_id
@@ -448,6 +494,7 @@ async def test_decide_request_refuses(db_session: AsyncSession, make: Any, error
             user_id=SEED.primary_profile,
             approve=True,
             write=True,
+            ai_run=False,
         )
 
 
@@ -494,6 +541,61 @@ async def test_get_consent_request_returns_the_view(
     assert view.expires_at > datetime.now(UTC)
 
 
+@pytest.mark.parametrize(
+    ("requested", "ai_run", "granted", "days"),
+    [
+        (_ASKS_AI_RUN, True, True, 30),
+        (_ASKS_AI_RUN, False, False, 90),
+        (("read", "write"), True, False, 90),
+    ],
+    ids=["asked-and-ticked", "asked-unticked", "ticked-not-asked"],
+)
+async def test_decide_request_grants_ai_run_only_when_asked_and_ticked(
+    db_session: AsyncSession,
+    requested: tuple[str, ...],
+    ai_run: bool,
+    granted: bool,
+    days: int,
+) -> None:
+    client_id = await insert_oauth_client(db_session)
+    request_id = await insert_oauth_request(
+        db_session, client_id=client_id, requested_scopes=requested
+    )
+
+    await svc.decide_request(
+        db_session,
+        request_id=request_id,
+        user_id=SEED.primary_profile,
+        approve=True,
+        write=True,
+        ai_run=ai_run,
+    )
+
+    request = await _request(db_session, request_id)
+    assert request.connection_id is not None
+    connection = await _connection(db_session, request.connection_id)
+    assert connection.ai_run is granted
+    assert connection.expires_at - connection.created_at == timedelta(days=days)
+
+
+@pytest.mark.parametrize(
+    ("scopes", "offers_ai_run"),
+    [(_ASKS_AI_RUN, True), (("read", "write"), False)],
+    ids=["asked", "not-asked"],
+)
+async def test_get_consent_request_offers_ai_run_only_when_asked(
+    db_session: AsyncSession, scopes: tuple[str, ...], offers_ai_run: bool
+) -> None:
+    client_id = await insert_oauth_client(db_session)
+    request_id = await insert_oauth_request(
+        db_session, client_id=client_id, requested_scopes=scopes
+    )
+
+    view = await svc.get_consent_request(db_session, request_id=request_id)
+
+    assert view.offers_ai_run is offers_ai_run
+
+
 async def test_concurrent_approvals_for_one_user_and_client_admit_one(
     _engine: AsyncEngine,
 ) -> None:
@@ -506,7 +608,12 @@ async def test_concurrent_approvals_for_one_user_and_client_admit_one(
 
     async def _decide(session: AsyncSession, request_id: UUID) -> str:
         return await svc.decide_request(
-            session, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+            session,
+            request_id=request_id,
+            user_id=SEED.primary_profile,
+            approve=True,
+            write=False,
+            ai_run=False,
         )
 
     try:
@@ -543,11 +650,18 @@ async def test_concurrent_approvals_for_one_user_and_client_admit_one(
 # --------------------------------------------------------------------------- code exchange
 
 
-async def _code(db: AsyncSession, *, write: bool = True) -> tuple[UUID, str, UUID]:
+async def _code(
+    db: AsyncSession,
+    *,
+    write: bool = True,
+    ai_run: bool = False,
+    requested: tuple[str, ...] = ("read", "write"),
+) -> tuple[UUID, str, UUID]:
     """client_id, an approved request's code and that request's id."""
     client_id = await insert_oauth_client(db)
-    request_id = await insert_oauth_request(db, client_id=client_id)
-    return client_id, await approve(db, request_id, SEED.primary_profile, write=write), request_id
+    request_id = await insert_oauth_request(db, client_id=client_id, requested_scopes=requested)
+    code = await approve(db, request_id, SEED.primary_profile, write=write, ai_run=ai_run)
+    return client_id, code, request_id
 
 
 async def _request(db: AsyncSession, request_id: UUID) -> McpOAuthRequest:
@@ -688,9 +802,15 @@ async def test_exchange_code_unknown_is_invalid_grant(db_session: AsyncSession) 
 # --------------------------------------------------------------------------- refresh
 
 
-async def _issued(db: AsyncSession, *, write: bool = True) -> tuple[UUID, str, str, UUID]:
+async def _issued(
+    db: AsyncSession,
+    *,
+    write: bool = True,
+    ai_run: bool = False,
+    requested: tuple[str, ...] = ("read", "write"),
+) -> tuple[UUID, str, str, UUID]:
     """client_id, access secret, refresh secret and the connection id."""
-    client_id, code, request_id = await _code(db, write=write)
+    client_id, code, request_id = await _code(db, write=write, ai_run=ai_run, requested=requested)
     issued = await svc.exchange_code(db, client_id=str(client_id), code=code)
     assert issued.refresh_token is not None
     request = await _request(db, request_id)
@@ -788,6 +908,37 @@ async def test_rotate_refresh_unknown_is_invalid_grant(
     assert caught.value.error == "invalid_grant"
 
 
+@pytest.mark.parametrize(
+    ("ai_run", "scope"),
+    [(False, "read write"), (True, "read write ai_run")],
+    ids=["unticked", "ticked"],
+)
+async def test_token_responses_carry_ai_run_only_on_a_granted_connection(
+    db_session: AsyncSession, ai_run: bool, scope: str
+) -> None:
+    """The request asked for ``ai_run`` either way: only the stored grant
+    puts it in the code, the pair, the refresh lookup and the access lookup."""
+    client_id, code, _ = await _code(db_session, ai_run=ai_run, requested=_ASKS_AI_RUN)
+
+    loaded_code = await svc.load_code(db_session, client_id=str(client_id), code=code)
+    issued = await svc.exchange_code(db_session, client_id=str(client_id), code=code)
+    assert issued.refresh_token is not None
+    loaded_refresh = await svc.load_refresh(
+        db_session, client_id=str(client_id), token=issued.refresh_token
+    )
+    rotated = await svc.rotate_refresh(
+        db_session, client_id=str(client_id), token=issued.refresh_token
+    )
+    loaded_access = await svc.load_access(db_session, rotated.access_token)
+
+    assert loaded_code is not None and loaded_refresh is not None and loaded_access is not None
+    assert loaded_code.scopes == scope.split()
+    assert issued.scope == scope
+    assert loaded_refresh.scopes == [*scope.split(), "offline_access"]
+    assert rotated.scope == scope
+    assert loaded_access.scopes == scope.split()
+
+
 # --------------------------------------------------------------------------- access tokens
 
 
@@ -844,9 +995,11 @@ async def test_active_access_row_applies_extra_predicates(db_session: AsyncSessi
     assert await svc._active_access_row(db_session, access, false()) is None
 
 
-@pytest.mark.parametrize(("write", "scope"), [(True, "read_write"), (False, "read")])
+@pytest.mark.parametrize(
+    ("write", "scopes"), [(True, {"read", "write"}), (False, {"read"})], ids=["write", "read"]
+)
 async def test_resolve_principal_returns_the_connection_principal(
-    db_session: AsyncSession, write: bool, scope: str
+    db_session: AsyncSession, write: bool, scopes: set[str]
 ) -> None:
     _, access, _, connection_id = await _issued(db_session, write=write)
 
@@ -856,7 +1009,7 @@ async def test_resolve_principal_returns_the_connection_principal(
     assert principal is not None
     assert principal.user_sub == SEED.primary_profile
     assert principal.token_id == connection_id
-    assert principal.scope == scope
+    assert principal.scopes == frozenset(scopes)
     assert principal.token_expires_at == connection.expires_at
     assert principal.project_ids is None
 
@@ -1121,3 +1274,90 @@ async def test_revoke_connection_refuses_a_foreign_row_and_a_pat(
 
     assert (await _connection(db_session, foreign)).revoked_at is None
     assert (await _connection(db_session, pat)).revoked_at is None
+
+
+# --------------------------------------------------------------------------- revocation cascade
+
+Revoker = Callable[[], Awaitable[object]]
+
+
+async def _by_token(db: AsyncSession) -> tuple[UUID, Revoker]:
+    _, access, _, connection_id = await _issued(db)
+    return connection_id, lambda: svc.revoke_connection_by_token(db, access)
+
+
+async def _connected_apps(db: AsyncSession) -> tuple[UUID, Revoker]:
+    _, _, _, connection_id = await _issued(db)
+    return connection_id, lambda: svc.revoke_connection(
+        db, user_id=SEED.primary_profile, connection_id=connection_id
+    )
+
+
+async def _re_consent(db: AsyncSession) -> tuple[UUID, Revoker]:
+    client_id = await insert_oauth_client(db)
+    previous = await insert_oauth_connection(db, user_id=SEED.primary_profile, client_id=client_id)
+    request_id = await insert_oauth_request(db, client_id=client_id)
+    return previous, lambda: svc.decide_request(
+        db,
+        request_id=request_id,
+        user_id=SEED.primary_profile,
+        approve=True,
+        write=False,
+        ai_run=False,
+    )
+
+
+async def _code_reuse(db: AsyncSession) -> tuple[UUID, Revoker]:
+    client_id, code, request_id = await _code(db)
+    await svc.exchange_code(db, client_id=str(client_id), code=code)
+    connection_id = (await _request(db, request_id)).connection_id
+    assert connection_id is not None
+
+    async def reuse() -> None:
+        with pytest.raises(TokenError):
+            await svc.exchange_code(db, client_id=str(client_id), code=code)
+
+    return connection_id, reuse
+
+
+async def _refresh_replay(db: AsyncSession) -> tuple[UUID, Revoker]:
+    client_id, _, refresh, connection_id = await _issued(db)
+    await svc.rotate_refresh(db, client_id=str(client_id), token=refresh)
+
+    async def replay() -> None:
+        with pytest.raises(TokenError):
+            await svc.rotate_refresh(db, client_id=str(client_id), token=refresh)
+
+    return connection_id, replay
+
+
+_REVOCATIONS = {
+    "revoke_by_token": _by_token,
+    "connected_apps": _connected_apps,
+    "re_consent": _re_consent,
+    "code_reuse": _code_reuse,
+    "refresh_replay": _refresh_replay,
+}
+
+
+@pytest.mark.parametrize("path", list(_REVOCATIONS), ids=list(_REVOCATIONS))
+async def test_every_connection_revocation_stops_its_agent_batches(
+    db_session: AsyncSession, path: str
+) -> None:
+    connection_id, revoke = await _REVOCATIONS[path](db_session)
+    batch_id = await make_agent_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        token_id=connection_id,
+    )
+    assert await batch_halt(db_session, batch_id) == (None, [("queued", None)] * 2)
+
+    await revoke()
+
+    assert (await _connection(db_session, connection_id)).revoked_at is not None
+    assert await batch_halt(db_session, batch_id) == (
+        "AGENT_TOKEN_INACTIVE",
+        [("cancelled", "STOPPED_AGENT_GUARD")] * 2,
+    )

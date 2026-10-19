@@ -96,6 +96,7 @@ def run_section_extraction_task(
         )
         from app.services.ai_usage_metering import LedgerSink
         from app.services.engine_credentials import resolve_engine_credentials
+        from app.services.extraction_batch_service import agent_batch_for_attempt
         from app.worker._session import worker_engine, worker_session
 
         async with worker_engine() as db_engine, worker_session(db_engine) as session:
@@ -144,11 +145,19 @@ def run_section_extraction_task(
                         user_id=UUID(user_id),
                     )
 
+                # An agent-started batch never runs on the deployment key —
+                # not through the ladder, the re-key, or build_model's own
+                # fallback. Re-derived per attempt (a retry replays kwargs).
+                allow_global_key = (
+                    attempt_id is None
+                    or await agent_batch_for_attempt(session, UUID(attempt_id)) is None
+                )
                 credentials = await resolve_engine_credentials(
                     session,
                     user_id=user_id,
                     project_id=request.project_id,
                     engine=engine,
+                    allow_global_key=allow_global_key,
                 )
 
                 service = AiExtraction(
@@ -174,6 +183,7 @@ def run_section_extraction_task(
                     # connection to this task's engine, committed apart from
                     # the run transaction.
                     usage_sink=LedgerSink(create_ledger_session_factory(db_engine)),
+                    allow_global_key=allow_global_key,
                 )
 
                 res = await service.run_from_request(request, engine=engine)

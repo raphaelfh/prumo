@@ -47,6 +47,7 @@ def _read(token_id: UUID | None = None) -> PersonalAccessTokenRead:
         name="cli",
         token_prefix="prumo_pat_abcdef",
         scope="read",
+        ai_run=False,
         status="active",
         expires_at=datetime.now(UTC),
         last_used_at=None,
@@ -79,6 +80,29 @@ async def test_create_commits_and_carries_trace_id(monkeypatch: pytest.MonkeyPat
     db2 = SimpleNamespace(commit=AsyncMock())
     result2 = await _create(body=_payload(), request=_request(None), db=db2, user_id=CALLER)
     assert result2.trace_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_forwards_ai_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    async def _fake_create_token(_db: object, **kwargs: object) -> PersonalAccessTokenCreated:
+        seen.update(kwargs)
+        return PersonalAccessTokenCreated(token=_read(), secret="prumo_pat_fakefake")
+
+    monkeypatch.setattr(pat_endpoints, "create_token", _fake_create_token)
+    db = SimpleNamespace(commit=AsyncMock())
+    body = PersonalAccessTokenCreateRequest.model_validate(
+        {"name": "agent", "scope": "read_write", "expires_in_days": 30, "ai_run": True}
+    )
+
+    await _create(body=body, request=_request(), db=db, user_id=CALLER)
+
+    payload = seen["payload"]
+    assert isinstance(payload, PersonalAccessTokenCreateRequest)
+    assert payload.ai_run is True
+    assert seen["user_id"] == CALLER
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -145,6 +169,7 @@ def _connection(status: TokenStatus = "active") -> OAuthConnectionRead:
         id=uuid4(),
         client_name="Claude",
         scope="read_write",
+        ai_run=False,
         status=status,
         created_at=datetime.now(UTC),
         last_used_at=None,

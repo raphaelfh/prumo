@@ -11,6 +11,7 @@ export const connectedApps = {
     retry: 'Retry',
     badgeRead: 'Read',
     badgeEdits: 'Edits',
+    badgeAiRuns: 'AI runs',
     badgeRevoked: 'Revoked',
     badgeExpired: 'Expired',
     lastUsed: 'Last used {{when}}',

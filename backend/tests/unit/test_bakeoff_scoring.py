@@ -16,6 +16,7 @@ from parsing_bakeoff.scoring import (
     match_boxes,
     maxrss_to_mb,
     normalize_text,
+    order_breaks,
     p95,
     recall_set,
     zw_char_count,
@@ -174,6 +175,18 @@ class TestColumnInversions:
 
     def test_no_gold_paragraphs_is_zero(self) -> None:
         assert column_inversions([_body(1, _PARAS[0])], []) == (0, 0)
+
+
+class TestOrderBreaks:
+    def test_counts_adjacent_descents(self) -> None:
+        # Reading order 2, 0, 3, 1 -> descents 2>0 and 3>1.
+        blocks = [_body(1, _PARAS[i]) for i in [2, 0, 3, 1]]
+        assert order_breaks(blocks, _PARAS) == 2
+
+    def test_one_displaced_paragraph_is_one_break_but_many_inversions(self) -> None:
+        blocks = [_body(1, _PARAS[i]) for i in [1, 2, 3, 0]]
+        assert order_breaks(blocks, _PARAS) == 1
+        assert column_inversions(blocks, _PARAS) == (3, 4)
 
 
 class TestChromeLeakage:

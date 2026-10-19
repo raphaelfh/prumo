@@ -27,6 +27,7 @@ from app.schemas.articles_export import (
 from app.schemas.common import ApiResponse
 from app.services.articles_export_service import ArticlesExportService
 from app.utils.rate_limiter import limiter
+from app.worker import queue_health
 from app.worker.tasks.export_tasks import export_articles_task
 
 router = APIRouter()
@@ -40,18 +41,6 @@ SYNC_METADATA_ONLY_MAX_ARTICLES = 50
 # work for the whole result window.
 _EXPORT_OWNER_KEY_PREFIX = "export_job_owner:"
 _EXPORT_OWNER_TTL_SECONDS = 3600
-
-
-def _is_queue_available() -> bool:
-    try:
-        Redis.from_url(
-            settings.REDIS_URL,
-            socket_connect_timeout=0.25,
-            socket_timeout=0.25,
-        ).ping()
-        return True
-    except Exception:
-        return False
 
 
 def _remember_export_owner(job_id: str, user_id: str) -> None:
@@ -183,7 +172,7 @@ async def start_export(
         )
 
     # Async: enfileirar task
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ApiResponse.failure(

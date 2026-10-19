@@ -42,7 +42,7 @@ from app.llm.extractor import (
     failed_usage,
 )
 from app.llm.pass_kinds import PASS_KIND_BY_PROMPT, PassKind
-from app.models.extraction_batch import ExtractionBatchItem
+from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem
 from app.repositories.ai_usage_ledger_repository import AiUsageLedgerRepository
 
 logger = get_logger(__name__)
@@ -83,12 +83,13 @@ class LedgerSink:
     """Writes one ledger row per call, each in its own short transaction.
 
     Catches nothing: a write error propagates to :func:`metered`. The batch a
-    call belongs to is resolved once per attempt and cached.
+    call belongs to, and the agent token that started it, are resolved once
+    per attempt and cached.
     """
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self.session_factory = session_factory
-        self._batch_ids: dict[UUID, UUID | None] = {}
+        self._origins: dict[UUID, tuple[UUID | None, UUID | None]] = {}
 
     async def record(
         self,
@@ -106,12 +107,14 @@ class LedgerSink:
             )
             return
         async with self.session_factory() as session, session.begin():
+            batch_id, agent_token_id = await self._batch_origin(session, ctx.attempt_id)
             await AiUsageLedgerRepository(session).append(
                 project_id=ctx.project_id,
                 owner_id=ctx.owner_id,
                 run_id=ctx.run_id,
                 attempt_id=ctx.attempt_id,
-                batch_id=await self._batch_id(session, ctx.attempt_id),
+                batch_id=batch_id,
+                agent_token_id=agent_token_id,
                 provider=ctx.provider,
                 model=ctx.model,
                 key_scope=ctx.key_scope,
@@ -123,16 +126,22 @@ class LedgerSink:
                 request_id=usage.request_ids[-1] if usage.request_ids else None,
             )
 
-    async def _batch_id(self, session: AsyncSession, attempt_id: UUID | None) -> UUID | None:
+    async def _batch_origin(
+        self, session: AsyncSession, attempt_id: UUID | None
+    ) -> tuple[UUID | None, UUID | None]:
+        """(batch_id, agent_token_id) of the batch item that ran ``attempt_id``."""
         if attempt_id is None:
-            return None
-        if attempt_id not in self._batch_ids:
-            self._batch_ids[attempt_id] = await session.scalar(
-                select(ExtractionBatchItem.batch_id).where(
-                    ExtractionBatchItem.attempt_id == attempt_id
+            return None, None
+        if attempt_id not in self._origins:
+            row = (
+                await session.execute(
+                    select(ExtractionBatchItem.batch_id, ExtractionBatch.agent_token_id)
+                    .join(ExtractionBatch, ExtractionBatch.id == ExtractionBatchItem.batch_id)
+                    .where(ExtractionBatchItem.attempt_id == attempt_id)
                 )
-            )
-        return self._batch_ids[attempt_id]
+            ).first()
+            self._origins[attempt_id] = (None, None) if row is None else (row[0], row[1])
+        return self._origins[attempt_id]
 
 
 def metered(

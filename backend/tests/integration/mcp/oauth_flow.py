@@ -72,10 +72,12 @@ def consent_request_id(resp: Response) -> UUID:
     return UUID(query["request"][0])
 
 
-async def approve(db: AsyncSession, request_id: UUID, user_id: UUID, *, write: bool) -> str:
+async def approve(
+    db: AsyncSession, request_id: UUID, user_id: UUID, *, write: bool, ai_run: bool = False
+) -> str:
     """Approve a pending request as ``user_id``; the minted authorization code."""
     url = await decide_request(
-        db, request_id=request_id, user_id=user_id, approve=True, write=write
+        db, request_id=request_id, user_id=user_id, approve=True, write=write, ai_run=ai_run
     )
     await db.flush()
     return parse_qs(urlsplit(url).query)["code"][0]
@@ -125,13 +127,25 @@ class OAuthTokens:
 
 
 async def connect(
-    client: AsyncClient, db: AsyncSession, user_id: UUID, *, write: bool = True
+    client: AsyncClient,
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    write: bool = True,
+    ask_ai_run: bool = False,
+    ai_run: bool = False,
 ) -> OAuthTokens:
-    """Register, authorize, approve as ``user_id`` and exchange the code."""
-    client_id = await registered_client_id(client)
+    """Register, authorize, approve as ``user_id`` and exchange the code.
+
+    ``ask_ai_run`` registers and authorizes with ``read write ai_run``;
+    ``ai_run`` ticks the consent box."""
+    scope = "read write ai_run" if ask_ai_run else None
+    client_id = await registered_client_id(client, **({"scope": scope} if scope else {}))
     verifier, challenge = pkce_pair()
-    request_id = consent_request_id(await authorize(client, client_id, challenge=challenge))
-    code = await approve(db, request_id, user_id, write=write)
+    request_id = consent_request_id(
+        await authorize(client, client_id, challenge=challenge, scope=scope)
+    )
+    code = await approve(db, request_id, user_id, write=write, ai_run=ai_run)
     r = await exchange(client, client_id, code, verifier)
     assert r.status_code == 200, r.text
     body = r.json()

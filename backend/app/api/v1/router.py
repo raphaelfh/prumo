@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     ai_context,
+    ai_policy,
     article_files,
     article_text_blocks,
     articles,
@@ -140,6 +141,12 @@ api_router.include_router(
 
 api_router.include_router(
     ai_context.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    ai_policy.router,
     prefix="/projects",
     tags=["projects"],
 )
