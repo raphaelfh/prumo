@@ -539,6 +539,39 @@ describe('useStructuralUndo — delete (B-9d)', () => {
     expect(index).toBe(1);
   });
 
+  it('Undo hands restoreField the select field with its {value, label} options intact', async () => {
+    const deleteField = vi.fn(async (_fieldId: string) => true);
+    const restoreField = vi.fn(
+      async (_field: GridField, _sectionId: string, _index: number) => 'f5-restored',
+    );
+    const select = {
+      ...field('f5', 'sec2', 'k_design', 'Design', 2),
+      field_type: 'select',
+      allowed_values: [{value: 'coh', label: 'Cohort'}],
+    };
+    const tree = buildTemplateTree(sections, [...baseFields, select]);
+    const {result} = renderHook(
+      ({tree: t}: {tree: GridSection[]}) => {
+        const history = useStructuralHistory();
+        return useStructuralUndo({
+          tree: t,
+          moveFieldTo: vi.fn(() => record(true)),
+          deleteField,
+          restoreField,
+          history,
+        });
+      },
+      {initialProps: {tree}},
+    );
+
+    void result.current.deleteFieldWithUndo(mustField(tree, 'f5'));
+    await flush();
+    clickUndo();
+    await flush();
+
+    expect(restoreField.mock.calls[0][0].allowedValues).toEqual([{value: 'coh', label: 'Cohort'}]);
+  });
+
   it('a delete retires a live move undo — still one slot, never a stack', async () => {
     const deleteField = vi.fn(async (_fieldId: string) => true);
     const restoreField = vi.fn(

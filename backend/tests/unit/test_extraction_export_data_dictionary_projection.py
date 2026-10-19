@@ -8,6 +8,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     FieldDescriptor,
     SectionDescriptor,
@@ -32,7 +33,7 @@ def _field(label, *, unit=None, required=False, allow_other=False, desc=None):
         field_id=uuid4(),
         label=label,
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Cohort", "RCT"),
+        allowed_values=(AllowedValue("Cohort", "Cohort"), AllowedValue("RCT", "RCT")),
         description=desc,
         unit=unit,
         is_required=required,
@@ -70,3 +71,20 @@ def test_build_data_dictionary_preserves_section_and_field_order():
 def test_build_data_dictionary_empty_sections_yields_no_entries():
     assert _build_data_dictionary(()) == ()
     assert _build_data_dictionary((_section("Empty"),)) == ()
+
+
+def test_coded_options_keep_value_and_label():
+    study_type = FieldDescriptor(
+        field_id=uuid4(),
+        label="Study type",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=(
+            AllowedValue("development_only", "Development only"),
+            AllowedValue("validation_only", "Validation only"),
+        ),
+    )
+    entries = _build_data_dictionary((_section("Assessment scope", study_type),))
+    assert entries[0].allowed_values == (
+        AllowedValue(value="development_only", label="Development only"),
+        AllowedValue(value="validation_only", label="Validation only"),
+    )

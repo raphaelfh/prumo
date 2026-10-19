@@ -338,6 +338,7 @@ async def create_consensus(
             selected_decision_id=body.selected_decision_id,
             value=body.value,
             rationale=body.rationale,
+            enforce_contract=True,
         )
     except RunWriteError as e:
         logger.warning(
@@ -581,12 +582,10 @@ async def reopen_run(
         if is_one_live_run_conflict(e):
             # One-live-run invariant (uq_one_live_extraction_run_per_coord,
             # 0045). reopen_run's idempotency guard only recognises children
-            # of THIS parent, but `resolve_or_create_extract` (the
-            # "Run AI" path) can create an UNPARENTED live run over a
-            # finalized coordinate — its lookup filters ExtractionRunStage.live(),
-            # so the finalized parent is invisible to it. The fork then
-            # collides. Report the conflict the way the sibling create_run
-            # does, instead of letting it escape as a 500.
+            # of THIS parent, so a live run another writer created for the
+            # same coordinate in the meantime (e.g. a concurrent create_run)
+            # collides with the fork. Report the conflict the way the sibling
+            # create_run does, instead of letting it escape as a 500.
             logger.warning(
                 "hitl_reopen_conflict_live_run",
                 trace_id=trace_id,

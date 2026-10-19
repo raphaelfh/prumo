@@ -52,6 +52,7 @@ from app.services.run_engine_freeze import (
     resolve_engine_for_run,
 )
 from tests.fakes.recorded_llm import RecordedLlm
+from tests.fakes.usage_sink import RecordingUsageSink
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 from tests.integration.helpers.ai_extraction import seed_article_text
@@ -92,6 +93,7 @@ def _service(
         ),
         repin=repin,
         llm=llm or _llm(),
+        usage_sink=RecordingUsageSink(),
     )
 
 
@@ -608,6 +610,7 @@ def _keyed_service(
         ),
         key_provider,
         llm=_llm(),
+        usage_sink=RecordingUsageSink(),
     )
 
 

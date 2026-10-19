@@ -18,6 +18,9 @@ Mocking strategy:
 - Replace ``service._consensus`` / ``service._published`` /
   ``service._decisions`` directly on the instance after construction so the
   repository constructors are not invoked at all.
+- Manual overrides pass ``enforce_contract=False``: these tests drive the
+  publish branches, not the value contract, which needs the run's pinned
+  field (``tests/integration/test_value_contract_services.py`` covers it).
 - ``db`` is a sentinel ``AsyncMock`` — the service never queries it directly;
   every DB op flows through one of the four mocked collaborators.
 """
@@ -131,6 +134,7 @@ async def test_record_consensus_propagates_coordinate_mismatch() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value={"v": "x"},
             rationale="r",
         )
@@ -183,6 +187,7 @@ async def test_manual_override_requires_value(
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value=value,
             rationale=rationale,
         )
@@ -203,6 +208,7 @@ async def test_manual_override_allows_null_rationale() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value={"value": "5", "unit": "mg"},
             rationale=None,
         )
@@ -460,6 +466,7 @@ async def test_manual_override_publishes_provided_value() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value=value,
             rationale="reviewer override",
         )
@@ -484,6 +491,7 @@ async def test_string_mode_is_accepted() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode="manual_override",
+            enforce_contract=False,
             value={"v": "raw"},
             rationale="r",
         )
@@ -510,6 +518,7 @@ async def test_publish_internal_falls_through_to_update_on_conflict() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value={"v": "x"},
             rationale="r",
         )
@@ -533,6 +542,7 @@ async def test_publish_internal_raises_when_post_conflict_row_missing() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value={"v": "x"},
             rationale="r",
         )
@@ -557,6 +567,7 @@ async def test_publish_internal_raises_when_update_rowcount_zero() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value={"v": "x"},
             rationale="r",
         )
@@ -577,6 +588,7 @@ async def test_publish_internal_raises_when_post_update_row_vanishes() -> None:
             field_id=uuid4(),
             consensus_user_id=uuid4(),
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            enforce_contract=False,
             value={"v": "x"},
             rationale="r",
         )

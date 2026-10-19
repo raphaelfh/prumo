@@ -199,7 +199,6 @@ export class SectionExtractionService {
         runId: request.runId,
         extractAllSections: true,
         sectionIds: request.sectionIds,
-        pdfText: request.pdfText,
         // C1a: no `model` key — the engine is server-owned.
       },
     }).catch((err: unknown) => {

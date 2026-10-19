@@ -573,3 +573,40 @@ class TestAssembleForModel:
         assert heuristic == max(1, len(text) // 4)
         openai = estimate_tokens(text, "gpt-4o-mini")
         assert heuristic != openai  # documented skew between heuristic and tiktoken
+
+
+# ---------------------------------------------------------------------------
+# Block refs count against the budget (ADR 0013 Amendment 2026-10)
+# ---------------------------------------------------------------------------
+
+
+class TestBlockRefs:
+    def _doc(self) -> list[ParsedBlock]:
+        return [
+            _b(1, 0, "Abstract", "heading"),
+            _b(1, 1, "A" * 40),
+            _b(2, 0, "Results", "heading"),
+            _b(2, 1, "B" * 40),
+            _b(2, 2, "Name", "table_cell"),
+            _b(2, 3, "Age", "table_cell"),
+        ]
+
+    def test_every_kept_block_carries_its_ref(self) -> None:
+        text, dropped = assemble(self._doc(), budget=100_000)
+        assert dropped == []
+        assert text == (
+            "## [p1·b0] Abstract\n[p1·b1] " + "A" * 40 + "\n\n"
+            "## [p2·b0] Results\n[p2·b1] " + "B" * 40 + "\n"
+            "[p2·b2–b3] \n| Name | Age |\n|------|-----|"
+        )
+
+    def test_budget_counts_ref_prefixes(self) -> None:
+        # The plain (ref-free) projection of this document is 135 chars, so it
+        # fits this budget whole; the ref-prefixed one does not.
+        plain_len = 135
+        text, dropped = assemble(self._doc(), budget=plain_len)
+        assert [d.title for d in dropped] == ["Results"]
+        assert len(text) <= plain_len
+        for line in text.splitlines():
+            if line:
+                assert line.startswith(("[p", "## [p"))

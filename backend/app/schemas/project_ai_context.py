@@ -6,13 +6,15 @@ instrument's own wording — PROBAST+AI phrases its applicability items against
 "index model(s)", not "intervention" — so the editor reads them from here
 rather than keeping a second copy that can drift from the prompt.
 
-``preview`` is the same string ``build_review_context`` hands the model, so a
+``preview`` is the same string ``build_review_question(...).text`` hands the model, so a
 manager cannot be shown text the AI did not get.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.project_protocol import PicotsSlotsWrite
 
 
 class PicotsSlot(BaseModel):
@@ -45,6 +47,8 @@ class ProjectAiContextRead(BaseModel):
     picots_enabled: bool = True
     #: The rendered block a run started now would pin, or None when it says nothing.
     preview: str | None = None
+    #: ``projects.protocol_revision``: echo it as ``expected_revision`` on save.
+    revision: int
 
 
 class ProjectAiContextUpdate(BaseModel):
@@ -53,7 +57,14 @@ class ProjectAiContextUpdate(BaseModel):
     Each field is optional: omitting ``picots`` changes only the switch and vice
     versa, which is what lets the toggle and the editor share one endpoint
     without either clobbering the other's value.
+
+    ``expected_revision`` is the ``revision`` last read: when the protocol moved
+    since, the save is refused with 409 ``STALE_VALUE`` and nothing is written.
+    Omitting it saves unconditionally.
     """
 
-    picots: PicotsSlots | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    picots: PicotsSlotsWrite | None = None
     picots_enabled: bool | None = None
+    expected_revision: int | None = Field(default=None, ge=1)

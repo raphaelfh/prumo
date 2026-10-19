@@ -12,6 +12,7 @@ from app.models.article import Article
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.project import Project
 from app.schemas.extraction_batch import ATTEMPT_LIVE, ENGINE_STOP_CODES, ItemRow
 
@@ -32,16 +33,58 @@ class ExtractionBatchRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_owned(self, batch_id: UUID, owner_id: UUID) -> ExtractionBatch | None:
+    async def get_owned(
+        self, batch_id: UUID, owner_id: UUID, *, project_id: UUID | None = None
+    ) -> ExtractionBatch | None:
+        """Owner, membership and (when given) the project, in one WHERE clause."""
+        stmt = select(ExtractionBatch).where(
+            ExtractionBatch.id == batch_id,
+            ExtractionBatch.owner_id == owner_id,
+            _member(owner_id),
+            *([ExtractionBatch.project_id == project_id] if project_id is not None else []),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def owned_by_plan_digest(
+        self, owner_id: UUID, plan_digest: str, *, project_id: UUID
+    ) -> UUID | None:
         return (
             await self.db.execute(
-                select(ExtractionBatch).where(
-                    ExtractionBatch.id == batch_id,
+                select(ExtractionBatch.id).where(
                     ExtractionBatch.owner_id == owner_id,
+                    ExtractionBatch.project_id == project_id,
+                    ExtractionBatch.agent_plan_digest == plan_digest,
                     _member(owner_id),
                 )
             )
         ).scalar_one_or_none()
+
+    async def agent_batch_of_attempt(self, attempt_id: UUID) -> UUID | None:
+        """The agent-started batch whose item ran ``attempt_id``, if any."""
+        return (
+            await self.db.execute(
+                select(ExtractionBatch.id)
+                .join(ExtractionBatchItem, ExtractionBatchItem.batch_id == ExtractionBatch.id)
+                .where(
+                    ExtractionBatchItem.attempt_id == attempt_id,
+                    ExtractionBatch.agent_plan_digest.is_not(None),
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def agent_articles_since(self, project_id: UUID, *, since: datetime) -> int:
+        """Articles in the project's agent batches since ``since``, cancelled included."""
+        return (
+            await self.db.execute(
+                select(func.count(ExtractionBatchItem.id))
+                .join(ExtractionBatch, ExtractionBatch.id == ExtractionBatchItem.batch_id)
+                .where(
+                    ExtractionBatch.project_id == project_id,
+                    ExtractionBatch.agent_plan_digest.is_not(None),
+                    ExtractionBatch.created_at >= since,
+                )
+            )
+        ).scalar_one()
 
     async def list_owned(
         self, owner_id: UUID, *, since: datetime, project_id: UUID | None
@@ -85,18 +128,36 @@ class ExtractionBatchRepository:
             )
         return rows
 
-    async def labels(self, batch: ExtractionBatch) -> tuple[str, str, str]:
-        project_name, template_name, kind = (
-            await self.db.execute(
-                select(Project.name, ProjectExtractionTemplate.name, ProjectExtractionTemplate.kind)
-                .join(ProjectExtractionTemplate, ProjectExtractionTemplate.project_id == Project.id)
-                .where(
-                    Project.id == batch.project_id,
-                    ProjectExtractionTemplate.id == batch.template_id,
-                )
+    async def labels(
+        self, batches: list[ExtractionBatch]
+    ) -> dict[UUID, tuple[str, str, str, str | None]]:
+        """Per batch id: project name, template name, kind and the starting
+        credential's name (``None``: a UI batch, or the token row is gone).
+        One statement for any number of batches."""
+        if not batches:
+            return {}
+        rows = await self.db.execute(
+            select(
+                ExtractionBatch.id,
+                Project.name,
+                ProjectExtractionTemplate.name,
+                ProjectExtractionTemplate.kind,
+                PersonalAccessToken.name,
             )
-        ).one()
-        return project_name, template_name, str(kind)
+            .join(Project, Project.id == ExtractionBatch.project_id)
+            .join(
+                ProjectExtractionTemplate,
+                ProjectExtractionTemplate.id == ExtractionBatch.template_id,
+            )
+            .outerjoin(
+                PersonalAccessToken, PersonalAccessToken.id == ExtractionBatch.agent_token_id
+            )
+            .where(ExtractionBatch.id.in_([b.id for b in batches]))
+        )
+        return {
+            batch_id: (project_name, template_name, str(kind), token_name)
+            for batch_id, project_name, template_name, kind, token_name in rows.all()
+        }
 
     async def add(self, batch: ExtractionBatch, article_ids: list[UUID]) -> None:
         self.db.add(batch)
@@ -139,12 +200,80 @@ class ExtractionBatchRepository:
             )
         ).scalar_one_or_none()
 
-    async def cancel_queued(self, batch_id: UUID, reason_code: str) -> None:
-        await self.db.execute(
+    async def stop(self, batch_id: UUID, stop_code: str, stop_message: str | None) -> bool:
+        """Stop a batch nobody halted yet; ``False`` when a cancel or stop got there first.
+
+        Conditional in the WHERE clause, so a concurrent cancel is never
+        overwritten by a stop read from an older snapshot of the row.
+        """
+        stopped = await self.db.execute(
+            update(ExtractionBatch)
+            .where(
+                ExtractionBatch.id == batch_id,
+                ExtractionBatch.cancelled_at.is_(None),
+                ExtractionBatch.stop_code.is_(None),
+            )
+            .values(stop_code=stop_code, stop_message=stop_message)
+            .returning(ExtractionBatch.id)
+        )
+        return stopped.first() is not None
+
+    async def stop_active_agent_batches(
+        self, token_id: UUID, stop_code: str, stop_message: str
+    ) -> list[UUID]:
+        """Stop every un-halted batch ``token_id`` started that still has queued items.
+
+        id-only on the token: every caller proved ownership of the credential
+        or holds it. Conditional like :meth:`stop`, so a cancel is never overwritten.
+        """
+        queued = (
+            select(ExtractionBatchItem.id)
+            .where(
+                ExtractionBatchItem.batch_id == ExtractionBatch.id,
+                ExtractionBatchItem.status == "queued",
+            )
+            .exists()
+        )
+        stopped = await self.db.execute(
+            update(ExtractionBatch)
+            .where(
+                ExtractionBatch.agent_token_id == token_id,
+                ExtractionBatch.cancelled_at.is_(None),
+                ExtractionBatch.stop_code.is_(None),
+                queued,
+            )
+            .values(stop_code=stop_code, stop_message=stop_message)
+            .returning(ExtractionBatch.id)
+        )
+        return list(stopped.scalars())
+
+    async def cancel_if_active(self, batch_id: UUID, *, now: datetime) -> bool:
+        """Cancel a batch nobody halted yet; ``False`` when a cancel or stop got there first.
+
+        id-only: the caller already passed ``owned_batch``. Conditional like
+        :meth:`stop`: of two concurrent halts, Postgres re-checks the WHERE on
+        the locked row after the first commits, so exactly one gets the row.
+        """
+        cancelled = await self.db.execute(
+            update(ExtractionBatch)
+            .where(
+                ExtractionBatch.id == batch_id,
+                ExtractionBatch.cancelled_at.is_(None),
+                ExtractionBatch.stop_code.is_(None),
+            )
+            .values(cancelled_at=now)
+            .returning(ExtractionBatch.id)
+        )
+        return cancelled.first() is not None
+
+    async def cancel_queued(self, batch_id: UUID, reason_code: str) -> int:
+        """Queued items become cancelled; returns how many."""
+        result = await self.db.execute(
             update(ExtractionBatchItem)
             .where(ExtractionBatchItem.batch_id == batch_id, ExtractionBatchItem.status == "queued")
             .values(status="cancelled", reason_code=reason_code)
         )
+        return int(result.rowcount)  # type: ignore[attr-defined]
 
     async def count_in_flight(self, batch_id: UUID, *, since: datetime) -> int:
         return (

@@ -117,6 +117,14 @@ const selectField = section.fields[0];
 const textField = section.fields[1];
 const numberField = section.fields[2];
 const otherField = section.fields[3];
+/** A field whose options carry codes distinct from their labels. */
+const canonicalSelectField = {
+  ...selectField,
+  allowedValues: [
+    {value: 'coh', label: 'Cohort'},
+    {value: 'rct', label: 'RCT'},
+  ],
+};
 
 /** Destination list the panel threads in — ALWAYS this template's
  * sections only (the client-side guard against the RLS move hole). */
@@ -257,7 +265,12 @@ describe('TemplateInspector field form', () => {
         label: 'Study design',
         field_type: 'select',
         is_required: true,
-        allowed_values: ['Cohort', 'RCT'],
+        // A legacy `string[]` field saves canonical options: each code is
+        // the old string, so recorded answers stay attached.
+        allowed_values: [
+          {value: 'Cohort', label: 'Cohort'},
+          {value: 'RCT', label: 'RCT'},
+        ],
         allow_other: false,
         other_label: null,
         other_placeholder: null,
@@ -276,16 +289,29 @@ describe('TemplateInspector field form', () => {
     const user = userEvent.setup();
     const {props} = renderInspector();
 
-    // Remove both chips (buttons around each option row).
-    for (const option of ['Cohort', 'RCT']) {
-      const row = screen.getByText(option).closest('div');
-      const remove = row?.querySelector('button');
-      expect(remove).toBeTruthy();
-      await user.click(remove as HTMLButtonElement);
+    // Remove both option rows (re-queried: a removal re-renders the list).
+    for (let i = 0; i < 2; i++) {
+      await user.click(screen.getAllByRole('button', {name: 'optionRemove'})[0]);
     }
     await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
 
     expect(lastUpdates(props.onSaveField).allowed_values).toBeNull();
+  });
+
+  it('renames an option label and keeps its code', async () => {
+    const user = userEvent.setup();
+    const {props} = renderInspector({field: canonicalSelectField});
+
+    await user.click(screen.getByText('Cohort'));
+    const edit = screen.getByRole('textbox', {name: 'optionLabelEdit'});
+    await user.clear(edit);
+    await user.type(edit, 'Cohort study{Enter}');
+    await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(lastUpdates(props.onSaveField).allowed_values).toEqual([
+      {value: 'coh', label: 'Cohort study'},
+      {value: 'rct', label: 'RCT'},
+    ]);
   });
 
   it('hides the options editor for non-select fields', () => {

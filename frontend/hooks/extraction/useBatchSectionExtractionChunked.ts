@@ -48,7 +48,7 @@ export interface ExtractionProgress {
  * not "succeed" against an empty tree).
  */
 type BatchSectionExtractionParams =
-  Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'> & {
+  Omit<BatchSectionExtractionRequest, 'sectionIds'> & {
     sections?: ModelChildSection[];
   };
 
@@ -100,7 +100,7 @@ export function useBatchSectionExtractionChunked(options?: {
   /**
    * Extracts all sections of a model using chunking
    *
-   * @param request - Extraction params (sectionIds and pdfText are generated);
+   * @param request - Extraction params (sectionIds are generated per chunk);
    *   ``sections`` is stripped off before the request reaches the service.
    */
   const extractAllSections = async ({sections: pinnedSections, ...request}: BatchSectionExtractionParams) => {
@@ -132,10 +132,6 @@ export function useBatchSectionExtractionChunked(options?: {
           sections,
           baseRequest: request,
           chunkSize,
-          // pdfText is intentionally omitted — the backend extracts text
-          // per chunk. A real cache would require populating + storing the
-          // text before chunking; see issue #12.
-          pdfText: undefined,
           onProgress: (progress) => {
             setProgress(progress);
             options?.onProgress?.(progress);

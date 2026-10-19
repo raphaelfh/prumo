@@ -5,8 +5,10 @@
  * evaluates it by set membership and knows nothing about section naming.
  *
  * Mirrors `scope_classifier_coordinate` / `out_of_scope_sections` in
- * `backend/app/services/derived_judgment_service.py`, which read the same
- * live `schema_` column, so the screen and the payload cannot disagree. The
+ * `backend/app/services/derived_judgment_service.py`. The run form passes the
+ * rules frozen in the run's pinned version (the run view's `scope_rules`), the
+ * ones the backend evaluates for that run, so the screen and the payload
+ * cannot disagree; the worklist dashboard passes the live template's. The
  * `dev_`/`eval_` prefix convention this replaced agreed with the rules only
  * by coincidence on the seeded template, and disagreed outright on a clone
  * whose `schema` predates them: the badge claimed "out of scope" while the

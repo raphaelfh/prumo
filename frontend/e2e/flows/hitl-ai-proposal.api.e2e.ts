@@ -23,6 +23,7 @@
 
 import { expect, test } from "@playwright/test";
 
+import { contractValue, FIELD_SHAPE_COLUMNS, type FieldShape } from "../_fixtures/field-values";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { resolveAuthToken, loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
@@ -122,11 +123,11 @@ test.describe("HITL AI proposal pipeline", () => {
     test.skip(instances.length === 0, "No extraction_instances seeded for this template+article");
 
     let instance: { id: string; entity_type_id: string } | null = null;
-    let field: { id: string; name: string } | null = null;
+    let field: FieldShape | null = null;
     for (const inst of instances) {
-      const fs = await adminSelect<{ id: string; name: string }>(
+      const fs = await adminSelect<FieldShape>(
         "extraction_fields",
-        `select=id,name&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
+        `select=${FIELD_SHAPE_COLUMNS}&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
       );
       if (fs.length > 0) {
         instance = inst;
@@ -136,6 +137,9 @@ test.describe("HITL AI proposal pipeline", () => {
     }
     test.skip(!instance || !field, "No (instance, field) coordinate available");
     if (!instance || !field) throw new Error("No (instance, field) coordinate — test.skip should have exited");
+    // The AI value, valid for the field's type: the arbitrator's override below
+    // republishes it as-is, and an override is held to the field's contract.
+    const aiValue = contractValue(field, "ai-proposed");
 
     // 1. Create a fresh run.
     const createRes = await request.post(`${env.apiUrl}/api/v1/runs`, {
@@ -188,7 +192,7 @@ test.describe("HITL AI proposal pipeline", () => {
         instanceId: instance.id,
         fieldId: field.id,
         source: "ai",
-        value: "ai-proposed",
+        value: aiValue,
         confidenceScore: 0.87,
         rationale: "E2E AI proposal",
       },
@@ -224,7 +228,7 @@ test.describe("HITL AI proposal pipeline", () => {
           instance_id: instance.id,
           field_id: field.id,
           mode: "manual_override",
-          value: { value: "ai-proposed" },
+          value: { value: aiValue },
           rationale: "Accept AI proposal as-is",
         },
         timeout: 15000,
@@ -264,6 +268,6 @@ test.describe("HITL AI proposal pipeline", () => {
       "value" in (published!.value as Record<string, unknown>)
         ? (published!.value as { value: unknown }).value
         : published!.value;
-    expect(publishedValue).toBe("ai-proposed");
+    expect(publishedValue).toEqual(aiValue);
   });
 });

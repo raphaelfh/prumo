@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.tools import project_details as project_details_tool
 from app.services import project_details_service
+from app.utils.text_caps import TITLE_CAP
 from tests.integration.conftest import SEED
 from tests.integration.mcp.test_mcp_audit import _audit_count
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
@@ -71,9 +72,12 @@ async def test_applied_edit_returns_before_after_and_writes_one_row(
     body = structured(result)
     assert body == {
         "project_id": str(P),
+        "project_name": (await _current(db_session, "name"))["name"],
         "before": {"description": current["description"]},
         "after": {"description": "New"},
         "note": None,
+        "untrusted_content": True,
+        "untrusted_fields": ["before{}", "after{}", "project_name"],
     }
 
     after = await _current(db_session, "description")
@@ -226,6 +230,9 @@ async def test_stale_value_returns_current_and_writes_nothing(
     error = error_payload(result)
     assert error["code"] == "STALE_VALUE"
     assert error["current"] == {"name": current["name"]}
+    assert error["project_name"] == current["name"]
+    assert error["untrusted_content"] is True
+    assert error["untrusted_fields"] == ["current{}", "project_name"]
 
     after = await _current(db_session, "name")
     assert after["name"] == current["name"]
@@ -313,22 +320,29 @@ async def test_unexpected_error_is_internal_with_no_row(
     assert (await _audit_count(db_session, outcome="refused")) == 0
 
 
-async def test_update_project_details_requires_user_interaction_meta(mcp_client, pat_primary_rw):
+async def test_update_project_details_is_a_non_destructive_write(mcp_client, pat_primary_rw):
     async with mcp_client(pat_primary_rw) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     t = tools["update_project_details"]
-    assert t.meta["anthropic/requiresUserInteraction"] is True
-    # F12: confirmation is client-dependent; the audit is not.
-    assert "Clients that support it (e.g. Claude Code) ask" in t.description
+    assert "anthropic/requiresUserInteraction" not in (t.meta or {})
+    assert "ask the human" not in t.description
     assert "audited" in t.description
     a = t.annotations
-    assert a.destructive_hint is True
+    assert a.destructive_hint is False
     assert a.idempotent_hint is True
     assert a.read_only_hint is False
     assert a.open_world_hint is False
     assert t.title
     assert t.output_schema is not None
-    assert set(t.output_schema["properties"]) == {"project_id", "before", "after", "note"}
+    assert set(t.output_schema["properties"]) == {
+        "project_id",
+        "project_name",
+        "before",
+        "after",
+        "note",
+        "untrusted_content",
+        "untrusted_fields",
+    }
 
 
 async def test_nul_in_a_string_is_invalid_argument_before_any_write(
@@ -354,3 +368,149 @@ async def test_nul_in_a_string_is_invalid_argument_before_any_write(
     assert error["field"] == "fields.description"
     assert (await _current(db_session, "description")) == current
     assert (await _audit_count(db_session, outcome="refused", error_code="INVALID_ARGUMENT")) == 1
+
+
+async def test_null_name_message_has_no_pydantic_prefix(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    # Regression guard: validation_failure (task 1.7) already strips "Value error, ".
+    current = await _current(db_session, "name")
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "update_project_details",
+        {"project_id": str(P), "fields": {"name": None}, "expected": {"name": current["name"]}},
+    )
+    error = error_payload(result)
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert error["field"] == "name"
+    assert not error["message"].startswith("Value error,")
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected", "code"),
+    [
+        ({"settings": {}}, {"settings": None}, "FIELD_NOT_EDITABLE"),
+        ({"description": "x"}, {}, "INVALID_ARGUMENT"),
+        ({"description": "x"}, {"description": "not the current one"}, "STALE_VALUE"),
+    ],
+    ids=["field_not_editable", "invalid_argument", "stale_value"],
+)
+async def test_post_membership_refusals_carry_the_project_name(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, fields: dict, expected: dict, code: str
+):
+    name = (await _current(db_session, "name"))["name"]
+
+    error = error_payload(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {"project_id": str(P), "fields": fields, "expected": expected},
+        )
+    )
+    assert error["code"] == code
+    assert error["project_name"] == name
+    assert error["untrusted_content"] is True
+    assert "project_name" in error["untrusted_fields"]
+
+
+async def test_renaming_reports_the_new_project_name(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    current = await _current(db_session, "name")
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {"project_id": str(P), "fields": {"name": "Renamed"}, "expected": current},
+        )
+    )
+    assert body["project_name"] == "Renamed"
+
+
+async def test_a_long_project_name_is_capped(mcp_client, pat_primary_rw, db_session: AsyncSession):
+    long_name = "N" * (TITLE_CAP + 50)
+    await db_session.execute(
+        text("UPDATE public.projects SET name = :n WHERE id = :id"), {"n": long_name, "id": str(P)}
+    )
+    current = await _current(db_session, "description")
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {
+                "project_id": str(P),
+                "fields": {"description": "New"},
+                "expected": {"description": current["description"]},
+            },
+        )
+    )
+    assert body["project_name"] == long_name[:TITLE_CAP]
+
+
+async def test_a_legacy_eligibility_echoed_in_expected_applies(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    await db_session.execute(
+        text(
+            'UPDATE public.projects SET eligibility_criteria = \'{"legacy": "x"}\'::jsonb '
+            "WHERE id = :id"
+        ),
+        {"id": str(P)},
+    )
+    await db_session.flush()
+
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "update_project_details",
+            {
+                "project_id": str(P),
+                "fields": {"eligibility_criteria": {"inclusion": ["adults"]}},
+                "expected": {"eligibility_criteria": {"legacy": "x"}},
+            },
+        )
+    )
+
+    assert body["before"] == {"eligibility_criteria": {"legacy": "x"}}
+    assert body["after"] == {"eligibility_criteria": {"inclusion": ["adults"]}}
+    assert (await _audit_count(db_session, outcome="applied", tool="update_project_details")) == 1
+
+
+async def test_a_malformed_eligibility_in_fields_is_one_audited_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    current = await _current(db_session, "eligibility_criteria")
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "update_project_details",
+        {
+            "project_id": str(P),
+            "fields": {"eligibility_criteria": {"inclusion": ["x"] * 51}},
+            "expected": {"eligibility_criteria": current["eligibility_criteria"]},
+        },
+    )
+
+    error = error_payload(result)
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert error["field"].startswith("eligibility_criteria")
+    assert (await _audit_count(db_session, outcome="refused", error_code="INVALID_ARGUMENT")) == 1
+    assert await _current(db_session, "eligibility_criteria") == current
+
+
+async def test_the_expected_argument_advertises_the_loose_schema(mcp_client, pat_primary_rw):
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    props = tools["update_project_details"].input_schema["properties"]
+    fields_elig = props["fields"]["properties"]["eligibility_criteria"]
+    expected_elig = props["expected"]["properties"]["eligibility_criteria"]
+    assert "inclusion" in str(fields_elig)
+    assert "inclusion" not in str(expected_elig)

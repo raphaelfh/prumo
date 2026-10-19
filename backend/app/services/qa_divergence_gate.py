@@ -13,9 +13,9 @@ values while this reads the published set, and the consensus panel can publish
 a divergence no reviewer's form ever saw. So the client explains and the server
 enforces — which is what makes the trace guarantee real (constitution §IX).
 
-Data-driven and kind-neutral: the rule is the template's own
-``derived_judgments`` spec, and a template without one exits on the first
-query, so extraction runs need no ``kind ==`` branch here.
+Data-driven and kind-neutral: the rule is the ``derived_judgments`` spec
+frozen in the run's pinned template version, and a version without one exits
+on the first query, so extraction runs need no ``kind ==`` branch here.
 """
 
 from __future__ import annotations
@@ -26,13 +26,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionInstance, ProjectExtractionTemplate
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.services.derived_judgment_payload import (
     build_derived_judgments_payload,
 )
 from app.services.derived_judgment_service import derived_spec
-from app.services.extraction_snapshot import entity_types_for_version
+from app.services.extraction_snapshot import entity_types_for_version, pinned_template_rules
 
 
 def divergences_without_rationale(
@@ -67,12 +67,11 @@ def divergences_without_rationale(
 async def divergence_rationale_failure(db: AsyncSession, run: Any) -> str | None:
     """The message that must block *run*'s finalize, or None to let it through.
 
-    Reads the live ``schema_`` (like every other scope/derivation consumer)
-    against the run's FROZEN entity-types tree, and exits after one cheap
-    lookup for a template that declares no derived judgments.
+    Reads the rules frozen in the run's pinned version against the run's
+    FROZEN entity-types tree, and exits after one cheap lookup for a version
+    that declares no derived judgments.
     """
-    template = await db.get(ProjectExtractionTemplate, run.template_id)
-    schema = getattr(template, "schema_", None)
+    schema = (await pinned_template_rules(db, [run.version_id])).get(run.version_id, {})
     if not derived_spec(schema):
         return None
 

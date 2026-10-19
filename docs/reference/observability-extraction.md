@@ -1,10 +1,10 @@
 ---
 status: stable
-last_reviewed: 2026-06-24
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-06-24 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-10-18 · Owner: @raphaelfh
 
 # Extraction Observability
 
@@ -20,14 +20,17 @@ owner: '@raphaelfh'
 (`app/services/extraction_prompt_input.py`) each time it assembles the
 article text passed to the LLM:
 
-| Field | Values | Meaning |
-|-------|--------|---------|
-| `source` | `stored_markdown` | Input taken directly from `article_files.content_markdown` (within `LLM_ASSEMBLY_BUDGET_TOKENS`). |
-| `source` | `budgeted_blocks` | Stored markdown exceeded the budget; fell back to `assemble_for_model` (IMRaD whole-section dropping). |
+| Field | Meaning |
+|-------|---------|
+| `total_blocks` | Persisted blocks of the article's latest PDF. |
+| `included_blocks` | Blocks kept by `assemble_for_model` under `LLM_ASSEMBLY_BUDGET_TOKENS`. |
+| `truncated` | Whether IMRaD whole-section dropping removed any section. |
+| `est_tokens` | Token estimate of the assembled text (block refs included). |
 
-Suggested query: filter `event_name=extraction.assembly`, group by `source` to
-track the proportion of articles that use the fast stored-markdown path vs. the
-block assembler fallback.
+The prompt is always assembled from blocks (ADR-0013 Amendment 2026-10); the
+stored `content_markdown` is never sent as the prompt. Suggested query: filter
+`event_name=extraction.assembly`, group by `truncated` to track how often the
+budget drops sections.
 
 ## Core metrics
 

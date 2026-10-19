@@ -45,7 +45,17 @@ APP_ROOT = "backend/app"
 # unclassified one fails the scan (exit 2) instead of going unchecked.
 LAYERS = ("api", "services", "repositories", "models")
 SUPPORT = frozenset({"core", "domain", "infrastructure", "llm", "schemas", "utils"})
-ENTRYPOINTS = frozenset({"main", "seed", "seed_probast_ai", "seed_probast_ai_data", "worker"})
+ENTRYPOINTS = frozenset(
+    {
+        "main",
+        "seed",
+        "seed_instruction_defaults",
+        "seed_instrument",
+        "seed_probast_ai",
+        "seed_probast_ai_data",
+        "worker",
+    }
+)
 
 # Allowed outbound edges per importer kind, besides edges within the same kind.
 ALLOWED: dict[str, set[str]] = {

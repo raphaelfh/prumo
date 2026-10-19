@@ -5,16 +5,20 @@ layering violation `check_layered_arch.py` catches).
 
 ``CallToolResult.content``'s ``TextContent.text`` must be the exact same JSON
 as ``structuredContent`` (spec §5.0), compact (no newlines/indentation) --
-never the SDK's own ``indent=2`` default. The 32,000-char per-result cap is
+never the SDK's own ``indent=2`` default (`get_article_pdf` alone swaps its
+signed URL for a pointer in that copy; the URL stays in structuredContent and
+its resource_link). The 32,000-char per-result cap is
 measured on this same rendering (`templates.py::_json_len`, the
 `test_response_size_cap_*` tests): a different serializer here would let a
 page clear one measure while exceeding the other.
 
-Never substitute ``pydantic.BaseModel.model_dump_json()`` for this in a
-budget calculation: it renders non-ASCII as raw UTF-8 bytes and uses no
-separators, so it under-counts a page that `compact_json` (default
-``json.dumps`` separators, ``ensure_ascii=True``) will render up to ~6x
-longer per non-ASCII character (Task 8b fix round, finding B1).
+Non-ASCII is rendered raw (``ensure_ascii=False``): an accented or CJK
+character costs one char of the cap, as it does in the agent's context,
+instead of a six-char ``\\uXXXX`` escape. JSON escaping still applies to
+quotes, backslashes and control characters, so a value's rendered length can
+exceed its raw length: budget on ``len(compact_json(...))``, never on a raw
+string length or on ``pydantic.BaseModel.model_dump_json()`` (no separators,
+so it under-counts the rendering measured here).
 """
 
 from __future__ import annotations
@@ -27,5 +31,6 @@ RESULT_CAP = 32_000
 
 
 def compact_json(data: Any) -> str:
-    """``json.dumps`` default separators (``", "`` / ``": "``), one line."""
-    return json.dumps(data)
+    """``json.dumps`` default separators (``", "`` / ``": "``), one line,
+    non-ASCII raw."""
+    return json.dumps(data, ensure_ascii=False)

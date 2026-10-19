@@ -9,14 +9,10 @@ import { IconButton } from '@/components/patterns/IconButton';
 import { cn } from '@/lib/utils';
 import { isMultiOtherValue } from '@/lib/validations/selectOther';
 import {t} from '@/lib/copy';
-
-// Same dual-shape support as SelectWithOther: backends sometimes hand us
-// {value, label} objects in allowed_values. Normalising here keeps the JSX
-// safe regardless of where the array came from.
-type MultiSelectOption = string | { value: string; label?: string };
+import type { OptionItem } from '@/lib/extraction/options';
 
 interface MultiSelectWithOtherProps {
-  options: MultiSelectOption[];
+  options: OptionItem[];
   value: string[] | { selected: string[]; other_texts: string[] } | null;
   onChange: (val: string[] | { selected: string[]; other_texts: string[] } | null) => void;
   allowOther?: boolean;
@@ -29,15 +25,6 @@ interface MultiSelectWithOtherProps {
   /** Compact review controls show human labels while retaining code payloads. */
   showSelectedLabels?: boolean;
   size?: ComponentProps<typeof Button>['size'];
-}
-
-function normalizeMultiOption(opt: MultiSelectOption): { value: string; label: string } {
-  if (typeof opt === 'string') {
-    return { value: opt, label: opt };
-  }
-  const value = String(opt.value);
-  const label = opt.label != null ? String(opt.label) : value;
-  return { value, label };
 }
 
 function splitMultiValue(
@@ -90,7 +77,7 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
 
   const summaryParts = internalSelected.map((code) => {
     if (!showSelectedLabels) return code;
-    const option = options.map(normalizeMultiOption).find((item) => item.value === code);
+    const option = options.find((item) => item.value === code);
     return option?.label ?? code;
   });
   if (allowOther && internalOthers.length > 0) {
@@ -135,19 +122,16 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-3">
         <div className="space-y-2">
           <div className="max-h-56 overflow-auto pr-2 space-y-2">
-            {options.map((opt) => {
-              const { value: optValue, label: optLabel } = normalizeMultiOption(opt);
-              return (
-                <label key={optValue} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={internalSelected.includes(optValue)}
-                    onCheckedChange={() => toggleOption(optValue)}
-                    disabled={disabled}
-                  />
-                  <span>{optLabel}</span>
-                </label>
-              );
-            })}
+            {options.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={internalSelected.includes(opt.value)}
+                  onCheckedChange={() => toggleOption(opt.value)}
+                  disabled={disabled}
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
           </div>
 
           {allowOther && (

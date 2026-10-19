@@ -20,11 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.models.extraction import (
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
-    ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
@@ -68,12 +67,17 @@ from app.services.extraction_reviewer_ready_service import ExtractionReviewerRea
 from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
+    pinned_template_rules,
 )
 from app.services.proposal_generation_read import (
     proposal_reveal_context,
     serialize_proposal_generation,
 )
-from app.services.run_prompt_context import read_pinned_review_context
+from app.services.run_prompt_context import (
+    current_protocol_revision,
+    read_pinned_review_question,
+    review_question_drift,
+)
 
 logger = get_logger(__name__)
 
@@ -423,12 +427,17 @@ async def build_run_view(
     instances = await _instances_for_run(db, detail.run)
 
     derived_judgments: list[RunViewDerivedJudgment] = []
+    scope_rules: dict[str, Any] | None = None
     if detail.run.kind == TemplateKind.QUALITY_ASSESSMENT.value:
-        template = await db.get(ProjectExtractionTemplate, detail.run.template_id)
+        # The rules frozen in the run's pinned version, never the live schema.
+        rules = (await pinned_template_rules(db, [detail.run.version_id])).get(
+            detail.run.version_id, {}
+        )
+        scope_rules = rules.get("scope_rules")
         # Both value sets are already loaded on `detail` and already returned to
         # every caller, so the choice adds no query and no new blind surface.
         derived_judgments = build_derived_judgments_payload(
-            template_schema=template.schema_ if template is not None else None,
+            template_schema=rules,
             entity_types=entity_types,
             instances=instances,
             values=values_for_derivation(
@@ -443,7 +452,8 @@ async def build_run_view(
     general_instructions = await general_instructions_for_version(db, detail.run.version_id)
     # A pure READ of the run's pin — never ``resolve_run_prompt_context``, which
     # installs one. A read path must not take the row lock or write provenance.
-    review_pin = read_pinned_review_context(detail.run.results)
+    review_pin = read_pinned_review_question(detail.run.results)
+    protocol_revision = await current_protocol_revision(db, detail.run.project_id)
 
     if detail.run.stage in ExtractionRunStage.reviewing():
         # include_peers reuses detail.peers_revealed (the single blind source),
@@ -470,8 +480,12 @@ async def build_run_view(
         reviewer_count=ready["reviewer_count"],
         reviewers_ready=ready["reviewers_ready"],
         derived_judgments=derived_judgments,
+        scope_rules=scope_rules,
         general_instructions=general_instructions,
-        review_context=review_pin.text if review_pin else None,
+        review_question=review_pin.text if review_pin else None,
+        review_question_revision=review_pin.revision if review_pin else None,
+        project_protocol_revision=protocol_revision,
+        review_question_drift=bool(review_question_drift(review_pin, protocol_revision)),
         peers_revealed=detail.peers_revealed,
     )
 

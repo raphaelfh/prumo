@@ -19,10 +19,20 @@ NULL — a legacy template's next republish stays byte-identical, no phantom
 v+1). It is deliberately NOT backfilled into old snapshots and needs no
 migration-0026-style copy: 0026 only rewrites snapshots lacking ``role``,
 which all pre-date this key.
+
+The template's quality-assessment rules, ``derived_judgments`` and
+``scope_rules`` (from ``project_extraction_templates.schema``), are
+conditional top-level keys under the same absent ≡ empty rule: appended only
+when the template declares a non-empty value, so a template without rules
+republishes byte-identically. Freezing them means a re-import that changes
+the rules cannot change what runs pinned to an older version compute.
+Migration 0085 backfilled them into the versions that existed before.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from typing import Any
 from uuid import UUID
 
@@ -30,9 +40,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.llm.claim_value import normalize_options
 from app.models.extraction import ExtractionEntityType
 from app.models.extraction_versioning import ExtractionTemplateVersion
-from app.schemas.extraction_run import RunViewEntityType
+from app.schemas.extraction_run import RunViewEntityType, RunViewField
 
 # WARNING: migration 0026_widen_template_snapshot embeds a copy of this
 # key set for its one-time backfill. If you add a key here for a column that
@@ -100,19 +111,25 @@ SNAPSHOT_SQL = text(
 )
 
 
-# WARNING: this is the ONLY template-level live column the snapshot carries,
-# and ``template_versioning._clone._refuse_if_instruction_draft_pending`` depends on
-# that being true — its zero-state guard compares exactly this key, because
-# everything else in the snapshot is rebuilt from the global template. Adding
-# a second template-level key here without extending that guard silently
-# re-opens the hole where a project MEMBER publishes a manager's draft.
-_LIVE_INSTRUCTION_SQL = text(
+# WARNING: the instruction is the ONLY draft-editable template-level key the
+# snapshot carries, and ``template_versioning._clone._refuse_if_instruction_draft_pending``
+# depends on that being true — its zero-state guard compares exactly this key,
+# because everything else in the snapshot is rebuilt from the global template.
+# The QA rules keys (``_RULES_KEYS``) are template-level too but not
+# draft-editable: they change only by re-import from the global catalogue,
+# which refreshes and republishes them. Adding a draft-editable template-level
+# key here without extending that guard silently re-opens the hole where a
+# project MEMBER publishes a manager's draft.
+_LIVE_TEMPLATE_SQL = text(
     """
-    SELECT llm_template_instruction
+    SELECT llm_template_instruction, schema
     FROM public.project_extraction_templates
     WHERE id = :tid
     """
 )
+
+#: Template-level QA rules frozen into a snapshot when the template declares them.
+_RULES_KEYS = ("derived_judgments", "scope_rules")
 
 _PINNED_INSTRUCTION_SQL = text(
     """
@@ -137,18 +154,60 @@ async def general_instructions_for_version(db: AsyncSession, version_id: UUID) -
     return value or None
 
 
+_PINNED_RULES_SQL = text(
+    """
+    SELECT id, schema -> 'derived_judgments', schema -> 'scope_rules'
+    FROM public.extraction_template_versions
+    WHERE id = ANY(CAST(:ids AS uuid[]))
+    """
+)
+
+
+async def pinned_template_rules(
+    db: AsyncSession, version_ids: Iterable[UUID]
+) -> dict[UUID, dict[str, Any]]:
+    """The QA rules frozen in each version snapshot, keyed by version id.
+
+    Every rules reader for a run (run view, finalize gate, AI field filter)
+    evaluates the rules of the version the run is PINNED to, never the
+    template's live ``schema`` — a re-import that changes the rules must not
+    change what an open run computes. Each value is template-schema shaped
+    (``derived_judgment_service.derived_spec`` / ``_scope_rules`` read it) and
+    holds only the keys present; a version without rules maps to ``{}`` and
+    an unknown id is absent, so callers use ``.get(vid, {})``.
+    """
+    rows = await db.execute(_PINNED_RULES_SQL, {"ids": [str(v) for v in version_ids]})
+    return {
+        vid: {
+            key: value
+            for key, value in zip(_RULES_KEYS, (derived, scope), strict=True)
+            if value is not None
+        }
+        for vid, derived, scope in rows.all()
+    }
+
+
 async def build_template_version_snapshot(
     db: AsyncSession, project_template_id: UUID
 ) -> dict[str, Any]:
-    """Build the frozen ``{entity_types: [...]}`` snapshot for a project template."""
+    """Build the frozen ``{entity_types: [...]}`` snapshot for a project template,
+    plus the template-level keys it declares (instruction, QA rules)."""
     row = await db.execute(SNAPSHOT_SQL, {"tid": str(project_template_id)})
     snapshot: dict[str, Any] = row.scalar_one()
-    instruction = (
-        await db.execute(_LIVE_INSTRUCTION_SQL, {"tid": str(project_template_id)})
-    ).scalar_one_or_none()
+    live = (await db.execute(_LIVE_TEMPLATE_SQL, {"tid": str(project_template_id)})).one_or_none()
+    instruction, template_schema = live if live is not None else (None, None)
     if instruction:
         snapshot["llm_template_instruction"] = instruction
+    snapshot.update(qa_rules_of(template_schema))
     return snapshot
+
+
+def qa_rules_of(template_schema: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The QA rules a snapshot freezes from *template_schema*: each declared,
+    non-empty ``_RULES_KEYS`` entry. Also reads a version snapshot, so a
+    re-import compares the catalogue's rules to the pinned ones by the same
+    rule that froze them."""
+    return {key: value for key in _RULES_KEYS if (value := (template_schema or {}).get(key))}
 
 
 def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
@@ -191,6 +250,21 @@ def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
     return False
 
 
+def canonical_snapshot(schema_: dict[str, Any] | None) -> dict[str, Any]:
+    """A deep copy of a snapshot with every field's options canonical.
+
+    Frozen snapshots keep whatever option shape they were published with, so a
+    structural compare reads both sides through here: a legacy bare-string
+    baseline and a canonical live tree with the same options are equal.
+    """
+    canonical = deepcopy(schema_ or {})
+    for et in canonical.get("entity_types") or []:
+        for field in et.get("fields") or []:
+            if field.get("allowed_values") is not None:
+                field["allowed_values"] = normalize_options(field["allowed_values"])
+    return canonical
+
+
 def baseline_is_restorable(schema_: dict[str, Any] | None) -> bool:
     """Can this published snapshot be written back over the live rows (B-9c1)?
 
@@ -208,6 +282,21 @@ def baseline_is_restorable(schema_: dict[str, Any] | None) -> bool:
     """
     entity_types = (schema_ or {}).get("entity_types") or []
     return not (entity_types and snapshot_is_narrow(entity_types))
+
+
+def baseline_isolated_for_agent(
+    entity_types: list[dict[str, Any]], *, pinned_run_exists: bool
+) -> bool:
+    """May the MCP agent edit the draft over this published snapshot?
+
+    A wide snapshot isolates every run pinned to it from the live rows. An
+    EMPTY one is narrow (runs fall back to live rows), so it isolates only
+    while no run is pinned to it: a blank template a manager is still
+    building. A legacy (pre-wide) snapshot with content never isolates.
+    """
+    if not entity_types:
+        return not pinned_run_exists
+    return not snapshot_is_narrow(entity_types)
 
 
 async def entity_types_for_version(
@@ -232,6 +321,21 @@ async def entity_types_for_version(
         return [RunViewEntityType.model_validate(et) for et in snapshot_types]
 
     return await live_entity_types(db, template_id=template_id)
+
+
+async def pinned_field(
+    db: AsyncSession, *, version_id: UUID, template_id: UUID, field_id: UUID
+) -> RunViewField | None:
+    """The field as the run's template version pins it, or ``None`` when the
+    run's tree does not hold it. A plain lookup in
+    :func:`entity_types_for_version`, whose live fallback for a narrow
+    snapshot is the only one: there is no second fallback here.
+    """
+    for et in await entity_types_for_version(db, version_id=version_id, template_id=template_id):
+        for field in et.fields:
+            if field.id == field_id:
+                return field
+    return None
 
 
 async def live_entity_types(db: AsyncSession, *, template_id: UUID) -> list[RunViewEntityType]:

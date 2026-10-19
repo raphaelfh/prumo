@@ -187,7 +187,7 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
         field_id=field_id,
         reviewer_id=profile_id,
         decision=ExtractionReviewerDecisionType.EDIT,
-        value={"value": "manual-edit"},
+        value={"value": 31},
     )
     assert decision.run_id == run.id
     assert decision.decision == ExtractionReviewerDecisionType.EDIT.value
@@ -207,11 +207,11 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
         field_id=field_id,
         consensus_user_id=profile_id,
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-        value={"value": "manual-edit"},
+        value={"value": 31},
         rationale="manual flow finalize",
     )
     assert consensus_record.run_id == run.id
-    assert published.value == {"value": "manual-edit"}
+    assert published.value == {"value": 31}
     assert published.run_id == run.id
 
     await lifecycle.advance_stage(
@@ -275,7 +275,7 @@ async def test_human_decision_blocks_ai_skip_flag(db_session: AsyncSession) -> N
         field_id=field_id,
         reviewer_id=profile_id,
         decision=ExtractionReviewerDecisionType.EDIT,
-        value={"value": "user-typed-this-first"},
+        value={"value": 41},
     )
 
     # The shared ``human`` proposal track is closed for extraction runs:
@@ -380,7 +380,7 @@ async def test_human_decision_skip_probe_scoping_and_types(
         field_id=field_id,
         reviewer_id=reviewer_b,
         decision=ExtractionReviewerDecisionType.EDIT,
-        value={"value": "second-reviewer-typed"},
+        value={"value": 42},
     )
     assert await settled()
 

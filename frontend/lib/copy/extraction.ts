@@ -119,6 +119,9 @@ export const extraction = {
     sectionExtractionErrorTitle: 'Extraction error',
     sectionExtractionErrorAuth: 'Authentication error',
     sectionExtractionErrorNoEntryKey: 'Entry key missing',
+    sectionExtractionErrorRunBusy: 'AI extraction is paused during consensus',
+    sectionExtractionErrorRunFinalized: 'Run already finalized',
+    sectionExtractionErrorEndpointUnavailable: 'The AI connection for this engine is unavailable',
     fullAICompleteSummary: '{{n}} suggestion(s) created across {{ok}}/{{total}} sections.',
     // Field/template management toasts
     errors_addField: 'Error adding field',
@@ -532,7 +535,7 @@ export const extraction = {
     instructionResetDefault: 'Reset to template default',
     instructionInsertDefault: 'Insert suggested default',
     instructionSuggestedDefault:
-      "You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value. [customize: describe this review's scope]",
+      'You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value.',
     instructionSavedToast: 'General AI instruction saved',
     errors_saveInstruction: 'Could not save the general AI instruction',
     instructionScopeHint:
@@ -681,6 +684,10 @@ export const extraction = {
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
     attributionUngroundable: 'Verify manually',
+    // Grounded evidence whose article was re-parsed after it was anchored.
+    evidenceStale: 'Location may have moved',
+    evidenceStaleTooltip:
+      'The article was re-parsed after this evidence was anchored; the passage is searched by its text.',
     // Attribution badge tooltips — this grades whether the CITED QUOTE supports
     // the value, independent of the AI's confidence or its rationale.
     attributionTooltipEntailed:

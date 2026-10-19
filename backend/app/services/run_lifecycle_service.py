@@ -9,13 +9,13 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
     ProjectExtractionTemplate,
     TemplateKind,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
@@ -287,6 +287,9 @@ class RunLifecycleService:
                 mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
                 value=envelope,
                 rationale="Approved: reviewers agree (Phase 2 approve-all).",
+                # Agreed values may include accepted AI proposals that were never
+                # validated; the read-only value-envelope audit covers them.
+                enforce_contract=False,
             )
         finalized = await self.advance_stage(
             run_id=run_id, target_stage=ExtractionRunStage.FINALIZED, user_id=user_id

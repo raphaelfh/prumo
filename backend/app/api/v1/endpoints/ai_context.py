@@ -53,7 +53,15 @@ async def read_ai_context(
     return ApiResponse.success(ProjectAiContextRead(**data), trace_id=trace_id)
 
 
-@router.put("/{project_id}/ai-context", response_model=ApiResponse[ProjectAiContextRead])
+@router.put(
+    "/{project_id}/ai-context",
+    response_model=ApiResponse[ProjectAiContextRead],
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "description": "The review question changed since it was read (STALE_VALUE)."
+        }
+    },
+)
 @limiter.limit("30/minute")
 async def update_ai_context(
     project_id: UUID,
@@ -66,6 +74,8 @@ async def update_ai_context(
 
     Returning the re-read model (rather than echoing the request) is what makes
     the preview trustworthy: it is rendered from what was actually stored.
+    A stale ``expected_revision`` raises ``StaleProtocolRevisionError`` (409,
+    via the global handler) before anything is written.
     """
     trace_id = getattr(request.state, "trace_id", None)
     try:
@@ -74,6 +84,7 @@ async def update_ai_context(
             project_id,
             picots=body.picots.model_dump() if body.picots is not None else None,
             picots_enabled=body.picots_enabled,
+            expected_revision=body.expected_revision,
         )
     except ProjectNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

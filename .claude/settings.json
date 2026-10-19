@@ -39,7 +39,7 @@
       "WebSearch"
     ],
     "deny": [
-      "mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__apply_migration"
+      "mcp__*__apply_migration"
     ]
   },
   "hooks": {

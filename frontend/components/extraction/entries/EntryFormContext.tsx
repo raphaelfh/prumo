@@ -112,6 +112,8 @@ export interface EntryFormContextValue {
   setActiveEntry: (slot: string, entryId: string) => void;
 
   readOnly?: boolean;
+  /** The page's project-role gate: every AI kickoff in the tree reads it. */
+  canRunAI: boolean;
 }
 
 const EntryFormContext = createContext<EntryFormContextValue | null>(null);

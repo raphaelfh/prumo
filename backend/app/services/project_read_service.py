@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import and_, exists, func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import NotFoundError
 from app.models.article import Article, ArticleFile
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
@@ -33,11 +34,19 @@ from app.schemas.mcp_projects import (
 from app.schemas.project_details import ProjectDetailsValues
 from app.services.extraction_snapshot import snapshot_is_narrow
 
-__all__ = ["get_project_overview", "list_projects_for_user", "template_summaries"]
+__all__ = [
+    "article_text_counts",
+    "get_project_overview",
+    "list_projects_for_user",
+    "project_name",
+    "template_summaries",
+]
 
 
-async def list_projects_for_user(db: AsyncSession, *, user_id: UUID) -> list[McpProjectListItem]:
-    members = await ProjectMemberRepository(db).list_for_user(user_id)
+async def list_projects_for_user(
+    db: AsyncSession, *, user_id: UUID, project_ids: frozenset[UUID] | None = None
+) -> list[McpProjectListItem]:
+    members = await ProjectMemberRepository(db).list_for_user(user_id, project_ids=project_ids)
     return [
         McpProjectListItem(
             project_id=m.project_id,
@@ -47,6 +56,39 @@ async def list_projects_for_user(db: AsyncSession, *, user_id: UUID) -> list[Mcp
         )
         for m in members
     ]
+
+
+async def project_name(db: AsyncSession, project_id: UUID) -> str:
+    """The project's display name, for MCP results and post-membership refusals.
+
+    Callers MUST have proven membership first (the MCP dispatch choke point
+    does); this is not an ownership guard and must never answer an
+    unauthenticated or non-member request. A project deleted mid-call raises
+    `NotFoundError` (NOT_FOUND at the MCP layer)."""
+    name = (
+        await db.execute(select(Project.name).where(Project.id == project_id))
+    ).scalar_one_or_none()
+    if name is None:
+        raise NotFoundError("Project", str(project_id))
+    return name
+
+
+async def article_text_counts(db: AsyncSession, project_id: UUID) -> tuple[int, int]:
+    """``(articles, articles_with_text)``: an article has text once one of
+    its files is parsed."""
+    parsed_exists = exists(
+        select(1).where(
+            ArticleFile.article_id == Article.id, ArticleFile.extraction_status == "parsed"
+        )
+    )
+    articles, with_text = (
+        await db.execute(
+            select(func.count(Article.id), func.count(Article.id).filter(parsed_exists)).where(
+                Article.project_id == project_id
+            )
+        )
+    ).one()
+    return int(articles), int(with_text)
 
 
 async def get_project_overview(
@@ -61,25 +103,15 @@ async def get_project_overview(
         {field: getattr(project, field) for field in ProjectDetailsValues.model_fields}
     )
 
-    parsed_exists = exists(
-        select(1).where(
-            ArticleFile.article_id == Article.id, ArticleFile.extraction_status == "parsed"
-        )
-    )
-    counts_row = (
-        await db.execute(
-            select(func.count(Article.id), func.count(Article.id).filter(parsed_exists)).where(
-                Article.project_id == project_id
-            )
-        )
-    ).one()
+    articles, articles_with_text = await article_text_counts(db, project_id)
 
     return McpProjectOverview(
         project_id=project_id,
         role=cast(ProjectRoleValue, member.role),
         is_active=project.is_active,
         details=details,
-        counts=McpProjectCounts(articles=counts_row[0], articles_with_text=counts_row[1]),
+        protocol_revision=project.protocol_revision,
+        counts=McpProjectCounts(articles=articles, articles_with_text=articles_with_text),
         templates=await template_summaries(db, project_id=project_id),
     )
 
@@ -114,6 +146,7 @@ async def template_summaries(db: AsyncSession, *, project_id: UUID) -> list[McpT
                 template_id=template.id,
                 name=template.name,
                 kind=template.kind,
+                instrument=template.instrument,
                 is_active=template.is_active,
                 published_version=version.version if version is not None else None,
                 narrow=narrow,

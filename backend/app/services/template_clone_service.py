@@ -129,6 +129,7 @@ class TemplateCloneService:
             kind=global_tpl.kind,
             schema_=dict(global_tpl.schema_ or {}),
             llm_template_instruction=global_tpl.llm_template_instruction,
+            instrument=global_tpl.instrument,
             is_active=True,
             created_by=user_id,
         )

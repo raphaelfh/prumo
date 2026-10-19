@@ -12,15 +12,21 @@ from time import perf_counter
 from typing import Any
 from uuid import UUID
 
+from app.llm.extractor import LlmUsage
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.llm_target import LlmTarget
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._pipeline import Pipeline
-from app.services.ai_extraction._results import BatchAllSectionsFailed, BatchExtractionResult
+from app.services.ai_extraction._results import (
+    BatchAllSectionsFailed,
+    BatchExtractionResult,
+    tokens_of,
+)
 from app.services.ai_extraction._sections import extract_into_instances
 from app.services.current_run import CurrentRunResolver
 from app.services.extraction_run_write import open_run_for_write
 from app.services.run_prompt_context import resolve_run_prompt_context
+from app.services.value_semantics import unwrap_value_envelope, value_absent_reason
 
 #: Summary length a section contributes to the memory of the next ones.
 _MAX_SUMMARY_LENGTH = 200
@@ -34,7 +40,6 @@ async def extract_all_sections(
     template_id: UUID,
     parent_instance_id: UUID,
     section_ids: list[UUID] | None,
-    pdf_text: str | None,
     engine: LlmTarget,
     run_id: UUID | None,
 ) -> BatchExtractionResult:
@@ -66,6 +71,7 @@ async def extract_all_sections(
         )
         if manage_lifecycle:
             await p.runs.start_run(run.id)
+    p.current_run = run
 
     model = await p.adopt_frozen_engine(run.id, engine, project_id)
     p.logger.info(
@@ -77,15 +83,11 @@ async def extract_all_sections(
     )
     memory: list[dict[str, str]] = []
     section_results: list[dict[str, Any]] = []
-    total_tokens = 0
+    usage = LlmUsage()
     try:
-        if not pdf_text:
-            phase_start = perf_counter()
-            pdf_text = await p.assemble_prompt_text(article_id, model)
-            phases["assemble_prompt"] = (perf_counter() - phase_start) * 1000
-        elif not p.anchor_blocks:
-            # Text supplied → assembly skipped; still needed for evidence anchors.
-            await p.assemble_prompt_text(article_id, model)
+        phase_start = perf_counter()
+        pdf_text = await p.assemble_prompt_text(article_id, model)
+        phases["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
         phase_start = perf_counter()
         child_types = await _child_entity_types(p, run, parent_instance_id, section_ids)
@@ -94,7 +96,7 @@ async def extract_all_sections(
         prompt_context = await resolve_run_prompt_context(p.db, run)
         for entity_type in child_types:
             try:
-                created, tokens, summary = await _section_with_memory(
+                created, section_usage, summary = await _section_with_memory(
                     p, run, entity_type, parent_instance_id, pdf_text, memory, prompt_context
                 )
             except Exception as e:
@@ -116,7 +118,7 @@ async def extract_all_sections(
                 continue
             successful += 1
             total_suggestions += created
-            total_tokens += tokens
+            usage = usage + section_usage
             if summary:
                 memory.append(
                     {"entity_type_name": entity_type.label or entity_type.name, "summary": summary}
@@ -127,7 +129,7 @@ async def extract_all_sections(
                     "entity_type_name": entity_type.name,
                     "success": True,
                     "suggestions_created": created,
-                    "tokens_used": tokens,
+                    "tokens": tokens_of(section_usage),
                 }
             )
 
@@ -135,6 +137,9 @@ async def extract_all_sections(
         if child_types and successful == 0:
             raise BatchAllSectionsFailed(f"All {failed} section(s) failed for run {run.id}.")
         duration = (perf_counter() - start_time) * 1000
+        # Chunked calls and the full pass's entries share the run: add, never
+        # overwrite.
+        await p.add_run_usage(run.id, usage)
         if manage_lifecycle:
             await p.runs.complete_run(
                 run_id=run.id,
@@ -143,7 +148,6 @@ async def extract_all_sections(
                     "successful_sections": successful,
                     "failed_sections": failed,
                     "total_suggestions_created": total_suggestions,
-                    "total_tokens_used": total_tokens,
                     "duration_ms": duration,
                     "phase_durations_ms": phases,
                 },
@@ -156,7 +160,7 @@ async def extract_all_sections(
             total_sections=len(child_types),
             successful=successful,
             failed=failed,
-            tokens_total=total_tokens,
+            tokens_total=usage.total_tokens,
             duration_ms=duration,
             phase_durations_ms=phases,
         )
@@ -190,13 +194,13 @@ async def _section_with_memory(
     pdf_text: str,
     memory: list[dict[str, str]],
     prompt_context: RunPromptContext,
-) -> tuple[int, int, str | None]:
-    """``(suggestions, tokens, summary)`` for one child section. Fields sent
+) -> tuple[int, LlmUsage, str | None]:
+    """``(suggestions, usage, summary)`` for one child section. Fields sent
     are snapshot ∩ live: a section deleted live is skipped before spending a
     model call on values the landing could not resolve."""
     fields = await p.live_field_intersection(entity_type)
     if fields is None:
-        return 0, 0, None
+        return 0, LlmUsage(), None
     outcome = await extract_into_instances(
         p,
         run=run,
@@ -209,22 +213,25 @@ async def _section_with_memory(
     )
     return (
         outcome.suggestions_created,
-        outcome.usage.total_tokens,
+        outcome.usage,
         _summary(entity_type, outcome.extracted_data),
     )
 
 
 def _summary(entity_type: Any, extracted: dict[str, Any]) -> str:
     """The first three populated fields, at most 200 characters — what the
-    next sections' prompts read about this one."""
+    next sections' prompts read about this one. An empty answer or an
+    absence marker is not data: it is skipped, never printed as "None"."""
     name = entity_type.label or entity_type.name
-    if not extracted:
-        return f"{name}: No data extracted"
-    key_fields = [
-        f"{field_name}: {str(answer.get('value'))[:50]}"
-        for field_name, answer in list(extracted.items())[:3]
+    populated = [
+        (field_name, unwrap_value_envelope(answer))
+        for field_name, answer in extracted.items()
+        if value_absent_reason(answer) is None and unwrap_value_envelope(answer) is not None
     ]
-    more = "..." if len(extracted) > 3 else ""
+    if not populated:
+        return f"{name}: No data extracted"
+    key_fields = [f"{field_name}: {str(value)[:50]}" for field_name, value in populated[:3]]
+    more = "..." if len(populated) > 3 else ""
     summary = f"{name}: {', '.join(key_fields)}{more}"
     if len(summary) > _MAX_SUMMARY_LENGTH:
         return summary[: _MAX_SUMMARY_LENGTH - 3] + "..."

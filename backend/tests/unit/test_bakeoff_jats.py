@@ -7,17 +7,19 @@ from parsing_bakeoff.jats_gold import gold_from_jats, parse_jats
 JATS = """<article>
   <front><article-meta><title-group>
     <article-title>Game-based education in T2DM</article-title>
-  </title-group></article-meta></front>
+  </title-group><abstract><p>Abstract paragraph.</p></abstract></article-meta></front>
   <body>
-    <sec><title>Methods</title><p>We randomised 72 adults.</p></sec>
-    <sec><title>Results</title>
+    <sec><title>Methods</title><p>We randomised 72 adults.</p>
+      <fig><caption><p>Figure caption text.</p></caption></fig>
+    </sec>
+    <sec><title>Results</title><p>HbA1c <italic>fell</italic> by 0.5%.</p>
       <table-wrap><label>Table 1</label><table>
         <thead><tr><th>Arm</th><th>N</th></tr></thead>
         <tbody>
           <tr><td>Control</td><td>36</td></tr>
           <tr><td>Intervention</td><td>36</td></tr>
         </tbody>
-      </table></table-wrap>
+      </table><table-wrap-foot><p>Footnote.</p></table-wrap-foot></table-wrap>
     </sec>
   </body>
   <back><ref-list>
@@ -51,3 +53,9 @@ def test_gold_from_jats_maps_to_gold_labels() -> None:
     assert gold.all_cells == ["Arm", "N", "Control", "36", "Intervention", "36"]
     assert len(gold.references) == 2
     assert gold.regions == []  # XML has no pixel coordinates
+
+
+def test_paragraphs_follow_abstract_then_body_order_without_floats() -> None:
+    expected = ["Abstract paragraph.", "We randomised 72 adults.", "HbA1c fell by 0.5%."]
+    assert parse_jats(JATS).paragraphs == expected
+    assert gold_from_jats(JATS).paragraphs == expected

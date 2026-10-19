@@ -13,15 +13,17 @@ vi.mock('@/services/templateInstructionService', () => ({
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
+import {toast} from 'sonner';
 import {TemplateInstructionPane} from '@/components/extraction/TemplateInstructionPane';
+import {ApiError} from '@/integrations/api/client';
+import {templateConfigStatusKeys} from '@/lib/query-keys/extraction';
 
 function Host() {
   const [draft, setDraft] = useState<string | null>(null);
   return <TemplateInstructionPane projectId="p1" templateId="t1" draft={draft} onDraftChange={setDraft} />;
 }
 
-function renderPane() {
-  const queryClient = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
+function renderPane(queryClient = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}})) {
   return render(
     <QueryClientProvider client={queryClient}>
       <Host />
@@ -58,5 +60,19 @@ describe('TemplateInstructionPane', () => {
     await userEvent.type(textarea, ' plus mine');
     await userEvent.click(screen.getByRole('button', {name: 'instructionCancel'}));
     expect(screen.getByRole('textbox')).toHaveValue('Old text');
+  });
+
+  it('a refused save toasts the server message, keeps the draft and refreshes the config status', async () => {
+    getTemplateInstruction.mockResolvedValue({project_template_id: 't1', llm_template_instruction: 'Old text', default_instruction: null});
+    updateTemplateInstruction.mockRejectedValueOnce(new ApiError('DRAFT_LOCK_HELD', 'Being edited by Ana', 409));
+    const queryClient = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    renderPane(queryClient);
+    const textarea = await screen.findByRole('textbox');
+    await userEvent.type(textarea, ' plus mine');
+    await userEvent.click(screen.getByRole('button', {name: 'instructionSave'}));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('errors_saveInstruction: Being edited by Ana'));
+    expect(screen.getByRole('textbox')).toHaveValue('Old text plus mine');
+    expect(invalidate).toHaveBeenCalledWith({queryKey: templateConfigStatusKeys.byTemplate('p1', 't1')});
   });
 });

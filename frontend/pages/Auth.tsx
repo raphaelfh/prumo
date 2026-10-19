@@ -1,7 +1,7 @@
 import {useState} from "react";
-import {useNavigate} from "react-router";
+import {useLocation, useNavigate} from "react-router";
 import {signInWithPassword, signUp, resetPasswordForEmail} from "@/services/authService";
-import {RESET_PASSWORD_PATH} from "@/lib/routes";
+import {RESET_PASSWORD_PATH, safeReturnPath} from "@/lib/routes";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
@@ -191,6 +191,7 @@ function LoginForm({
     onSwitchToRegister: () => void;
 }) {
   const navigate = useNavigate();
+    const location = useLocation();
     const [form, setForm] = useState({email: "", password: ""});
     const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -207,7 +208,7 @@ function LoginForm({
       return;
     }
     toast.success(t("auth", "loginSuccess"));
-    navigate("/");
+    navigate(safeReturnPath((location.state as {from?: unknown} | null)?.from));
   };
 
     return (
@@ -296,6 +297,7 @@ function LoginForm({
 
 function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
     const navigate = useNavigate();
+    const location = useLocation();
     const [form, setForm] = useState({
         fullName: "",
         email: "",
@@ -342,7 +344,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
     // default), sessionReady is false and we keep the original UX.
     if (result.data.sessionReady) {
       toast.success(t("auth", "loginSuccess"));
-      navigate("/");
+      navigate(safeReturnPath((location.state as {from?: unknown} | null)?.from));
     } else {
       setEmailSent(true);
     }

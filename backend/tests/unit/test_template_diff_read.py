@@ -329,6 +329,14 @@ def _field_option_removed() -> _Pair:
     )
 
 
+def _field_option_renamed() -> _Pair:
+    section_id, field_id = uuid4(), uuid4()
+    return (
+        _snapshot(_entity(section_id, _select(field_id, [{"value": "no", "label": "No"}]))),
+        _snapshot(_entity(section_id, _select(field_id, [{"value": "no", "label": "Not at all"}]))),
+    )
+
+
 def _field_options_reordered() -> _Pair:
     section_id, field_id = uuid4(), uuid4()
     return (
@@ -487,6 +495,16 @@ _RENDERER_CASES: tuple[
         ChangeTier.DESTRUCTIVE,
     ),
     (
+        _field_option_renamed,
+        ChangeVariant.FIELD_OPTION_RENAMED,
+        "No",
+        "Not at all",
+        "allowed_values",
+        None,
+        ["Participants", "Age"],
+        ChangeTier.COSMETIC,
+    ),
+    (
         _field_options_reordered,
         ChangeVariant.FIELD_OPTIONS_REORDERED,
         None,
@@ -532,7 +550,7 @@ def test_variant_map_is_exhaustive_over_the_reachable_kind_pairs() -> None:
 
     Bounded claim: this catches a new *pair*, not a future sub-split inside an
     existing one — the way ``_diff_options`` already splits
-    ``(MODIFIED, FIELD, allowed_values)`` by polarity. That split stays covered
+    ``(MODIFIED, FIELD, allowed_values)`` into add, remove and rename. That split stays covered
     by the per-variant cases below.
     """
     every_pair = {(kind, node_kind) for kind in ChangeKind for node_kind in NodeKind}
@@ -543,8 +561,9 @@ def test_no_variant_exists_outside_the_map_and_the_option_split() -> None:
     assert set(VARIANT_BY_KIND.values()) | {
         ChangeVariant.FIELD_OPTION_ADDED,
         ChangeVariant.FIELD_OPTION_REMOVED,
+        ChangeVariant.FIELD_OPTION_RENAMED,
     } == set(ChangeVariant)
-    assert len(ChangeVariant) == 14
+    assert len(ChangeVariant) == 15
 
 
 def test_every_variant_is_reachable_from_a_real_diff() -> None:
@@ -743,6 +762,7 @@ def test_no_read_model_field_is_typed_any() -> None:
         "after_opaque_state",
         "reorder_count",
         "affects_recorded_data",
+        "affects_ai",
     }
     assert [name for name, hint in annotations.items() if re.search(r"\bAny\b", hint)] == []
 
@@ -884,3 +904,112 @@ def test_to_rows_never_claims_recorded_work() -> None:
     curr = _snapshot(_entity(section_id, _field(field_id, label="Age (years)")))
 
     assert [row.affects_recorded_data for row in _rows(base, curr)] == [False]
+
+
+# --------------------------------------------------------------------------
+# affects_ai — which rows change what the AI receives
+# --------------------------------------------------------------------------
+
+_AI_INPUT_EXPECTED = (
+    "label",
+    "description",
+    "llm_description",
+    "llm_template_instruction",
+    "allowed_values",
+    "is_required",
+    "field_type",
+    "name",
+    "is_entity_key",
+    "entry_label",
+    "cardinality",
+)
+
+_NOT_AI_INPUT = (
+    "unit",
+    "allowed_units",
+    "other_label",
+    "allows_not_applicable",
+    "allows_not_evaluated",
+    "allows_no_information",
+)
+
+_ENTITY_TYPE_ATTRIBUTES = frozenset({"cardinality", "entry_label"})
+
+
+def _modified(attribute: str) -> TemplateChangeRowRead:
+    if attribute == "llm_template_instruction":
+        node_kind, raw_node_id = NodeKind.TEMPLATE, ""
+    elif attribute in _ENTITY_TYPE_ATTRIBUTES:
+        node_kind, raw_node_id = NodeKind.ENTITY_TYPE, str(uuid4())
+    else:
+        node_kind, raw_node_id = NodeKind.FIELD, str(uuid4())
+    change = _diff.TemplateChange(
+        kind=ChangeKind.MODIFIED,
+        node_kind=node_kind,
+        tier=ChangeTier.SEMANTIC,
+        label_path=("Section", "Field"),
+        raw_node_id=raw_node_id,
+        attribute=attribute,
+        before="old",
+        after="new",
+    )
+    return _diff_read._to_row(change, affects_recorded_data=False)
+
+
+def test_ai_input_attributes_are_exactly_the_prompt_and_schema_inputs() -> None:
+    assert frozenset(_AI_INPUT_EXPECTED) == _diff.AI_INPUT_ATTRIBUTES
+
+
+@pytest.mark.parametrize("attribute", _AI_INPUT_EXPECTED, ids=list(_AI_INPUT_EXPECTED))
+def test_a_change_to_an_ai_input_attribute_affects_ai(attribute: str) -> None:
+    assert _modified(attribute).affects_ai is True
+
+
+@pytest.mark.parametrize("attribute", _NOT_AI_INPUT, ids=list(_NOT_AI_INPUT))
+def test_a_change_to_a_non_ai_attribute_does_not_affect_ai(attribute: str) -> None:
+    assert _modified(attribute).affects_ai is False
+
+
+@pytest.mark.parametrize(
+    ("scenario", "variant"),
+    [
+        (_field_added, ChangeVariant.FIELD_ADDED),
+        (_entity_type_removed, ChangeVariant.ENTITY_TYPE_REMOVED),
+        (_field_moved, ChangeVariant.FIELD_MOVED),
+        (_entity_type_reordered, ChangeVariant.ENTITY_TYPE_FIELDS_REORDERED),
+    ],
+    ids=["field-added", "section-removed", "field-moved", "field-reorder"],
+)
+def test_every_node_add_remove_move_and_reorder_affects_ai(
+    scenario: Callable[[], _Pair], variant: ChangeVariant
+) -> None:
+    row = _one_row(scenario)
+    assert row.variant is variant
+    assert row.attribute is None
+    assert row.affects_ai is True
+
+
+def test_an_option_reorder_affects_ai() -> None:
+    row = _one_row(_field_options_reordered)
+    assert row.variant is ChangeVariant.FIELD_OPTIONS_REORDERED
+    assert row.attribute == "allowed_values"
+    assert row.affects_ai is True
+
+
+def test_an_instruction_set_from_empty_affects_ai() -> None:
+    row = _one_row(_instruction_added)
+    assert row.variant is ChangeVariant.TEMPLATE_INSTRUCTION_ADDED
+    assert row.attribute == "llm_template_instruction"
+    assert row.affects_ai is True
+
+
+def test_a_unit_change_from_a_real_diff_does_not_affect_ai() -> None:
+    section_id, field_id = uuid4(), uuid4()
+    row = _only(
+        _rows(
+            _snapshot(_entity(section_id, _field(field_id, unit="kg"))),
+            _snapshot(_entity(section_id, _field(field_id, unit="g"))),
+        )
+    )
+    assert row.attribute == "unit"
+    assert row.affects_ai is False

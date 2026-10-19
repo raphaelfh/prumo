@@ -11,7 +11,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.utils.opaque_cursor import encode_cursor
+from app.api.mcp import server
+from app.utils.opaque_cursor import INT4_MAX, encode_cursor
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, error_payload
@@ -42,13 +43,14 @@ async def test_list_articles_rejects_bad_cursor_values(
 @pytest.mark.parametrize(
     "values",
     [
-        ["0.5", "not-a-uuid"],
-        ["not-a-rank", str(uuid4())],
-        ["1e300", str(uuid4())],
-        ["1e-300", str(uuid4())],
-        [10**400, str(uuid4())],
+        ["b", "0.5", "not-a-uuid"],
+        ["b", "not-a-rank", str(uuid4())],
+        ["b", "1e300", str(uuid4())],
+        ["b", "1e-300", str(uuid4())],
+        ["b", 10**400, str(uuid4())],
+        ["x", "0.5", str(uuid4())],
     ],
-    ids=["bad-uuid", "bad-rank", "rank-overflow", "rank-underflow", "rank-huge-int"],
+    ids=["bad-uuid", "bad-rank", "rank-overflow", "rank-underflow", "rank-huge-int", "bad-mode"],
 )
 async def test_search_rejects_bad_cursor_values(
     mcp_client: Any, pat_primary_read: Any, values: list[str | int]
@@ -118,3 +120,35 @@ async def test_get_article_text_rejects_bad_cursor_values(
     )
     payload = error_payload(result)
     assert (payload["code"], payload["field"]) == ("INVALID_ARGUMENT", "cursor")
+
+
+@pytest.mark.parametrize("arg", ["page_from", "page_to"])
+async def test_get_article_text_page_past_int4_is_invalid_argument(
+    mcp_client: Any,
+    pat_primary_read: Any,
+    db_session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    arg: str,
+) -> None:
+    # A recorder, not caplog: structlog events never reach caplog here.
+    logged: list[str] = []
+
+    class _Recorder:
+        def exception(self, event: str, **_kw: object) -> None:
+            logged.append(event)
+
+    monkeypatch.setattr(server, "logger", _Recorder())
+
+    article_id = await insert_article(db_session, SEED.primary_project, title="Page overflow")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await insert_blocks(db_session, file_id, [(1, 0, "Some body text.", "paragraph")])
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_read,
+        "get_article_text",
+        {"article_id": str(article_id), arg: INT4_MAX + 1},
+    )
+    payload = error_payload(result)
+    assert (payload["code"], payload["field"]) == ("INVALID_ARGUMENT", arg)
+    assert logged == []

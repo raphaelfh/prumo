@@ -18,7 +18,7 @@ import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionValue} from './shared/AISuggestionValue';
 import {AISuggestionReviewPopover} from './AISuggestionReviewPopover';
-import {isSuggestionAccepted, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
+import {isSuggestionAccepted, valuelessProposalKind, valuelessProposalLabel} from '@/lib/ai-extraction/suggestionUtils';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
@@ -128,7 +128,7 @@ export function AISuggestionDisplay({
             className="flex-1 min-w-0 inline-flex px-1.5 py-0.5 -mx-1.5"
           >
             <span className="text-xs italic text-muted-foreground">
-              {t('extraction', valueless === 'marker' ? 'reviewNoInformation' : 'reviewNoValue')}
+              {valuelessProposalLabel(suggestion.value)}
             </span>
           </ReviewTrigger>
           <div className="flex items-center gap-2 shrink-0 pr-1">

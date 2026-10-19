@@ -682,10 +682,20 @@ async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -
     ).scalar_one()
     assert persisted == {"scope_rules": {"classifier": {"section": "s", "field": "f"}}}
 
-    # Rules only. Structure is untouched and the version does not roll.
+    # Structure is untouched; the new rules roll a version that freezes them.
     assert second.entity_type_count == first.entity_type_count
     assert second.field_count == first.field_count
-    assert second.version_id == first.version_id
+    assert second.version_id != first.version_id
+    frozen = (
+        await db_session.execute(
+            text(
+                "SELECT schema -> 'scope_rules' FROM public.extraction_template_versions "
+                "WHERE id = :id AND is_active"
+            ),
+            {"id": str(second.version_id)},
+        )
+    ).scalar_one()
+    assert frozen == {"classifier": {"section": "s", "field": "f"}}
 
     await db_session.rollback()
 

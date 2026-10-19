@@ -8,7 +8,7 @@
  */
 import {describe, expect, it} from 'vitest';
 
-import type {RunViewResponse} from '@/hooks/runs/types';
+import type {RunViewFieldResponse, RunViewResponse} from '@/hooks/runs/types';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +95,10 @@ function makeRunViewResponse(
     entity_types: entityTypes,
     current_values: [],
     instances,
+    review_question: null,
+    review_question_revision: null,
+    project_protocol_revision: null,
+    review_question_drift: false,
     ...overrides,
   };
 }
@@ -168,6 +172,21 @@ describe('entityTypesFromRunView', () => {
     const [et] = entityTypesFromRunView(view);
     expect(et.fields[0].allows_not_applicable).toBe(true);
     expect(et.fields[0].allows_not_evaluated).toBe(true);
+  });
+
+  it.each([
+    ['legacy string[] → {value, label}', ['Yes', 'No'], [{value: 'Yes', label: 'Yes'}, {value: 'No', label: 'No'}]],
+    ['canonical options pass through', [{value: 'dev', label: 'Development only'}], [{value: 'dev', label: 'Development only'}]],
+    ['null stays null', null, null],
+  ])('allowed_values: %s', (_name, allowedValues, expected) => {
+    const view = makeRunViewResponse();
+    view.entity_types[0].fields[0] = {
+      ...view.entity_types[0].fields[0],
+      // The legacy case stands for a stale payload the type no longer admits.
+      allowed_values: allowedValues as RunViewFieldResponse['allowed_values'],
+    };
+    const [et] = entityTypesFromRunView(view);
+    expect(et.fields[0].allowed_values).toEqual(expected);
   });
 
   it('sets created_at placeholder from run.created_at on entity type', () => {

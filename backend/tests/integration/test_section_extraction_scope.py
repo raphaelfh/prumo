@@ -26,7 +26,7 @@ from over-rejecting legitimate own-coordinate ids.
 from __future__ import annotations
 
 from unittest.mock import MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -34,7 +34,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints import section_extraction as se
+from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories.extraction_repository import ExtractionInstanceRepository
+from app.services import engine_credentials, llm_connection_service
+from app.services.llm_connection_service import MissingCredentialError
+from app.worker import queue_health
 from tests.integration.conftest import CHARMS_GLOBAL_ID, SEED, first_entity_type_id
 from tests.integration.helpers import engine_setup
 from tests.integration.helpers.template_fixtures import add_instance, fresh_charms
@@ -151,7 +155,10 @@ def _stub_queue(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     The endpoint enqueues through ``apply_async`` (keyed by the attempt); a
     ``delay`` stub would leave every "never enqueued" assertion vacuous.
     """
-    monkeypatch.setattr(se, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
+    # The credential precheck runs for real; a deployment key makes it pass
+    # whatever the developer's or CI's environment holds.
+    monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
     fake_enqueue = MagicMock()
     monkeypatch.setattr(se, "run_section_extraction_task", MagicMock(apply_async=fake_enqueue))
     monkeypatch.setattr(se, "_remember_job_owner", lambda *_a, **_k: None)
@@ -379,3 +386,192 @@ async def test_foreign_template_is_rejected_without_an_entity_type_oracle(
     assert await _post(matching_entity_type) == 400
     assert await _post(SEED.primary_entity_type) == 400
     fake_enqueue.assert_not_called()
+
+
+# ======================================================================
+# The one AI kickoff gate: role, then credentials, then the run's stage
+# ======================================================================
+
+
+async def _make_viewer(db: AsyncSession) -> None:
+    """The outsider profile becomes a read-only viewer of the primary project."""
+    await db.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:p, :u, 'viewer')"
+        ),
+        {"p": str(SEED.primary_project), "u": str(SEED.outsider_profile)},
+    )
+
+
+async def _fresh_article(db: AsyncSession) -> UUID:
+    """An article in the primary project whose coordinate has no run yet."""
+    return (
+        await db.execute(
+            text(
+                "INSERT INTO public.articles (id, project_id, title, row_version) "
+                "VALUES (gen_random_uuid(), :pid, 'kickoff-gate article', 1) RETURNING id"
+            ),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+
+
+async def _run_at(db: AsyncSession, article_id: UUID, stage: ExtractionRunStage) -> UUID:
+    version_id = (
+        await db.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    run = ExtractionRun(
+        id=uuid4(),
+        project_id=SEED.primary_project,
+        article_id=article_id,
+        template_id=SEED.primary_template,
+        kind="extraction",
+        version_id=version_id,
+        stage=stage.value,
+        status="completed",
+        created_by=SEED.primary_profile,
+    )
+    db.add(run)
+    await db.flush()
+    return run.id
+
+
+_ROWS_SQL = {
+    "extraction_runs": "SELECT id, stage FROM public.extraction_runs WHERE article_id = :aid",
+    "extraction_attempts": (
+        "SELECT id, status FROM public.extraction_attempts WHERE article_id = :aid"
+    ),
+}
+
+
+async def _rows(db: AsyncSession, table: str, article_id: UUID) -> list[tuple]:
+    result = await db.execute(text(_ROWS_SQL[table]), {"aid": str(article_id)})
+    return [tuple(row) for row in result.all()]
+
+
+def _article_payload(article_id: UUID, **extra: str) -> dict:
+    return {**_payload(SEED.primary_entity_type), "articleId": str(article_id), **extra}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_run", [False, True], ids=["new-run", "run-id"])
+async def test_viewer_is_refused_on_both_branches(
+    client_as_outsider: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    with_run: bool,
+) -> None:
+    """A read-only viewer cannot start AI extraction: 403, nothing recorded,
+    nothing queued."""
+    fake_enqueue = _stub_queue(monkeypatch)
+    await _make_viewer(db_session)
+    article_id = await _fresh_article(db_session)
+    body = _article_payload(article_id)
+    if with_run:
+        body["runId"] = str(await _run_at(db_session, article_id, ExtractionRunStage.EXTRACT))
+
+    r = await client_as_outsider.post("/api/v1/extraction/sections", json=body)
+
+    assert r.status_code == 403, r.text
+    assert await _rows(db_session, "extraction_attempts", article_id) == []
+    fake_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_run", [False, True], ids=["new-run", "run-id"])
+async def test_outsider_gets_403_before_the_engine_check(
+    client_as_outsider: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    with_run: bool,
+) -> None:
+    """Membership precedes the credential precheck: a non-member never sees
+    the 409 that would reveal the project's engine configuration."""
+    fake_enqueue = _stub_queue(monkeypatch)
+
+    async def no_key(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise MissingCredentialError("openai")
+
+    monkeypatch.setattr(engine_credentials, "assert_engine_ready", no_key)
+    article_id = await _fresh_article(db_session)
+    body = _article_payload(article_id)
+    if with_run:
+        body["runId"] = str(await _run_at(db_session, article_id, ExtractionRunStage.EXTRACT))
+
+    r = await client_as_outsider.post("/api/v1/extraction/sections", json=body)
+
+    assert r.status_code == 403, r.text
+    fake_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_caller_supplied_article_text_is_rejected(
+    client_as_manager: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The prompt text always comes from the stored article: ``pdfText`` is
+    an unknown field, so the request is a 422."""
+    fake_enqueue = _stub_queue(monkeypatch)
+
+    r = await client_as_manager.post(
+        "/api/v1/extraction/sections",
+        json={**_payload(SEED.primary_entity_type), "pdfText": "caller text"},
+    )
+
+    assert r.status_code == 422, r.text
+    fake_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_run", [False, True], ids=["new-run", "run-id"])
+async def test_finalized_run_is_a_typed_409(
+    client_as_manager: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    with_run: bool,
+) -> None:
+    """A finalized article refuses AI extraction until it is reopened: no new
+    run beside it, no attempt row, nothing queued."""
+    fake_enqueue = _stub_queue(monkeypatch)
+    article_id = await _fresh_article(db_session)
+    finalized = await _run_at(db_session, article_id, ExtractionRunStage.FINALIZED)
+    body = _article_payload(article_id)
+    if with_run:
+        body["runId"] = str(finalized)
+
+    r = await client_as_manager.post("/api/v1/extraction/sections", json=body)
+
+    assert r.status_code == 409, r.text
+    error = r.json()["error"]
+    assert error["code"] == "RUN_FINALIZED"
+    assert error["details"] == {"run_id": str(finalized)}
+    assert await _rows(db_session, "extraction_runs", article_id) == [(finalized, "finalized")]
+    assert await _rows(db_session, "extraction_attempts", article_id) == []
+    fake_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_only_coordinate_still_gets_a_new_run(
+    client_as_manager: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_enqueue = _stub_queue(monkeypatch)
+    article_id = await _fresh_article(db_session)
+    cancelled = await _run_at(db_session, article_id, ExtractionRunStage.CANCELLED)
+
+    r = await client_as_manager.post(
+        "/api/v1/extraction/sections", json=_article_payload(article_id)
+    )
+
+    assert r.status_code == 202, r.text
+    runs = dict(await _rows(db_session, "extraction_runs", article_id))
+    assert runs.pop(cancelled) == "cancelled"
+    assert list(runs.values()) == ["extract"]
+    fake_enqueue.assert_called_once()

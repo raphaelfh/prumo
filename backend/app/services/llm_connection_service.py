@@ -52,6 +52,7 @@ __all__ = [
     "ConnectionUnavailableError",
     "KeyScope",
     "LlmConnectionService",
+    "MissingCredentialError",
     "ResolvedKey",
     "availability_map",
     "capabilities_of",
@@ -90,6 +91,27 @@ class ConnectionUnavailableError(AppError):
 
     def __init__(self, message: str) -> None:
         super().__init__(code="LLM_ENDPOINT_UNAVAILABLE", message=message, status_code=409)
+
+
+MissingCredentialReason = Literal["MISSING_API_KEY", "DEPLOYMENT_KEY_NOT_ALLOWED"]
+
+
+class MissingCredentialError(AppError):
+    """No usable credential at any rung for the engine's provider (kickoff precheck)."""
+
+    def __init__(
+        self, provider: str, *, reason: MissingCredentialReason = "MISSING_API_KEY"
+    ) -> None:
+        if reason == "DEPLOYMENT_KEY_NOT_ALLOWED":
+            message = (
+                f"Agent-started runs need your own or the project's own key for {provider}; "
+                "the deployment key is not used. Add one in Settings."
+            )
+        else:
+            message = f"No API key is configured for {provider}. Add one in Settings."
+        super().__init__(
+            code="MISSING_API_KEY", status_code=409, message=message, details={"reason": reason}
+        )
 
 
 class ConnectionNotFoundError(Exception):
@@ -426,11 +448,16 @@ async def _scoped_key_row(
 
 
 async def resolve_provider_key(
-    session: AsyncSession, *, provider: str, project_id: UUID, user_id: UUID
+    session: AsyncSession,
+    *,
+    provider: str,
+    project_id: UUID,
+    user_id: UUID,
+    allow_global: bool = True,
 ) -> ResolvedKey | None:
     """THE credential ladder: caller's user-scope key → project's shared key →
     the deployment's global setting. First hit wins; ``None`` when nothing has
-    a key.
+    a key. ``allow_global=False`` (agent-started batches) drops the last rung.
     """
     service = LlmConnectionService(session)
     for scope, column, owner, key_scope in (
@@ -446,7 +473,7 @@ async def resolve_provider_key(
                 row.last_used_at = datetime.now(UTC)
                 await session.flush()
                 return ResolvedKey(key, key_scope)
-    global_key = global_key_for(provider)
+    global_key = global_key_for(provider) if allow_global else None
     return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE) if global_key else None
 
 

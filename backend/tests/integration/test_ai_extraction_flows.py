@@ -188,7 +188,7 @@ async def test_a_standalone_section_resolves_runs_and_completes_its_own_run(
     assert run.stage == ExtractionRunStage.EXTRACT.value
     assert run.status == "completed"
     assert run.results["suggestions_created"] == 1
-    assert run.results["tokens_total"] == 15
+    assert run.results["tokens"]["total"] == 15
     assert run.results["fields_extracted"] == 1
     assert run.results["provenance"]["sections"], "completion merged, never replaced"
 
@@ -310,7 +310,7 @@ async def _decide(db: AsyncSession, run: ExtractionRun, field_id: UUID, decision
         field_id=field_id,
         reviewer_id=SEED.primary_profile,
         decision=decision,
-        value={"value": "settled"} if decision is ExtractionReviewerDecisionType.EDIT else None,
+        value={"value": 12} if decision is ExtractionReviewerDecisionType.EDIT else None,
     )
 
 
@@ -423,8 +423,9 @@ async def test_each_child_section_reads_what_the_previous_ones_found(
     db_session: AsyncSession,
 ) -> None:
     """Summarized memory: a later section's prompt carries the earlier
-    sections' first three values (``...`` when there are more), never the
-    first section's own prompt."""
+    sections' first three populated values (``...`` when there are more;
+    unanswered fields are skipped, never printed as "None"), never the first
+    section's own prompt."""
     parent, _children = await _entry_with_children(
         db_session, ("first_child", ("a", "b", "c", "d")), ("second_child", ("e",))
     )
@@ -439,7 +440,8 @@ async def test_each_child_section_reads_what_the_previous_ones_found(
     assert result.successful_sections == 2
     first, second = (c.user_prompt for c in fake.field_calls())
     assert "CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS" not in first
-    assert "1. first_child: first_child: a: alpha, b: beta, c: None..." in second
+    assert "1. first_child: first_child: a: alpha, b: beta\n" in second
+    assert "None" not in second
 
 
 async def test_an_entry_without_child_sections_is_an_empty_batch(
@@ -475,36 +477,6 @@ async def test_a_batch_on_the_session_run_raises_but_leaves_the_run(
 
     refreshed = await _refreshed(db_session, run.id)
     assert refreshed.status not in {"failed", "completed"}
-
-
-async def test_supplied_article_text_still_anchors_evidence(db_session: AsyncSession) -> None:
-    """A caller may pass ``pdf_text``; the model reads it, and the article's
-    parsed blocks are still loaded so evidence anchors."""
-    quote = "Each child cites this sentence."
-    parent, _ = await _entry_with_children(db_session, ("cited_child", ("x",)))
-    run = await run_in_extract(db_session)
-    file_id = await seed_article_text(db_session, quote)
-    fake = RecordedLlm(
-        fields={"x": {"value": "v", "evidence": [{"text": quote, "page_number": 1}]}}
-    )
-
-    await extraction(db_session, fake).run_from_request(
-        request(
-            parent_instance_id=parent,
-            run_id=run.id,
-            extract_all_sections=True,
-            pdf_text="SUPPLIED TEXT",
-        )
-    )
-
-    assert "SUPPLIED TEXT" in fake.field_calls()[0].user_prompt
-    anchored = (
-        await db_session.execute(
-            text("SELECT article_file_id FROM extraction_evidence WHERE run_id=:r"),
-            {"r": run.id},
-        )
-    ).scalar_one()
-    assert anchored == file_id
 
 
 async def test_the_full_pass_merges_every_entry_and_counts_a_failed_one_once(

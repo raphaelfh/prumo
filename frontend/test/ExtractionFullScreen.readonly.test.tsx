@@ -34,6 +34,15 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   useComparisonPermissions: vi.fn(),
 }));
 
+// The page computes its AI kickoff gate from the project role; a reviewer
+// unless a case says otherwise.
+const memberRole = vi.hoisted(() => ({
+  current: { role: "reviewer" as string | null, isManager: false, loading: false },
+}));
+vi.mock("@/hooks/useProjectMemberRole", () => ({
+  useProjectMemberRole: () => memberRole.current,
+}));
+
 // Worklist (header pager + next-article) and the reader's DOI lookup read
 // `articles` through the baselined PostgREST path; the stub serves both.
 vi.mock("@/integrations/supabase/client", async () => {
@@ -68,9 +77,12 @@ import {
   ARBITRATOR,
   BLIND_PERMISSIONS,
   extractionApi,
+  instance,
   makeDecision,
   makeRunView,
+  section,
   sourceOfDataForm,
+  textField,
 } from "./helpers/runScreenFixtures";
 
 const FINALIZED_RUN_VIEW = makeRunView({
@@ -230,5 +242,67 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
       );
       expect(await sourcePanelToggle()).toHaveAttribute("aria-pressed", "false");
     });
+  });
+});
+
+describe("ExtractionFullScreen — AI kickoff controls follow the project role", () => {
+  // A repeating group with one child section: the group's selector carries
+  // the entry-level AI actions, the child accordion the per-section button.
+  const MODELS_VIEW = makeRunView({
+    entity_types: [
+      section({ id: "et-models", name: "prediction_models", label: "Prediction Models", cardinality: "many", entry_label: "model" }),
+      section({
+        id: "et-dev",
+        name: "model_development",
+        label: "Model Development",
+        parent_entity_type_id: "et-models",
+        sort_order: 1,
+        fields: [textField("f-dev", "Notes")],
+      }),
+    ],
+    instances: [
+      instance("m-a", "et-models", { label: "Cox Model" }),
+      instance("d-a", "et-dev", { parent_instance_id: "m-a", label: "Cox development" }),
+    ],
+  });
+
+  const pageAIButton = () => screen.queryByTestId("run-ai-actions");
+  const selectorAIActions = () =>
+    screen.queryByRole("button", { name: /extract model entries automatically with ai/i });
+  const sectionAIButton = () => screen.queryByTestId("section-ai-extract-et-dev");
+
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    vi.mocked(apiClient).mockImplementation(extractionApi({ view: () => MODELS_VIEW }));
+  });
+
+  afterEach(() => {
+    memberRole.current = { role: "reviewer", isManager: false, loading: false };
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["the role is still loading", { role: null, loading: true }],
+    ["a stale role is reloading", { role: "reviewer", loading: true }],
+    ["the role lookup found no membership", { role: null, loading: false }],
+    ["the member is a viewer", { role: "viewer", loading: false }],
+  ])("hides every AI kickoff control while %s", async (_case, state) => {
+    memberRole.current = { ...state, isManager: false };
+    renderExtractionPage();
+
+    // The form is up (its child section rendered) before asserting absence.
+    expect((await screen.findAllByText("Model Development")).length).toBeGreaterThan(0);
+    expect(pageAIButton()).not.toBeInTheDocument();
+    expect(selectorAIActions()).not.toBeInTheDocument();
+    expect(sectionAIButton()).not.toBeInTheDocument();
+  });
+
+  it("shows every AI kickoff control to a reviewer in the extract stage", async () => {
+    memberRole.current = { role: "reviewer", isManager: false, loading: false };
+    renderExtractionPage();
+
+    expect(await screen.findByTestId("section-ai-extract-et-dev")).toBeInTheDocument();
+    expect(selectorAIActions()).toBeInTheDocument();
+    expect(pageAIButton()).toBeInTheDocument();
   });
 });

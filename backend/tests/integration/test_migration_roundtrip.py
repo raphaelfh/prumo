@@ -21,6 +21,8 @@ import re
 import subprocess
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import NamedTuple
+from uuid import UUID, uuid4
 
 import asyncpg
 import pytest
@@ -1305,15 +1307,17 @@ async def test_0056_makes_provenance_server_only(migration_session: AsyncSession
 
     Guards the exact failure this hardening was written against: a column-level
     REVOKE layered on a table-level GRANT does nothing, so the protection can
-    look present in the migration and be absent in the database.
+    look present in the migration and be absent in the database. The column
+    grants 0056 left on the other columns were later revoked
+    (``0081_revoke_member_writes``): every proposal write goes through the API.
     """
     assert (
         await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_PROVENANCE)
     ).scalar() is False, (
         "authenticated must NOT be able to UPDATE extraction_proposal_records.provenance"
     )
-    assert (await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)).scalar() is True, (
-        "the rest of the table's UPDATE grant must be preserved (only provenance is withheld)"
+    assert (await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)).scalar() is False, (
+        "authenticated has no UPDATE on any proposal-record column: writes go through the API"
     )
     assert (
         await migration_session.execute(_AUTHENTICATED_CAN_INSERT_PROVENANCE)
@@ -1328,7 +1332,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0080_article_text_fts"
+    expected_head = "0093_batch_agent_origin"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1788,3 +1792,982 @@ async def test_migration_0080_article_text_fts_roundtrip(
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert await has_index()
+
+
+# --- 0081: member writes revoked, append-only history trigger ---------------
+@pytest.mark.asyncio
+async def test_migration_0081_revoke_member_writes_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    async def posture() -> tuple[bool, bool, bool, bool, bool]:
+        row = (
+            await migration_session.execute(
+                text(
+                    "SELECT has_table_privilege("
+                    "  'authenticated', 'public.extraction_evidence', 'INSERT'),"
+                    " has_any_column_privilege("
+                    "  'authenticated', 'public.extraction_proposal_records', 'INSERT'),"
+                    " has_any_column_privilege("
+                    "  'authenticated', 'public.extraction_proposal_records', 'UPDATE'),"
+                    " has_column_privilege('authenticated',"
+                    "  'public.extraction_proposal_records', 'proposed_value', 'UPDATE'),"
+                    " to_regprocedure('public.refuse_append_only_change()') IS NOT NULL"
+                )
+            )
+        ).one()
+        await migration_session.rollback()
+        return tuple(bool(v) for v in row)  # type: ignore[return-value]
+
+    revoked = (False, False, False, False, True)
+    assert await posture() == revoked
+    _run_alembic("downgrade", "0080_article_text_fts", database_url=migration_db_url)
+    try:
+        assert await posture() == (True, True, True, True, False)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == revoked
+
+
+# --- 0082: optional per-project restriction on personal access tokens -------
+@pytest.mark.asyncio
+async def test_migration_0082_pat_project_scope_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    user_id, restricted_id, open_id = uuid4(), uuid4(), uuid4()
+
+    async def column_and_check() -> tuple[bool, bool]:
+        row = (
+            await migration_session.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns"
+                    "  WHERE table_schema = 'public' AND table_name = 'personal_access_tokens'"
+                    "  AND column_name = 'project_ids'),"
+                    " EXISTS (SELECT 1 FROM pg_constraint"
+                    "  WHERE conname = 'ck_personal_access_tokens_project_ids_check'"
+                    "  AND conrelid = 'public.personal_access_tokens'::regclass)"
+                )
+            )
+        ).one()
+        await migration_session.rollback()
+        return bool(row[0]), bool(row[1])
+
+    async def revoked() -> dict[str, bool]:
+        rows = (
+            await migration_session.execute(
+                text(
+                    "SELECT id::text, revoked_at IS NOT NULL FROM public.personal_access_tokens "
+                    "WHERE user_id = :u"
+                ),
+                {"u": str(user_id)},
+            )
+        ).all()
+        await migration_session.rollback()
+        return {r[0]: bool(r[1]) for r in rows}
+
+    async def insert_token(token_id: UUID, project_ids: list[str] | None) -> None:
+        await migration_session.execute(
+            text(
+                "INSERT INTO public.personal_access_tokens (id, user_id, name, token_prefix,"
+                " token_hash, scope, expires_at, project_ids) VALUES (:id, :u, 't',"
+                " 'prumo_pat_x', :h, 'read', now() + interval '1 day', CAST(:p AS uuid[]))"
+            ),
+            {"id": str(token_id), "u": str(user_id), "h": str(token_id), "p": project_ids},
+        )
+
+    assert await column_and_check() == (True, True)
+    await migration_session.execute(
+        text(
+            "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (:u,"
+            " 'pat-0082@test.local', '00000000-0000-0000-0000-000000000000',"
+            " 'authenticated', 'authenticated')"
+        ),
+        {"u": str(user_id)},
+    )
+    await migration_session.execute(
+        text("INSERT INTO public.profiles (id, email) VALUES (:u, 'pat-0082@test.local')"),
+        {"u": str(user_id)},
+    )
+    await migration_session.commit()
+    try:
+        with pytest.raises(Exception, match="ck_personal_access_tokens_project_ids_check"):
+            await insert_token(uuid4(), [])
+        await migration_session.rollback()
+        await insert_token(restricted_id, [str(uuid4())])
+        await insert_token(open_id, None)
+        await migration_session.commit()
+        assert await revoked() == {str(restricted_id): False, str(open_id): False}
+        _run_alembic("downgrade", "0081_revoke_member_writes", database_url=migration_db_url)
+        try:
+            assert await column_and_check() == (False, False)
+            # Fail closed: a restricted token never survives as an all-projects token.
+            assert await revoked() == {str(restricted_id): True, str(open_id): False}
+        finally:
+            _run_alembic("upgrade", "head", database_url=migration_db_url)
+        assert await column_and_check() == (True, True)
+        assert await revoked() == {str(restricted_id): True, str(open_id): False}
+    finally:
+        await migration_session.execute(
+            text("DELETE FROM public.profiles WHERE id = :u"), {"u": str(user_id)}
+        )
+        await migration_session.execute(
+            text("DELETE FROM auth.users WHERE id = :u"), {"u": str(user_id)}
+        )
+        await migration_session.commit()
+
+
+# --- 0083: OAuth connections to the MCP server -------------------------------
+_OAUTH_TABLES = ("mcp_oauth_clients", "mcp_oauth_requests", "mcp_oauth_tokens")
+_OAUTH_CHECKS = (
+    "ck_personal_access_tokens_kind_check",
+    "ck_personal_access_tokens_kind_shape_check",
+    "ck_mcp_oauth_clients_client_name_check",
+    "ck_mcp_oauth_clients_redirect_uris_check",
+    "ck_mcp_oauth_tokens_kind_check",
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0083_mcp_oauth_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    user_id, project_id, client_id = uuid4(), uuid4(), uuid4()
+    pat_id, connection_id, action_id = uuid4(), uuid4(), uuid4()
+    session = migration_session
+
+    async def schema() -> tuple[set[str], set[str], set[str]]:
+        tables = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = ANY(:t)"
+                    ),
+                    {"t": list(_OAUTH_TABLES)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        columns = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'personal_access_tokens' "
+                        "AND column_name IN ('kind', 'oauth_client_id')"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checks = set(
+            (
+                await session.execute(
+                    text("SELECT conname FROM pg_constraint WHERE conname = ANY(:c)"),
+                    {"c": list(_OAUTH_CHECKS)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.rollback()
+        return tables, columns, checks
+
+    async def scalar(sql: str, **params: str) -> object:
+        value = (await session.execute(text(sql), params)).scalar_one_or_none()
+        await session.rollback()
+        return value
+
+    at_head = (set(_OAUTH_TABLES), {"kind", "oauth_client_id"}, set(_OAUTH_CHECKS))
+    assert await schema() == at_head
+    for sql in (
+        "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (:u,"
+        " 'oauth-0083@test.local', '00000000-0000-0000-0000-000000000000',"
+        " 'authenticated', 'authenticated')",
+        "INSERT INTO public.profiles (id, email) VALUES (:u, 'oauth-0083@test.local')",
+        "INSERT INTO public.projects (id, name, created_by_id, is_active)"
+        " VALUES (:p, 'OAuth 0083 Project', :u, true)",
+    ):
+        await session.execute(text(sql), {"u": str(user_id), "p": str(project_id)})
+    await session.commit()
+    try:
+        # A PAT row written without `kind` defaults to 'pat'.
+        await session.execute(
+            text(
+                "INSERT INTO public.personal_access_tokens (id, user_id, name, token_prefix,"
+                " token_hash, scope, expires_at) VALUES (:id, :u, 'pat', 'prumo_pat_x',"
+                " 'hash-0083', 'read', now() + interval '1 day')"
+            ),
+            {"id": str(pat_id), "u": str(user_id)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO public.mcp_oauth_clients (client_id, client_name, redirect_uris,"
+                " scope) VALUES (:c, 'Claude', ARRAY['https://claude.ai/cb'], 'read write')"
+            ),
+            {"c": str(client_id)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO public.personal_access_tokens (id, user_id, kind, oauth_client_id,"
+                " name, scope, expires_at) VALUES (:id, :u, 'oauth', :c, 'Claude', 'read_write',"
+                " now() + interval '90 days')"
+            ),
+            {"id": str(connection_id), "u": str(user_id), "c": str(client_id)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO public.agent_actions (id, token_id, user_id, project_id, tool,"
+                " input, before, after, outcome, error_code) VALUES (:id, :tok, :u, :p,"
+                " 'edit_template_draft', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'applied', NULL)"
+            ),
+            {
+                "id": str(action_id),
+                "tok": str(connection_id),
+                "u": str(user_id),
+                "p": str(project_id),
+            },
+        )
+        await session.commit()
+        assert (
+            await scalar(
+                "SELECT kind FROM public.personal_access_tokens WHERE id = :id", id=str(pat_id)
+            )
+            == "pat"
+        )
+
+        with pytest.raises(Exception, match="uq_personal_access_tokens_oauth_user_client"):
+            await session.execute(
+                text(
+                    "INSERT INTO public.personal_access_tokens (id, user_id, kind, oauth_client_id,"
+                    " name, scope, expires_at) VALUES (gen_random_uuid(), :u, 'oauth', :c, 'Claude', 'read',"
+                    " now() + interval '90 days')"
+                ),
+                {"u": str(user_id), "c": str(client_id)},
+            )
+        await session.rollback()
+
+        _run_alembic("downgrade", "0082_pat_project_scope", database_url=migration_db_url)
+        try:
+            assert await schema() == (set(), set(), set())
+            assert (
+                await scalar(
+                    "SELECT count(*) FROM public.personal_access_tokens WHERE id = :id",
+                    id=str(connection_id),
+                )
+                == 0
+            )
+            assert (
+                await scalar(
+                    "SELECT token_id IS NULL FROM public.agent_actions WHERE id = :id",
+                    id=str(action_id),
+                )
+                is True
+            )
+            assert (
+                await scalar(
+                    "SELECT token_hash FROM public.personal_access_tokens WHERE id = :id",
+                    id=str(pat_id),
+                )
+                == "hash-0083"
+            )
+        finally:
+            _run_alembic("upgrade", "head", database_url=migration_db_url)
+        assert await schema() == at_head
+    finally:
+        await session.rollback()
+        await session.execute(
+            text("DELETE FROM public.mcp_oauth_clients WHERE client_id = :c"), {"c": str(client_id)}
+        )
+        for sql in (
+            "DELETE FROM public.projects WHERE id = :p",
+            "DELETE FROM public.profiles WHERE id = :u",
+            "DELETE FROM auth.users WHERE id = :u",
+        ):
+            await session.execute(text(sql), {"u": str(user_id), "p": str(project_id)})
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_migration_0084_canonical_options_roundtrip(migration_db_url: str) -> None:
+    """Data-only and forward-only: the downgrade is a no-op, and the upgrade
+    re-runs cleanly over rows that are already canonical."""
+    try:
+        _run_alembic("downgrade", "0083_mcp_oauth", database_url=migration_db_url)
+        assert "0083_mcp_oauth" in _run_alembic("current", database_url=migration_db_url)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+
+
+@pytest.mark.asyncio
+async def test_migration_0085_freeze_qa_rules_roundtrip(migration_db_url: str) -> None:
+    """Data-only: the downgrade strips the rules keys, the re-upgrade
+    backfills them again from the templates' current rules."""
+    try:
+        _run_alembic("downgrade", "0084_canonical_field_options", database_url=migration_db_url)
+        assert "0084_canonical_field_options" in _run_alembic(
+            "current", database_url=migration_db_url
+        )
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+
+
+_0086_INDEXES = (
+    "idx_extraction_evidence_proposal_record_id",
+    "idx_extraction_evidence_reviewer_decision_id",
+    "idx_extraction_evidence_consensus_decision_id",
+)
+_0086_FKS = ("fk_hitl_configs_scope_project", "fk_hitl_configs_scope_template")
+_0086_COLUMNS = ("scope_project_id", "scope_template_id")
+
+
+@pytest.mark.asyncio
+async def test_migration_0086_evidence_idx_hitl_fk_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """Downgrade drops the evidence indexes, the scope FKs and columns; the
+    re-upgrade deletes orphan configs of both scope kinds planted while
+    downgraded and ties the surviving rows to their project or template."""
+    user_id, project_id, template_id = uuid4(), uuid4(), uuid4()
+    live_project_cfg, live_template_cfg = uuid4(), uuid4()
+    orphan_project_cfg, orphan_template_cfg = uuid4(), uuid4()
+    session = migration_session
+
+    async def names(sql: str, values: tuple[str, ...]) -> set[str]:
+        found = set((await session.execute(text(sql), {"n": list(values)})).scalars().all())
+        await session.rollback()
+        return found
+
+    async def schema() -> tuple[set[str], set[str], set[str]]:
+        return (
+            await names(
+                "SELECT indexname FROM pg_indexes WHERE indexname = ANY(:n)", _0086_INDEXES
+            ),
+            await names("SELECT conname FROM pg_constraint WHERE conname = ANY(:n)", _0086_FKS),
+            await names(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'"
+                " AND table_name = 'extraction_hitl_configs' AND column_name = ANY(:n)",
+                _0086_COLUMNS,
+            ),
+        )
+
+    at_head = (set(_0086_INDEXES), set(_0086_FKS), set(_0086_COLUMNS))
+    assert await schema() == at_head
+    ids = {
+        "u": str(user_id),
+        "p": str(project_id),
+        "t": str(template_id),
+        "cp": str(live_project_cfg),
+        "ct": str(live_template_cfg),
+        "op": str(orphan_project_cfg),
+        "ot": str(orphan_template_cfg),
+    }
+    try:
+        _run_alembic("downgrade", "0085_freeze_qa_rules", database_url=migration_db_url)
+        try:
+            assert await schema() == (set(), set(), set())
+            for sql in (
+                "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (:u,"
+                " 'hitl-0086@test.local', '00000000-0000-0000-0000-000000000000',"
+                " 'authenticated', 'authenticated')",
+                "INSERT INTO public.profiles (id, email) VALUES (:u, 'hitl-0086@test.local')",
+                "INSERT INTO public.projects (id, name, created_by_id, is_active)"
+                " VALUES (:p, 'HITL 0086 Project', :u, true)",
+                "INSERT INTO public.project_extraction_templates (id, project_id, name,"
+                " framework, version, kind, schema, is_active, created_by) VALUES (:t, :p,"
+                " 'hitl-0086-template', 'CUSTOM', '1.0', 'extraction', '{}'::jsonb, false, :u)",
+                # Deferred invariant: every project template needs an active version.
+                "INSERT INTO public.extraction_template_versions (id, project_template_id,"
+                " version, schema, published_by, is_active) VALUES (gen_random_uuid(), :t, 1,"
+                " '{\"entity_types\": []}'::jsonb, :u, true)",
+                "INSERT INTO public.extraction_hitl_configs (id, scope_kind, scope_id,"
+                " reviewer_count, consensus_rule) VALUES (:cp, 'project', :p, 2, 'majority'),"
+                " (:ct, 'template', :t, 1, 'unanimous'), (:op, 'project', :op, 1, 'unanimous'),"
+                " (:ot, 'template', :ot, 1, 'unanimous')",
+            ):
+                await session.execute(text(sql), ids)
+            await session.commit()
+        finally:
+            _run_alembic("upgrade", "head", database_url=migration_db_url)
+        assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+        assert await schema() == at_head
+        rows = {
+            row.id: (row.scope_project_id, row.scope_template_id)
+            for row in (
+                await session.execute(
+                    text(
+                        "SELECT id, scope_project_id, scope_template_id"
+                        " FROM public.extraction_hitl_configs WHERE id IN (:cp, :ct, :op, :ot)"
+                    ),
+                    ids,
+                )
+            ).all()
+        }
+        await session.rollback()
+        assert rows == {
+            live_project_cfg: (project_id, None),
+            live_template_cfg: (None, template_id),
+        }
+    finally:
+        await session.rollback()
+        for sql in (
+            "DELETE FROM public.extraction_hitl_configs WHERE id IN (:cp, :ct, :op, :ot)",
+            "DELETE FROM public.project_extraction_templates WHERE id = :t",
+            "DELETE FROM public.projects WHERE id = :p",
+            "DELETE FROM public.profiles WHERE id = :u",
+            "DELETE FROM auth.users WHERE id = :u",
+        ):
+            await session.execute(text(sql), ids)
+        await session.commit()
+
+
+_0087_TABLES = ("extraction_templates_global", "project_extraction_templates")
+_0087_CHECKS = (
+    "ck_extraction_templates_global_instrument",
+    "ck_project_extraction_templates_instrument",
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0087_template_instrument_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """Both template tables gain a checked ``instrument`` column; the
+    downgrade drops column and CHECK, the re-upgrade restores both.
+    ``alembic check`` ignores CHECKs, so the names are asserted here."""
+    session = migration_session
+
+    async def schema() -> tuple[set[str], set[str]]:
+        tables = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.columns"
+                        " WHERE table_schema = 'public' AND column_name = 'instrument'"
+                        " AND table_name = ANY(:n)"
+                    ),
+                    {"n": list(_0087_TABLES)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checks = set(
+            (
+                await session.execute(
+                    text("SELECT conname FROM pg_constraint WHERE conname = ANY(:n)"),
+                    {"n": list(_0087_CHECKS)},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.rollback()
+        return tables, checks
+
+    at_head = (set(_0087_TABLES), set(_0087_CHECKS))
+    assert await schema() == at_head
+    try:
+        _run_alembic("downgrade", "0086_evidence_idx_hitl_fk", database_url=migration_db_url)
+        assert await schema() == (set(), set())
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    assert await schema() == at_head
+
+
+@pytest.mark.asyncio
+async def test_migration_0088_protocol_revision_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``projects`` gains a checked ``protocol_revision`` counter; the
+    downgrade drops column and CHECK, the re-upgrade restores both.
+    ``alembic check`` ignores CHECKs, so the name is asserted here."""
+    session = migration_session
+
+    async def schema() -> tuple[bool, bool]:
+        column = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns"
+                    " WHERE table_schema = 'public' AND table_name = 'projects'"
+                    " AND column_name = 'protocol_revision'"
+                )
+            )
+        ).scalar_one_or_none() is not None
+        check = (
+            await session.execute(
+                text("SELECT 1 FROM pg_constraint WHERE conname = 'ck_projects_protocol_revision'")
+            )
+        ).scalar_one_or_none() is not None
+        await session.rollback()
+        return column, check
+
+    assert await schema() == (True, True)
+    try:
+        _run_alembic("downgrade", "0087_template_instrument", database_url=migration_db_url)
+        assert await schema() == (False, False)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    assert await schema() == (True, True)
+
+
+@pytest.mark.asyncio
+async def test_migration_0089_evidence_content_version_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``extraction_evidence`` gains a nullable ``content_version`` and a
+    partial index on ``article_file_id``; the downgrade drops both, the
+    re-upgrade restores both."""
+    session = migration_session
+
+    async def schema() -> tuple[bool, str | None]:
+        column = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns"
+                    " WHERE table_schema = 'public' AND table_name = 'extraction_evidence'"
+                    " AND column_name = 'content_version'"
+                )
+            )
+        ).scalar_one_or_none() is not None
+        indexdef = (
+            await session.execute(
+                text(
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+                    " AND indexname = 'idx_extraction_evidence_article_file_id'"
+                )
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+        return column, indexdef
+
+    column, indexdef = await schema()
+    assert column is True
+    assert indexdef is not None and "WHERE (article_file_id IS NOT NULL)" in indexdef
+    try:
+        _run_alembic("downgrade", "0088_protocol_revision", database_url=migration_db_url)
+        assert await schema() == (False, None)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    column, indexdef = await schema()
+    assert column is True
+    assert indexdef is not None and "WHERE (article_file_id IS NOT NULL)" in indexdef
+
+
+_ENTITY_KEY_INDEXDEF = text(
+    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+    " AND indexname = 'uq_extraction_instances_entity_key'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0090_entity_key_unique_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``uq_extraction_instances_entity_key`` holds one identity per
+    coordinate, roots included (NULLS NOT DISTINCT), over keyed rows only;
+    the downgrade drops it, the re-upgrade restores it. The partial WHERE is
+    not compared by ``alembic check``, so this indexdef assertion is its guard."""
+    session = migration_session
+
+    async def indexdef() -> str | None:
+        found = (await session.execute(_ENTITY_KEY_INDEXDEF)).scalar_one_or_none()
+        await session.rollback()
+        return found
+
+    def assert_shape(found: str | None) -> None:
+        assert found is not None
+        assert found.startswith("CREATE UNIQUE INDEX")
+        assert (
+            "(article_id, entity_type_id, parent_instance_id, ((metadata ->> 'entity_key'::text)))"
+            in found
+        )
+        assert "NULLS NOT DISTINCT" in found
+        assert found.endswith("WHERE (metadata ? 'entity_key'::text)")
+
+    assert_shape(await indexdef())
+    try:
+        _run_alembic("downgrade", "0089_evidence_content_version", database_url=migration_db_url)
+        assert await indexdef() is None
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "(head)" in _run_alembic("current", database_url=migration_db_url)
+    assert_shape(await indexdef())
+
+
+# --- 0090: duplicate entity_key heal ---
+# Fixed fixture ids (0090-prefixed, hex-only) so assertions can name rows.
+_EK_PROFILE = "00900000-0000-4000-8000-00000000000a"
+_EK_PROJECT = "00900000-0000-4000-8000-00000000000b"
+_EK_TEMPLATE = "00900000-0000-4000-8000-00000000000c"
+_EK_ARTICLE = "00900000-0000-4000-8000-00000000000d"
+_EK_SECTION = "00900000-0000-4000-8000-00000000000e"
+_EK_KEEP = "00900000-0000-4000-8000-000000000001"
+_EK_DUP2 = "00900000-0000-4000-8000-000000000002"
+_EK_DUP3 = "00900000-0000-4000-8000-000000000003"
+
+# Duplicates are only representable at 0089 (pre-index). created_at is
+# staggered explicitly because it is the heal's rank key; the newest loser
+# already carries a history entry the heal must append to, not replace.
+_EK_FIXTURE_STATEMENTS = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_EK_PROFILE}', 'heal-0090@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_EK_PROFILE}', 'heal-0090@integration-test.prumo.local', 'Heal 0090')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
+    f"('{_EK_PROJECT}', 'Heal 0090 Project', '{_EK_PROFILE}', true)",
+    "INSERT INTO public.project_extraction_templates "
+    "(id, project_id, name, framework, version, kind, schema, is_active, created_by) VALUES "
+    f"('{_EK_TEMPLATE}', '{_EK_PROJECT}', 'heal-0090-template', 'CUSTOM', '1.0', "
+    f"'extraction', '{{}}'::jsonb, true, '{_EK_PROFILE}')",
+    "INSERT INTO public.extraction_template_versions "
+    "(id, project_template_id, version, schema, published_by, is_active) VALUES "
+    f"('00900000-0000-4000-8000-0000000000aa', '{_EK_TEMPLATE}', 1, "
+    f"'{{\"entity_types\": []}}'::jsonb, '{_EK_PROFILE}', true)",
+    "INSERT INTO public.articles (id, project_id, title, row_version) VALUES "
+    f"('{_EK_ARTICLE}', '{_EK_PROJECT}', 'Heal 0090 Article', 1)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, sort_order, entry_label) VALUES "
+    f"('{_EK_SECTION}', '{_EK_TEMPLATE}', 'heal_models', 'Heal Models', 'many', 0, 'model')",
+    "INSERT INTO public.extraction_instances "
+    "(id, project_id, article_id, template_id, entity_type_id, parent_instance_id,"
+    " label, sort_order, metadata, created_by, created_at) VALUES "
+    f"('{_EK_KEEP}', '{_EK_PROJECT}', '{_EK_ARTICLE}', '{_EK_TEMPLATE}', '{_EK_SECTION}',"
+    " NULL, 'Probe', 0, '{\"entity_key\": \"probe\"}'::jsonb,"
+    f" '{_EK_PROFILE}', now() - interval '3 hours'), "
+    f"('{_EK_DUP2}', '{_EK_PROJECT}', '{_EK_ARTICLE}', '{_EK_TEMPLATE}', '{_EK_SECTION}',"
+    " NULL, 'probe', 1, '{\"entity_key\": \"probe\"}'::jsonb,"
+    f" '{_EK_PROFILE}', now() - interval '2 hours'), "
+    f"('{_EK_DUP3}', '{_EK_PROJECT}', '{_EK_ARTICLE}', '{_EK_TEMPLATE}', '{_EK_SECTION}',"
+    ' NULL, \'PROBE\', 2, \'{"entity_key": "probe", "entity_key_history":'
+    ' [{"who": "u", "when": "2026-01-01T00:00:00+00:00", "from": "old", "to": "probe"}]}\'::jsonb,'
+    f" '{_EK_PROFILE}', now() - interval '1 hour')",
+)
+_EK_METADATA = text(
+    "SELECT id::text, metadata FROM public.extraction_instances WHERE entity_type_id = :sid"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0090_heals_seeded_duplicates(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """Three root holders of one key at one coordinate: the upgrade keeps
+    the key on the oldest and moves it into each loser's key history (the
+    trail is appended to, never replaced) before the index is built."""
+    session = migration_session
+    await session.rollback()
+    _run_alembic("downgrade", "0089_evidence_content_version", database_url=migration_db_url)
+    try:
+        for statement in _EK_FIXTURE_STATEMENTS:
+            await session.execute(text(statement))
+        await session.commit()
+    finally:
+        await session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    try:
+        rows = dict((await session.execute(_EK_METADATA, {"sid": _EK_SECTION})).all())
+        await session.rollback()
+        assert set(rows) == {_EK_KEEP, _EK_DUP2, _EK_DUP3}
+        assert rows[_EK_KEEP] == {"entity_key": "probe"}, "the oldest holder keeps its key"
+        for loser in (_EK_DUP2, _EK_DUP3):
+            assert "entity_key" not in rows[loser]
+            last = rows[loser]["entity_key_history"][-1]
+            assert last["who"] == "migration:0090_entity_key_unique"
+            assert last["from"] == "probe"
+            assert last["to"] is None
+            assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00", last["when"])
+        assert len(rows[_EK_DUP2]["entity_key_history"]) == 1
+        history = rows[_EK_DUP3]["entity_key_history"]
+        assert [entry["from"] for entry in history] == ["old", "probe"]
+        assert (await session.execute(_ENTITY_KEY_INDEXDEF)).scalar_one_or_none() is not None
+    finally:
+        await session.rollback()
+        await session.execute(
+            text("DELETE FROM public.extraction_instances WHERE entity_type_id = :sid"),
+            {"sid": _EK_SECTION},
+        )
+        await session.commit()
+
+
+# --- 0091: ai_usage_ledger (backend-only, deny_all) ------------------------
+_LEDGER_INDEXES = {
+    "ix_ai_usage_ledger_project_created",
+    "ix_ai_usage_ledger_owner_created",
+    "ix_ai_usage_ledger_run_id",
+    "ix_ai_usage_ledger_attempt_id",
+    "ix_ai_usage_ledger_batch_id",
+}
+_LEDGER_INDEXES_AFTER_0091 = {"ix_ai_usage_ledger_agent_token_id"}  # 0093
+_LEDGER_CHECKS = {
+    "ck_ai_usage_ledger_key_scope",
+    "ck_ai_usage_ledger_pass_kind",
+    "ck_ai_usage_ledger_outcome",
+    "ck_ai_usage_ledger_prompt_tokens_nonneg",
+    "ck_ai_usage_ledger_completion_tokens_nonneg",
+}
+
+
+class _LedgerPosture(NamedTuple):
+    exists: bool
+    rls: bool
+    policies: set[str]
+    indexes: set[str]
+    checks: set[str]
+
+
+@pytest.mark.asyncio
+async def test_migration_0091_ai_usage_ledger_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The ledger table, its five indexes, its CHECKs and the deny-all
+    posture exist at head, go with the downgrade, and come back with the
+    re-upgrade, REVOKE included (Supabase default privileges would
+    otherwise re-grant the client roles)."""
+    session = migration_session
+
+    async def posture() -> _LedgerPosture:
+        rls = (
+            await session.execute(
+                text(
+                    "SELECT relrowsecurity FROM pg_class "
+                    "WHERE oid = to_regclass('public.ai_usage_ledger')"
+                )
+            )
+        ).scalar_one_or_none()
+        policies = (
+            await session.execute(
+                text(
+                    "SELECT policyname FROM pg_policies "
+                    "WHERE schemaname = 'public' AND tablename = 'ai_usage_ledger'"
+                )
+            )
+        ).scalars()
+        indexes = (
+            await session.execute(
+                text(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE schemaname = 'public' AND tablename = 'ai_usage_ledger'"
+                )
+            )
+        ).scalars()
+        checks = (
+            await session.execute(
+                text(
+                    "SELECT conname FROM pg_constraint WHERE contype = 'c' "
+                    "AND conrelid = to_regclass('public.ai_usage_ledger')"
+                )
+            )
+        ).scalars()
+        found = _LedgerPosture(
+            exists=rls is not None,
+            rls=bool(rls),
+            policies=set(policies),
+            indexes=set(indexes) - {"ai_usage_ledger_pkey"},
+            checks=set(checks),
+        )
+        await session.rollback()
+        return found
+
+    at_head = _LedgerPosture(
+        True, True, {"deny_all"}, _LEDGER_INDEXES | _LEDGER_INDEXES_AFTER_0091, _LEDGER_CHECKS
+    )
+    assert await posture() == at_head
+    try:
+        _run_alembic("downgrade", "0090_entity_key_unique", database_url=migration_db_url)
+        assert await posture() == _LedgerPosture(False, False, set(), set(), set())
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == at_head
+    for role in ("anon", "authenticated"):
+        granted = (
+            await session.execute(
+                text("SELECT has_table_privilege(:role, 'public.ai_usage_ledger', 'SELECT')"),
+                {"role": role},
+            )
+        ).scalar_one()
+        await session.rollback()
+        assert granted is False, f"{role} regained SELECT on ai_usage_ledger after re-upgrade"
+
+
+@pytest.mark.asyncio
+async def test_migration_0092_pat_ai_run_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The ``ai_run`` column and its lifetime CHECK exist at head, go with the
+    downgrade and come back with the re-upgrade; a 90-day OAuth connection
+    written before 0092 survives the upgrade with ``ai_run = false``."""
+    user_id, client_id, connection_id = uuid4(), uuid4(), uuid4()
+    session = migration_session
+
+    async def schema() -> tuple[set[str], set[str]]:
+        columns = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'personal_access_tokens' "
+                        "AND column_name = 'ai_run'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checks = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint WHERE contype = 'c' "
+                        "AND conrelid = to_regclass('public.personal_access_tokens') "
+                        "AND conname LIKE '%ai_run%'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.rollback()
+        return columns, checks
+
+    at_head = ({"ai_run"}, {"ck_personal_access_tokens_ai_run_lifetime_check"})
+    assert await schema() == at_head
+    try:
+        _run_alembic("downgrade", "0091_ai_usage_ledger", database_url=migration_db_url)
+        try:
+            assert await schema() == (set(), set())
+            for sql in (
+                "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (:u,"
+                " 'pat-0092@test.local', '00000000-0000-0000-0000-000000000000',"
+                " 'authenticated', 'authenticated')",
+                "INSERT INTO public.profiles (id, email) VALUES (:u, 'pat-0092@test.local')",
+                "INSERT INTO public.mcp_oauth_clients (client_id, client_name, redirect_uris,"
+                " scope) VALUES (:c, 'Claude', ARRAY['https://claude.ai/cb'], 'read write')",
+                "INSERT INTO public.personal_access_tokens (id, user_id, kind, oauth_client_id,"
+                " name, scope, expires_at) VALUES (:id, :u, 'oauth', :c, 'Claude', 'read_write',"
+                " now() + interval '90 days')",
+            ):
+                await session.execute(
+                    text(sql), {"u": str(user_id), "c": str(client_id), "id": str(connection_id)}
+                )
+            await session.commit()
+        finally:
+            _run_alembic("upgrade", "head", database_url=migration_db_url)
+        assert await schema() == at_head
+        ai_run = (
+            await session.execute(
+                text("SELECT ai_run FROM public.personal_access_tokens WHERE id = :id"),
+                {"id": str(connection_id)},
+            )
+        ).scalar_one()
+        await session.rollback()
+        assert ai_run is False
+    finally:
+        await session.rollback()
+        for sql in (
+            "DELETE FROM public.personal_access_tokens WHERE id = :id",
+            "DELETE FROM public.mcp_oauth_clients WHERE client_id = :c",
+            "DELETE FROM public.profiles WHERE id = :u",
+            "DELETE FROM auth.users WHERE id = :u",
+        ):
+            await session.execute(
+                text(sql), {"u": str(user_id), "c": str(client_id), "id": str(connection_id)}
+            )
+        await session.commit()
+
+
+# --- 0093: agent-origin batches ---------------------------------------------
+_AGENT_BATCH_COLUMNS = {
+    ("extraction_batches", "agent_token_id"),
+    ("extraction_batches", "agent_engine"),
+    ("extraction_batches", "agent_plan_digest"),
+    ("ai_usage_ledger", "agent_token_id"),
+}
+_AGENT_BATCH_INDEXES = {
+    "uq_extraction_batches_agent_plan_digest",
+    "ix_extraction_batches_agent_token_id",
+    "ix_extraction_batches_agent_project_created",
+    "ix_ai_usage_ledger_agent_token_id",
+}
+_AGENT_BATCH_CONSTRAINTS = {
+    ("ck_extraction_batches_agent_fields_check", "c", " "),
+    ("extraction_batches_agent_token_id_fkey", "f", "n"),
+    ("ai_usage_ledger_agent_token_id_fkey", "f", "n"),
+}
+
+
+@pytest.mark.asyncio
+async def test_migration_0093_batch_agent_origin_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The agent columns, the CHECK, the three batch indexes (one unique),
+    the ledger column and its index, and both SET NULL foreign keys exist at
+    head, go with the downgrade to 0092 and come back with the re-upgrade."""
+    session = migration_session
+
+    async def schema() -> tuple[set[tuple[str, str]], set[str], set[tuple[str, str, str]]]:
+        columns = {
+            (row[0], row[1])
+            for row in (
+                await session.execute(
+                    text(
+                        "SELECT table_name, column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' "
+                        "AND table_name IN ('extraction_batches', 'ai_usage_ledger') "
+                        "AND column_name LIKE 'agent_%'"
+                    )
+                )
+            ).all()
+        }
+        indexes = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' "
+                        "AND tablename IN ('extraction_batches', 'ai_usage_ledger') "
+                        "AND indexname LIKE '%agent%'"
+                    )
+                )
+            ).scalars()
+        )
+        constraints = {
+            (row[0], row[1], row[2])
+            for row in (
+                await session.execute(
+                    text(
+                        "SELECT conname, contype::text, confdeltype::text FROM pg_constraint "
+                        "WHERE conrelid IN (to_regclass('public.extraction_batches'), "
+                        "to_regclass('public.ai_usage_ledger')) AND conname LIKE '%agent%'"
+                    )
+                )
+            ).all()
+        }
+        await session.rollback()
+        return columns, indexes, constraints
+
+    at_head = (_AGENT_BATCH_COLUMNS, _AGENT_BATCH_INDEXES, _AGENT_BATCH_CONSTRAINTS)
+    assert await schema() == at_head
+    unique = (
+        await session.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE indexname = 'uq_extraction_batches_agent_plan_digest'"
+            )
+        )
+    ).scalar_one()
+    await session.rollback()
+    assert "UNIQUE" in unique and "agent_plan_digest IS NOT NULL" in unique
+    try:
+        _run_alembic("downgrade", "0092_pat_ai_run", database_url=migration_db_url)
+        assert await schema() == (set(), set(), set())
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await schema() == at_head

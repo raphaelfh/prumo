@@ -2,20 +2,88 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from typing import Any
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from limits import parse
 from mcp import Client
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp import server
+from app.api.mcp.tools import template_draft
 from app.core.config import API_VERSION
-from tests.integration.conftest import SEED
-from tests.integration.mcp.conftest import SeededPat
+from tests.integration.conftest import SEED, IntegrationSeedIds
+from tests.integration.mcp.conftest import SeededPat, seed_oauth_principal
+
+# INSTRUCTIONS length before the untrusted_fields paragraph: that paragraph
+# may spend at most 250 chars and the configuration (Setup) paragraph at most
+# 300 more, and the AI extraction runs paragraph at most 350 more, of the
+# 2,048 budget later tools also need.
+_PRE_HARDEN_INSTRUCTIONS_LEN = 1095
+
+# Tools allowed a destructive/open-world hint or a requiresUserInteraction meta.
+_HINT_ALLOWLIST: frozenset[str] = frozenset({"start_ai_run"})
+
+
+# Every test here runs with a PAT and with an OAuth connection of the same
+# scope: an OAuth principal must pass the choke point exactly as a PAT does.
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_rw(
+    request: pytest.FixtureRequest,
+    pat_primary_rw: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_rw
+    return await seed_oauth_principal(db_session, monkeypatch, SEED.primary_profile, "read_write")
+
+
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_read(
+    request: pytest.FixtureRequest,
+    pat_primary_read: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_read
+    return await seed_oauth_principal(db_session, monkeypatch, SEED.primary_profile, "read")
+
+
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_rw_ai_run(
+    request: pytest.FixtureRequest,
+    pat_primary_rw_ai_run: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_rw_ai_run
+    return await seed_oauth_principal(
+        db_session, monkeypatch, SEED.primary_profile, "read_write", ai_run=True
+    )
+
+
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_read_ai_run(
+    request: pytest.FixtureRequest,
+    pat_primary_read_ai_run: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_read_ai_run
+    return await seed_oauth_principal(
+        db_session, monkeypatch, SEED.primary_profile, "read", ai_run=True
+    )
 
 
 async def test_tools_list_is_scope_filtered(
@@ -68,12 +136,23 @@ async def test_reviewer_is_manager_required_for_write(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_reviewer_rw: SeededPat,
     pat_primary_rw: SeededPat,
+    db_session: AsyncSession,
     probe_tools: None,  # noqa: ARG001
 ) -> None:
+    name = (
+        await db_session.execute(
+            text("SELECT name FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
     async with mcp_client(pat_reviewer_rw) as client:
         r = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
         assert r.structured_content is not None
         assert r.structured_content["code"] == "MANAGER_REQUIRED"
+        # Membership is proven before this refusal, so naming the project leaks nothing.
+        assert r.structured_content["project_name"] == name
+        assert r.structured_content["untrusted_content"] is True
+        assert r.structured_content["untrusted_fields"] == ["project_name"]
 
         r_read = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
         assert r_read.is_error is False
@@ -120,7 +199,7 @@ async def test_rate_limit_per_token(
     probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(server, "_READ_LIMIT", parse("2/minute"))
+    monkeypatch.setitem(server._TIERS, "read", parse("2/minute"))
 
     async with mcp_client(pat_primary_read) as client:
         r1 = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
@@ -138,13 +217,220 @@ async def test_rate_limit_per_token(
     assert r_other.is_error is False
 
 
+# --- the ai_run grant and the tier table (ADR 0021) ---------------------------
+
+_AI_PROBES = {"probe_ai_read", "probe_ai_write"}
+
+
+async def test_ai_run_probe_hidden_without_grant(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    pat_primary_rw: SeededPat,
+    pat_primary_read_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    for pat in (pat_primary_read, pat_primary_rw):
+        async with mcp_client(pat) as client:
+            names = {t.name for t in (await client.list_tools()).tools}
+        assert "probe_read" in names
+        assert not names & _AI_PROBES
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+    assert names >= _AI_PROBES
+
+
+async def test_ai_run_direct_call_without_grant_is_scope_insufficient_and_free(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        results = [
+            await client.call_tool("probe_ai_read", {"project_id": str(SEED.primary_project)})
+            for _ in range(15)  # above the ai_plan tier's 10/minute
+        ]
+    for r in results:
+        assert r.structured_content is not None
+        assert r.structured_content["code"] == "SCOPE_INSUFFICIENT"
+        assert r.structured_content["required_scope"] == "ai_run"
+
+
+async def test_viewer_with_grant_is_reviewer_required(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_viewer_ai_run: SeededPat,
+    db_session: AsyncSession,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    name = (
+        await db_session.execute(
+            text("SELECT name FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    async with mcp_client(pat_viewer_ai_run) as client:
+        r = await client.call_tool("probe_ai_read", {"project_id": str(SEED.primary_project)})
+        r_member = await client.call_tool(
+            "probe_ai_write", {"project_id": str(SEED.primary_project)}
+        )
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "REVIEWER_REQUIRED"
+    assert r.structured_content["retryable"] is False
+    assert r.structured_content["project_name"] == name
+    assert r.structured_content["untrusted_fields"] == ["project_name"]
+    assert r_member.is_error is False
+
+
+async def test_read_ai_run_token_cannot_call_write_tools(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+        r = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
+    assert "probe_write" not in names
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "SCOPE_INSUFFICIENT"
+    assert r.structured_content["required_scope"] == "write"
+
+
+async def test_tiers_never_share_counters(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    args = {"project_id": str(SEED.primary_project)}
+    async with mcp_client(pat_primary_rw_ai_run) as client:
+        writes = [await client.call_tool("probe_write", args) for _ in range(21)]
+        r_ai = await client.call_tool("probe_ai_write", args)
+    assert all(r.is_error is False for r in writes[:20])
+    assert writes[20].structured_content is not None
+    assert writes[20].structured_content["code"] == "RATE_LIMITED"  # write tier exhausted
+    assert r_ai.is_error is False
+
+
+def _register_bad(**kwargs: Any) -> None:
+    async def probe_never(db: AsyncSession, project_id: Any) -> dict:  # noqa: ARG001
+        return {}
+
+    server.agent_tool(
+        **{"project_arg": "project_id", **kwargs},
+        title="never",
+        description="test",
+        destructive=False,
+    )(probe_never)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "missing"),
+    [
+        pytest.param(
+            {
+                "requires": "ai_run",
+                "role": "member",
+                "read_only": True,
+                "open_world": False,
+                "requires_user_interaction": False,
+            },
+            "tier",
+            id="ai_run-without-tier",
+        ),
+        pytest.param({"requires": "read", "role": "member"}, "role", id="read-with-role"),
+        pytest.param({"requires": "write", "tier": "ai_plan"}, "tier", id="write-with-tier"),
+        pytest.param(
+            {
+                "requires": "ai_run",
+                "role": "member",
+                "tier": "nope",
+                "read_only": True,
+                "open_world": False,
+                "requires_user_interaction": False,
+            },
+            "tier",
+            id="ai_run-unknown-tier",
+        ),
+        pytest.param(
+            {
+                "requires": "ai_run",
+                "project_arg": None,
+                "role": "reviewer",
+                "tier": "ai_plan",
+                "read_only": True,
+                "open_world": False,
+                "requires_user_interaction": False,
+            },
+            "project_arg",
+            id="role-without-project",
+        ),
+    ],
+)
+def test_ai_run_rule_requires_explicit_fields(kwargs: dict[str, Any], missing: str) -> None:
+    with pytest.raises(TypeError, match=missing):
+        _register_bad(**kwargs)
+    assert "probe_never" not in server._RULES
+
+
+async def test_requires_user_interaction_renders_the_meta(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw_ai_run: SeededPat,
+) -> None:
+    async def probe_prompted(db: AsyncSession, project_id: Any) -> dict:  # noqa: ARG001
+        return {}
+
+    server.agent_tool(
+        requires="ai_run",
+        role="reviewer",
+        tier="ai_start",
+        read_only=False,
+        open_world=True,
+        requires_user_interaction=True,
+        project_arg="project_id",
+        title="Probe prompted",
+        description="test",
+        destructive=True,
+        idempotent=False,
+    )(probe_prompted)
+    try:
+        async with mcp_client(pat_primary_rw_ai_run) as client:
+            tools = {t.name: t for t in (await client.list_tools()).tools}
+    finally:
+        server.mcp.remove_tool("probe_prompted")
+        server._RULES.pop("probe_prompted", None)
+    tool = tools["probe_prompted"]
+    assert tool.meta == {"anthropic/requiresUserInteraction": True}
+    assert tool.annotations is not None
+    assert (tool.annotations.read_only_hint, tool.annotations.open_world_hint) == (False, True)
+    assert all(
+        set(t.meta or {}) <= {"ui"}
+        for name, t in tools.items()
+        if name != "probe_prompted" and name not in _HINT_ALLOWLIST
+    )
+
+
+async def test_read_only_ai_tool_rejects_nul_in_dispatcher(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    args = {"project_id": str(SEED.primary_project), "note": "a\x00b"}
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        r = await client.call_tool("probe_ai_read", args)
+        # A mutating tool (read_only=False) gets the NUL: it rejects it inside its
+        # own audited try, so the dispatcher keys on read_only, not the scope.
+        r_mutating = await client.call_tool("probe_ai_write", args)
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "INVALID_ARGUMENT"
+    assert r.structured_content["field"] == "note"
+    assert r_mutating.is_error is False
+
+
 async def test_write_tools_use_the_write_bucket(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
     probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(server, "_WRITE_LIMIT", parse("1/minute"))
+    monkeypatch.setitem(server._TIERS, "write", parse("1/minute"))
 
     async with mcp_client(pat_primary_rw) as client:
         r1 = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
@@ -215,9 +501,15 @@ async def test_server_info_instructions_and_cache_hints(
         assert client.server_info.version == API_VERSION
         assert client.instructions is not None
         assert len(client.instructions) <= 2048
+        assert len(server.INSTRUCTIONS) == 1810  # pinned: later slices must not grow it
+        assert len(client.instructions) <= _PRE_HARDEN_INSTRUCTIONS_LEN + 250 + 300 + 350
+        assert "explicitly asks" in client.instructions
         assert "list_projects" in client.instructions
         assert "untrusted" in client.instructions
+        assert "untrusted_fields" in client.instructions
+        assert "nonce" in client.instructions
         assert "Publish" in client.instructions
+        assert "get_setup_readiness" in client.instructions
 
         result = await client.list_tools()
         assert result.ttl_ms == 3_600_000
@@ -225,7 +517,8 @@ async def test_server_info_instructions_and_cache_hints(
         for tool in result.tools:
             assert tool.title
             assert tool.annotations is not None
-            assert tool.annotations.open_world_hint is False
+            if tool.name not in _HINT_ALLOWLIST:
+                assert tool.annotations.open_world_hint is False
 
 
 async def test_tool_call_span_carries_no_secret(
@@ -276,3 +569,375 @@ async def test_tool_call_span_carries_no_secret(
     assert span.attrs["outcome"] == "ok"
     for value in span.attrs.values():
         assert "prumo_pat_" not in str(value)
+
+
+# --- argument validation inside the envelope (PRU-80 / PRU-81) ---------------
+
+
+async def test_malformed_argument_is_invalid_argument_naming_the_field(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        r = await client.call_tool("get_project", {"project_id": "abc"})
+    assert r.is_error is True
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "INVALID_ARGUMENT"
+    assert r.structured_content["field"] == "project_id"
+    assert r.structured_content["retryable"] is False
+    assert "pydantic" not in r.content[0].text
+    assert "Error executing tool" not in r.content[0].text
+
+
+async def test_read_token_with_bad_arguments_to_write_tool_is_scope_insufficient(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        r = await client.call_tool("probe_write", {"project_id": "abc"})
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "SCOPE_INSUFFICIENT"
+
+
+async def test_bad_arguments_are_charged_to_the_rate_tier(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(server._TIERS, "read", parse("1/minute"))
+    async with mcp_client(pat_primary_read) as client:
+        r1 = await client.call_tool("probe_read", {"project_id": "abc"})
+        r2 = await client.call_tool("probe_read", {"project_id": "abc"})
+    assert r1.structured_content is not None
+    assert r1.structured_content["code"] == "INVALID_ARGUMENT"
+    assert r2.structured_content is not None
+    assert r2.structured_content["code"] == "RATE_LIMITED"
+    assert r2.structured_content["retry_after_seconds"] >= 1
+
+
+@pytest.mark.parametrize("limit", [0, -1, 51, 2**31], ids=["zero", "negative", "over", "int4"])
+async def test_list_articles_limit_out_of_range_is_invalid_argument(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    limit: int,
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        r = await client.call_tool(
+            "list_articles", {"project_id": str(SEED.primary_project), "limit": limit}
+        )
+    assert r.structured_content is not None
+    assert (r.structured_content["code"], r.structured_content["field"]) == (
+        "INVALID_ARGUMENT",
+        "limit",
+    )
+
+
+def _branches(schema: dict) -> list[dict]:
+    """A property's schema, or each branch of its ``anyOf`` (an optional arg)."""
+    return schema.get("anyOf", [schema])
+
+
+async def test_tools_list_advertises_argument_bounds(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    bounded = 0
+    for tool in tools.values():
+        for name, prop in tool.input_schema.get("properties", {}).items():
+            if name in {"limit", "page_from", "page_to"}:
+                ints = [b for b in _branches(prop) if b.get("type") == "integer"]
+                assert ints, (tool.name, name)
+                for branch in ints:
+                    assert "minimum" in branch and "maximum" in branch, (tool.name, name)
+                    bounded += 1
+            if name == "response_format":
+                enums = [b for b in _branches(prop) if "enum" in b]
+                assert enums and set(enums[0]["enum"]) == {"concise", "detailed"}, tool.name
+    assert bounded == 4  # list_articles.limit, get_extractions.limit, page_from, page_to
+
+    ops = tools["edit_template_draft"].input_schema["properties"]["ops"]
+    assert ops["maxItems"] == 25
+    op_names: set[str] = set()
+    for branch in ops["items"]["oneOf"]:
+        op_names |= set(
+            branch["properties"]["op"].get("enum", [branch["properties"]["op"].get("const")])
+        )
+    assert op_names == set(template_draft._ALLOWED_OPS)
+    assert len(op_names) == 10
+
+    details = tools["update_project_details"].input_schema["properties"]
+    for key in ("fields", "expected"):
+        assert details[key]["additionalProperties"] is False
+        assert len(details[key]["properties"]) == 11
+
+
+class _Out(BaseModel):  # module level: agent_tool evaluates the annotations by name
+    x: int
+
+
+class _Wrong(BaseModel):
+    x: str
+
+
+async def test_output_schema_failure_is_not_the_callers_invalid_argument(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tool RESULT failing its output schema is a server bug the SDK raises
+    as `UnexpectedToolError` (cause: a ValidationError) AFTER `_dispatch` ran:
+    never re-answered as INVALID_ARGUMENT, never charged twice."""
+    runs: list[int] = []
+
+    async def probe_bad_output(db: AsyncSession) -> _Out:  # noqa: ARG001
+        runs.append(1)
+        return _Wrong(x="not-an-int")  # type: ignore[return-value]
+
+    hits: list[str] = []
+    real_hit = server.hit_shared
+
+    def _counting_hit(*args: object, **kwargs: object) -> bool:
+        hits.append(str(args[1:]))
+        return real_hit(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(server, "hit_shared", _counting_hit)
+    server.agent_tool(
+        requires="read", project_arg=None, title="Probe out", description="test", destructive=False
+    )(probe_bad_output)
+    try:
+        async with mcp_client(pat_primary_read) as client:
+            r = await client.call_tool("probe_bad_output", {})
+    finally:
+        server.mcp.remove_tool("probe_bad_output")
+        server._RULES.pop("probe_bad_output", None)
+
+    assert r.is_error is True
+    assert (r.structured_content or {}).get("code") != "INVALID_ARGUMENT"
+    assert len(runs) == 1
+    assert len(hits) == 1
+
+
+async def test_no_tool_listing_cites_internal_spec_sections(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        tools = (await client.list_tools()).tools
+
+    assert tools
+    for tool in tools:
+        listing = json.dumps(
+            [tool.description, tool.input_schema, tool.output_schema], ensure_ascii=False
+        )
+        assert "spec §" not in listing, tool.name
+
+
+async def test_descriptions_document_search_syntax(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        descriptions = {t.name: t.description or "" for t in (await client.list_tools()).tools}
+
+    assert "Words are ANDed" in descriptions["search_project_text"]
+    assert "case-insensitive substring" in descriptions["list_articles"]
+    assert "ai_only" in descriptions["get_extractions"]
+    assert "run.stage" in descriptions["get_extractions"]
+
+
+async def test_annotation_policy_is_pinned(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw_ai_run: SeededPat,
+) -> None:
+    """Reads are (read-only, non-destructive, idempotent, closed-world); config
+    writes are non-destructive, closed-world and carry no per-call prompt."""
+    async with mcp_client(pat_primary_rw_ai_run) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    assert "update_project_details" in tools and "edit_template_draft" in tools
+    assert "plan_ai_run" in tools and "start_ai_run" in tools
+    start = tools["start_ai_run"]
+    assert (
+        start.annotations.read_only_hint,
+        start.annotations.destructive_hint,
+        start.annotations.idempotent_hint,
+        start.annotations.open_world_hint,
+    ) == (False, True, True, True)
+    assert start.meta == {"anthropic/requiresUserInteraction": True}
+    for name, tool in tools.items():
+        a = tool.annotations
+        assert a is not None, name
+        hints = (a.read_only_hint, a.destructive_hint, a.idempotent_hint, a.open_world_hint)
+        if a.read_only_hint:
+            assert hints == (True, False, True, False), name
+        if name not in _HINT_ALLOWLIST:
+            assert a.destructive_hint is False and a.open_world_hint is False, name
+            assert "anthropic/requiresUserInteraction" not in (tool.meta or {}), name
+    assert tools["update_project_details"].annotations.idempotent_hint is True
+    assert tools["edit_template_draft"].annotations.idempotent_hint is False
+    assert not any(w in n for n in tools for w in ("publish", "clone", "import"))
+
+
+# One minimal valid edit_template_draft call per op on the seeded primary
+# template. Ops that delete or move carry an expected_fingerprint, so the
+# refusal under test (scope, role or lock) is what surfaces.
+_DRAFT_OP_CASES: dict[str, Callable[[IntegrationSeedIds], list[dict[str, Any]]]] = {
+    "add_question": lambda seed: [
+        {
+            "op": "add_question",
+            "section_id": str(seed.primary_entity_type),
+            "label": "Choke point Q",
+            "type": "text",
+        }
+    ],
+    "update_question": lambda seed: [
+        {"op": "update_question", "field_id": str(seed.primary_field), "label": "Choke point"}
+    ],
+    "delete_question": lambda seed: [
+        {"op": "delete_question", "field_id": str(seed.primary_field)}
+    ],
+    "move_question": lambda seed: [
+        {
+            "op": "move_question",
+            "field_id": str(seed.primary_field),
+            "section_id": str(seed.primary_entity_type),
+            "position": 0,
+        }
+    ],
+    "reorder_questions": lambda seed: [
+        {
+            "op": "reorder_questions",
+            "section_id": str(seed.primary_entity_type),
+            "field_ids": [str(seed.primary_field)],
+        }
+    ],
+    "set_options": lambda seed: [
+        {
+            "op": "set_options",
+            "field_id": str(seed.primary_field),
+            "options": [{"value": "y", "label": "Yes"}],
+        }
+    ],
+    "add_section": lambda _seed: [
+        {"op": "add_section", "label": "Choke point S", "cardinality": "one"}
+    ],
+    "update_section": lambda seed: [
+        {"op": "update_section", "section_id": str(seed.primary_entity_type), "label": "Choke"}
+    ],
+    "delete_section": lambda seed: [
+        {"op": "delete_section", "section_id": str(seed.primary_entity_type)}
+    ],
+    "set_instruction": lambda _seed: [{"op": "set_instruction", "instruction": "Choke point"}],
+}
+
+
+def _draft_op_args(op: str) -> dict[str, Any]:
+    return {
+        "project_id": str(SEED.primary_project),
+        "template_id": str(SEED.primary_template),
+        "ops": _DRAFT_OP_CASES[op](SEED),
+        "expected_fingerprint": "any",
+    }
+
+
+async def _template_state(db: AsyncSession) -> tuple[Any, frozenset[str]]:
+    holder = (
+        await db.execute(
+            text("SELECT config_draft_by FROM public.project_extraction_templates WHERE id = :t"),
+            {"t": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT f.id, f.label, f.sort_order, f.entity_type_id "
+                "FROM public.extraction_fields f "
+                "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+                "WHERE et.project_template_id = :t"
+            ),
+            {"t": str(SEED.primary_template)},
+        )
+    ).all()
+    sections = (
+        await db.execute(
+            text(
+                "SELECT id, label, cardinality FROM public.extraction_entity_types "
+                "WHERE project_template_id = :t"
+            ),
+            {"t": str(SEED.primary_template)},
+        )
+    ).all()
+    instruction = (
+        await db.execute(
+            text(
+                "SELECT llm_template_instruction FROM public.project_extraction_templates "
+                "WHERE id = :t"
+            ),
+            {"t": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    return (holder, instruction), frozenset(
+        [f"{r.id}:{r.label}:{r.sort_order}:{r.entity_type_id}" for r in rows]
+        + [f"section:{r.id}:{r.label}:{r.cardinality}" for r in sections]
+    )
+
+
+def test_draft_op_cases_cover_every_allowed_op() -> None:
+    assert set(_DRAFT_OP_CASES) == set(template_draft._ALLOWED_OPS)
+
+
+async def _assert_draft_op_refused(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat: SeededPat,
+    db_session: AsyncSession,
+    op: str,
+    code: str,
+) -> None:
+    before = await _template_state(db_session)
+    async with mcp_client(pat) as client:
+        r = await client.call_tool("edit_template_draft", _draft_op_args(op))
+    assert r.is_error is True
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == code
+    assert await _template_state(db_session) == before
+
+
+@pytest.mark.parametrize("op", sorted(_DRAFT_OP_CASES))
+async def test_draft_op_choke_point_read_token(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    db_session: AsyncSession,
+    op: str,
+) -> None:
+    await _assert_draft_op_refused(
+        mcp_client, pat_primary_read, db_session, op, "SCOPE_INSUFFICIENT"
+    )
+
+
+@pytest.mark.parametrize("op", sorted(_DRAFT_OP_CASES))
+async def test_draft_op_choke_point_reviewer(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_reviewer_rw: SeededPat,
+    db_session: AsyncSession,
+    op: str,
+) -> None:
+    await _assert_draft_op_refused(mcp_client, pat_reviewer_rw, db_session, op, "MANAGER_REQUIRED")
+
+
+@pytest.mark.parametrize("op", sorted(_DRAFT_OP_CASES))
+async def test_draft_op_choke_point_foreign_lock(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+    db_session: AsyncSession,
+    op: str,
+) -> None:
+    await db_session.execute(
+        text("UPDATE public.project_extraction_templates SET config_draft_by = :r WHERE id = :t"),
+        {"r": str(SEED.reviewer_profile), "t": str(SEED.primary_template)},
+    )
+    await db_session.flush()
+    await _assert_draft_op_refused(mcp_client, pat_primary_rw, db_session, op, "DRAFT_LOCK_HELD")

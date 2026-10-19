@@ -63,7 +63,7 @@ def test_text_field_round_trip():
                 "value": "adults with sepsis",
                 "confidence": 0.9,
                 "reasoning": "stated in methods",
-                "evidence": [{"text": "We enrolled adults...", "page_number": 3}],
+                "evidence": [{"block_ref": "p3·b2", "quote": "We enrolled adults..."}],
                 "status": "found",
             }
         }
@@ -71,7 +71,10 @@ def test_text_field_round_trip():
     data = dump_extraction(instance)
     assert data["population"]["value"] == "adults with sepsis"
     assert data["population"]["confidence"] == 0.9
-    assert data["population"]["evidence"][0]["page_number"] == 3
+    assert data["population"]["evidence"][0] == {
+        "block_ref": "p3·b2",
+        "quote": "We enrolled adults...",
+    }
 
 
 def test_value_may_be_null_when_not_found():
@@ -398,8 +401,8 @@ def test_dump_extraction_emits_evidence_list():
                 "reasoning": "stated",
                 "status": "found",
                 "evidence": [
-                    {"text": "overall survival", "page_number": 3},
-                    {"text": "OS was the primary endpoint", "page_number": 3},
+                    {"block_ref": "p3·b1", "quote": "overall survival"},
+                    {"block_ref": "p3·b4", "quote": "OS was the primary endpoint"},
                 ],
             }
         }
@@ -407,4 +410,4 @@ def test_dump_extraction_emits_evidence_list():
     dumped = dump_extraction(instance)
     ev = dumped["primary_outcome"]["evidence"]
     assert isinstance(ev, list) and len(ev) == 2
-    assert ev[0]["text"] == "overall survival"
+    assert ev[0]["quote"] == "overall survival"

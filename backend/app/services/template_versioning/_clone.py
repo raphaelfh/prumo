@@ -14,6 +14,10 @@ B-4):
   republish was lost, and the historical wipe-and-rebuild destroyed
   customizations. Live is authoritative; true factory recovery is an
   explicit delete + re-import.
+* **rules refresh** — the catalogue's QA rules (``derived_judgments``,
+  ``scope_rules``) differ from the active snapshot's: write them to the
+  clone and publish a new version, alongside either heal or alone on an
+  aligned clone. Runs pinned to older versions keep their rules.
 
 Idempotent on ``(project_id, global_template_id)``: a second call returns
 the existing clone (re-activated) instead of creating duplicates. Flushes,
@@ -27,11 +31,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ProjectExtractionTemplate
+from app.models.extraction import ExtractionTemplateGlobal, ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
+from app.services.extraction_snapshot import qa_rules_of
 from app.services.template_clone_service import TemplateCloneService
 from app.services.template_versioning._diff import (
     TEMPLATE_INSTRUCTION_KEY,
@@ -72,8 +77,8 @@ async def clone_template(
 
     ``kind`` requires a specific lineage at the global level; a mismatch is
     ``TemplateNotFoundError`` like a missing id. Raises
-    ``PendingConfigDraftError`` when either heal would publish an
-    unpublished draft (B-4).
+    ``PendingConfigDraftError`` when either heal or a rules refresh would
+    publish an unpublished draft (B-4).
     """
     structure = TemplateCloneService(db)
     publisher = TemplateVersionService(db)
@@ -119,6 +124,8 @@ async def clone_template(
     # placeholder snapshot (live == snapshot == 0), so zero-state gets its
     # own clause.
     zero_state = entity_types == 0 and fields == 0
+    drifted = entity_types != snapshot_et or fields != snapshot_field
+    rules_changed = qa_rules_of(global_tpl.schema_) != qa_rules_of(version.schema_)
     version_id = version.id
     if zero_state:
         # Locks BEFORE the rebuild: the rebuild's mark-draft trigger
@@ -133,6 +140,10 @@ async def clone_template(
         await _refuse_if_instruction_draft_pending(
             db, existing.id, active_snapshot=version.schema_ or {}
         )
+        if rules_changed:
+            # Under the locks above: the schema UPDATE takes the
+            # template-row lock (see ``_write_catalogue_rules``).
+            await _write_catalogue_rules(db, existing, global_tpl)
         entity_types, fields = await structure.rebuild_from_global(
             project_template_id=existing.id, global_template_id=global_template_id
         )
@@ -144,15 +155,22 @@ async def clone_template(
             user_id=user_id,
         )
         version_id = republished.version_id
-    elif entity_types != snapshot_et or fields != snapshot_field:
-        if existing.config_draft_since is not None:
+    elif drifted or rules_changed:
+        if drifted and existing.config_draft_since is not None:
             # B-4: a marker-set drift is a PENDING DRAFT, and this
             # heal would silently publish it. Fast-fail courtesy —
             # the AUTHORITATIVE re-check runs under republish's
             # locks (fail_if_pending_draft), so a stamp landing
             # after this read still refuses. A marker-NULL drift
-            # is a lost republish and self-heals as before.
+            # is a lost republish and self-heals as before. A rules
+            # refresh on aligned structure refuses there too, rather
+            # than ship a pending draft with the new rules.
             raise PendingConfigDraftError()
+        # Locks BEFORE the rules write, as in the zero-state branch:
+        # the schema UPDATE takes the template-row lock.
+        await publisher.acquire_publish_locks(existing.id)
+        if rules_changed:
+            await _write_catalogue_rules(db, existing, global_tpl)
         republished = await publisher.republish(
             project_id=project_id,
             project_template_id=existing.id,
@@ -171,6 +189,25 @@ async def clone_template(
         field_count=fields,
         created=False,
     )
+
+
+async def _write_catalogue_rules(
+    db: AsyncSession,
+    existing: ProjectExtractionTemplate,
+    global_tpl: ExtractionTemplateGlobal,
+) -> None:
+    """Write the catalogue's rules to the clone, flushed so ``republish``
+    (which reads the LIVE ``schema`` through SQL) snapshots them.
+
+    The caller holds ``acquire_publish_locks`` first. The UPDATE row-locks
+    the template, while ``republish``, run creation and session-open take
+    the advisory publish locks BEFORE the template row; writing first
+    would invert that order and can deadlock a re-import against a run
+    being opened (ABBA). ``reactivate`` repeats the same assignment
+    idempotently.
+    """
+    existing.schema_ = dict(global_tpl.schema_ or {})
+    await db.flush()
 
 
 async def _refuse_if_instruction_draft_pending(
@@ -201,6 +238,11 @@ async def _refuse_if_instruction_draft_pending(
     loaded before the locks) so the check is authoritative rather than
     TOCTOU-racy. The pinned side needs no such read: version rows are
     append-only, so ``active_snapshot`` cannot have gone stale.
+
+    The instruction is the only draft-editable template-level key in the
+    snapshot. The QA rules keys (``derived_judgments``, ``scope_rules``)
+    change only by re-import from the global catalogue, which refreshes and
+    republishes them, so no draft of theirs can be pending here.
     """
     marker, live = (
         await db.execute(

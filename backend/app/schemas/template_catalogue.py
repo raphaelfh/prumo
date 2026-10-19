@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.extraction import Framework
+from app.schemas.extraction import Framework, InstrumentCode
 
 TemplateKindLiteral = Literal["extraction", "quality_assessment"]
 
@@ -21,6 +21,7 @@ class GlobalTemplateSummaryRead(BaseModel):
     name: str
     description: str | None
     framework: Framework
+    instrument: InstrumentCode
     version: str
     kind: TemplateKindLiteral
     entity_types_count: int
@@ -41,6 +42,7 @@ class ProjectTemplateRead(BaseModel):
     name: str
     description: str | None
     framework: Framework
+    instrument: InstrumentCode
     version: str
     kind: TemplateKindLiteral
     template_schema: dict[str, Any] = Field(

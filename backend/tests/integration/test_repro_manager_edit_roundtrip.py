@@ -111,7 +111,7 @@ async def test_manager_edit_survives_reload(
             "instance_id": instance_id,
             "field_id": field_id,
             "decision": "edit",
-            "value": {"value": "MANAGER-TYPED-VALUE"},
+            "value": {"value": 4242},
         },
     )
     assert dec.status_code in (200, 201), dec.text  # "Saved" badge == this succeeding
@@ -127,7 +127,7 @@ async def test_manager_edit_survives_reload(
     assert found, (
         f"manager edit LOST on reload: current_values has no entry for {key}. current_values={cv!r}"
     )
-    assert found[0]["value"] == {"value": "MANAGER-TYPED-VALUE"}, found[0]
+    assert found[0]["value"] == {"value": 4242}, found[0]
 
 
 _SHADOW_RUN_INSERT = text(
@@ -182,7 +182,7 @@ async def test_second_live_run_is_unrepresentable(
             "instance_id": instance_id,
             "field_id": field_id,
             "decision": "edit",
-            "value": {"value": "MANAGER-TYPED-VALUE"},
+            "value": {"value": 4242},
         },
     )
     assert dec.status_code in (200, 201), dec.text
@@ -192,7 +192,7 @@ async def test_second_live_run_is_unrepresentable(
     assert reloaded["run_id"] == run_1
     cv = reloaded["run_view"]["current_values"]
     found = [c for c in cv if c["instance_id"] == instance_id and c["field_id"] == field_id]
-    assert found and found[0]["value"] == {"value": "MANAGER-TYPED-VALUE"}, cv
+    assert found and found[0]["value"] == {"value": 4242}, cv
 
     # The forked shadow run (what model/full-AI extraction used to create) is
     # rejected by the partial unique index. LAST statement on purpose: the

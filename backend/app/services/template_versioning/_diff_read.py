@@ -19,6 +19,7 @@ from uuid import UUID
 from app.domain.template_change import ChangeVariant, OpaqueValueState
 from app.schemas.hitl_session import TemplateChangeRowRead
 from app.services.template_versioning._diff import (
+    AI_INPUT_ATTRIBUTES,
     OPTION_KEY,
     ChangeKind,
     NodeKind,
@@ -32,7 +33,7 @@ from app.services.template_versioning._diff import (
 #: ``(MOVED, TEMPLATE)`` and ``(REORDERED, TEMPLATE)``.
 #:
 #: ``(MODIFIED, FIELD)`` is the one entry :func:`_variant_of` overrides: an
-#: ``allowed_values`` change splits by polarity into its own two variants.
+#: ``allowed_values`` change splits into add, remove and rename variants.
 VARIANT_BY_KIND: dict[tuple[ChangeKind, NodeKind], ChangeVariant] = {
     (ChangeKind.ADDED, NodeKind.TEMPLATE): ChangeVariant.TEMPLATE_INSTRUCTION_ADDED,
     (ChangeKind.REMOVED, NodeKind.TEMPLATE): ChangeVariant.TEMPLATE_INSTRUCTION_REMOVED,
@@ -192,6 +193,7 @@ def _to_row(change: TemplateChange, *, affects_recorded_data: bool) -> TemplateC
         after_opaque_state=after_state,
         reorder_count=int(change.after) if reordered else None,
         affects_recorded_data=affects_recorded_data,
+        affects_ai=change.attribute is None or change.attribute in AI_INPUT_ATTRIBUTES,
     )
 
 
@@ -203,8 +205,10 @@ def _to_row(change: TemplateChange, *, affects_recorded_data: bool) -> TemplateC
 def _variant_of(change: TemplateChange) -> ChangeVariant:
     """The row's discriminator: one variant per change, never a catch-all."""
     if change.attribute == OPTION_KEY and change.kind is ChangeKind.MODIFIED:
-        # Option add and option remove share a ``(kind, node_kind)``; only the
-        # polarity of the engine's before/after tells them apart.
+        # Option add, remove and rename share a ``(kind, node_kind)``; which of
+        # the engine's before/after are set tells them apart.
+        if change.before is not None and change.after is not None:
+            return ChangeVariant.FIELD_OPTION_RENAMED
         return (
             ChangeVariant.FIELD_OPTION_REMOVED
             if change.after is None
@@ -244,15 +248,14 @@ def _row_id(change: TemplateChange) -> str:
 
 
 def _option_code(change: TemplateChange) -> str | None:
-    """The added or removed option code, for the only rows that carry one.
+    """The added, removed or renamed option's code, for the only rows that carry one.
 
-    An options *reorder* also has ``attribute == "allowed_values"`` but puts a
-    sibling count in ``after``, so the kind must be checked too.
+    An options *reorder* also has ``attribute == "allowed_values"`` but carries
+    no code, so the kind must be checked too.
     """
     if change.attribute != OPTION_KEY or change.kind is not ChangeKind.MODIFIED:
         return None
-    code = change.before if change.before is not None else change.after
-    return str(code) if code is not None else None
+    return change.option_code
 
 
 # --------------------------------------------------------------------------
@@ -272,7 +275,8 @@ def _wire_value(
     baseline side is raw stored JSONB, so a value that is not already a
     display-safe scalar gets summarized instead of shipped, whatever the
     attribute claims to be. ``attribute is None`` (a move's parent labels) and
-    ``allowed_values`` (an option code) are strings the engine built itself.
+    ``allowed_values`` (an option code or label) are strings the engine built
+    itself.
     """
     if attribute in OPAQUE_ATTRIBUTES or not isinstance(raw, bool | str | None):
         return _render_opaque(raw)

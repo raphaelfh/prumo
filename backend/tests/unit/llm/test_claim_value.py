@@ -6,7 +6,51 @@ LABEL ("Yes") so the claim is interpretable. Numeric/date/text must pass
 through unchanged so the deterministic numeric check still works.
 """
 
-from app.llm.claim_value import option_label_map, value_str_for_claim
+import pytest
+
+from app.llm.claim_value import normalize_options, option_label_map, value_str_for_claim
+from app.schemas.template_structure import OptionItem
+
+CANONICAL = [{"value": "Y", "label": "Yes"}, {"value": "N", "label": "No"}]
+
+
+class TestNormalizeOptions:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            ["Y", "N"],
+            {"options": ["Y", "N"]},
+            {"options": [{"value": "Y"}, {"value": "N"}]},
+        ],
+        ids=["bare-strings", "wrapper-of-strings", "wrapper-of-label-less-dicts"],
+    )
+    def test_legacy_shapes_read_canonical(self, raw: object) -> None:
+        assert normalize_options(raw) == [
+            {"value": "Y", "label": "Y"},
+            {"value": "N", "label": "N"},
+        ]
+
+    def test_canonical_is_unchanged(self) -> None:
+        assert normalize_options(CANONICAL) == CANONICAL
+
+    def test_mixed_list_and_label_only(self) -> None:
+        assert normalize_options(
+            ["Y", {"value": "NI", "label": "No information"}, {"label": "Z"}]
+        ) == [
+            {"value": "Y", "label": "Y"},
+            {"value": "NI", "label": "No information"},
+            {"value": "Z", "label": "Z"},
+        ]
+
+    def test_objects_with_attributes_are_read(self) -> None:
+        assert normalize_options([OptionItem(value="dev", label="Development")]) == [
+            {"value": "dev", "label": "Development"}
+        ]
+
+    def test_junk_is_skipped(self) -> None:
+        assert normalize_options(None) == []
+        assert normalize_options("x") == []
+        assert normalize_options([None, 3, "", {}, {"value": ""}]) == []
 
 
 class TestOptionLabelMap:

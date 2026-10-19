@@ -35,6 +35,12 @@ export function fetchAiContext(
   );
 }
 
+/**
+ * `body.expected_revision` is the `revision` the editor was seeded with. A
+ * moved protocol answers 409 STALE_VALUE; the `ApiError` (`code`, `status`,
+ * `details.current_revision`, `details.current`) comes back intact as `error`
+ * — `staleValuesOf` (projectSettingsService) is the one predicate for it.
+ */
 export function setAiContext(
   projectId: string,
   body: ProjectAiContextUpdate,

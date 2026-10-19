@@ -25,6 +25,7 @@ and applying the SAME NFKC + whitespace fold yields the folded quote.
 
 from __future__ import annotations
 
+from app.domain.evidence_block_refs import normalize_text
 from app.infrastructure.parsing.base import (
     ParsedBlock,
     assign_char_offsets_to_blocks,
@@ -32,7 +33,6 @@ from app.infrastructure.parsing.base import (
 )
 from app.services.evidence_anchor_service import (
     AnchorMatch,
-    _normalize,
     match,
 )
 
@@ -69,10 +69,10 @@ def make_block(
 def _fold(s: str) -> str:
     """The canonical comparison surface (NFKC + punctuation + whitespace fold).
 
-    Delegates to the service's own ``_normalize`` so the test asserts against
+    Delegates to the matcher's own ``normalize_text`` so the test asserts against
     the real folding surface rather than a reimplementation that could drift.
     """
-    return _normalize(s)
+    return normalize_text(s)
 
 
 def _original_page_text(blocks: list[ParsedBlock]) -> dict[int, str]:

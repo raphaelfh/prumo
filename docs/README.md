@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-07
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 ---
 
@@ -36,6 +36,7 @@ tutorial lives here.*
 | [Constitution](./reference/constitution.md) | Non-negotiable architectural principles (layering, typed everything, split migration ownership) |
 | [Extraction + HITL architecture](./reference/extraction-hitl-architecture.md) | Canonical schema, run lifecycle, RLS posture |
 | [Test strategy](./reference/test-strategy.md) | Load-bearing tests, pyramid layout |
+| [MCP chat eval](./reference/mcp-chat-eval.md) | Chat eval suite for the MCP server: tasks, thresholds, baseline |
 | [Extraction observability](./reference/observability-extraction.md) | Metrics + structured events; debugging extraction latency/errors (browser → API → DB) |
 | [CHARMS template (v1.1)](./reference/templates/charms-v1.1-complete.md) | Field-by-field spec of the global CHARMS template |
 | [CHARMS visual hierarchy](./reference/templates/charms-v1.1-hierarchy.md) | Tree view of CHARMS entities |

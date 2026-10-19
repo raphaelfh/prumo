@@ -1,5 +1,7 @@
 """Integration tests for ExtractionHitlConfig."""
 
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -10,7 +12,7 @@ from app.models.extraction_versioning import (
     ExtractionHitlConfig,
     HitlConfigScopeKind,
 )
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, clone_charms
 
 
 @pytest.mark.asyncio
@@ -77,3 +79,45 @@ async def test_hitl_config_arbitrator_required_when_rule_is_arbitrator(
     with pytest.raises(IntegrityError):
         await db_session.flush()
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_project_delete_leaves_no_hitl_configs(db_session: AsyncSession) -> None:
+    project_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.projects (id, name, created_by_id, is_active) "
+            "VALUES (:id, 'HITL cascade probe', :by, true)"
+        ),
+        {"id": str(project_id), "by": str(SEED.primary_profile)},
+    )
+    template = await clone_charms(db_session, project_id, SEED.primary_profile)
+    template_id = template.project_template_id
+    db_session.add_all(
+        [
+            ExtractionHitlConfig(
+                scope_kind=HitlConfigScopeKind.PROJECT.value,
+                scope_id=project_id,
+                reviewer_count=2,
+                consensus_rule=ConsensusRule.MAJORITY.value,
+            ),
+            ExtractionHitlConfig(
+                scope_kind=HitlConfigScopeKind.TEMPLATE.value,
+                scope_id=template_id,
+                reviewer_count=1,
+                consensus_rule=ConsensusRule.UNANIMOUS.value,
+            ),
+        ]
+    )
+    await db_session.flush()
+    count_sql = text(
+        "SELECT COUNT(*) FROM public.extraction_hitl_configs WHERE scope_id IN (:pid, :tid)"
+    )
+    ids = {"pid": str(project_id), "tid": str(template_id)}
+    assert (await db_session.execute(count_sql, ids)).scalar_one() == 2
+
+    await db_session.execute(
+        text("DELETE FROM public.projects WHERE id = :pid"), {"pid": str(project_id)}
+    )
+
+    assert (await db_session.execute(count_sql, ids)).scalar_one() == 0

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.project_ai_context import (
     ProjectNotFoundError,
+    build_review_question,
     get_ai_context,
     set_ai_context,
 )
@@ -311,4 +312,201 @@ async def test_the_service_refuses_a_project_that_is_not_there(
         await get_ai_context(db_session, uuid4())
     with pytest.raises(ProjectNotFoundError):
         await set_ai_context(db_session, uuid4(), picots=None, picots_enabled=True)
+    await db_session.rollback()
+
+
+async def _stored(db: AsyncSession) -> tuple[int, object]:
+    row = (
+        await db.execute(
+            text(
+                "SELECT protocol_revision, picots_config_ai_review FROM public.projects "
+                "WHERE id = :pid"
+            ),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).one()
+    return row[0], row[1]
+
+
+@pytest.mark.asyncio
+async def test_a_stale_expected_revision_is_409_and_writes_nothing(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    revision, picots = await _stored(db_session)
+
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot("Children")}, "expected_revision": revision + 5},
+    )
+
+    assert res.status_code == 409, res.text
+    error = res.json()["error"]
+    assert error["code"] == "STALE_VALUE"
+    assert error["details"]["current_revision"] == revision
+    assert error["details"]["current"]["picots"]["population"]["description"] == "Adults"
+    db_session.expire_all()
+    assert await _stored(db_session) == (revision, picots)
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_an_omitted_expected_revision_still_saves(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    """A stale bundle carries no revision: last writer wins (deploy skew)."""
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    revision, _ = await _stored(db_session)
+
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot("Children")}},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["picots"]["population"]["description"] == "Children"
+    assert res.json()["data"]["revision"] == revision + 1
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_matching_expected_revision_saves_and_returns_the_next_one(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    revision, _ = await _stored(db_session)
+    read = await client_as_manager.get(_URL.format(pid=SEED.primary_project))
+    assert read.json()["data"]["revision"] == revision
+
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot("Children")}, "expected_revision": revision},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["revision"] == revision + 1
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_an_over_bound_picots_write_is_422(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    res = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project),
+        json={"picots": {"population": _slot(inclusion=["x"] * 51)}},
+    )
+
+    assert res.status_code == 422, res.text
+    assert res.json()["error"]["code"] == "VALIDATION_ERROR"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_over_bound_row_still_reads(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    """Bounds apply to writes only; rows stored before them keep reading."""
+    await _set_raw(
+        db_session,
+        SEED.primary_project,
+        {"population": _slot("Adults", inclusion=[f"c{i}" for i in range(60)])},
+        "predictive_model",
+    )
+
+    res = await client_as_manager.get(_URL.format(pid=SEED.primary_project))
+
+    assert res.status_code == 200, res.text
+    assert len(res.json()["data"]["picots"]["population"]["inclusion"]) == 60
+    await db_session.rollback()
+
+
+async def _set_eligibility(db: AsyncSession, eligibility: dict, design: dict) -> None:
+    await db.execute(
+        text(
+            "UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb), "
+            "study_design = CAST(:d AS jsonb) WHERE id = :pid"
+        ),
+        {"e": json.dumps(eligibility), "d": json.dumps(design), "pid": str(SEED.primary_project)},
+    )
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_the_preview_carries_eligibility_and_study_designs(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await _set_raw(
+        db_session, SEED.primary_project, {"population": _slot("Adults")}, "predictive_model"
+    )
+    await _set_eligibility(
+        db_session,
+        {"inclusion": ["English"], "exclusion": ["abstracts"], "notes": "NOTE"},
+        {"types": ["cohort"], "notes": "NOTE"},
+    )
+
+    res = await client_as_manager.get(_URL.format(pid=SEED.primary_project))
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["preview"] == (
+        "- Population: Adults\n"
+        "Eligibility:\n"
+        "  Include: English\n"
+        "  Exclude: abstracts\n"
+        "Eligible study designs: cohort"
+    )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_the_switch_silences_eligibility_too(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await _set_raw(db_session, SEED.primary_project, None, "predictive_model")
+    await _set_eligibility(db_session, {"inclusion": ["English"]}, {"types": ["cohort"]})
+
+    on = await client_as_manager.get(_URL.format(pid=SEED.primary_project))
+    assert "Eligibility:\n  Include: English" in on.json()["data"]["preview"]
+
+    off = await client_as_manager.put(
+        _URL.format(pid=SEED.primary_project), json={"picots_enabled": False}
+    )
+
+    assert off.status_code == 200, off.text
+    assert off.json()["data"]["preview"] is None
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_the_builder_returns_the_preview_text_and_mutes_with_the_switch(
+    db_session: AsyncSession,
+) -> None:
+    """``build_review_question`` and the editor preview render the same row identically."""
+    await _set_raw(
+        db_session, SEED.primary_project, {"outcomes": _slot("Mortality")}, "interventional"
+    )
+    await _set_eligibility(db_session, {"exclusion": ["animal studies"]}, {"types": ["RCT"]})
+
+    built = await build_review_question(db_session, SEED.primary_project)
+    read = await get_ai_context(db_session, SEED.primary_project)
+
+    assert built is not None
+    assert built.text == (
+        "- Outcome(s): Mortality\n"
+        "Eligibility:\n"
+        "  Exclude: animal studies\n"
+        "Eligible study designs: RCT"
+    )
+    assert built.text == read["preview"]
+
+    await set_ai_context(db_session, SEED.primary_project, picots=None, picots_enabled=False)
+    muted = await build_review_question(db_session, SEED.primary_project)
+    assert muted is not None
+    assert muted.text is None
     await db_session.rollback()

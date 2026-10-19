@@ -5,16 +5,18 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.exc import DBAPIError
 
 from app.api.mcp.errors import (
+    AUDITED_CODES,
     NOT_FOUND_MESSAGE,
     McpErrorCode,
     McpToolError,
     error_result,
     reject_nul,
     to_tool_error,
+    validation_failure,
 )
 from app.core.error_handler import NotFoundError
 from app.services.article_read_service import ArticleNotFoundError
@@ -38,18 +40,59 @@ class _PgLike(Exception):
 
 
 def test_every_code_renders_with_its_retryability() -> None:
-    assert len(McpErrorCode) == 15
+    assert len(McpErrorCode) == 24
+    assert {c.value for c in McpErrorCode} == {
+        "NOT_FOUND",
+        "MANAGER_REQUIRED",
+        "REVIEWER_REQUIRED",
+        "SCOPE_INSUFFICIENT",
+        "INVALID_ARGUMENT",
+        "DRAFT_LOCK_HELD",
+        "NARROW_BASELINE",
+        "NO_PUBLISHED_VERSION",
+        "OP_NOT_ALLOWED_VIA_AGENT",
+        "TOO_MANY_OPS",
+        "FIELD_NOT_EDITABLE",
+        "STALE_VALUE",
+        "DUPLICATE_NAME",
+        "IN_USE",
+        "STRUCTURE_CONFLICT",
+        "RETRY",
+        "RATE_LIMITED",
+        "INTERNAL_ERROR",
+        "AI_RUNS_NOT_ALLOWED",
+        "PLAN_STALE",
+        "AI_NOT_CONFIGURED",
+        "AI_RUN_ACTIVE",
+        "AI_RUN_LIMIT",
+        "SERVICE_UNAVAILABLE",
+    }
     for code in McpErrorCode:
         r = error_result(McpToolError(code, "m"))
         assert r.is_error is True
         assert r.structured_content is not None
         assert r.structured_content["code"] == code.value
         assert r.structured_content["retryable"] is (
-            code in {McpErrorCode.DUPLICATE_NAME, McpErrorCode.RETRY, McpErrorCode.RATE_LIMITED}
+            code
+            in {
+                McpErrorCode.DUPLICATE_NAME,
+                McpErrorCode.RETRY,
+                McpErrorCode.RATE_LIMITED,
+                McpErrorCode.SERVICE_UNAVAILABLE,
+            }
         )
         assert isinstance(r.structured_content["next_step"], str)
         assert r.structured_content["next_step"] != ""
         assert json.loads(r.content[0].text) == r.structured_content
+
+
+@pytest.mark.parametrize("code", ["IN_USE", "STRUCTURE_CONFLICT"])
+def test_structure_codes_are_audited_and_not_retryable(code: str) -> None:
+    member = McpErrorCode(code)
+    assert member in AUDITED_CODES
+    r = error_result(McpToolError(member, "m"))
+    assert r.structured_content is not None
+    assert r.structured_content["retryable"] is False
 
 
 def test_extras_ride_the_payload() -> None:
@@ -129,3 +172,51 @@ def test_field_never_echoes_a_nul_or_an_unbounded_key() -> None:
     assert "\x00" not in field
     assert field.startswith("fields.bad\\u0000key")
     assert len(field) <= 200
+
+
+class _Inner(BaseModel):
+    label: str
+
+    @field_validator("label")
+    @classmethod
+    def _no_x(cls, value: str) -> str:
+        if value == "x":
+            raise ValueError("label must not be x")
+        if value == "y":  # raised, not `assert`: pytest rewrites asserts in test modules
+            raise AssertionError("label must not be y")
+        return value
+
+
+class _Outer(BaseModel):
+    items: list[_Inner]
+
+
+def _outer_error(label: str) -> ValidationError:
+    try:
+        _Outer.model_validate({"items": [{"label": "ok"}, {"label": label}]})
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected ValidationError")
+
+
+@pytest.mark.parametrize(
+    ("label", "message"),
+    [("x", "label must not be x"), ("y", "label must not be y")],
+    ids=["value-error", "assertion"],
+)
+def test_validation_failure_names_the_dotted_field_and_strips_pydantic_prefixes(
+    label: str, message: str
+) -> None:
+    err = validation_failure(_outer_error(label), prefix="ops", op_index=1)
+    assert err.code == McpErrorCode.INVALID_ARGUMENT
+    assert err.message == message
+    assert err.extras == {"field": "ops.items.1.label", "op_index": 1}
+    rendered = error_result(err).content[0].text
+    assert "pydantic" not in rendered
+    assert "errors.pydantic.dev" not in rendered
+
+
+def test_validation_failure_without_prefix_is_the_bare_loc() -> None:
+    err = validation_failure(_validation_error())
+    assert err.extras == {"field": "label"}
+    assert err.message == "String should have at most 3 characters"

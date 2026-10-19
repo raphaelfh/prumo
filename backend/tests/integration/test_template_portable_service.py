@@ -388,3 +388,148 @@ async def test_export_of_unrepresentable_rows_is_typed(db_session: AsyncSession)
     assert isinstance(exc.value, AppError) and exc.value.status_code == 422
     assert exc.value.code == "TEMPLATE_EXPORT_INVALID"
     assert any("allowed_values" in e["path"] for e in exc.value.details["errors"])
+
+
+@pytest.mark.asyncio
+async def test_export_reads_legacy_option_rows_canonical(db_session: AsyncSession) -> None:
+    """A live select row still holding bare-string options exports as
+    canonical ``{value, label}`` items instead of failing the export."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+    section_name, field_name = (
+        await db_session.execute(
+            text(
+                'UPDATE public.extraction_fields f SET allowed_values = \'["Yes","No"]\'::jsonb '
+                "FROM public.extraction_entity_types et "
+                "WHERE et.id = f.entity_type_id AND f.id = ("
+                "SELECT f2.id FROM public.extraction_fields f2 "
+                "JOIN public.extraction_entity_types et2 ON et2.id = f2.entity_type_id "
+                "WHERE et2.project_template_id = :tid AND f2.field_type = 'select' "
+                "ORDER BY et2.name, f2.name LIMIT 1) RETURNING et.name, f.name"
+            ),
+            {"tid": str(clone.project_template_id)},
+        )
+    ).one()
+
+    doc = await to_portable(
+        db_session, project_id=project_id, template_id=clone.project_template_id
+    )
+
+    def walk(sections: list[PortableSection]):
+        for section in sections:
+            yield section
+            yield from walk(section.sections)
+
+    section = next(s for s in walk(doc.sections) if s.name == section_name)
+    exported = next(f for f in section.fields if f.name == field_name)
+    assert exported.model_dump()["allowed_values"] == [
+        {"value": "Yes", "label": "Yes"},
+        {"value": "No", "label": "No"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_legacy_option_file_is_stored_canonical(db_session: AsyncSession) -> None:
+    """A file written before options carried labels (bare strings, or the
+    ``{"options": [...]}`` wrapper) still imports, and its rows are stored
+    as canonical ``{value, label}`` items."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    doc = parse_portable_document(
+        {
+            "prumo_template": 1,
+            "kind": "extraction",
+            "name": "Legacy options",
+            "sections": [
+                {
+                    "name": "design",
+                    "label": "Design",
+                    "fields": [
+                        {
+                            "name": "study_type",
+                            "label": "Study type",
+                            "type": "select",
+                            "allowed_values": ["Cohort", "RCT"],
+                        },
+                        {
+                            "name": "wrapped",
+                            "label": "Wrapped",
+                            "type": "select",
+                            "allowed_values": {"options": ["X"]},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    result = await import_portable(
+        db_session, project_id=project_id, doc=doc, user_id=SEED.primary_profile
+    )
+
+    rows = await db_session.execute(
+        text(
+            "SELECT f.name, f.allowed_values FROM public.extraction_fields f "
+            "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+            "WHERE et.project_template_id = :tid"
+        ),
+        {"tid": str(result.project_template_id)},
+    )
+    assert dict(rows.tuples().all()) == {
+        "study_type": [
+            {"value": "Cohort", "label": "Cohort"},
+            {"value": "RCT", "label": "RCT"},
+        ],
+        "wrapped": [{"value": "X", "label": "X"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_export_and_import_carry_the_instrument_code(db_session: AsyncSession) -> None:
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+
+    exported = await to_portable(
+        db_session, project_id=project_id, template_id=clone.project_template_id
+    )
+    assert _dump(exported)["instrument"] == "charms"
+
+    imported = await import_portable(
+        db_session, project_id=project_id, doc=exported, user_id=SEED.primary_profile
+    )
+    assert await _instrument(db_session, imported.project_template_id) == "charms"
+
+
+@pytest.mark.asyncio
+async def test_import_without_a_code_creates_custom(db_session: AsyncSession) -> None:
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    doc = parse_portable_document(
+        {
+            "prumo_template": 1,
+            "kind": "extraction",
+            "name": "No code",
+            "sections": [
+                {
+                    "name": "sec1",
+                    "label": "S1",
+                    "fields": [{"name": "f1", "label": "F1", "type": "text"}],
+                }
+            ],
+        }
+    )
+    imported = await import_portable(
+        db_session, project_id=project_id, doc=doc, user_id=SEED.primary_profile
+    )
+    assert await _instrument(db_session, imported.project_template_id) == "custom"
+
+
+async def _instrument(db: AsyncSession, template_id: UUID) -> str:
+    return (
+        await db.execute(
+            text("SELECT instrument FROM public.project_extraction_templates WHERE id = :tid"),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()

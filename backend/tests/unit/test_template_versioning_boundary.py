@@ -46,6 +46,7 @@ IMPLEMENTATION_TESTS: dict[str, frozenset[str]] = {
     ),
     f"{PACKAGE}._diff_read": frozenset(
         {
+            "tests/unit/test_template_diff.py",
             "tests/unit/test_template_diff_read.py",
             "tests/unit/test_template_diff_fingerprint.py",
         }

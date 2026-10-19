@@ -23,11 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionEvidence,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
 from app.models.extraction_attempt import ExtractionAttempt
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_extraction import (
@@ -37,6 +37,7 @@ from app.services.ai_extraction import (
     ProposalLanding,
     SingletonSlot,
 )
+from app.services.ai_extraction.landing import _sanitize
 from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.factories.template_factory import TemplateFactory
@@ -47,6 +48,7 @@ from tests.integration.helpers.template_fixtures import (
     add_instance,
     add_section,
     fresh_charms,
+    publish_rules,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -413,26 +415,25 @@ async def test_human_source_is_refused_on_a_qa_run(db_session: AsyncSession) -> 
 
 
 async def test_assessor_exclusions_are_reread_at_landing(db_session: AsyncSession) -> None:
-    """A field the template made assessor-owned WHILE the model ran is dropped:
-    the landing re-reads the live schema under the run lock."""
+    """A field a republish made assessor-owned WHILE the model ran is dropped:
+    the republish re-pins the run, and the landing reads the LOCKED run's
+    pinned rules."""
     run = await run_in_extract(db_session)
     section = await _section(db_session)
-    await db_session.execute(
-        text("UPDATE project_extraction_templates SET schema = CAST(:s AS jsonb) WHERE id = :id"),
-        {
-            "id": SEED.primary_template,
-            "s": json.dumps(
+    await publish_rules(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+        rules={
+            "derived_judgments": [
                 {
-                    "derived_judgments": [
-                        {
-                            "id": "j",
-                            "rule": "signaling_worst",
-                            "target": {"section": section.name, "field": "sample_size"},
-                            "inputs": [],
-                        }
-                    ]
+                    "id": "j",
+                    "rule": "signaling_worst",
+                    "target": {"section": section.name, "field": "sample_size"},
+                    "inputs": [],
                 }
-            ),
+            ]
         },
     )
     written = await _landing(db_session).land(
@@ -442,30 +443,28 @@ async def test_assessor_exclusions_are_reread_at_landing(db_session: AsyncSessio
     assert await _rows(db_session, run.id) == []
 
 
-async def test_the_gate_rereads_the_template_once_and_never_walks_the_tree(
+async def test_the_gate_reads_the_pinned_rules_once_and_never_walks_the_tree(
     db_session: AsyncSession,
 ) -> None:
-    """The landing gate re-reads the live schema in ONE statement and leaves
+    """The landing gate reads the pinned rules in ONE statement and leaves
     the orphaned-exclusion warning (a whole-tree join) to the pipeline, which
     asks it once per run — not on every landing of an extract-all."""
     run = await run_in_extract(db_session)
     section = await _section(db_session)
-    await db_session.execute(
-        text("UPDATE project_extraction_templates SET schema = CAST(:s AS jsonb) WHERE id = :id"),
-        {
-            "id": SEED.primary_template,
-            "s": json.dumps(
+    await publish_rules(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+        rules={
+            "derived_judgments": [
                 {
-                    "derived_judgments": [
-                        {
-                            "id": "j",
-                            "rule": "signaling_worst",
-                            "target": {"section": section.name, "field": "renamed_away"},
-                            "inputs": [],
-                        }
-                    ]
+                    "id": "j",
+                    "rule": "signaling_worst",
+                    "target": {"section": section.name, "field": "renamed_away"},
+                    "inputs": [],
                 }
-            ),
+            ]
         },
     )
     with (
@@ -481,7 +480,7 @@ async def test_the_gate_rereads_the_template_once_and_never_walks_the_tree(
         )
     assert written == 1
     assert not log.warning.called
-    assert len([s for s in sent if "FROM public.project_extraction_templates" in s]) == 1
+    assert len([s for s in sent if "FROM public.extraction_template_versions" in s]) == 1
     assert not [s for s in sent if "project_template_id" in s]
 
 
@@ -735,6 +734,63 @@ async def test_a_moved_verdict_heals_in_place_with_its_execution_record(
     assert (row.provenance["mode_executed"], row.provenance["passes"]) == ("verified", 2)
 
 
+def _pass(kind: str, total: int) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "prompt_name": f"{kind}_prompt",
+        "prompt_version": "v",
+        "tokens": {"prompt": total, "completion": 0, "total": total},
+        "request_ids": [f"{kind}-{total}"],
+    }
+
+
+async def test_an_attempt_owned_row_is_never_healed_by_a_write_without_one(
+    db_session: AsyncSession,
+) -> None:
+    """An attempt's row is its immutable call record: a later attempt-less
+    write of the same value does not move its verdict or execution facts, so
+    the row never claims two passes while its ``passes_detail`` lists no
+    verify pass. The section's run-level snapshot still takes the new call."""
+    run = await run_in_extract(db_session)
+    landing, section, instance = (
+        _landing(db_session),
+        await _section(db_session),
+        await _instance(db_session),
+    )
+    fast = {
+        **SNAPSHOT,
+        "mode_executed": "fast",
+        "passes": 1,
+        "passes_detail": [_pass("extract", 10)],
+    }
+    verified = {
+        **SNAPSHOT,
+        "mode_executed": "verified",
+        "passes": 2,
+        "passes_detail": [_pass("extract", 20), _pass("verify", 10)],
+    }
+    attempt = await _attempt(db_session, run)
+    await landing.land(
+        run, section, instance, [_candidate(142)], Generation(ENGINE, fast, attempt.id)
+    )
+    annotated = _candidate(142)
+    annotated.proposed_value = {"value": 142, "verification": {"verdict": "confirmed"}}
+    written = await landing.land(
+        run, section, instance, [annotated], Generation(ENGINE, verified, None)
+    )
+
+    assert written == 1, "the unchanged value still counts"
+    (row,) = await _rows(db_session, run.id)
+    await db_session.refresh(row)
+    assert row.proposed_value == {"value": 142}
+    assert (row.provenance["mode_executed"], row.provenance["passes"]) == ("fast", 1)
+    assert row.generation_snapshot["passes"] == 1
+    assert [p["kind"] for p in row.generation_snapshot["passes_detail"]] == ["extract"]
+    await db_session.refresh(run)
+    merged = run.results["provenance"]["sections"][str(SEED.primary_entity_type)]
+    assert (merged["passes"], len(merged["passes_detail"])) == (2, 2)
+
+
 async def test_a_legacy_disposition_string_lands_as_the_coded_marker(
     db_session: AsyncSession,
 ) -> None:
@@ -759,6 +815,40 @@ async def test_a_legacy_disposition_string_lands_as_the_coded_marker(
     )
     (row,) = await _rows(db_session, run.id)
     assert row.proposed_value == {"value": None, "absent_reason": "no_information"}
+
+
+@pytest.mark.parametrize(
+    ("marker_on", "expected"),
+    [
+        (False, {"value": "Not applicable"}),
+        (True, {"value": None, "absent_reason": "not_applicable"}),
+    ],
+    ids=["marker-off", "marker-on"],
+)
+async def test_a_listed_not_applicable_option_follows_the_field_flag(
+    db_session: AsyncSession, marker_on: bool, expected: dict
+) -> None:
+    """The AI path translates a listed "Not applicable" exactly as a reviewer's
+    write does: the marker only where the field offers it, else the option."""
+    run = await run_in_extract(db_session)
+    section_id = await add_section(db_session, SEED.primary_template, f"na_{uuid4().hex[:6]}")
+    field_id = await add_field(db_session, section_id, "status")
+    await db_session.execute(
+        text(
+            "UPDATE extraction_fields SET field_type='select', allowed_values=CAST(:av AS jsonb), "
+            "allows_not_applicable=:na WHERE id=:id"
+        ),
+        {"id": field_id, "av": json.dumps(["Yes", "Not applicable"]), "na": marker_on},
+    )
+    await _landing(db_session).land(
+        run,
+        await _section(db_session, section_id),
+        SingletonSlot(None),
+        [ProposalCandidate(field_id, "status", {"value": "Not applicable"})],
+        Generation(ENGINE, None, None),
+    )
+    (row,) = await _rows(db_session, run.id)
+    assert row.proposed_value == expected
 
 
 # --------------------------------------------------------------------------
@@ -826,3 +916,40 @@ async def test_a_failed_evidence_write_rolls_the_landing_back(
             Generation(ENGINE, None, None),
         )
     assert await _rows(db_session, run.id) == []
+
+
+# --------------------------------------------------------------------------
+# Sanitizer
+# --------------------------------------------------------------------------
+
+
+async def test_sanitize_keeps_provenance_keys() -> None:
+    """The snapshot identity survives the sanitizer — template version (id and
+    version only), schema hash, passes and the article version and text hash —
+    and an unknown key is still dropped at every level."""
+    raw = {
+        "ran_by_user_id": "secret",
+        "unknown": 1,
+        "schema_sha256": "a" * 64,
+        "template_version": {"id": "tv-1", "version": 4, "unknown": 1},
+        "passes_detail": [{**_pass("extract", 10), "unknown": 1}],
+        "prompt_composition": {
+            "section_name": "participants",
+            "unknown": 1,
+            "article_ref": {
+                "file_id": "f",
+                "content_version": 3,
+                "text_sha256": "b" * 64,
+                "unknown": 1,
+            },
+        },
+    }
+    assert _sanitize(raw) == {
+        "schema_sha256": "a" * 64,
+        "template_version": {"id": "tv-1", "version": 4},
+        "passes_detail": [_pass("extract", 10)],
+        "prompt_composition": {
+            "section_name": "participants",
+            "article_ref": {"file_id": "f", "content_version": 3, "text_sha256": "b" * 64},
+        },
+    }

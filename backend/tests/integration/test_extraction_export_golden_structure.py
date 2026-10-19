@@ -111,6 +111,9 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
         value={"value": {"value": 42, "unit": "patients"}},
         rationale="golden-structure export fixture",
+        # Plants a stored legacy envelope verbatim (the shape exports must
+        # read), as a system write: a person's override would be canonicalized.
+        enforce_contract=False,
     )
     assert published.run_id == run_id
 

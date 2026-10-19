@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-07
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 ---
 
@@ -136,9 +136,41 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0076_extraction_batches` (post-squash numbering; run
+`0093_batch_agent_origin` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
+
+Entry identity is enforced by the database: the partial unique index
+`uq_extraction_instances_entity_key` holds one `metadata->>'entity_key'` per
+`(article_id, entity_type_id, parent_instance_id)` coordinate, roots included
+(`NULLS NOT DISTINCT`, keyed rows only). 0090 healed earlier duplicates first
+(the oldest holder keeps the key; the others drop it and record the loss in
+`entity_key_history`), and `entity_key.resolve_instance` answers a lost
+creation race by re-reading the winner.
+
+**AI usage ledger (0091).** `ai_usage_ledger` holds one append-only row per
+model call: provider, model, key scope (NULL before credentials resolve),
+pass kind (`extract` / `identify` / `verify` / `entailment`), prompt version,
+prompt and completion tokens (`total_tokens` is a stored generated column),
+outcome (`ok` / `failed`) and the provider request id. A project delete
+cascades; owner, run, attempt and batch links are `ON DELETE SET NULL`, so
+usage outlives the work it metered. The table is backend-only with the 0072
+posture: RLS on, a single `deny_all` policy, and every privilege revoked from
+`authenticated` and `anon`. Every extraction flow adds its usage to the run's
+`results.tokens` (`{prompt, completion, total}`), so it equals the run's `ok`
+rows; usage behind a section that failed after answered calls, a degraded
+verify, or a flow that rolled back is in the ledger only — the ledger is
+authoritative for failed paths.
+
+**API-only writes (0081).** `authenticated` holds SELECT but no
+INSERT/UPDATE/DELETE on `article_text_blocks` and the extraction history
+tables (evidence, reviewer decisions and states, consensus decisions,
+published states, proposal records), and no INSERT/UPDATE on
+`article_files` (DELETE stays); the backend is the one writer and the RLS
+policies remain the floor. The `refuse_append_only_change` trigger refuses
+UPDATE/DELETE on reviewer decisions, consensus decisions and proposal
+records for every role but the table owner, so FK cascades and backend
+writes keep working.
 
 **One-live-run invariant (0045).** At most ONE non-terminal run (stage in
 `pending` / `extract` / `consensus`) exists per `(project_id, article_id,
@@ -187,12 +219,21 @@ keeps one control. Historical in-band disposition strings
 migration `0039_absent_reason_backfill`. Decision record:
 [ADR-0016](../adr/0016-typed-absent-reason-marker.md).
 
+**AI proposals** are offered only the codes a field allows (`no_information`,
+`not_applicable`; never `not_evaluated`) and write, by the first rule that
+applies: an offered `absent_reason` → its marker (an un-offered code is logged,
+never written); an in-domain option answer (e.g. `NI`) → the value, whatever the
+status; an uncertainty scale (an option coded `Unclear`, any case) answering
+`not_found` → its own `Unclear` code, never a marker; any other `not_found` →
+the `no_information` marker when allowed, else a bare null; `found` /
+`ambiguous` → the value (ADR-0016 Amendment 2026-10).
+
 ### Core HITL tables (introduced pre-squash 0010 → 0012; evolving — see migration head above)
 
 | Table | Append-only? | Purpose |
 | --- | --- | --- |
-| `extraction_template_versions` | No (mutable `is_active`) | Immutable schema snapshot of a project template. Unique `(project_template_id, version)`; partial unique index keeps exactly one `is_active` per template. Run references via `version_id`. |
-| `extraction_hitl_configs` | No | HITL config (reviewer count, consensus rule, arbitrator) scoped to `project` or `template`. Resolution: template > project > system default. |
+| `extraction_template_versions` | No (mutable `is_active`) | Immutable schema snapshot of a project template. Unique `(project_template_id, version)`; partial unique index keeps exactly one `is_active` per template. Run references via `version_id`. Besides the `entity_types` tree, the snapshot carries the template-level `llm_template_instruction` and the QA rules `derived_judgments` / `scope_rules` only when the template declares them non-empty (0085 backfilled the rules into earlier versions). |
+| `extraction_hitl_configs` | No | HITL config (reviewer count, consensus rule, arbitrator) scoped to `project` or `template`. Resolution: template > project > system default. Generated `scope_project_id` / `scope_template_id` carry `ON DELETE CASCADE` FKs, so a config goes with its project or template (0086). |
 | `extraction_proposal_records` | **Yes** | One row per proposed value for a `(run, instance, field)` triplet. Source: `ai` / `human` / `system`. CHECK: `human` requires `source_user_id`. Append-only of *changes*: `ProposalLanding` (the one writer, `app/services/ai_extraction/landing.py`) re-uses the latest row when an AI value without an attempt is identical to it (an in-place verdict heal aside), so a replayed unchanged value doesn't grow a duplicate. **Attempt-owned AI proposals (0075) follow a different rule**: they carry `extraction_attempt_id` + `generation_snapshot`, a fresh attempt appends even when the value equals an earlier one, and a replay of the same attempt and coordinate returns the existing row without appending evidence (see [Extraction attempts](#extraction-attempts-and-per-call-generation-0075)). |
 | `extraction_reviewer_decisions` | **Yes** | One row per reviewer decision: `accept_proposal` / `reject` / `edit`. CHECKs enforce that `accept_proposal` carries a `proposal_record_id` and `edit` carries a `value`. Same idempotent-re-record rule as proposals: an unchanged decision replay (same decision+value+proposal) is a no-op. A reversal or undo appends a new row; earlier rows are never rewritten. `CreateDecisionRequest.expected_current_decision_id` (optional) makes a write conditional: under the run lock, `ExtractionReviewService` compares it with the coordinate's latest decision and refuses a mismatch with `DecisionConflictError` (409 `DECISION_CONFLICT`). Omitted or `null` keeps the unconditional write. |
 | `extraction_reviewer_states` | Materialized | Current `decision_id` per `(run, reviewer, instance, field)`. Upserted alongside each decision so reads are O(1). Unique `(run_id, reviewer_id, instance_id, field_id)`. |
@@ -253,15 +294,32 @@ there is **no question-level extraction** action or endpoint.
 browser's job store (`useSectionExtractionJobs.begin`,
 `frontend/stores/sectionExtractionJobs.ts`) mints `crypto.randomUUID()` for
 every deliberate kickoff. It reuses the previous id and payload only when the
-last transport outcome was uncertain. After kickoff scope authorization,
-`ExtractionAttemptService.prepare_request` does the following:
+last transport outcome was uncertain.
+
+**The server-side AI kickoff gate.** Every endpoint that queues AI work runs
+`api/deps/scope.assert_ai_kickoff` before any work is queued: the section
+kickoff reaches it through `assert_kickoff_scope`, which first binds the
+request coordinate (project, article, template, run) to the caller. The gate
+checks, in order, the reviewer role (403 for a viewer or non-member), then the
+engine-credential check (`engine_credentials.assert_engine_ready`, 409 when
+no usable credential is configured), so a caller without the role never learns
+the project's engine configuration. The batch kickoff (`extraction_batches.py`)
+does not call the gate: it runs `ensure_project_reviewer`, then
+`ExtractionBatchService.start` (engine check → queue probe → flush-only
+create), commits, and only then calls `kick_batch`. The MCP `start_ai_run`
+tool reaches the same `start` behind its own `@agent_tool` role check. The
+worker re-resolves the engine at execution time; both checks only fail fast.
+
+After the gate, `ExtractionAttemptService.prepare_request` does the following:
 
 1. Uses a server `uuid4()` when the id is absent.
 2. Picks the run: a client-sent `run_id` takes precedence; otherwise it reuses
    the run of an attempt the caller already owns, or resolves the live extract
    run (`CurrentRunResolver.resolve_or_create_extract`).
-3. Refuses a run outside the `extract` stage (`InvalidStageTransitionError`,
-   400).
+3. Refuses a run outside the `extract` stage: a finalized run answers 409
+   `RUN_FINALIZED` (reopen it first), a run in consensus answers 409
+   `RUN_BUSY`, and any other invalid stage transition answers 400
+   (`InvalidStageTransitionError`).
 4. Inserts through `ExtractionAttemptRepository.get_or_create`
    (`ON CONFLICT (request_id) DO NOTHING`).
 5. Answers a different owner with 404 and a changed payload with 409
@@ -296,7 +354,9 @@ row, a stage gate on a named `ExtractionRunStage` set (`live()`, `editable()`,
 `reviewing()`, `with_current_values()`, `<stage>.only()`), coordinate coherence
 for the (instance, field) pair, one `RunWriteError(reason=missing|stage|coordinate)`.
 `extraction_runs.py` maps a coordinate refusal to 422 and the rest to 400; the
-section-extraction kickoff maps every refusal to 400. The AI-extraction module
+section-extraction kickoff maps a finalized run to 409 `RUN_FINALIZED`
+(`RunFinalizedError`), a run in consensus to 409 `RUN_BUSY` (`RunBusyError`)
+and every other refusal to 400. The AI-extraction module
 (`app/services/ai_extraction/`, interface `AiExtraction.run_from_request`)
 commits a worker session before PDF assembly and before every model call.
 Every candidate then lands through ONE seam, `ProposalLanding.land(run,
@@ -392,7 +452,7 @@ runner for the whole run.
   consensus). QA's `FieldInput` subscribes, but the QA screen never
   dispatches, so it does not light.
 
-### AI batch runs (0076)
+### AI batch runs (0076, 0093)
 
 Migration `0076_extraction_batches` (down revision `0075_extraction_attempts`).
 Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
@@ -407,6 +467,28 @@ Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
   `UNIQUE (batch_id, article_id)`; `status` `queued` / `dispatched` /
   `skipped` / `failed` / `cancelled`, `reason_code`, `attempt_id`
   (`ON DELETE SET NULL`). A dispatched item's outcome is its attempt's.
+- **Agent origin (0093, ADR 0021).** `extraction_batches` gains
+  `agent_token_id` (FK to `personal_access_tokens`, `ON DELETE SET NULL`),
+  `agent_engine` (JSONB, the approved `EngineIdentity`: provider, model, mode, connection,
+  endpoint hash and payer) and `agent_plan_digest` (TEXT, the approved plan).
+  CHECK `agent_fields_check`: engine and digest are set together, and a token
+  never without them. Indexes: unique partial
+  `uq_extraction_batches_agent_plan_digest` (one batch per approved plan, so a
+  repeated start replays), partial `ix_extraction_batches_agent_token_id`
+  (revocation lookup) and partial `ix_extraction_batches_agent_project_created`
+  `(project_id, created_at)` (the per-project daily agent cap).
+  `ai_usage_ledger` gains `agent_token_id` with the same key and a partial
+  index. A batch with a digest is agent-started (`started_by_agent`).
+- **Agent stop codes.** Before each advance an agent batch re-checks
+  `extraction_batch_agent_guard.agent_stop_reason`, in order:
+  `AGENT_TOKEN_INACTIVE` (token revoked, expired or without the `ai_run`
+  grant; revocation also stops it in the same transaction),
+  `AGENT_RUNS_DISABLED` (the project policy no longer lets the owner start
+  agent runs), `ENGINE_RETIRED`, then `AGENT_ENGINE_CHANGED` (engine,
+  endpoint or payer differ from the approved identity). Queued items of a
+  guard-stopped batch take reason `STOPPED_AGENT_GUARD`; an engine-failure
+  stop uses `STOPPED_ENGINE_ERROR`; a cancel uses `CANCELLED`. In-flight
+  items always finish. UI batches never run the guard.
 - Backend-only: RLS enabled, `anon`/`authenticated` revoked.
 - Execution: `advance_extraction_batch` (queue `extractions`) keeps at most 2
   articles in flight, opens the owner's session run
@@ -438,10 +520,10 @@ Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
 
 | Table | Notable evolution | Where |
 | --- | --- | --- |
-| `extraction_templates_global` | + `kind` column, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — template-level general AI instruction, seeded per framework) | 0011 + 0047 |
-| `project_extraction_templates` | + `kind`, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — copied from the global on clone; snapshot emits the key only when non-NULL); + `config_draft_since` TIMESTAMPTZ NULL (B-4 draft marker — stamped by the `trg_extraction_{entity_types,fields}_mark_draft` AFTER-row triggers on any live config write, cleared only inside `TemplateVersionService.republish`'s locked section, which is now the ONLY writer of a version row. Run creation used to lazily publish a v=1 snapshot from LIVE rows when a template had no active version — publishing a pending draft under the run creator's identity, logged as least-harm. Migration 0004 heals stranded templates and then enforces the invariant with DEFERRED constraint triggers, so that state cannot exist in committed data; the lazy publisher was unreachable and has been deleted rather than guarded) | 0011 + 0047 + 0048 |
+| `extraction_templates_global` | + `kind` column, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — template-level general AI instruction, seeded per framework); + `instrument` TEXT NOT NULL DEFAULT `'custom'` (CHECK in `charms`, `charms_mm`, `probast`, `probast_ai`, `quadas2`, `custom` — stable instrument code set by the seed; the QA prompt names the instrument from it) | 0011 + 0047 + 0087 |
+| `project_extraction_templates` | + `kind`, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — copied from the global on clone; snapshot emits the key only when non-NULL); + `config_draft_since` TIMESTAMPTZ NULL (B-4 draft marker — stamped by the `trg_extraction_{entity_types,fields}_mark_draft` AFTER-row triggers on any live config write, cleared only inside `TemplateVersionService.republish`'s locked section, which is now the ONLY writer of a version row. Run creation used to lazily publish a v=1 snapshot from LIVE rows when a template had no active version — publishing a pending draft under the run creator's identity, logged as least-harm. Migration 0004 heals stranded templates and then enforces the invariant with DEFERRED constraint triggers, so that state cannot exist in committed data; the lazy publisher was unreachable and has been deleted rather than guarded); + `instrument` (0087 — copied from the global on clone and converged onto clones by the seed; `custom` for a blank template) | 0011 + 0047 + 0048 + 0087 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
-| `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
+| `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). + `content_version` INTEGER NULL (0089) — the `article_files.content_version` a grounded row's `position` was anchored against, stamped by the AI landing on grounded rows only; NULL = unknown and reads current. A row is **stale** when it is grounded, its `content_version` is not NULL and differs from the file's. A reparse (`DocumentParsingService.parse_article_file`) re-anchors, under the same per-file advisory lock (`evidence_reanchor.lock_file_blocks`) and transaction as the block rewrite, every grounded AI row on the file whose version is NULL or the previous one (`evidence_reanchor.reanchor_file`: exact match, then fuzzy): a match rewrites `position` (the stored `anchor.quote` is kept), `page_number` and `content_version`; a miss leaves the locator alone and stamps a NULL version with the previous one, so it reads stale. `text_content` never changes, and evidence on a human proposal, a reviewer decision or a consensus decision never moves. Partial index `idx_extraction_evidence_article_file_id` (`WHERE article_file_id IS NOT NULL`) serves the per-file read. | 0013 + 0017 + 0044 + 0089 |
 | `extraction_entity_types` | **Structure is `parent_entity_type_id` + `cardinality` (0069).** `role`, its ENUM `extraction_entity_role`, the `ck_extraction_entity_types_role_parent` CHECK, the two `uq_..._one_container_per_*` partial unique indexes and the `trg_check_model_section_parent_role` trigger are all dropped: a repeating section is an entry group, a template may hold SEVERAL root groups, and a group may own a group at any depth. Replaced by `ck_extraction_entity_types_noun_on_repeating` (a repeating section always carries `entry_label`) and the deferred `trg_check_section_parent_repeats` (a section may name a parent only if that parent repeats; a section that owns children may not stop repeating). `check_cardinality_one` is dropped with them — B2 retired only the browser call, leaving a SECURITY DEFINER function granted to `authenticated` with no caller. Write RLS manager-gated (B-7): INSERT/UPDATE policies require `is_project_manager` (was member), both with explicit WITH CHECK, plus `template_id IS NULL` — the RLS floor against writing GLOBAL-catalogue sections (cross-tenant prompt injection via cloned `llm_description`; previously only the `template_xor` CHECK stood in the way). SELECT scoped to project members (0058): the policy is `can_read_entity_type(id, auth.uid())` — global-catalogue rows (`project_template_id IS NULL`) stay world-readable because the browser's global-template fallback in `queryEntityTypes` still reads them (the import dialog's section counts come from `GET /api/v1/templates/global`), project-lineage rows require `is_project_member`. It was `USING (true)` with no `TO` clause and a baseline SELECT grant to `anon`, so unauthenticated callers could read every project's sections, fields and authored `llm_description`. Manager DELETE unchanged. Residual: manager JWTs can still write via PostgREST (GRANT survives) — follow-up REVOKE recorded in the 0049 docstring. + `entry_label` TEXT NULL (B-8 entry noun — what reviewers call one entry of a repeating section. Meaningful for **every** `cardinality='many'` section at any depth (unlocked from the container in the entry-group train: the section PATCH, the create request and the portable bundle accept it wherever the section repeats; the AI identification prompt and the run form read it per section, falling back to "entry"). The container keeps its `'model'` default: backfilled `'model'` via a role-only predicate covering BOTH lineages, with the 0048 mark-draft trigger disabled during the backfill; seed stamps `"model"` on the catalogue containers; migration 0026's embedded snapshot SQL intentionally untouched — column post-dates its slot, `llm_template_instruction` precedent). `description` is the section's **AI instruction**: sent with every extraction of the section (`section_extraction` prompt) and, for a repeating section, as the entry-identification instruction (`entry_identification`); the run form never renders it. Editable after creation through the section PATCH (a blank clears it) and offered in every mode of the add-section dialog (entry-group follow-up). | 0049 + 0051 + 0058 0068 stamps the entry noun (`predictor`, `validation`) onto the two seeded global groups that shipped without one; clones are untouched (versioned config). |
 | `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated`, `allows_no_information` opt-in disposition flags (ADR-0016, the third added by 0062 with a `true` server_default because the marker was universal before it; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK; per-section name uniqueness enforced by unique index `uq_extraction_fields_entity_type_name (entity_type_id, name)` — preceded by a deterministic first-free-suffix heal of pre-existing duplicates (both lineages, 0048 trigger left ENABLED so healed templates stamp as real drift; downgrade drops the index only). SELECT scoped to project members (0058) through the SAME predicate as its parent — `can_read_entity_type(entity_type_id, auth.uid())`; a field is visible exactly when its entity type is, expressed once so the two policies cannot drift (several frontend reads select fields by `entity_type_id` alone and rely on the id list being pre-filtered). `template_field_service` remaps a 23505 on this index to the typed duplicate error. Promotion runs the duplicate + hybrid-row audit from the 0050 docstring against prod FIRST. + `is_entity_key` (0059 — the field whose value identifies an entry of a repeating group; at most one per section via the partial unique index `uq_extraction_fields_one_entity_key`; `app/services/entity_key.py` owns the concept and the seeded coordinate list `ENTITY_KEY_FIELDS`). **Identity is versioned config**: the snapshot builder copies the flag into `version.schema_`, the publish diff reports a key move as two SEMANTIC `is_entity_key` changes (never destructive — it strands no recorded value and changes no gate; entries already materialized under the old key simply will not match a re-run), and Discard/Restore-vN round-trip it — the restore writer parks the key like a name (`false` is the park value) and releases every key the baseline does not grant, because the index is partial, immediate, and the update set settles in snapshot order; a section whose baseline holder is name-conflicted keeps the key where the draft put it rather than ending keyless. Era: snapshots published before this shipped lack the key while 0059/0066 stamped it on the live rows, so migration **0067** wrote each field's live flag into every stored snapshot by field id (the 0017 `role` precedent) — no seed-coordinate list in the diff engine, and a key a manager moved by hand between 0059 and 0067 is captured exactly; a field whose live row was already gone stays absent and reads as `false`. The AI re-run gate reads the PINNED flag too: `entity_key.key_field_of` takes the run's pinned entity type (`entity_types_for_version`, live-row fallback only when the pin carries no such section), so a key moved in an unpublished draft gates nothing until Publish re-pins — the 0067 residual is closed. **Every `cardinality='many'` section is an entry group**, at any depth and regardless of `role`: `app/services/ai_extraction` routes it through `extract_into_instances` (identify → `entity_key.resolve_instance` per entry at the `(article, entity_type, parent_instance)` coordinate → extract per entry with the prompt scoped to that entry — and, since the trees train's B1, every section under an entry is scoped to the whole chain of enclosing entries: `ancestry_of` walks `parent_instance_id` through `get_on_run`, and the section, QA and identification prompts name the chain), which is the model pipeline generalized; a keyless group refuses before any LLM call, and the `instances[0]` collapse that never filled repeats 2..N is gone. `RunViewField.is_entity_key` is on the wire so the run form can name the key: the add dialog (`AddEntryDialog`, every `onAddInstance` and the model selector) labels its input with the key field, lists the siblings and blocks an exact duplicate. **Creation itself is server-side** since the trees train's B2: `POST /api/v1/extraction/instances` (`entry_hierarchy_service`, guarded by `owned_template` WITH `kind`, `owned_article`, `owned_section` and `get_in_coordinate`, behind the member + reviewer gate) creates an entry of ANY repeating section — root or nested — stamps `metadata.entity_key`, materializes the section's `cardinality='one'` children in the same transaction, and records the key value as the caller's ReviewerDecision on the key field. A duplicate key at the `(article, entity_type, parent_instance)` coordinate is refused with a typed 409 `ENTRY_KEY_DUPLICATE` instead of being silently renamed. The model-only `POST /api/v1/extraction/models/manual` and the browser-side PostgREST insert are retired. **Re-key** is a reviewer action folded into rename — `PATCH /api/v1/extraction/instances/{id}` (`instance_identity_service`, guarded by `get_in_coordinate` + the reviewer gate) rewrites `label` and/or `metadata.entity_key` and appends `{who, when, from, to}` to `metadata.entity_key_history` (append-only, constitution §IX; `entity_key.rekey_instance`). Merge stays out (identity spec §7). **Bulk delete** is server-side too (trees B7): `DELETE /api/v1/extraction/instances` takes a distinct, non-empty `instanceIds` list behind the same member + reviewer gate, binds EVERY id to the request coordinate through `get_in_coordinate` before it touches a row, and refuses the whole batch on one unknown or out-of-coordinate id (404, the same answer for both, so it is no existence oracle) or one `cardinality='one'` instance (422). All-or-nothing because an entry cascades to its children, its values and its reviewer decisions: a loop of the browser's single PostgREST delete that gets halfway leaves audit-bearing tables in a state no undo restores. The single delete is still that browser call. | 0038 + 0049 + 0050 + 0058 + 0059 + 0062 + 0066 + 0067 |
 
@@ -589,17 +671,19 @@ depends on the active template version are built at runtime by
 **Article-text input (2026-06-24).** The `article_text` passed to each
 `render(...)` is no longer raw `pypdf` text truncated at 15k. The extraction
 services call `build_prompt_input` (`app/services/extraction_prompt_input.py`),
-which uses the **stored `article_files.content_markdown`** column directly when
-it fits within `LLM_ASSEMBLY_BUDGET_TOKENS`; otherwise it falls back to
+which always assembles it from the persisted blocks through
 `app/llm/assembler.py::assemble_for_model` (a deterministic
-`render_blocks_to_markdown` + IMRaD-aware whole-section dropping). The assembly
-event is logged as `extraction.assembly` with a `source` field:
-`stored_markdown` or `budgeted_blocks`. When an article has never been parsed,
+`render_blocks_to_markdown(..., block_refs=True)` + IMRaD-aware whole-section
+dropping under `LLM_ASSEMBLY_BUDGET_TOKENS`). Every kept block carries its
+citation ref followed by a space (`[p3·b12]`, or `[p3·b12–b18]` above a table); the refs are
+prompt-only and the stored `content_markdown` the reader shows is unchanged
+(ADR-0013 Amendment 2026-10). The assembly event is logged as
+`extraction.assembly`. When an article has never been parsed,
 `build_prompt_input` runs `PymupdfParser` **once** via `DocumentParsingService`
 and persists blocks + `content_markdown` atomically — it is never re-parsed
 afterward. The `pypdf` fallback (`pdf_processor.py`, `blocks_from_plain_text`,
 the `pypdf` dep) has been **removed**; no unbounded-text path remains.
-See ADR-0011 (block input) and ADR-0013 (stored markdown + deterministic highlight).
+See ADR-0011 (block input) and ADR-0013 (stored markdown, prompt block refs, deterministic highlight).
 
 Unit tests for the prompt layer live in
 `backend/tests/unit/llm/test_prompts.py`.
@@ -619,7 +703,7 @@ also lists the project's own templates — active and inactive — with *Switch
 to* (`PATCH …/templates/{id}`, which since this slice deactivates the
 extraction sibling first) and *Delete* (`DELETE …/templates/{id}`: guards run
 under `SELECT … FOR UPDATE` — 409 `TEMPLATE_ACTIVE` / `TEMPLATE_IN_USE`, else
-DB cascade plus the template-scoped `extraction_hitl_configs` row; the locked
+DB cascade, which since 0086 includes the template-scoped `extraction_hitl_configs` row; the locked
 pre-check is load-bearing because `extraction_runs` also carries a composite
 CASCADE FK to the template). `GET …/templates/{id}/export` serializes the
 **live** structure as a `prumo-template@1` document (`app/schemas/

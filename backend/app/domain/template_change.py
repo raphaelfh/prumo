@@ -64,7 +64,7 @@ class ChangeTier(StrEnum):
 class ChangeVariant(StrEnum):
     """The shape of one row — the client's discriminator (D1).
 
-    One member per reachable ``(kind, node_kind[, option polarity])`` the
+    One member per reachable ``(kind, node_kind[, option add/remove/rename])`` the
     engine can emit, so a renderer never has to re-derive which of the
     engine's overloaded fields are meaningful.
     """
@@ -82,4 +82,5 @@ class ChangeVariant(StrEnum):
     FIELD_MODIFIED = "field_modified"
     FIELD_OPTION_ADDED = "field_option_added"
     FIELD_OPTION_REMOVED = "field_option_removed"
+    FIELD_OPTION_RENAMED = "field_option_renamed"
     FIELD_OPTIONS_REORDERED = "field_options_reordered"

@@ -6,6 +6,11 @@ and the tool body never calls the logger. The storage adapter comes only
 from ``mcp_session.storage_factory()``, read through the module so a test's
 monkeypatch on the attribute applies (never ``create_storage_adapter``
 directly, and never a cached adapter across calls).
+
+The signed URL appears twice per result: in ``structuredContent.pdf.url`` and
+as the ``resource_link`` block. The text copy is the compact JSON of the
+structured content with that one value replaced by a pointer, so a long
+signed URL is not paid for a third time.
 """
 
 from __future__ import annotations
@@ -24,12 +29,14 @@ from app.services import article_read_service
 from app.utils.compact_json import compact_json
 
 _SIGNED_URL_TTL_SECONDS = 600
+_URL_POINTER = "see structuredContent.pdf.url or the resource_link block"
 
 
 @agent_tool(
     requires="read",
     project_arg="article_id",
     title="Get article PDF link",
+    destructive=False,
     description=(
         "Return a short-lived (10 min) signed URL for the article's PDF. Download it to read "
         "figures and tables. Chat-only clients should use get_article_text instead."
@@ -69,7 +76,8 @@ async def get_article_pdf(
         ResourceLink(type="resource_link", uri=url, name=filename, mime_type="application/pdf")
     ]
     structured_content = result.model_dump(mode="json")
+    text_copy = {**structured_content, "pdf": {**structured_content["pdf"], "url": _URL_POINTER}}
     return CallToolResult(
-        content=[TextContent(type="text", text=compact_json(structured_content)), *links],
+        content=[TextContent(type="text", text=compact_json(text_copy)), *links],
         structured_content=structured_content,
     )

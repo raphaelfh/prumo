@@ -25,10 +25,10 @@ import pytest
 from app.core.error_handler import AuthorizationError
 from app.models.extraction import (
     ExtractionFieldType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.project import ProjectMemberRole
 from app.services.extraction_export_service import (

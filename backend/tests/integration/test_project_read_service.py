@@ -6,14 +6,17 @@ from __future__ import annotations
 from typing import get_args
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import event, text
 
+from app.core.error_handler import NotFoundError
 from app.models.base import POSTGRESQL_ENUM_VALUES
 from app.schemas.mcp_projects import ProjectRoleValue
 from app.schemas.project_details import ProjectDetailsValues
 from app.services.project_read_service import (
     get_project_overview,
     list_projects_for_user,
+    project_name,
     template_summaries,
 )
 from tests.integration.conftest import SEED
@@ -112,3 +115,18 @@ async def test_template_summaries_narrow_flag(db_session):
     )
     by_id = {t.template_id: t for t in await template_summaries(db_session, project_id=project_id)}
     assert (by_id[template_id].published_version, by_id[template_id].narrow) == (None, None)
+
+
+async def test_project_name_reads_the_row(db_session):
+    expected = (
+        await db_session.execute(
+            text("SELECT name FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert await project_name(db_session, SEED.primary_project) == expected
+
+
+async def test_project_name_of_a_missing_project_is_not_found(db_session):
+    with pytest.raises(NotFoundError):
+        await project_name(db_session, uuid4())

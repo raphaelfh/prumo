@@ -26,14 +26,17 @@ under the previous text — the unattributable claim the pin exists to prevent
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun
+from app.models.project import Project
 from app.repositories import ExtractionRunRepository
-from app.schemas.run_prompt_context import ReviewContextPin, RunPromptContext
+from app.schemas.run_prompt_context import ReviewQuestionPin, RunPromptContext
 from app.services.extraction_snapshot import general_instructions_for_version
-from app.services.project_ai_context import build_review_context
+from app.services.project_ai_context import build_review_question
 
 #: Annotated so it satisfies ``freeze_provenance_key``'s Literal — that
 #: parameter is narrow on purpose (it writes into the dict holding the engine
@@ -41,8 +44,8 @@ from app.services.project_ai_context import build_review_context
 _PIN_KEY: Literal["review_context"] = "review_context"
 
 
-def read_pinned_review_context(results: dict[str, Any] | None) -> ReviewContextPin | None:
-    """The run's pinned review context, or ``None`` — a pure READ.
+def read_pinned_review_question(results: dict[str, Any] | None) -> ReviewQuestionPin | None:
+    """The run's pinned review question, or ``None`` — a pure READ.
 
     ``None`` means no LLM call has run on this run yet, which is a different
     fact from a pin whose ``text`` is ``None`` (resolved, and the review says
@@ -51,8 +54,41 @@ def read_pinned_review_context(results: dict[str, Any] | None) -> ReviewContextP
     """
     pinned = ((results or {}).get("provenance") or {}).get(_PIN_KEY)
     if isinstance(pinned, dict) and pinned:
-        return ReviewContextPin.model_validate(pinned)
+        return ReviewQuestionPin.model_validate(pinned)
     return None
+
+
+async def current_protocol_revision(db: AsyncSession, project_id: UUID) -> int | None:
+    """The project's ``protocol_revision`` now, or ``None`` when the row is gone.
+
+    Not an ownership guard: callers pass a ``project_id`` whose access is
+    already proven — the run's own project on the run view, or the
+    membership-checked ``project_id`` an MCP read was called with.
+    """
+    stmt = select(Project.protocol_revision).where(Project.id == project_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+def review_question_drift(
+    pin: ReviewQuestionPin | None, current_revision: int | None
+) -> bool | None:
+    """Whether the project's protocol moved since the run pinned its question.
+
+    ``None`` when nothing is pinned yet. A legacy pin (no revision) or an
+    unknown current revision never reports drift: there is nothing to compare.
+    """
+    if pin is None:
+        return None
+    if pin.revision is None or current_revision is None:
+        return False
+    return pin.revision != current_revision
+
+
+def pinned_question_drift(
+    results: dict[str, Any] | None, current_revision: int | None
+) -> bool | None:
+    """:func:`review_question_drift` for a run's raw ``results``."""
+    return review_question_drift(read_pinned_review_question(results), current_revision)
 
 
 async def resolve_run_prompt_context(db: AsyncSession, run: ExtractionRun) -> RunPromptContext:
@@ -65,15 +101,19 @@ async def resolve_run_prompt_context(db: AsyncSession, run: ExtractionRun) -> Ru
     lock the two share is re-entrant within one transaction and would deadlock
     across two.
     """
-    pinned = read_pinned_review_context(run.results)
+    pinned = read_pinned_review_question(run.results)
     if pinned is None:
+        question = await build_review_question(db, run.project_id)
         stored = await ExtractionRunRepository(db).freeze_provenance_key(
             run.id,
             _PIN_KEY,
-            ReviewContextPin(text=await build_review_context(db, run.project_id)).model_dump(),
+            ReviewQuestionPin(
+                text=question.text if question else None,
+                revision=question.revision if question else None,
+            ).model_dump(),
         )
-        pinned = ReviewContextPin.model_validate(stored) if stored else ReviewContextPin()
+        pinned = ReviewQuestionPin.model_validate(stored) if stored else ReviewQuestionPin()
     return RunPromptContext(
-        review_context=pinned.text,
+        review_question=pinned.text,
         general_instructions=await general_instructions_for_version(db, run.version_id),
     )

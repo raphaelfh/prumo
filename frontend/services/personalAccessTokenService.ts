@@ -36,3 +36,8 @@ export function revokeMyToken(id: string): Promise<ErrorResult<void>> {
 export function isTokenLimitError(error: Error): boolean {
   return error instanceof ApiError && error.code === 'TOKEN_LIMIT_REACHED';
 }
+
+/** The 422 when a requested project is not one the caller belongs to. */
+export function isProjectNotAccessibleError(error: Error): boolean {
+  return error instanceof ApiError && error.code === 'PROJECT_NOT_ACCESSIBLE';
+}

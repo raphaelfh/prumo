@@ -40,6 +40,8 @@ import {NotificationCenter} from "../NotificationCenter";
 import {useBackgroundJobs} from "@/stores/useBackgroundJobs";
 import {createExtractionExportJob} from "@/types/background-jobs";
 import {getExportStatus as getExtractionExportStatus} from "@/services/extractionExportService";
+import {toast} from "sonner";
+import type {AiBatchJob} from "@/types/background-jobs";
 import type {ExtractionExportStatus} from "@/types/extraction-export";
 
 function completedExportJob(id: string) {
@@ -75,7 +77,49 @@ function runningExportJobWithoutTemplateName(id: string) {
     };
 }
 
+function aiBatchJob(metadata: Partial<AiBatchJob["metadata"]> = {}, status: AiBatchJob["status"] = "failed"): AiBatchJob {
+    return {
+        id: "ai-batch-b1",
+        type: "ai-batch",
+        status,
+        createdAt: Date.now(),
+        completedAt: status === "running" ? undefined : Date.now(),
+        metadata: {
+            batchId: "b1",
+            projectId: "p1",
+            projectName: "Project 1",
+            templateId: "t1",
+            templateName: "CHARMS",
+            kind: "extraction",
+            state: status === "running" ? "active" : "stopped",
+            stalled: false,
+            stopCode: null,
+            counts: {
+                done: 1, done_with_issues: 0, needs_attention: 0, not_run: 1,
+                queued: 0, running: 0, skipped: 0, total: 2,
+            },
+            startedByAgent: false,
+            agentTokenName: null,
+            ...metadata,
+        },
+    };
+}
+
+async function openBellWith(job: AiBatchJob) {
+    const user = userEvent.setup();
+    act(() => {
+        useBackgroundJobs.setState({jobs: [job], lastReadAt: Date.now()});
+    });
+    render(
+        <MemoryRouter>
+            <NotificationCenter />
+        </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", {name: /notifications/i}));
+}
+
 beforeEach(() => {
+    vi.mocked(toast.error).mockClear();
     // The bell polls every in-flight export job on mount. Re-establish the
     // default terminal result each time so a per-test override cannot leak.
     vi.mocked(getExtractionExportStatus).mockResolvedValue({
@@ -245,5 +289,84 @@ describe("NotificationCenter", () => {
         expect(
             await screen.findByText("Generating… (5 articles, Template)"),
         ).toBeInTheDocument();
+    });
+});
+
+describe("NotificationCenter — AI batch origin and stop reason", () => {
+    it("labels an agent-started batch with its token name", async () => {
+        await openBellWith(aiBatchJob({startedByAgent: true, agentTokenName: "CLI token"}));
+        expect(await screen.findByText("Started by agent · CLI token")).toBeInTheDocument();
+    });
+
+    it("labels an agent-started batch whose token name is gone without a name", async () => {
+        await openBellWith(aiBatchJob({startedByAgent: true, agentTokenName: null}));
+        expect(await screen.findByText("Started by agent")).toBeInTheDocument();
+    });
+
+    it("renders a token name literally, replacement patterns included", async () => {
+        await openBellWith(aiBatchJob({startedByAgent: true, agentTokenName: "<b>x</b> $& $1"}));
+        expect(await screen.findByText("Started by agent · <b>x</b> $& $1")).toBeInTheDocument();
+    });
+
+    it("shows no agent label on a batch started in the app", async () => {
+        await openBellWith(aiBatchJob());
+        await screen.findByText("Project 1");
+        expect(screen.queryByText(/Started by agent/)).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ["MISSING_API_KEY", "Stopped: the AI engine has no API key"],
+        ["ENGINE_RETIRED", "Stopped: the AI engine is no longer available"],
+        ["LLM_ENDPOINT_UNAVAILABLE", "Stopped: the AI endpoint could not be reached"],
+        ["AGENT_TOKEN_INACTIVE", "Stopped: the agent's access token was revoked or expired"],
+        ["AGENT_RUNS_DISABLED", "Stopped: agent-started runs were turned off for this project"],
+        ["AGENT_ENGINE_CHANGED", "Stopped: the project's AI engine changed after approval"],
+    ])("explains stop code %s in its own words", async (code, message) => {
+        await openBellWith(aiBatchJob({stopCode: code}));
+        expect(await screen.findByText(message)).toBeInTheDocument();
+    });
+
+    it("never shows an unknown stop code's raw text", async () => {
+        await openBellWith(aiBatchJob({stopCode: "SOMETHING_NEW"}));
+        expect(await screen.findByText("Stopped for an unexpected reason")).toBeInTheDocument();
+        expect(screen.queryByText(/SOMETHING_NEW/)).not.toBeInTheDocument();
+    });
+
+    it("toasts an agent stop with its reason and no engine action", async () => {
+        act(() => {
+            useBackgroundJobs.setState({jobs: [aiBatchJob({}, "running")], lastReadAt: Date.now()});
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+        act(() => {
+            useBackgroundJobs.getState().updateJob("ai-batch-b1", aiBatchJob({stopCode: "AGENT_TOKEN_INACTIVE"}));
+        });
+
+        await waitFor(() => expect(toast.error).toHaveBeenCalled());
+        const [message, options] = vi.mocked(toast.error).mock.calls[0];
+        expect(message).toBe("Stopped: the agent's access token was revoked or expired");
+        expect((options as {action?: unknown} | undefined)?.action).toBeUndefined();
+    });
+
+    it("toasts an engine stop with its reason and the engine settings action", async () => {
+        act(() => {
+            useBackgroundJobs.setState({jobs: [aiBatchJob({}, "running")], lastReadAt: Date.now()});
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+        act(() => {
+            useBackgroundJobs.getState().updateJob("ai-batch-b1", aiBatchJob({stopCode: "MISSING_API_KEY"}));
+        });
+
+        await waitFor(() => expect(toast.error).toHaveBeenCalled());
+        const [message, options] = vi.mocked(toast.error).mock.calls[0];
+        expect(message).toBe("Stopped: the AI engine has no API key");
+        expect((options as {action?: {label: string}}).action?.label).toBe("Choose engine");
     });
 });

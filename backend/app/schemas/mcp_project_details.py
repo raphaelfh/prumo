@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -12,6 +12,13 @@ class UpdateProjectDetailsResult(BaseModel):
     """What ``update_project_details`` changed. ``before``/``after`` carry only the keys in ``fields``."""
 
     project_id: UUID
+    project_name: str
     before: dict[str, Any]
     after: dict[str, Any]
     note: str | None = None
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "before{}",
+        "after{}",
+        "project_name",
+    ]

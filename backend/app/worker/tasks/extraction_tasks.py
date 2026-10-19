@@ -40,6 +40,15 @@ def _retry_countdown(retries: int) -> float:
     return min(base + random.uniform(0, base * 0.1), float(_RETRY_MAX_SECONDS))
 
 
+def _api_section(section: dict[str, Any]) -> dict[str, Any]:
+    """A per-section outcome in the job-result shape the API serves
+    (``SectionOutcome.tokens_used``): the section's ``tokens`` total."""
+    api = {k: v for k, v in section.items() if k != "tokens"}
+    if "tokens" in section:
+        api["tokens_used"] = section["tokens"]["total"]
+    return api
+
+
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -78,22 +87,32 @@ def run_section_extraction_task(
 
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
-        from app.core.factories import create_storage_adapter
+        from app.core.factories import create_ledger_session_factory, create_storage_adapter
         from app.schemas.extraction import SectionExtractionRequest
         from app.services.ai_extraction import (
             AiExtraction,
             BatchAllSectionsFailed,
             BatchExtractionResult,
         )
+        from app.services.ai_usage_metering import LedgerSink
         from app.services.engine_credentials import resolve_engine_credentials
-        from app.worker._session import worker_session
+        from app.services.extraction_batch_service import agent_batch_for_attempt
+        from app.worker._session import worker_engine, worker_session
 
-        async with worker_session() as session:
+        async with worker_engine() as db_engine, worker_session(db_engine) as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                request = SectionExtractionRequest(**payload_json)
+                # One-release deferral, like the note on
+                # ``SectionExtractionRequest.model_config``: a payload stored
+                # before caller-supplied article text was removed still
+                # carries ``pdf_text``. Delete in a later refactor(extraction)
+                # once no older attempt can replay. Filtered, not popped:
+                # ``payload_json`` may be the attempt row's own dict.
+                request = SectionExtractionRequest(
+                    **{k: v for k, v in payload_json.items() if k != "pdf_text"}
+                )
 
                 # Attempt 0 is the HUMAN kickoff (one enqueue site — the
                 # endpoint); every later attempt is a Celery retry, which
@@ -126,11 +145,19 @@ def run_section_extraction_task(
                         user_id=UUID(user_id),
                     )
 
+                # An agent-started batch never runs on the deployment key —
+                # not through the ladder, the re-key, or build_model's own
+                # fallback. Re-derived per attempt (a retry replays kwargs).
+                allow_global_key = (
+                    attempt_id is None
+                    or await agent_batch_for_attempt(session, UUID(attempt_id)) is None
+                )
                 credentials = await resolve_engine_credentials(
                     session,
                     user_id=user_id,
                     project_id=request.project_id,
                     engine=engine,
+                    allow_global_key=allow_global_key,
                 )
 
                 service = AiExtraction(
@@ -152,6 +179,11 @@ def run_section_extraction_task(
                     repin=repin,
                     attempt_id=UUID(attempt_id) if attempt_id else None,
                     owns_transactions=True,
+                    # Every model call writes a ledger row on its own
+                    # connection to this task's engine, committed apart from
+                    # the run transaction.
+                    usage_sink=LedgerSink(create_ledger_session_factory(db_engine)),
+                    allow_global_key=allow_global_key,
                 )
 
                 res = await service.run_from_request(request, engine=engine)
@@ -168,7 +200,7 @@ def run_section_extraction_task(
                         "total_suggestions_created": res.total_suggestions_created,
                         # Per-section outcomes — enables legacy frontend flows to
                         # reconstruct BatchSectionResult.sections from the job result.
-                        "sections": res.sections,
+                        "sections": [_api_section(s) for s in res.sections],
                     }
 
                 # SectionExtractionResult (single)

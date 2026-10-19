@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-09-24
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 adr_number: '0020'
 ---
@@ -8,7 +8,7 @@ adr_number: '0020'
 # Personal access tokens as a second auth carrier for `/mcp`
 
 > **Status:** Accepted · Date: 2026-09-24 · Deciders: @raphaelfh
-> **Supersedes:** N/A · **Superseded by:** N/A
+> **Supersedes:** N/A · **Superseded by:** N/A · **Amended by:** ADR 0021
 
 ## Context and Problem Statement
 
@@ -50,6 +50,10 @@ Chosen option: **personal access tokens**, issued and managed through
 `/api/v1/me/tokens` and accepted as a second bearer credential on `/mcp`
 only.
 
+**Amended (2026-10):** a token may carry an optional project restriction
+(default: all of the user's projects), enforced exactly like non-membership.
+The personal-access-token decision itself stands.
+
 OAuth was rejected: prumo has no web chat client to support (the entire
 consumer base for `/mcp` is header-capable agents), so an authorization-code
 flow would add a redirect endpoint, a consent screen and a provider
@@ -57,6 +61,13 @@ registration for zero clients that need it. A PAT reaches the same
 long-lived-credential goal with the shape those clients already expect
 (paste a bearer token into a config file), and issuance instead of a JWT
 refresh loop avoids inventing agent-side session renewal.
+
+**Amended by ADR 0022 (2026-10):** OAuth is now accepted for /mcp, with prumo as the authorization server; PATs remain the credential for header-capable agents.
+
+**Amended by ADR 0021 (2026-10):** a credential may also carry the optional
+`ai_run` grant, off by default, which lets the agent plan and start an AI
+extraction run the user approved; without it the AI-run tools are hidden and
+refused.
 
 Reusing the JWT unmodified was rejected: it is short-lived by design (session
 security for the browser), and widening its lifetime for MCP would weaken it
@@ -170,7 +181,7 @@ through `RequestIdMiddleware`, which runs on every request regardless of
 downstream framework, so `/mcp` calls remain traceable in logs even though
 their wire format is not `ApiResponse`.
 
-### Migration 0077
+### Migration 0078_personal_access_tokens
 
 `personal_access_tokens` follows the 0072 (`llm_connections`) posture
 exactly: RLS enabled, a single `deny_all USING (false)` policy, and every

@@ -5,9 +5,16 @@
  * stored, not echoed from the request), so it is written onto the read key
  * synchronously — a back-to-back save then never computes from a pre-PUT
  * cache while the refetch is still in flight.
+ *
+ * `expected_revision` rides the body unchanged: a 409 STALE_VALUE reaches the
+ * caller as the `ApiError` and invalidates nothing, so the read only moves
+ * when the editor asks for it (Reload). A successful save also refreshes the
+ * run reads: their drift chip compares the run's pinned protocol revision
+ * with the project's current one.
  */
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 
+import {runsKeys} from '@/hooks/runs/types';
 import {projectKeys} from '@/lib/query-keys';
 import {
   fetchAiContext,
@@ -45,6 +52,7 @@ export function useSetAiContext(projectId: string) {
       void queryClient.invalidateQueries({
         queryKey: projectKeys.aiContext(projectId),
       });
+      void queryClient.invalidateQueries({queryKey: runsKeys.all});
     },
   });
 }

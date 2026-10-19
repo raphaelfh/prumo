@@ -605,7 +605,7 @@ def _tied_appraisal_inputs():
         ExtractionFieldType,
     )
 
-    risk_labels = ("Low", "Unclear", "High")
+    risk_labels = tuple(AllowedValue(x, x) for x in ("Low", "Unclear", "High"))
 
     def _verdict_field():
         return FieldDescriptor(

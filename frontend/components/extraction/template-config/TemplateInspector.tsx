@@ -6,6 +6,7 @@ import {Input} from '@/components/ui/input';
 import {Switch} from '@/components/ui/switch';
 import {Textarea} from '@/components/ui/textarea';
 import {t} from '@/lib/copy';
+import {normalizeOptions, type OptionItem} from '@/lib/extraction/options';
 import {cn} from '@/lib/utils';
 import type {ExtractionFieldUpdate} from '@/types/extraction';
 
@@ -140,7 +141,7 @@ interface FieldDraft {
   label: string;
   fieldType: string;
   isRequired: boolean;
-  allowedValues: string[];
+  allowedValues: OptionItem[];
   allowedUnits: string[];
   allowOther: boolean;
   otherLabel: string;
@@ -156,7 +157,7 @@ function draftFromField(field: GridField): FieldDraft {
     label: field.label,
     fieldType: field.fieldType,
     isRequired: field.isRequired,
-    allowedValues: field.allowedValues ?? [],
+    allowedValues: normalizeOptions(field.allowedValues),
     allowedUnits: field.allowedUnits ?? [],
     allowOther: field.allowOther,
     otherLabel: field.otherLabel ?? '',
@@ -172,6 +173,13 @@ function listsEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
+function optionsEqual(a: OptionItem[], b: OptionItem[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((o, i) => o.value === b[i].value && o.label === b[i].label)
+  );
+}
+
 function draftsEqual(a: FieldDraft, b: FieldDraft): boolean {
   return (
     a.label === b.label &&
@@ -184,7 +192,7 @@ function draftsEqual(a: FieldDraft, b: FieldDraft): boolean {
     a.allowsNotEvaluated === b.allowsNotEvaluated &&
     a.aiInstruction === b.aiInstruction &&
     a.description === b.description &&
-    listsEqual(a.allowedValues, b.allowedValues) &&
+    optionsEqual(a.allowedValues, b.allowedValues) &&
     listsEqual(a.allowedUnits, b.allowedUnits)
   );
 }
@@ -411,8 +419,8 @@ function FieldInspectorForm({
         <>
           <Label>{t('extraction', 'inspectorOptionsLabel')}</Label>
           <AllowedValuesList
-            values={draft.allowedValues}
-            onChange={(values) => setDraft({...draft, allowedValues: values})}
+            options={draft.allowedValues}
+            onChange={(options) => setDraft({...draft, allowedValues: options})}
             disabled={saving}
             showReorder
             autoFocusInput={focusGroup === 'options'}

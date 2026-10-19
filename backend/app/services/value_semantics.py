@@ -34,6 +34,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
+from app.llm.claim_value import normalize_options
+
 
 class AbsentReason(StrEnum):
     """The closed vocabulary of coded "no value, on purpose" dispositions.
@@ -163,20 +165,17 @@ def is_disposition_candidate(raw: Any) -> bool:
 
 
 def _option_values(allowed_values: Any) -> set[str]:
-    """The set of option value-strings in a field's ``allowed_values`` (tolerant
-    of both the plain-string and ``{"value": ...}`` option shapes)."""
-    out: set[str] = set()
-    if isinstance(allowed_values, list):
-        for opt in allowed_values:
-            if isinstance(opt, str):
-                out.add(opt)
-            elif isinstance(opt, dict) and isinstance(opt.get("value"), str):
-                out.add(opt["value"])
-    return out
+    """The set of option values (codes) in a field's ``allowed_values``."""
+    return {o["value"] for o in normalize_options(allowed_values)}
 
 
 def disposition_to_marker(
-    raw: Any, allowed_values: Any, *, allows_no_information: bool = True
+    raw: Any,
+    allowed_values: Any,
+    *,
+    allows_no_information: bool = True,
+    allows_not_applicable: bool = True,
+    allows_not_evaluated: bool = True,
 ) -> Any:
     """The single write-time disposition normalizer (ADR-0016 Phase 2).
 
@@ -189,14 +188,15 @@ def disposition_to_marker(
     multiselect list is never rewritten. Pure; no DB. Domain-scoped exactly like
     the Phase-3 data migration so the two agree.
 
-    ``allows_no_information`` (migration 0062) is the field's flag, and it
-    inverts the premise for its own disposition: the rewrite exists because an
-    in-band "NI" USED to mean the marker. A field that opts OUT offers no marker
-    button, so the string can only be its own substantive answer — PROBAST+AI
-    2.1.0's fifth signaling answer, which the instrument itself defines.
-    Rewriting it there would erase the reviewer's answer into a marker the form
-    then refuses to render. Scoped to ``no_information`` alone: NA/NE on the
-    same field are still the retired strings and still normalize.
+    Each disposition follows its own field flag (``allows_no_information``,
+    ``allows_not_applicable``, ``allows_not_evaluated``): the rewrite exists
+    because an in-band string USED to mean the marker. A field that opts OUT of
+    a marker offers no button for it, so the listed string can only be its own
+    substantive answer (PROBAST+AI 2.1.0's fifth signaling answer "NI", or a
+    template's own "Not applicable" option). Rewriting it there would turn the
+    reviewer's answer into a marker the field refuses. A flag is scoped to its
+    own disposition. The defaults keep the rewrite for callers that have not
+    looked the flags up.
     """
     value = unwrap_value_envelope(raw)
     if not isinstance(value, str):
@@ -204,6 +204,11 @@ def disposition_to_marker(
     reason = _DISPOSITION_TO_REASON.get(value)
     if reason is None or value not in _option_values(allowed_values):
         return raw
-    if reason is AbsentReason.NO_INFORMATION and not allows_no_information:
+    allowed = {
+        AbsentReason.NO_INFORMATION: allows_no_information,
+        AbsentReason.NOT_APPLICABLE: allows_not_applicable,
+        AbsentReason.NOT_EVALUATED: allows_not_evaluated,
+    }[reason]
+    if not allowed:
         return raw
     return {"value": None, "absent_reason": reason.value}

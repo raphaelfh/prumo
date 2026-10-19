@@ -35,6 +35,7 @@ import {
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {AlertCircle, Loader2, Pencil, Sparkles} from 'lucide-react';
+import {ApiError} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {isDuplicateEntryKey} from '@/lib/extraction/entryKey';
 
@@ -67,6 +68,13 @@ function keyProblem(
  * a component's try/catch, so the branching lives out here. */
 function failureMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
+}
+
+/** The rename dialog's error: the server's message only for its typed 409
+ * (a sibling already holds the key); a 404, 403, network or unknown failure
+ * shows the generic fallback, never a raw transport or server detail. */
+function renameFailureMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError && err.status === 409 && err.message ? err.message : fallback;
 }
 
 function SiblingChips({keys}: {keys: readonly string[]}) {
@@ -292,7 +300,7 @@ export function RenameEntryDialog({
     try {
       await onConfirm(changes);
     } catch (err: unknown) {
-      setError(failureMessage(err, fallback));
+      setError(renameFailureMessage(err, fallback));
       setLoading(false);
     }
   };

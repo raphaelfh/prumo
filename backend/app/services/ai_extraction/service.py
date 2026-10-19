@@ -27,15 +27,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
-from app.llm.extractor import StructuredCall, extract_structured
+from app.llm.extractor import LlmUsage, StructuredCall, extract_structured
 from app.models.extraction import (
     ExtractionEntityType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
-from app.schemas.extraction import SectionExtractionRequest
+from app.models.extraction_instance import ExtractionInstance
+from app.schemas.extraction import INSTRUMENT_LABELS, SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services.ai_extraction._batch import extract_all_sections
 from app.services.ai_extraction._pipeline import Pipeline
@@ -43,8 +43,10 @@ from app.services.ai_extraction._results import (
     BatchAllSectionsFailed,
     BatchExtractionResult,
     SectionExtractionResult,
+    tokens_of,
 )
 from app.services.ai_extraction._sections import extract_into_instances
+from app.services.ai_usage_metering import UsageSink
 from app.services.current_run import CurrentRunResolver
 from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_run_write import open_run_for_write
@@ -52,17 +54,20 @@ from app.services.llm_engine_service import resolve_engine
 from app.services.run_prompt_context import resolve_run_prompt_context
 
 
-def _qa_framework_label(template: Any | None) -> str | None:
+def instrument_label(template: Any | None) -> str | None:
     """The instrument a quality-assessment prompt grounds in.
 
-    Prefers the template's human name ("PROBAST+AI", "QUADAS-2"): every QA
-    template is ``framework='CUSTOM'``, so the enum alone produced the prompt
-    "assessing a study using CUSTOM". Falls back to ``framework``.
+    A known ``instrument`` code yields its fixed label, so a renamed clone
+    still prompts as "PROBAST+AI". A ``custom`` template keeps its own name,
+    falling back to ``framework`` (every QA template is ``framework='CUSTOM'``,
+    so the enum alone would prompt "assessing a study using CUSTOM").
     """
     if template is None:
         return None
-    name = (getattr(template, "name", None) or "").strip()
-    return name or getattr(template, "framework", None)
+    label = INSTRUMENT_LABELS.get(template.instrument)
+    if label is not None:
+        return label
+    return (template.name or "").strip() or template.framework
 
 
 class AiExtraction:
@@ -81,6 +86,8 @@ class AiExtraction:
         attempt_id: UUID | None = None,
         owns_transactions: bool = False,
         llm: StructuredCall = extract_structured,
+        usage_sink: UsageSink,
+        allow_global_key: bool = True,
     ) -> None:
         """
         Args:
@@ -98,6 +105,10 @@ class AiExtraction:
             owns_transactions: a worker session — commit before every
                 external call and after every landing.
             llm: the model-call seam (pydantic-ai in production).
+            usage_sink: where every model call is metered — the worker's
+                ``LedgerSink``. Required: a caller cannot forget metering.
+            allow_global_key: False for an agent-started batch — neither the
+                re-key nor the model builder may fall back to the deployment key.
         """
         self._db = db
         self._user_id = user_id
@@ -112,6 +123,8 @@ class AiExtraction:
             attempt_id=attempt_id,
             owns_transactions=owns_transactions,
             llm=llm,
+            usage_sink=usage_sink,
+            allow_global_key=allow_global_key,
         )
         self._current_run = CurrentRunResolver(db)
 
@@ -146,7 +159,6 @@ class AiExtraction:
                 template_id=payload.template_id,
                 parent_instance_id=payload.parent_instance_id,
                 section_ids=payload.section_ids,
-                pdf_text=payload.pdf_text,
                 engine=engine,
                 run_id=payload.run_id,
             )
@@ -195,6 +207,7 @@ class AiExtraction:
             )
             if manage_lifecycle:
                 await p.runs.start_run(run.id)
+        p.current_run = run
 
         model = await p.adopt_frozen_engine(run.id, engine, payload.project_id)
         p.logger.info(
@@ -231,15 +244,13 @@ class AiExtraction:
             )
             phases["extract_and_record"] = (perf_counter() - phase_start) * 1000
             duration = (perf_counter() - start_time) * 1000
+            await p.add_run_usage(run.id, outcome.usage)
             if manage_lifecycle:
                 phase_start = perf_counter()
                 await p.runs.complete_run(
                     run_id=run.id,
                     results={
                         "suggestions_created": outcome.suggestions_created,
-                        "tokens_prompt": outcome.usage.prompt_tokens,
-                        "tokens_completion": outcome.usage.completion_tokens,
-                        "tokens_total": outcome.usage.total_tokens,
                         "duration_ms": duration,
                         "fields_extracted": len(outcome.extracted_data),
                         "phase_durations_ms": phases,
@@ -296,19 +307,21 @@ class AiExtraction:
         decision). ``auto_advance_to_review`` is inert in the collapsed
         lifecycle; it is recorded in the results for telemetry continuity.
         The prompt pair follows ``run.kind`` and names the template's
-        instrument (``_qa_framework_label``).
+        instrument (``instrument_label``).
         """
         p = self._p
         start_time = perf_counter()
         run = await open_run_for_write(self._db, run_id, expect=ExtractionRunStage.EXTRACT.only())
+        p.current_run = run
         template = await self._db.get(ProjectExtractionTemplate, run.template_id)
-        framework = _qa_framework_label(template)
+        framework = instrument_label(template)
         kind = run.kind
         await p.runs.start_run(run.id)
         model = await p.adopt_frozen_engine(run.id, engine, run.project_id)
 
         sections: list[dict[str, Any]] = []
-        total_suggestions = total_tokens = successful = failed = 0
+        total_suggestions = successful = failed = 0
+        usage = LlmUsage()
         try:
             pdf_text = await p.assemble_prompt_text(run.article_id, model)
             prompt_context = await resolve_run_prompt_context(self._db, run)
@@ -321,7 +334,7 @@ class AiExtraction:
                 try:
                     fields = await p.live_field_intersection(entity_type)
                     skipped = fields is None
-                    created = tokens = 0
+                    created, section_usage = 0, LlmUsage()
                     if fields is not None:
                         outcome = await extract_into_instances(
                             p,
@@ -336,7 +349,7 @@ class AiExtraction:
                             skip_fields_with_human_proposals=skip_settled,
                         )
                         skipped = outcome.skipped
-                        created, tokens = outcome.suggestions_created, outcome.usage.total_tokens
+                        created, section_usage = outcome.suggestions_created, outcome.usage
                 except Exception as e:
                     failed += 1
                     p.logger.error(
@@ -357,14 +370,14 @@ class AiExtraction:
                     continue
                 successful += 1
                 total_suggestions += created
-                total_tokens += tokens
+                usage = usage + section_usage
                 sections.append(
                     {
                         "entity_type_id": str(entity_type.id),
                         "entity_type_name": entity_type.name,
                         "success": True,
                         "suggestions_created": created,
-                        "tokens_used": tokens,
+                        "tokens": tokens_of(section_usage),
                         "skipped": skipped,
                     }
                 )
@@ -373,6 +386,7 @@ class AiExtraction:
             # Provenance was merged per section at the landing; a run-level
             # ``provenance`` key here would clobber that ``sections`` map
             # (``complete_run`` shallow-merges).
+            await p.add_run_usage(run.id, usage)
             await p.runs.complete_run(
                 run_id=run.id,
                 results={
@@ -380,7 +394,6 @@ class AiExtraction:
                     "successful_sections": successful,
                     "failed_sections": failed,
                     "total_suggestions_created": total_suggestions,
-                    "total_tokens_used": total_tokens,
                     "duration_ms": (perf_counter() - start_time) * 1000,
                     "kind": kind,
                     "skip_fields_with_human_proposals": skip_settled,
@@ -433,7 +446,6 @@ class AiExtraction:
                     template_id=run.template_id,
                     parent_instance_id=entry_id,
                     section_ids=None,
-                    pdf_text=None,
                     engine=engine,
                     run_id=run.id,
                 )

@@ -1,10 +1,14 @@
 """extraction_fields rows → runtime Pydantic output models.
 
 Builds one Pydantic model per chunk of fields. OpenAI strict-mode schemas
-allow ~100 properties and each extraction field expands to ~8 (value,
-confidence, reasoning, status, evidence list[{text, page_number}] + the
-container), so large UI-built templates are split into multiple calls and
-merged by the caller. DB field names are mapped through aliases so any
+allow ~100 properties and each extraction field is budgeted at 9 (value,
+confidence, reasoning, status, absent_reason, evidence list[{block_ref,
+quote}] + the container), so large UI-built templates are split into
+multiple calls and merged by the caller. ``absent_reason`` offers only the
+typed absence codes the field allows (never ``not_evaluated``) and is
+omitted when it offers none; a field whose options include ``Unclear`` is an
+uncertainty scale: its status has no ``not_found`` and it is never offered
+``no_information`` (the scale answers Unclear instead). DB field names are mapped through aliases so any
 template name — spaces, parentheses, leading digits — round-trips safely.
 """
 
@@ -16,7 +20,13 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from app.llm.claim_value import normalize_options
 
 OPENAI_STRICT_PROPERTY_BUDGET = 100
-_PROPERTIES_PER_FIELD = 8  # value, confidence, reasoning, evidence{text,page}, status
+# value, confidence, reasoning, evidence{block_ref, quote}, status, absent_reason
+_PROPERTIES_PER_FIELD = 9
+_UNCERTAIN_CODE = "unclear"
+# The offered absence codes mirror app.services.value_semantics.AbsentReason;
+# app.llm is support and may not import a service, so they are literals here.
+_NO_INFORMATION = "no_information"
+_NOT_APPLICABLE = "not_applicable"
 
 
 class SchemaBuildError(ValueError):
@@ -27,10 +37,13 @@ class SchemaBuildError(ValueError):
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str = Field(description="Short verbatim quote from the article supporting the value.")
-    page_number: int | None = Field(
-        description="1-based page number of the quote, null if unknown."
+    block_ref: str = Field(
+        description=(
+            "The citation ref of the block the quote comes from, exactly as shown before "
+            "it in the article text, e.g. p3·b12 (or p3·b12–b18 for a table)."
+        )
     )
+    quote: str = Field(description="Short verbatim quote from that block supporting the value.")
 
 
 _SCALAR_TYPES: dict[str, type] = {
@@ -46,19 +59,44 @@ _SCALAR_TYPES: dict[str, type] = {
 _LIST_TYPES = ("array", "list", "multiselect")
 
 
-def _enum_values(field: Any) -> list[Any]:
-    """allowed_values options → list of option codes (each option's "value").
+def option_codes(field: Any) -> list[Any]:
+    """allowed_values options → list of option codes (each option's "value"),
+    read through ``claim_value.normalize_options``. The output model's value
+    Literal and the AI write path's in-domain check both read it."""
+    return [o["value"] for o in normalize_options(getattr(field, "allowed_values", None))]
 
-    Options are dicts with a "value" key or plain strings. Shape tolerance
-    ({"options": [...]} vs [...]) lives in ``claim_value.normalize_options``.
-    """
-    values: list[Any] = []
-    for opt in normalize_options(getattr(field, "allowed_values", None)):
-        if isinstance(opt, dict) and "value" in opt:
-            values.append(opt["value"])
-        elif isinstance(opt, str):
-            values.append(opt)
-    return values
+
+def uncertain_code(field: Any) -> str | None:
+    """The field's own ``Unclear`` option code, exact case (the first one when
+    several differ only in case), or ``None`` when the field has none."""
+    return next(
+        (c for c in option_codes(field) if isinstance(c, str) and c.casefold() == _UNCERTAIN_CODE),
+        None,
+    )
+
+
+def is_uncertainty_scale(field: Any) -> bool:
+    """True when one of the field's option codes is ``Unclear`` (any case)."""
+    return uncertain_code(field) is not None
+
+
+def offered_absent_codes(field: Any) -> tuple[str, ...]:
+    """The typed absence codes the AI may answer for ``field``, in a fixed
+    order: ``no_information`` when allowed and the field is not an
+    uncertainty scale, ``not_applicable`` when allowed. Never
+    ``not_evaluated``."""
+    codes: list[str] = []
+    if getattr(field, "allows_no_information", False) and not is_uncertainty_scale(field):
+        codes.append(_NO_INFORMATION)
+    if getattr(field, "allows_not_applicable", False):
+        codes.append(_NOT_APPLICABLE)
+    return tuple(codes)
+
+
+_ABSENT_MEANINGS = {
+    _NO_INFORMATION: "no_information = the article is silent about it",
+    _NOT_APPLICABLE: "not_applicable = the criterion does not apply to this study",
+}
 
 
 def _description(field: Any) -> str:
@@ -72,7 +110,7 @@ def _description(field: Any) -> str:
 
 def _value_type(field: Any) -> Any:
     field_type = getattr(field, "field_type", None) or "text"
-    enum_values = _enum_values(field)
+    enum_values = option_codes(field)
     if enum_values:
         literal = Literal[tuple(enum_values)]
         if field_type in _LIST_TYPES:
@@ -83,25 +121,59 @@ def _value_type(field: Any) -> Any:
     return _SCALAR_TYPES.get(field_type, str)
 
 
+def _status_definition(field: Any) -> tuple[Any, Any]:
+    if is_uncertainty_scale(field):
+        return (
+            Literal["found", "ambiguous"],
+            Field(
+                description=(
+                    "found = the value is present and supported by the article; "
+                    "ambiguous = present but unclear/conflicting, or the article does "
+                    "not permit a judgment (answer the Unclear option)."
+                ),
+            ),
+        )
+    return (
+        Literal["found", "not_found", "ambiguous"],
+        Field(
+            description=(
+                "found = the value is present and supported by the article; "
+                "not_found = the article does not contain it; "
+                "ambiguous = present but unclear/conflicting."
+            ),
+        ),
+    )
+
+
+def _absent_reason_definition(codes: tuple[str, ...]) -> tuple[Any, Any]:
+    meanings = "; ".join(_ABSENT_MEANINGS[code] for code in codes)
+    return (
+        Literal[codes] | None,
+        Field(
+            description=(
+                f"Set only when there is no value on purpose: {meanings}. Null otherwise."
+            ),
+        ),
+    )
+
+
 def _field_result_model(field: Any, index: int) -> type[BaseModel]:
     # Every property is required (nullable where optional) so the schema
     # stays inside the OpenAI strict-mode subset.
-    return create_model(
-        f"Field{index}Result",
-        __config__=ConfigDict(extra="forbid"),
-        value=(
+    definitions: dict[str, Any] = {
+        "value": (
             _value_type(field) | None,
             Field(description="The extracted value; null when the article does not contain it."),
         ),
-        confidence=(
+        "confidence": (
             float,
             Field(ge=0.0, le=1.0, description="1 = very confident, 0 = not found/uncertain."),
         ),
-        reasoning=(
+        "reasoning": (
             str | None,
             Field(description="1-2 sentence justification for the value, null if none."),
         ),
-        evidence=(
+        "evidence": (
             list[Evidence],
             Field(
                 description=(
@@ -110,16 +182,15 @@ def _field_result_model(field: Any, index: int) -> type[BaseModel]:
                 ),
             ),
         ),
-        status=(
-            Literal["found", "not_found", "ambiguous"],
-            Field(
-                description=(
-                    "found = the value is present and supported by the article; "
-                    "not_found = the article does not contain it; "
-                    "ambiguous = present but unclear/conflicting."
-                ),
-            ),
-        ),
+        "status": _status_definition(field),
+    }
+    codes = offered_absent_codes(field)
+    if codes:
+        definitions["absent_reason"] = _absent_reason_definition(codes)
+    return create_model(
+        f"Field{index}Result",
+        __config__=ConfigDict(extra="forbid"),
+        **definitions,
     )
 
 

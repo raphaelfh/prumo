@@ -24,6 +24,11 @@ vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ userId: "reviewer-1" }),
 }));
 
+// The page's AI kickoff gate reads the project role: a reviewer may run AI.
+vi.mock("@/hooks/useProjectMemberRole", () => ({
+  useProjectMemberRole: () => ({ role: "reviewer", isManager: false, loading: false }),
+}));
+
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     user: { id: "reviewer-1", email: "reviewer@test.local" },

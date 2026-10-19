@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from app.schemas.project_protocol import EligibilityCriteria, StudyDesign
+
 ReviewTypeValue = Literal[
     "interventional", "predictive_model", "diagnostic", "prognostic", "qualitative", "other"
 ]
@@ -32,8 +34,8 @@ class ProjectDetailsFields(BaseModel):
     condition_studied: str | None = None
     review_rationale: str | None = None
     search_strategy: str | None = None
-    eligibility_criteria: dict[str, Any] | None = None
-    study_design: dict[str, Any] | None = None
+    eligibility_criteria: EligibilityCriteria | None = None
+    study_design: StudyDesign | None = None
     review_keywords: list[str] | None = None
     review_context: str | None = None
 
@@ -46,6 +48,28 @@ class ProjectDetailsFields(BaseModel):
         return value
 
 
+class ProjectDetailsExpected(BaseModel):
+    """The values the caller last read, echoed back as the write's precondition.
+
+    Loose on purpose: the two JSON columns may hold a shape written before the
+    typed write bounds existed, and the caller must be able to echo it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    description: str | None = None
+    review_type: ReviewTypeValue | None = None
+    review_title: str | None = None
+    condition_studied: str | None = None
+    review_rationale: str | None = None
+    search_strategy: str | None = None
+    eligibility_criteria: dict[str, Any] | None = None
+    study_design: dict[str, Any] | None = None
+    review_keywords: list[str] | None = None
+    review_context: str | None = None
+
+
 class ProjectDetailsUpdate(BaseModel):
     """The changed columns and the values the caller last read for each of them.
 
@@ -56,7 +80,7 @@ class ProjectDetailsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     fields: ProjectDetailsFields
-    expected: ProjectDetailsFields
+    expected: ProjectDetailsExpected
 
     @model_validator(mode="after")
     def _expected_covers_fields(self) -> ProjectDetailsUpdate:

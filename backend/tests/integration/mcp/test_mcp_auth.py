@@ -8,9 +8,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp import asgi_auth
+from app.main import app
 from app.services.pat_service import PAT_PREFIX, revoke_token
 from tests.integration.conftest import SEED
-from tests.integration.mcp.conftest import SeededPat
+from tests.integration.helpers.engine_setup import client_as
+from tests.integration.mcp.conftest import SeededPat, expected_challenge
 from tests.integration.mcp.rpc import rpc
 
 
@@ -24,16 +26,18 @@ from tests.integration.mcp.rpc import rpc
     ids=["no-header", "malformed", "well-formed-unknown"],
 )
 async def test_missing_or_bad_bearer_is_401(
-    mcp_http_client: AsyncClient, headers: dict[str, str]
+    mode_http_client: AsyncClient, auth_mode: str, headers: dict[str, str]
 ) -> None:
-    r = await rpc(mcp_http_client, "tools/list", headers=headers)
+    r = await rpc(mode_http_client, "tools/list", headers=headers)
     assert r.status_code == 401
-    assert r.headers["www-authenticate"] == "Bearer"
-    assert "resource_metadata" not in r.headers.get("www-authenticate", "")
+    assert r.headers["www-authenticate"] == expected_challenge(auth_mode, presented=bool(headers))
 
 
 async def test_expired_token_is_401(
-    mcp_http_client: AsyncClient, db_session: AsyncSession, pat_primary_read: SeededPat
+    mode_http_client: AsyncClient,
+    auth_mode: str,
+    db_session: AsyncSession,
+    pat_primary_read: SeededPat,
 ) -> None:
     await db_session.execute(
         text(
@@ -43,20 +47,23 @@ async def test_expired_token_is_401(
         ),
         {"id": str(pat_primary_read.principal.token_id)},
     )
-    r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
+    r = await rpc(mode_http_client, "tools/list", headers=pat_primary_read.headers)
     assert r.status_code == 401
-    assert r.headers["www-authenticate"] == "Bearer"
+    assert r.headers["www-authenticate"] == expected_challenge(auth_mode, presented=True)
 
 
 async def test_revoked_token_is_401(
-    mcp_http_client: AsyncClient, db_session: AsyncSession, pat_primary_read: SeededPat
+    mode_http_client: AsyncClient,
+    auth_mode: str,
+    db_session: AsyncSession,
+    pat_primary_read: SeededPat,
 ) -> None:
     await revoke_token(
         db_session, user_id=SEED.primary_profile, token_id=pat_primary_read.principal.token_id
     )
-    r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
+    r = await rpc(mode_http_client, "tools/list", headers=pat_primary_read.headers)
     assert r.status_code == 401
-    assert r.headers["www-authenticate"] == "Bearer"
+    assert r.headers["www-authenticate"] == expected_challenge(auth_mode, presented=True)
 
 
 async def test_revoke_between_calls(
@@ -156,6 +163,19 @@ async def test_mcp401_bucket_spares_valid_tokens(
     assert r_valid.status_code == 200
 
 
+async def test_mcp401_bucket_counts_failed_lookups_with_oauth_on(
+    oauth_http_client: AsyncClient,
+) -> None:
+    statuses = []
+    for _ in range(30):
+        r = await rpc(oauth_http_client, "tools/list", headers={"Authorization": "Bearer bogus"})
+        statuses.append(r.status_code)
+    assert statuses == [401] * 30
+
+    r31 = await rpc(oauth_http_client, "tools/list", headers={"Authorization": "Bearer bogus"})
+    assert r31.status_code == 429
+
+
 async def test_principal_reaches_the_tool_over_http(
     mcp_http_client: AsyncClient,
     pat_reviewer_rw: SeededPat,
@@ -185,3 +205,45 @@ async def test_banned_users_live_token_is_401(
     r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
     assert r.status_code == 401
     assert r.headers["www-authenticate"] == "Bearer"
+
+
+async def test_oat_bearer_with_oauth_off_is_plain_401(mcp_http_client: AsyncClient) -> None:
+    r = await rpc(
+        mcp_http_client, "tools/list", headers={"Authorization": "Bearer prumo_oat_" + "a" * 43}
+    )
+    assert r.status_code == 401
+    assert r.headers["www-authenticate"] == "Bearer"
+
+
+_AI_RUN_TOOLS = {"plan_ai_run", "start_ai_run", "cancel_ai_run"}
+
+
+@pytest.mark.parametrize("ai_run", [True, False], ids=["granted", "not-granted"])
+async def test_created_token_lists_ai_run_tools_only_with_the_grant(
+    mcp_http_client: AsyncClient, db_session: AsyncSession, ai_run: bool
+) -> None:
+    """A token issued by ``POST /api/v1/me/tokens`` carries exactly the grant
+    its creator chose to ``/mcp``."""
+    try:
+        async with client_as(str(SEED.primary_profile), db_session) as rest:
+            created = await rest.post(
+                "/api/v1/me/tokens",
+                json={
+                    "name": "agent",
+                    "scope": "read_write",
+                    "expires_in_days": 30,
+                    "ai_run": ai_run,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert created.status_code == 201, created.text
+    secret = created.json()["data"]["secret"]
+
+    r = await rpc(mcp_http_client, "tools/list", headers={"Authorization": f"Bearer {secret}"})
+
+    assert r.status_code == 200, r.text
+    names = {t["name"] for t in r.json()["result"]["tools"]}
+    assert "list_projects" in names
+    assert (names >= _AI_RUN_TOOLS) is ai_run
+    assert names.isdisjoint(_AI_RUN_TOOLS) is not ai_run

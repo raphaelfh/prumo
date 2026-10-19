@@ -1,4 +1,4 @@
-"""Unit tests for build_prompt_input — the stored-markdown and budgeted-blocks paths."""
+"""Unit tests for build_prompt_input — the prompt is always assembled from blocks."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -17,14 +17,17 @@ def _block(page, idx, text, bt="paragraph"):
 
 
 @pytest.mark.asyncio
-async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
-    """When blocks exist and stored_markdown fits the budget, returns it directly
-    with assembly info (file identity, no truncation, a real token estimate)."""
+async def test_prompt_always_from_blocks_with_refs(monkeypatch) -> None:
+    """A stored content_markdown that fits the budget is never the prompt: the
+    prompt is assembled from the blocks and carries their refs, with assembly
+    info (file identity, no truncation, a real token estimate)."""
     aid, fid = uuid4(), uuid4()
+    stored = "## Results\nEffect size 0.81."
     main_file = SimpleNamespace(
         id=fid,
-        content_markdown="# Results\n\nEffect size 0.81.",
+        content_markdown=stored,
         original_filename="teste3.pdf",
+        content_version=3,
     )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
@@ -44,10 +47,12 @@ async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
         user_id="user-1",
         trace_id="t1",
     )
-    assert "Results" in text and "Effect size 0.81." in text
+    assert text == "## [p1·b0] Results\n[p1·b1] Effect size 0.81."
+    assert text != stored
     assert info.anchor_file_id == fid
     assert len(info.anchor_blocks) == 2
     assert info.file_name == "teste3.pdf"
+    assert info.content_version == 3
     assert info.truncated is False
     assert isinstance(info.est_tokens, int) and info.est_tokens > 0
 
@@ -56,7 +61,9 @@ async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
 async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
     """When no blocks exist, DocumentParsingService is called once, blocks reloaded."""
     aid, fid = uuid4(), uuid4()
-    main_file = SimpleNamespace(id=fid, content_markdown=None, original_filename=None)
+    main_file = SimpleNamespace(
+        id=fid, content_markdown=None, original_filename=None, content_version=0
+    )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
 
@@ -67,8 +74,9 @@ async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
         call_count["n"] += 1
         if call_count["n"] == 1:
             return []  # first call: no blocks yet
-        # After parse, patch main_file.content_markdown
+        # After parse, patch what the refresh would reload
         main_file.content_markdown = "Hello from parse"
+        main_file.content_version = 1
         return [block_after_parse]
 
     repo = MagicMock()
@@ -97,6 +105,7 @@ async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
     db.refresh.assert_awaited_once_with(main_file)
     assert info.anchor_file_id == fid
     assert info.anchor_blocks == [block_after_parse]
+    assert info.content_version == 1  # read after the on-demand parse
     assert "Hello from parse" in text
 
 
@@ -120,41 +129,55 @@ async def test_raises_when_no_pdf_file() -> None:
 
 
 @pytest.mark.asyncio
-async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) -> None:
-    """When stored_markdown exceeds token budget, assemble_for_model is used and its
-    truncation flag + token estimate surface on the returned info."""
-    aid, fid = uuid4(), uuid4()
-    large_md = "x" * 10_000
-    main_file = SimpleNamespace(id=fid, content_markdown=large_md, original_filename="big.pdf")
+async def test_budget_truncation_surfaces_on_info(monkeypatch) -> None:
+    """Over the token budget, whole sections drop and the info says truncated."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LLM_ASSEMBLY_BUDGET_TOKENS", 30)
+    main_file = SimpleNamespace(
+        id=uuid4(), content_markdown=None, original_filename="big.pdf", content_version=1
+    )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
     repo = MagicMock()
-    repo.list_ordered_for_file = AsyncMock(return_value=[_block(1, 0, "Short text", "paragraph")])
+    repo.list_ordered_for_file = AsyncMock(
+        return_value=[
+            _block(1, 0, "Abstract", "heading"),
+            _block(1, 1, "short abstract"),
+            _block(2, 0, "References", "heading"),
+            _block(2, 1, "word " * 200),
+        ]
+    )
     monkeypatch.setattr(f"{_EP}.ArticleTextBlockRepository", lambda _db: repo)
-
-    # Force estimate_tokens to return a value over budget
-    monkeypatch.setattr(f"{_EP}.estimate_tokens", lambda _text, _model: 999_999)
-
-    from app.schemas.extraction import AssemblyInfo
-
-    mock_info = AssemblyInfo(total_blocks=1, included_blocks=1, truncated=True, est_tokens=50)
-    mock_assemble = MagicMock(return_value=("assembled text", mock_info))
-    monkeypatch.setattr(f"{_EP}.assemble_for_model", mock_assemble)
 
     text, info = await build_prompt_input(
         db=AsyncMock(),
         article_files=article_files,
         storage=MagicMock(),
-        article_id=aid,
+        article_id=uuid4(),
         model="gpt-4o-mini",
         logger=MagicMock(),
         user_id="user-1",
         trace_id="t1",
     )
-
-    mock_assemble.assert_called_once()
-    assert text == "assembled text"
-    assert info.anchor_file_id == fid
-    assert info.file_name == "big.pdf"
+    assert text == "## [p1·b0] Abstract\n[p1·b1] short abstract"
     assert info.truncated is True
-    assert info.est_tokens == 50
+    assert len(info.anchor_blocks) == 4
+
+
+def test_assembled_charms_prompt_carries_no_customize_slot() -> None:
+    """The seeded CHARMS default reaches the prompt as the general instruction;
+    the review question comes from the project's settings, so no slot asks for it."""
+    from app.llm.prompts import section_extraction
+    from app.seed import _CHARMS_TEMPLATE_ID, _LLM_TEMPLATE_INSTRUCTIONS
+
+    instruction = _LLM_TEMPLATE_INSTRUCTIONS[_CHARMS_TEMPLATE_ID]
+    prompt = section_extraction.render(
+        entity_name="Participants",
+        entity_description="Who was studied",
+        article_text="Effect size 0.81.",
+        general_instructions=instruction,
+        review_question="Adults with sepsis; 28-day mortality.",
+    )
+    assert instruction in prompt
+    assert "[customize:" not in prompt

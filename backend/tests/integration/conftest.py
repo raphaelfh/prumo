@@ -46,6 +46,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.core.security import TokenPayload, get_current_user
+from app.main import app
 from app.utils.rate_limiter import limiter
 
 # =================== AUTO MARKER ===================
@@ -184,9 +186,8 @@ async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -
     A fixture may drop what the product protects, so clear the guarded rows
     first, in FK order: runs before instances, because
     ``extraction_published_states`` hangs off both (CASCADE from the run, NO
-    ACTION from the instance). ``extraction_hitl_configs.scope_id`` has no FK
-    at all and would just be orphaned, so template-scoped overrides go too —
-    mirroring ``template_delete_service``.
+    ACTION from the instance). Template-scoped HITL overrides go with the
+    template through their CASCADE foreign key (migration 0086).
     """
     ids = [str(i) for i in template_ids]
     if not ids:
@@ -194,8 +195,6 @@ async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -
     for statement in (
         "DELETE FROM public.extraction_runs WHERE template_id = ANY(CAST(:ids AS uuid[]))",
         "DELETE FROM public.extraction_instances WHERE template_id = ANY(CAST(:ids AS uuid[]))",
-        "DELETE FROM public.extraction_hitl_configs "
-        "WHERE scope_kind = 'template' AND scope_id = ANY(CAST(:ids AS uuid[]))",
         "DELETE FROM public.project_extraction_templates WHERE id = ANY(CAST(:ids AS uuid[]))",
     ):
         await session.execute(text(statement), {"ids": ids})
@@ -772,3 +771,27 @@ async def land_ai_proposal(
         source.value,  # type: ignore[attr-defined]
     )
     return latest.get(field_id)
+
+
+@pytest_asyncio.fixture
+async def auth_as_profile(
+    db_session: AsyncSession,
+) -> AsyncGenerator[UUID, None]:
+    """JWT sub must be a real profile id (manager on the seeded projects).
+
+    Files that need a different profile define their own fixture of this
+    name, which shadows this one.
+    """
+    del db_session  # kept for fixture-dependency ordering; the seed runs first
+    profile_id = SEED.primary_profile
+
+    async def override_get_current_user() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    yield profile_id

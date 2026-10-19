@@ -242,13 +242,13 @@ async def test_manual_override_allows_null_rationale(
         field_id=field_id,
         consensus_user_id=profile_id,
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-        value={"value": "5", "unit": "mg"},
+        value={"value": 5},
         rationale=None,
     )
     assert consensus.mode == "manual_override"
     assert consensus.rationale is None
     assert published.version == 1
-    assert published.value == {"value": "5", "unit": "mg"}
+    assert published.value == {"value": 5}
     await db_session.rollback()
 
 
@@ -285,7 +285,7 @@ async def test_record_consensus_rejects_incoherent_coordinates(
             field_id=other_field_id,
             consensus_user_id=profile_id,
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-            value={"v": "x"},
+            value={"value": 5},
             rationale="test",
         )
     await db_session.rollback()
@@ -482,7 +482,7 @@ async def test_republish_updates_published_at_timestamp(
         field_id=field_id,
         consensus_user_id=profile_id,
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-        value={"v": "edited"},
+        value={"value": 7},
         rationale="re-publish",
     )
     assert second.version == first_version + 1

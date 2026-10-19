@@ -13,9 +13,14 @@ from uuid import UUID, uuid4
 from sqlalchemy import event, text
 
 from app.api.mcp.tools import templates as templates_tool
+from app.models.extraction_versioning import TemplateKind
 from app.schemas.mcp_templates import McpTemplateView
+from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 from app.services.extraction_snapshot import live_entity_types
+from app.services.template_instruction_service import set_template_instruction
 from app.services.template_versioning import (
+    TemplateVersionService,
+    clone_template,
     get_active_version_tree,
     get_template_config_diff,
 )
@@ -316,7 +321,7 @@ async def _walk_all_pages(mcp_client, pat, project_id, template_id) -> list[dict
 
 async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_session):
     # B1, diff-heavy shape: 45 new sections with long labels open a draft
-    # with 45 ADDITIVE rows (capped at 40 by _DIFF_ROW_CAP, still filling
+    # with 45 ADDITIVE rows (capped at 40 by DIFF_ROW_CAP, still filling
     # page 1's diff close to its max size), plus a few fields with long
     # `llm_description` ("instructions") text on page 1's questions too.
     project_id, template_id, schema = await fresh_charms(db_session)
@@ -332,6 +337,7 @@ async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_s
     await db_session.flush()
 
     pages = await _walk_all_pages(mcp_client, pat_primary_read, project_id, template_id)
+    assert pages[0]["editor_url"]  # charged against the cap with everything else
     for page in pages:
         assert len(json.dumps(page)) <= 32_000
 
@@ -364,3 +370,231 @@ async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_s
             assert section["questions"], f"section emitted with zero questions: {section}"
             covered += len(section["questions"])
     assert covered == expected_covered
+
+
+def _questions(pages: list[dict]) -> list[dict]:
+    return [q for page in pages for s in page["sections"] for q in s["questions"]]
+
+
+async def test_probast_ai_study_type_options_are_value_label(
+    mcp_client, pat_primary_read, db_session
+):
+    clone = await clone_template(
+        db_session,
+        project_id=SEED.primary_project,
+        global_template_id=_PROBAST_AI_TEMPLATE_ID,
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    await db_session.commit()
+
+    pages = await _walk_all_pages(
+        mcp_client, pat_primary_read, SEED.primary_project, clone.project_template_id
+    )
+    study_type = next(q for q in _questions(pages) if q["label"] == "Study type")
+    assert {"value": "development_only", "label": "Development only"} in study_type["options"]
+
+
+async def test_legacy_options_read_canonical(mcp_client, pat_primary_read, db_session):
+    project_id, template_id, schema = await fresh_charms(db_session)
+    fields = [f for et in schema["entity_types"] for f in et["fields"]]
+    select_field = next(f for f in fields if f["field_type"] == "select")
+    text_field = next(f for f in fields if f["field_type"] == "text")
+    await db_session.execute(
+        text(
+            """UPDATE public.extraction_fields SET allowed_values = '["Yes","No"]'::jsonb """
+            "WHERE id = :id"
+        ),
+        {"id": select_field["id"]},
+    )
+    # The live row carries the legacy shape; read the live tree so the
+    # planted row is what get_template serves.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    await db_session.flush()
+
+    questions = {
+        q["field_id"]: q
+        for q in _questions(
+            await _walk_all_pages(mcp_client, pat_primary_read, project_id, template_id)
+        )
+    }
+    assert questions[select_field["id"]]["options"] == [
+        {"value": "Yes", "label": "Yes"},
+        {"value": "No", "label": "No"},
+    ]
+    assert questions[text_field["id"]]["options"] is None
+
+
+async def test_get_template_carries_the_instrument_code(mcp_client, pat_primary_read, db_session):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_read,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id)},
+        )
+    )
+    assert body["instrument"] == "charms"
+
+    seeded = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_read,
+            "get_template",
+            {"project_id": str(SEED.primary_project), "template_id": str(SEED.primary_template)},
+        )
+    )
+    assert seeded["instrument"] == "custom"
+
+
+async def _first_page(mcp_client, pat, project_id, template_id) -> dict:
+    return structured(
+        await call_tool(
+            mcp_client,
+            pat,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id)},
+        )
+    )
+
+
+async def test_get_template_names_the_project_and_the_template(
+    mcp_client, pat_primary_read, db_session
+):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    body = await _first_page(mcp_client, pat_primary_read, project_id, template_id)
+
+    project_name = (
+        await db_session.execute(
+            text("SELECT name FROM public.projects WHERE id = :id"), {"id": str(project_id)}
+        )
+    ).scalar_one()
+    assert body["project_name"] == project_name
+    assert body["template_name"] == "CHARMS"
+    assert "name" not in body
+
+
+async def test_a_seeded_clone_carries_the_default_instruction(
+    mcp_client, pat_primary_read, db_session
+):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    default = (
+        await db_session.execute(
+            text(
+                "SELECT g.llm_template_instruction FROM public.extraction_templates_global g "
+                "JOIN public.project_extraction_templates t ON t.global_template_id = g.id "
+                "WHERE t.id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+    assert default  # precondition: the seeded global ships an instruction
+
+    body = await _first_page(mcp_client, pat_primary_read, project_id, template_id)
+
+    assert body["instruction"] == default
+    assert body["instruction_is_default"] is True
+
+
+async def test_a_published_edited_instruction_is_not_the_default(
+    mcp_client, pat_primary_read, db_session
+):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    await set_template_instruction(
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        llm_template_instruction="Extract only what the article states.",
+    )
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    await db_session.flush()
+
+    body = await _first_page(mcp_client, pat_primary_read, project_id, template_id)
+
+    assert body["instruction"] == "Extract only what the article states."
+    assert body["instruction_is_default"] is False
+
+
+async def test_a_template_without_an_active_version_has_no_instruction(
+    mcp_client, pat_primary_read, db_session
+):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    await db_session.flush()
+
+    body = await _first_page(mcp_client, pat_primary_read, project_id, template_id)
+
+    assert body["instruction"] is None
+    assert body["instruction_is_default"] is False
+
+
+async def test_sections_and_questions_carry_labels_units_and_true_flags(
+    mcp_client, pat_primary_read, db_session
+):
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    section_id = await add_section(
+        db_session, template_id, "Doses", cardinality="many", entry_label="dose", sort_order=0
+    )
+    field_id = await add_field(db_session, section_id, "amount", sort_order=0)
+    plain_id = await add_field(db_session, section_id, "note", sort_order=1)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_entity_types SET description = 'Each dose given', "
+            "is_required = true WHERE id = :id"
+        ),
+        {"id": str(section_id)},
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_fields SET is_required = true, is_entity_key = true, "
+            "allows_no_information = true, unit = 'mg', "
+            """allowed_units = '["mg", "g"]'::jsonb WHERE id = :id"""
+        ),
+        {"id": str(field_id)},
+    )
+    await db_session.execute(
+        text("UPDATE public.extraction_fields SET allows_no_information = false WHERE id = :id"),
+        {"id": str(plain_id)},
+    )
+    # The live tree serves the planted rows.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    await db_session.flush()
+
+    pages = await _walk_all_pages(mcp_client, pat_primary_read, project_id, template_id)
+    section = next(
+        s for page in pages for s in page["sections"] if s["section_id"] == str(section_id)
+    )
+    assert section["description"] == "Each dose given"
+    assert section["entry_label"] == "dose"
+    assert section["required"] is True
+    questions = {q["field_id"]: q for q in section["questions"]}
+    amount = questions[str(field_id)]
+    assert amount["flags"] == ["required", "entity_key", "allows_no_information"]
+    assert amount["unit"] == "mg"
+    assert amount["allowed_units"] == ["mg", "g"]
+    assert "required" not in amount
+    plain = questions[str(plain_id)]
+    assert plain["flags"] == []
+    assert plain["unit"] is None
+    assert plain["allowed_units"] is None

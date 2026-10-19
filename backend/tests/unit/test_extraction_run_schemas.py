@@ -26,6 +26,7 @@ from app.schemas.extraction_run import (
     RunViewField,
     RunViewResponse,
 )
+from app.schemas.template_structure import OptionItem
 
 NOW = datetime(2026, 6, 13, 12, 0, 0, tzinfo=UTC)
 
@@ -489,6 +490,26 @@ class TestRunViewField:
         del ns.field_type
         with pytest.raises(ValidationError):
             RunViewField.model_validate(ns)
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (
+                ["Yes", "No"],
+                [OptionItem(value="Yes", label="Yes"), OptionItem(value="No", label="No")],
+            ),
+            (
+                {"options": [{"value": "NI", "label": "No information"}]},
+                [OptionItem(value="NI", label="No information")],
+            ),
+            (None, None),
+            ([], None),
+        ],
+        ids=["bare-strings", "options-envelope", "none", "empty"],
+    )
+    def test_allowed_values_read_canonical(self, raw: object, expected: object) -> None:
+        field = RunViewField.model_validate(self._ns(allowed_values=raw))
+        assert field.allowed_values == expected
 
 
 # --------------------------------------------------------------------------- #

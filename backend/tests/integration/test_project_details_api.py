@@ -140,3 +140,46 @@ async def test_route_is_rate_limited(
 
     assert limited.status_code == 429, limited.text
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_malformed_eligibility_in_fields_is_422(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    res = await client_as_manager.patch(
+        _URL.format(pid=SEED.primary_project),
+        json={
+            "fields": {"eligibility_criteria": {"inclusion": ["x"], "extra": 1}},
+            "expected": {"eligibility_criteria": {}},
+        },
+    )
+
+    assert res.status_code == 422, res.text
+    assert res.json()["error"]["code"] == "VALIDATION_ERROR"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_stored_eligibility_echoed_in_expected_is_replaced(
+    db_session: AsyncSession, client_as_manager: AsyncClient
+) -> None:
+    await db_session.execute(
+        text(
+            'UPDATE public.projects SET eligibility_criteria = \'{"legacy": "x"}\'::jsonb '
+            "WHERE id = :pid"
+        ),
+        {"pid": str(SEED.primary_project)},
+    )
+    await db_session.flush()
+
+    res = await client_as_manager.patch(
+        _URL.format(pid=SEED.primary_project),
+        json={
+            "fields": {"eligibility_criteria": {"inclusion": ["adults"]}},
+            "expected": {"eligibility_criteria": {"legacy": "x"}},
+        },
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["eligibility_criteria"] == {"inclusion": ["adults"]}
+    await db_session.rollback()

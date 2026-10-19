@@ -3,9 +3,9 @@
 `public.articles.title` (and `journal_title`, each author, a file's
 `original_filename`) is unbounded `Text`: every read tool that returns one
 cuts it here, so a single pathological row cannot push a result past the
-32,000-char cap (spec §5.1). A char cap bounds weight only for ASCII:
-`compact_json` renders a CJK char as a 6-char `\\uXXXX` escape (an astral one
-as 12), so a field whose char cap could still blow the result budget is cut
+32,000-char cap (spec §5.1). A char cap bounds weight only for text JSON
+leaves unescaped: `compact_json` renders a control character as a 6-char
+`\\uXXXX` escape (quotes and backslashes as 2), so a field whose char cap could still blow the result budget is cut
 by `cap_json_weight` instead.
 """
 
@@ -36,9 +36,3 @@ def cap_json_weight(value: str, budget: int) -> tuple[str, bool]:
         if remaining < 0:
             return value[:index], True
     return value, False
-
-
-def join_capped(values: list[str], *, sep: str, cap: int) -> str:
-    """`values` joined by `sep`, cut to `cap` chars plus a visible "…" mark."""
-    joined = sep.join(values)
-    return joined if len(joined) <= cap else joined[:cap] + "…"

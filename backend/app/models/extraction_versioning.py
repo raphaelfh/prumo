@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -83,7 +84,8 @@ class ExtractionTemplateVersion(BaseModel):
     Version METADATA, deliberately not part of ``schema_``: the snapshot is
     the frozen structure runs are pinned to, and a prose edit must never
     make two structurally identical versions compare unequal (``republish``
-    short-circuits on ``current.schema_ == snapshot``).
+    short-circuits when the canonical forms of ``current.schema_`` and the new
+    snapshot are equal).
 
     Nullable because it is optional at publish time, and because every row
     that existed before this column did has no answer. History renders it
@@ -129,6 +131,30 @@ class ExtractionHitlConfig(BaseModel):
         PG_UUID(as_uuid=True),
         nullable=False,
         index=True,
+    )
+    # ``scope_id`` split by kind, so each half can carry a real foreign key:
+    # deleting the project or template deletes its configuration (0086).
+    scope_project_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        Computed(
+            "CASE WHEN scope_kind = 'project'::hitl_config_scope_kind THEN scope_id END",
+            persisted=True,
+        ),
+        ForeignKey("public.projects.id", ondelete="CASCADE", name="fk_hitl_configs_scope_project"),
+        nullable=True,
+    )
+    scope_template_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        Computed(
+            "CASE WHEN scope_kind = 'template'::hitl_config_scope_kind THEN scope_id END",
+            persisted=True,
+        ),
+        ForeignKey(
+            "public.project_extraction_templates.id",
+            ondelete="CASCADE",
+            name="fk_hitl_configs_scope_template",
+        ),
+        nullable=True,
     )
     reviewer_count: Mapped[int] = mapped_column(Integer, nullable=False)
     consensus_rule: Mapped[str] = mapped_column(

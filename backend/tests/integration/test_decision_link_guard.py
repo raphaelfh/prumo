@@ -89,7 +89,7 @@ def _edit_body(field_id: UUID, proposal_id: UUID) -> dict[str, object]:
         "instance_id": str(SEED.primary_instance),
         "field_id": str(field_id),
         "decision": "edit",
-        "value": {"value": "typed"},
+        "value": {"value": 12},
         "proposal_record_id": str(proposal_id),
     }
 
@@ -267,7 +267,7 @@ async def test_link_guard_service_direct(
             reviewer_id=SEED.primary_profile,
             decision="edit",
             proposal_record_id=proposal_id,
-            value={"value": "typed"},
+            value={"value": 12},
         )
 
     # Nonexistent proposal id → rejected (proposal is None branch).
@@ -279,7 +279,7 @@ async def test_link_guard_service_direct(
             reviewer_id=SEED.primary_profile,
             decision="edit",
             proposal_record_id=uuid4(),
-            value={"value": "typed"},
+            value={"value": 12},
         )
 
     # Same-coord AI link → accepted and persisted with the link.
@@ -290,7 +290,7 @@ async def test_link_guard_service_direct(
         reviewer_id=SEED.primary_profile,
         decision="edit",
         proposal_record_id=proposal_id,
-        value={"value": "typed"},
+        value={"value": 12},
     )
     assert record.proposal_record_id == proposal_id
 

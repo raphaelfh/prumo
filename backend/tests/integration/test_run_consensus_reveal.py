@@ -72,7 +72,7 @@ async def test_arbitrator_auto_revealed_on_consensus_entry(db_session: AsyncSess
         field_id=field_id,
         reviewer_id=manager_id,
         decision="edit",
-        value={"value": "M"},
+        value={"value": 1},
     )
     await review.record_decision(
         run_id=run.id,
@@ -80,7 +80,7 @@ async def test_arbitrator_auto_revealed_on_consensus_entry(db_session: AsyncSess
         field_id=field_id,
         reviewer_id=reviewer_id,
         decision="edit",
-        value={"value": "R"},
+        value={"value": 2},
     )
 
     # EXTRACT: a manager with the toggle OFF is blind even though arbitrator.

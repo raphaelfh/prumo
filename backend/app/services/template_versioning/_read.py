@@ -46,6 +46,7 @@ from app.schemas.hitl_session import (
     TemplateVersionHistoryEntry,
     TemplateVersionHistoryRead,
 )
+from app.services.agent_action_service import DRAFT_EDIT_TOOLS
 from app.services.extraction_snapshot import (
     baseline_is_restorable,
     build_template_version_snapshot,
@@ -203,10 +204,11 @@ async def _agent_edit_marker(
     db: AsyncSession, *, template_id: UUID, since: datetime
 ) -> tuple[bool, str | None]:
     """The draft chip's agent line (researcher MCP spec §6.2): the latest APPLIED agent
-    write inside the open draft window, and its token's name. ``since`` is the draft
-    marker; the agent's first draft write shares its transaction's ``now()`` with the
-    0048 trigger stamp, so ``>=`` counts the write that opened the draft. Served by
-    the ``(template_id, created_at) WHERE outcome = 'applied'`` index."""
+    draft edit (``DRAFT_EDIT_TOOLS``; an AI run start is not one) inside the open draft
+    window, and its token's name. ``since`` is the draft marker; the agent's first
+    draft write shares its transaction's ``now()`` with the 0048 trigger stamp, so
+    ``>=`` counts the write that opened the draft. Served by the
+    ``(template_id, created_at) WHERE outcome = 'applied'`` index."""
     row = (
         await db.execute(
             select(PersonalAccessToken.name)
@@ -215,6 +217,7 @@ async def _agent_edit_marker(
             .where(
                 AgentAction.template_id == template_id,
                 AgentAction.outcome == "applied",
+                AgentAction.tool.in_(DRAFT_EDIT_TOOLS),
                 AgentAction.created_at >= since,
             )
             .order_by(AgentAction.created_at.desc(), AgentAction.id.desc())

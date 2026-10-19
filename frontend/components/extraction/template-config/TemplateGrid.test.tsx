@@ -636,6 +636,40 @@ describe('TemplateGrid control cells (B-5 Task 5)', () => {
     );
   });
 
+  it('renders canonical {value, label} options as their labels', () => {
+    const canonical = buildTemplateTree(
+      [
+        {
+          id: 'sec',
+          name: 'source_of_data',
+          label: 'Source of Data',
+          description: null,
+          cardinality: 'one',
+          parent_entity_type_id: null,
+          sort_order: 1,
+        },
+      ],
+      [
+        {
+          id: 'f1',
+          entity_type_id: 'sec',
+          name: 'study_design',
+          label: 'Study design',
+          field_type: 'select',
+          allowed_values: [
+            {value: 'coh', label: 'Cohort'},
+            {value: 'rct', label: 'RCT'},
+          ],
+          sort_order: 1,
+        },
+      ],
+    );
+    renderGrid({sections: canonical, showOptionsColumn: true});
+    const cell = screen.getByRole('button', {name: /gridOptionsCellAria/});
+    expect(cell).toHaveTextContent('Cohort, RCT');
+    expect(cell).not.toHaveTextContent('[object Object]');
+  });
+
   it('deep-links the Options cell to the options group', async () => {
     const {onDeepLink} = renderGrid({showOptionsColumn: true});
     await userEvent.click(

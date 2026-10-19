@@ -21,6 +21,7 @@
  */
 
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
+import {normalizeOptions, type OptionItem} from '@/lib/extraction/options';
 
 
 /** Copy keys in the `extraction` namespace. */
@@ -79,7 +80,8 @@ export interface TemplateFieldInput {
   description?: string | null;
   field_type: string;
   is_required?: boolean;
-  allowed_values?: string[] | null;
+  /** Raw row value: legacy `string[]`, `{options}` or `{value, label}[]`. */
+  allowed_values?: unknown;
   unit?: string | null;
   allowed_units?: string[] | null;
   allow_other?: boolean;
@@ -115,7 +117,7 @@ export interface GridField {
   description: string | null;
   aiInstruction: string | null;
   hasAiInstruction: boolean;
-  allowedValues: string[] | null;
+  allowedValues: OptionItem[] | null;
   optionCount: number;
   unit: string | null;
   /** B-5 Task 5 — everything the inspector edits rides the projection so
@@ -228,7 +230,7 @@ function bySortOrder<T extends {sort_order?: number}>(a: T, b: T): number {
 }
 
 function toGridField(input: TemplateFieldInput): GridField {
-  const options = input.allowed_values ?? null;
+  const options = normalizeOptions(input.allowed_values);
   const aiInstruction = input.llm_description?.trim() ? input.llm_description : null;
   return {
     id: input.id,
@@ -242,8 +244,8 @@ function toGridField(input: TemplateFieldInput): GridField {
     description: input.description ?? null,
     aiInstruction,
     hasAiInstruction: aiInstruction !== null,
-    allowedValues: options,
-    optionCount: options?.length ?? 0,
+    allowedValues: options.length > 0 ? options : null,
+    optionCount: options.length,
     unit: input.unit?.trim() ? input.unit : null,
     allowedUnits: input.allowed_units ?? null,
     allowOther: Boolean(input.allow_other),
@@ -386,7 +388,7 @@ function fieldMatchHint(field: GridField, terms: string[]): TemplateMatchHint | 
     ['key', field.key],
     ['description', field.description ?? ''],
     ['aiInstruction', field.aiInstruction ?? ''],
-    ['options', (field.allowedValues ?? []).join(' ')],
+    ['options', (field.allowedValues ?? []).map((o) => o.label).join(' ')],
   ];
   const normalized = haystacks.map(
     ([hint, text]) => [hint, normalizeForSearch(text)] as const,

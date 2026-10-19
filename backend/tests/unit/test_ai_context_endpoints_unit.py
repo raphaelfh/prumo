@@ -19,8 +19,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.endpoints.ai_context import read_ai_context, update_ai_context
-from app.schemas.project_ai_context import PicotsSlot, PicotsSlots, ProjectAiContextUpdate
-from app.services.project_ai_context import ProjectNotFoundError
+from app.schemas.project_ai_context import ProjectAiContextUpdate
+from app.schemas.project_protocol import PicotsSlotsWrite, PicotsSlotWrite
+from app.services.project_ai_context import ProjectNotFoundError, StaleProtocolRevisionError
 
 _EP = "app.api.v1.endpoints.ai_context"
 
@@ -42,6 +43,7 @@ def _payload(preview: str | None = "- Population: Adults") -> dict:
         "review_type": "predictive_model",
         "picots_enabled": True,
         "preview": preview,
+        "revision": 3,
     }
 
 
@@ -79,7 +81,7 @@ async def test_put_passes_both_halves_as_named_kwargs_and_commits() -> None:
     """Named kwargs, so a future reorder cannot silently swap the two halves."""
     db = AsyncMock()
     body = ProjectAiContextUpdate(
-        picots=PicotsSlots(population=PicotsSlot(description="Adults")),
+        picots=PicotsSlotsWrite(population=PicotsSlotWrite(description="Adults")),
         picots_enabled=False,
     )
 
@@ -122,4 +124,53 @@ async def test_put_maps_a_missing_project_to_404_without_committing() -> None:
         )
 
     assert exc.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_put_forwards_expected_revision() -> None:
+    with patch(f"{_EP}.set_ai_context", AsyncMock(return_value=_payload())) as svc:
+        res = await _put(
+            project_id=uuid4(),
+            body=ProjectAiContextUpdate(picots_enabled=True, expected_revision=7),
+            request=_request(),
+            db=AsyncMock(),
+        )
+
+    assert svc.await_args.kwargs["expected_revision"] == 7
+    assert res.data.revision == 3
+
+
+@pytest.mark.asyncio
+async def test_put_forwards_an_omitted_expected_revision_as_none() -> None:
+    """A stale bundle sends no revision; the save still goes through (deploy skew)."""
+    with patch(f"{_EP}.set_ai_context", AsyncMock(return_value=_payload())) as svc:
+        await _put(
+            project_id=uuid4(),
+            body=ProjectAiContextUpdate(picots_enabled=True),
+            request=_request(),
+            db=AsyncMock(),
+        )
+
+    assert svc.await_args.kwargs["expected_revision"] is None
+
+
+@pytest.mark.asyncio
+async def test_put_lets_a_stale_revision_propagate_without_committing() -> None:
+    db = AsyncMock()
+    stale = StaleProtocolRevisionError(current_revision=4, current=_payload())
+    with (
+        patch(f"{_EP}.set_ai_context", AsyncMock(side_effect=stale)),
+        pytest.raises(StaleProtocolRevisionError) as exc,
+    ):
+        await _put(
+            project_id=uuid4(),
+            body=ProjectAiContextUpdate(picots_enabled=True, expected_revision=3),
+            request=_request(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.code == "STALE_VALUE"
+    assert exc.value.details == {"current_revision": 4, "current": _payload()}
     db.commit.assert_not_awaited()

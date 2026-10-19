@@ -1212,7 +1212,7 @@ async def test_create_decision_condition_forwarding_and_conflict(
         "instance_id": instance_id,
         "field_id": field_id,
         "decision": "edit",
-        "value": {"value": "first"},
+        "value": {"value": 1},
     }
     request = Request({"type": "http", "headers": []})
     # Direct coroutine invocation registers handler coverage outside ASGITransport.
@@ -1226,7 +1226,7 @@ async def test_create_decision_condition_forwarding_and_conflict(
     second = await create_decision(
         run_id=run_id,
         body=CreateDecisionRequest(
-            **{**body, "value": {"value": "second"}}, expected_current_decision_id=first.data.id
+            **{**body, "value": {"value": 2}}, expected_current_decision_id=first.data.id
         ),
         request=request,
         db=db_session,
@@ -1239,7 +1239,7 @@ async def test_create_decision_condition_forwarding_and_conflict(
             "instance_id": str(instance_id),
             "field_id": str(field_id),
             "decision": "edit",
-            "value": {"value": "second"},
+            "value": {"value": 2},
             "expected_current_decision_id": str(uuid4()),
         },
     )

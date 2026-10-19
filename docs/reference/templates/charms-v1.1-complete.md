@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-04
+last_reviewed: 2026-10-16
 owner: '@raphaelfh'
 template_version: '1.1.0'
 ---
@@ -50,10 +50,7 @@ see [`charms-v1.1-hierarchy.md`](./charms-v1.1-hierarchy.md).
 - **2.6** `inclusion_criteria` (text)
 - **2.7** `exclusion_criteria` (text)
 - **2.8.1** `age_of_participants` (text)
-- **2.8.2** `native_valve_endocarditis` (text)
-- **2.8.3** `valve_affected` (text)
-- **2.8.4** `characteristic_4` (text)
-- **2.8.5** `characteristic_5` (text)
+- **2.8** `participant_characteristics` (text, optional)
 
 ### 3. Outcome to be Predicted
 

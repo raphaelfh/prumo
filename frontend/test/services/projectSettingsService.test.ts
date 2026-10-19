@@ -60,6 +60,26 @@ describe('toDetailsFields', () => {
     expect(toDetailsFields(values)).toEqual(values);
   });
 
+  it('drops keys the details contract does not know from eligibility and study design', () => {
+    const values = {
+      eligibility_criteria: {inclusion: ['a'], exclusion: ['b'], notes: 'n', extra: 'legacy'},
+      study_design: {types: ['RCT'], notes: 'm', legacy: true},
+    } as unknown as Partial<Project>;
+    expect(toDetailsFields(values)).toStrictEqual({
+      name: undefined,
+      description: undefined,
+      review_type: undefined,
+      review_title: undefined,
+      condition_studied: undefined,
+      review_rationale: undefined,
+      search_strategy: undefined,
+      review_context: undefined,
+      eligibility_criteria: {inclusion: ['a'], exclusion: ['b'], notes: 'n'},
+      study_design: {types: ['RCT'], notes: 'm'},
+      review_keywords: undefined,
+    });
+  });
+
   it.each([
     [{eligibility_criteria: ['x']}],
     [{study_design: 'x'}],

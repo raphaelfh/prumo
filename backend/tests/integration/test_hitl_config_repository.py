@@ -8,21 +8,26 @@ the upsert semantics the ON CONFLICT path guarantees: idempotent on scope, and a
 second call updates the existing row instead of inserting a duplicate.
 """
 
-from uuid import uuid4
-
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import ExtractionHitlConfig, HitlConfigScopeKind
 from app.repositories.hitl_config_repository import HitlConfigRepository
+from tests.integration.conftest import SEED
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_upsert_inserts_then_updates_same_row(db_session: AsyncSession) -> None:
     repo = HitlConfigRepository(db_session)
-    scope_id = uuid4()  # scope_id carries no FK
+    scope_id = SEED.primary_project  # the scope foreign key needs a real project
+    await db_session.execute(
+        delete(ExtractionHitlConfig).where(
+            ExtractionHitlConfig.scope_kind == HitlConfigScopeKind.PROJECT.value,
+            ExtractionHitlConfig.scope_id == scope_id,
+        )
+    )
 
     created = await repo.upsert(
         HitlConfigScopeKind.PROJECT,

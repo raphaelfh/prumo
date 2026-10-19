@@ -20,7 +20,6 @@ from app.services.extraction_run_read_service import get_run_with_workflow_histo
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import InvalidCursorError, encode_cursor
-from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED, land_ai_proposal
 from tests.integration.helpers.template_fixtures import add_field, add_section
 from tests.integration.mcp.article_seed import insert_article
@@ -32,6 +31,7 @@ async def _page(db, caller, fmt="detailed", template_id=None, article_id=SEED.pr
         db,
         project_id=SEED.primary_project,
         template_id=template_id,
+        template_name="Template",
         template_kind="extraction",
         caller_id=caller,
         article_id=article_id,
@@ -133,7 +133,7 @@ async def test_blind_parity_own_only(db_session: AsyncSession) -> None:
         for d in detail.decisions
         if d.value is not None
     }
-    got_values = {str(row.value) for row in (article.rows or [])}
+    got_values = {str(row.value.value) for row in (article.rows or [])}
     # get_run_with_workflow_history is the parity oracle (spec §8): every
     # decision value it exposes to this caller must show up (as a short
     # string, not a raw dict) in at least one detailed row this service
@@ -241,11 +241,12 @@ async def test_ai_only_flag(db_session: AsyncSession) -> None:
         if r.instance_id == instance_id and r.field_id == field_id
     )
     assert row.decider == "ai"
-    assert "candidate" in row.value
+    assert row.value.value == "candidate"
 
     concise = await _page(db_session, reviewer_a, fmt="concise", template_id=template_id)
     cell = concise.articles[0].values[str(field_id)]
     assert cell.ai_only is True
+    assert "candidate" in [v.value for v in cell.values]
 
 
 async def test_picks_live_run_over_finalized_after_reopen(db_session: AsyncSession) -> None:
@@ -295,7 +296,7 @@ async def test_picks_live_run_over_finalized_after_reopen(db_session: AsyncSessi
         for r in (page.articles[0].rows or [])
         if r.instance_id == instance_id and r.field_id == field_id
     )
-    assert "LIVE-VALUE" in row.value
+    assert row.value.value == "LIVE-VALUE"
 
 
 async def test_no_run_row(db_session: AsyncSession) -> None:
@@ -331,6 +332,7 @@ async def test_query_count_bounded_per_page(db_session: AsyncSession) -> None:
                 db_session,
                 project_id=SEED.primary_project,
                 template_id=template_id,
+                template_name="Template",
                 template_kind="extraction",
                 caller_id=SEED.primary_profile,
                 article_id=article_id,
@@ -399,7 +401,7 @@ async def test_query_count_bounded_per_page(db_session: AsyncSession) -> None:
     assert c_two_runs - c_one_run == c_three_runs - c_two_runs
 
 
-async def test_detailed_evidence_is_wrapped_and_scoped(db_session: AsyncSession) -> None:
+async def test_detailed_evidence_is_raw_and_scoped(db_session: AsyncSession) -> None:
     run_id, reviewer_a, _reviewer_b = await _built_or_skip(db_session)
     template_id = await _template_id_of_run(db_session, run_id)
     instance_id, field_id = await _ai_only_coordinate(
@@ -464,10 +466,12 @@ async def test_detailed_evidence_is_wrapped_and_scoped(db_session: AsyncSession)
         if r.instance_id == instance_id and r.field_id == field_id and r.decider == "ai"
     )
     assert ai_row.evidence
-    assert ai_row.evidence[0].locator == "p4"
-    assert "QUOTE" in ai_row.evidence[0].quote
-    assert UNTRUSTED_OPEN in ai_row.evidence[0].quote
-    assert UNTRUSTED_CLOSE in ai_row.evidence[0].quote
+    # A bare page_number with no anchor is ungrounded: never a locator.
+    assert (ai_row.evidence[0].locator, ai_row.evidence[0].grounded) == (None, False)
+    # The stored text_content, capped, returned raw (the result's
+    # untrusted_fields declares the quote).
+    assert ai_row.evidence[0].quote == "QUOTE"
+    assert "ARTICLE_TEXT" not in ai_row.evidence[0].quote
 
     blob = _blob(page)
     assert "PEER-EVIDENCE" not in blob
@@ -562,6 +566,7 @@ async def test_cursor_article_deleted_resumes_at_next_article(db_session: AsyncS
         db_session,
         project_id=SEED.primary_project,
         template_id=template_id,
+        template_name="Template",
         template_kind="extraction",
         caller_id=SEED.primary_profile,
         article_id=None,
@@ -579,6 +584,7 @@ async def test_cursor_article_deleted_resumes_at_next_article(db_session: AsyncS
         db_session,
         project_id=SEED.primary_project,
         template_id=template_id,
+        template_name="Template",
         template_kind="extraction",
         caller_id=SEED.primary_profile,
         article_id=None,
@@ -607,6 +613,7 @@ async def test_cursor_rejects_mismatched_response_format(db_session: AsyncSessio
             db_session,
             project_id=SEED.primary_project,
             template_id=template_id,
+            template_name="Template",
             template_kind="extraction",
             caller_id=SEED.primary_profile,
             article_id=None,
@@ -629,6 +636,7 @@ async def test_cursor_rejects_mismatched_article_filter(db_session: AsyncSession
             db_session,
             project_id=SEED.primary_project,
             template_id=template_id,
+            template_name="Template",
             template_kind="extraction",
             caller_id=SEED.primary_profile,
             article_id=SEED.primary_article,
@@ -782,6 +790,7 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
             db_session,
             project_id=SEED.primary_project,
             template_id=template_id,
+            template_name="Template",
             template_kind="extraction",
             caller_id=SEED.primary_profile,
             article_id=None,
@@ -817,11 +826,11 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
     assert pages > 1  # 19 articles at limit=10 alone forces multiple pages
 
 
-async def test_concise_join_is_bounded_and_ordered(db_session: AsyncSession) -> None:
-    """F4 + F5 (final review): a concise cell joins one short value per
-    instance -- that join is capped (1,000 chars + a marker), and the
-    instances are read in `sort_order`, so the same data always renders the
-    same cell. Instances are inserted in REVERSE sort order: an unordered
+async def test_concise_cell_is_bounded_and_ordered(db_session: AsyncSession) -> None:
+    """F4 + F5 (final review): a concise cell holds one typed value per
+    instance -- bounded to 1,000 chars of compact JSON, flagged by
+    `values_truncated` -- and the instances are read in `sort_order`, so the
+    same data always renders the same cell. Instances are inserted in REVERSE sort order: an unordered
     instances query returns them in insertion order and fails the prefix."""
     run_id, reviewer_a, _reviewer_b = await _built_or_skip(db_session)
     template_id = await _template_id_of_run(db_session, run_id)
@@ -870,6 +879,9 @@ async def test_concise_join_is_bounded_and_ordered(db_session: AsyncSession) -> 
 
     concise = await _page(db_session, reviewer_a, fmt="concise", template_id=template_id)
     cell = concise.articles[0].values[str(field_id)]
-    assert cell.value.startswith("v00-")
-    assert cell.value.endswith("…")
-    assert len(cell.value) <= 1_001
+    assert cell.values_truncated is True
+    assert 0 < len(cell.values) < 30
+    assert [v.value for v in cell.values] == [
+        f"v{position:02d}-" + "x" * 70 for position in range(len(cell.values))
+    ]
+    assert len(compact_json([v.model_dump(mode="json") for v in cell.values])) <= 1_000

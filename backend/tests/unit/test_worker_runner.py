@@ -185,3 +185,26 @@ def test_worker_session_uses_fresh_engine_each_call() -> None:
         "engine identity reuse is the root cause of the 2026-05-24 "
         "cross-loop bug."
     )
+
+
+def test_worker_session_runs_on_the_engine_it_is_given() -> None:
+    """A task that needs its engine (the usage ledger's second session
+    factory) opens ``worker_engine`` and hands it over: the session runs on
+    that engine, and the engine outlives the session for its owner to dispose."""
+    import asyncio
+
+    from app.worker._session import worker_engine, worker_session
+
+    seen: list[object] = []
+
+    async def run() -> None:
+        async with worker_engine() as engine:
+            async with worker_session(engine) as session:
+                seen.extend([engine, session.bind])
+            async with worker_session(engine) as again:
+                seen.append(again.bind)
+
+    asyncio.run(run())
+
+    engine, *binds = seen
+    assert binds == [engine, engine]

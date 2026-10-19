@@ -4,7 +4,7 @@
  * resolution surface: filter chips, adopt, typed override, resolved summary,
  * provenance gating, and the disabled state.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
@@ -148,6 +148,22 @@ describe('RunReviewerComparison — resolve mode', () => {
       value: 'Maybe',
       rationale: 'tie-break',
     });
+  });
+
+  it('a refused override keeps the editor open with no unhandled rejection', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    const onManualOverride = vi.fn().mockRejectedValue(new Error('Refused by contract'));
+    renderResolve(buildResolution({ onManualOverride }));
+    fireEvent.click(screen.getByTestId('consensus-override-toggle-inst-1_field-1'));
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Maybe' } });
+    fireEvent.click(screen.getByTestId('consensus-override-submit-inst-1_field-1'));
+    await act(async () => {await new Promise((resolve) => setTimeout(resolve, 0));});
+    process.off('unhandledRejection', record);
+    expect(onManualOverride).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('consensus-override-submit-inst-1_field-1')).toBeInTheDocument();
+    expect(unhandled).toEqual([]);
   });
 
   it('a resolved row shows the published value + reviewer provenance when peersRevealed', () => {

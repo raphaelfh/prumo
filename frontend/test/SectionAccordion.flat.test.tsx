@@ -33,7 +33,7 @@ describe('SectionAccordion flat header', () => {
     const { container } = render(
       <SectionAccordion
         entityType={entityType} instances={[]} fields={[]} values={{}}
-        onValueChange={() => {}} projectId="p" articleId="a" templateId="t"
+        onValueChange={() => {}} projectId="p" articleId="a" templateId="t" canRunAI
       />,
       { wrapper: Wrapper },
     );

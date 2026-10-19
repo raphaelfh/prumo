@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-24
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 adr_number: '0011'
 ---
@@ -309,3 +309,29 @@ Concretely, respecting the existing layering:
   HITL in clinical NLP (<https://www.nature.com/articles/s41746-025-01840-7>).
 - Related: ADR 0003 (HITL unification), ADR 0007 (single API read path),
   ADR 0009 (finalize completeness gate), ADR 0010 (REVIEW stage).
+
+## Amendment (2026-10): PyMuPDF vs Docling bake-off
+
+**Run.** `docs/superpowers/quality-runs/2026-10-18-2106-pymupdf-vs-docling/`
+compares the two self-hosted parsers as ingest runs them (PyMuPDF 1.27.2.3
+with chrome typing and column-aware order; Docling 2.104.0, OCR off) on 14 PMC
+open-access CC BY papers, 9 of them two-column, with gold built from JATS.
+
+**Result.** Docling recovers tables on every paper (table-cell F1 0.866 vs
+0.364; PyMuPDF's `find_tables` finds no table on 7 of 14), headings (section
+recall 0.734 vs 0.373) and paragraph starts (85% vs 44% of gold paragraphs),
+and breaks reading order less often (5 backward jumps vs 19). PyMuPDF is about
+4× faster (median 1.4 s vs 5.4 s per paper) and uses ~16× less memory (356 MB
+vs 5.7 GB peak). Both leave no page chrome typed as body and no invisible
+characters. Bbox, reference recall and scanned inputs are not measured.
+
+**Decision (2026-10-19): status quo (option c).** The maintainer ruled
+against making Docling the default (a) or routing some papers to it (b).
+PyMuPDF stays the default: `auto` resolves to LlamaParse when a `llama_cloud`
+key resolves and to `pymupdf` otherwise. Docling stays opt-in per project,
+set only by a project manager (`PUT /projects/{id}/parser-settings` requires
+the manager role). The Decision Outcome above stands unchanged, and no parser
+selection code changes with this run. The trade-off accepted: PyMuPDF's
+missed tables without full rulings and weaker heading and paragraph segmentation, in
+exchange for ~4× faster parses and a worker that does not need ~6 GB per
+parse.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isJudgmentField } from "@/lib/extraction/judgmentFields";
+import { isJudgmentField, isSignalingSelect } from "@/lib/extraction/judgmentFields";
 
 describe("isJudgmentField", () => {
   it("detects a Low/High/Unclear select", () => {
@@ -43,11 +43,35 @@ describe("isJudgmentField", () => {
     expect(isJudgmentField({ field_type: "select" })).toBe(false);
   });
 
+  it("detects a canonical {value,label} Low/High/Unclear select", () => {
+    expect(
+      isJudgmentField({
+        field_type: "select",
+        allowed_values: [
+          { value: "Low", label: "Low" },
+          { value: "High", label: "High" },
+          { value: "Unclear", label: "Unclear" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
   it("tolerates the {options:[...]} envelope shape", () => {
     expect(
       isJudgmentField({
         field_type: "select",
         allowed_values: { options: ["Low", "High", "Unclear"] },
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("isSignalingSelect", () => {
+  it("classifies by option value, so a coded NI with a spelled-out label still counts", () => {
+    expect(
+      isSignalingSelect({
+        field_type: "select",
+        allowed_values: ["Y", "PY", "PN", "N", { value: "NI", label: "No information" }],
       }),
     ).toBe(true);
   });

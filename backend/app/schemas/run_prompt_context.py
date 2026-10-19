@@ -12,7 +12,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
-class ReviewContextPin(BaseModel):
+class ReviewQuestionPin(BaseModel):
     """What ``results["provenance"]["review_context"]`` holds.
 
     A fixed-shape JSONB payload that crosses the API boundary verbatim, so it
@@ -24,13 +24,18 @@ class ReviewContextPin(BaseModel):
     from an ABSENT key, which means no LLM call has run on this run yet.
     ``{"text": None}`` is still a truthy dict, which is what keeps
     ``freeze_provenance_key``'s first-writer-wins guard working.
+
+    ``revision`` is the project's ``protocol_revision`` the text was built
+    from. Pins written before it existed hold ``{"text": ...}`` only and read
+    with ``revision=None``.
     """
 
     text: str | None = None
+    revision: int | None = None
 
 
 class RunPromptContext(BaseModel):
     """Run-constant prompt inputs, resolved once and reused by every section."""
 
-    review_context: str | None = None
+    review_question: str | None = None
     general_instructions: str | None = None

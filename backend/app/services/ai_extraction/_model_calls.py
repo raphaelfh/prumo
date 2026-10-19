@@ -4,23 +4,39 @@ mode) verify them — and the ONE post-verify section snapshot.
 Execution truth lives only in the section snapshot
 (``results.provenance.sections[et_id].mode_executed`` / ``passes``); the
 frozen engine's mode fields are a request-echo (``schemas/llm_target.py``).
-Every call goes through the pipeline's ``StructuredCall``.
+The snapshot's ``passes_detail`` lists every model pass behind the section's
+proposals (:func:`pass_detail`): the group's identify pass, the extract pass
+and the verify pass here; the entailment pass is appended by the caller once
+the judge has run. The snapshot also names its inputs: the pinned
+``template_version``, the ``schema_sha256`` of the output models sent, and the
+article version and text hash under ``prompt_composition.article_ref``. Every
+call goes through the pipeline's ``StructuredCall``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from app.llm import verify
 from app.llm.claim_value import value_str_for_claim
 from app.llm.extractor import LlmUsage
+from app.llm.pass_kinds import PASS_KIND_BY_PROMPT
 from app.llm.prompts import Scope
 from app.llm.prompts.section import render_section_prompt
 from app.llm.schema import build_output_models, dump_extraction
-from app.llm.validators import evidence_is_plausible
+from app.llm.validators import GroundingStats, evidence_grounding_validator
 from app.llm.verify import VerifyVerdict, run_verify_pass
-from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
+from app.schemas.prompt_composition import (
+    PassDetail,
+    PassTokens,
+    PromptComposition,
+    PromptCompositionArticleRef,
+    TemplateVersionRef,
+)
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._pipeline import Pipeline
 from app.services.llm_field_filter import LlmFieldFilter
@@ -50,6 +66,8 @@ class _SnapshotInputs:
     section_instruction: str
     fields: list[Any]
     llm_calls: int
+    #: SHA-256 of the canonical JSON schemas of the output models sent.
+    schema_sha256: str
 
 
 @dataclass(frozen=True)
@@ -61,6 +79,8 @@ class FieldCall:
     extracted: dict[str, Any] = field(default_factory=dict)
     usage: LlmUsage = field(default_factory=LlmUsage)
     inputs: _SnapshotInputs | None = None
+    #: Times the grounding validator sent this section's calls back.
+    grounding_retries: int = 0
 
 
 async def extract_fields(
@@ -94,7 +114,7 @@ async def extract_fields(
         article_marker=ARTICLE_MARKDOWN_MARKER,
         memory_context=memory_context,
         general_instructions=context.general_instructions,
-        review_context=context.review_context,
+        review_question=context.review_question,
         entry_scope=entry_scope,
     )
     effective: list[Any] = fields if fields is not None else list(entity_type.fields or [])
@@ -112,6 +132,7 @@ async def extract_fields(
     model = p.wire_model()
     extracted: dict[str, Any] = {}
     usage = LlmUsage()
+    stats = GroundingStats()
     for output_model in output_models:
         output, call_usage = await p.llm(
             output_model=output_model,
@@ -120,7 +141,7 @@ async def extract_fields(
             model=model,
             prompt_name=prompt.name,
             prompt_version=prompt.version,
-            validators=[evidence_is_plausible],
+            validators=[evidence_grounding_validator(p.block_ref_index, stats)],
         )
         extracted.update(dump_extraction(output))
         usage = usage + call_usage
@@ -133,8 +154,33 @@ async def extract_fields(
         section_instruction=prompt.section_instruction,
         fields=effective,
         llm_calls=len(output_models),
+        schema_sha256=_schema_sha256(output_models),
     )
-    return FieldCall(extracted, usage, inputs)
+    return FieldCall(extracted, usage, inputs, grounding_retries=stats.retried)
+
+
+def _schema_sha256(output_models: list[Any]) -> str:
+    """The hash of the canonical (sorted-key, compact) JSON schemas of the
+    output models, in the order the chunks were sent."""
+    schemas = [m.model_json_schema(by_alias=True) for m in output_models]
+    canonical = json.dumps(schemas, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def pass_detail(prompt_name: str, prompt_version: str, usage: LlmUsage) -> PassDetail:
+    """One ``passes_detail`` entry; the kind comes from the one prompt map
+    (an unknown prompt name is a ``KeyError``)."""
+    return PassDetail(
+        kind=PASS_KIND_BY_PROMPT[prompt_name],
+        prompt_name=prompt_name,
+        prompt_version=prompt_version,
+        tokens=PassTokens(
+            prompt=usage.prompt_tokens,
+            completion=usage.completion_tokens,
+            total=usage.total_tokens,
+        ),
+        request_ids=list(usage.request_ids),
+    )
 
 
 async def verify_and_snapshot(
@@ -145,10 +191,15 @@ async def verify_and_snapshot(
     kind: str,
     pdf_text: str,
     call: FieldCall,
+    template_version: TemplateVersionRef,
+    identify: dict[str, Any] | None = None,
 ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage, dict[str, Any] | None]:
     """``(verdicts, usage, snapshot)``: the verify pass (mode and kind checks
     inside), then the ONE post-verify section snapshot with the extract +
-    verify usage sum. No model ran → nothing to verify, no snapshot."""
+    verify usage sum. ``identify`` — the entry group's identify pass entry —
+    leads the snapshot's ``passes_detail``; ``template_version`` is the pin
+    the prompt was built from. No model ran → nothing to verify, no
+    snapshot."""
     if call.inputs is None:
         return None, call.usage, None
     verdicts, verify_usage, mode_executed, passes = await _verify(
@@ -167,6 +218,15 @@ async def verify_and_snapshot(
     snapshot = _section_snapshot(
         p, inputs=call.inputs, usage=usage, mode_executed=mode_executed, passes=passes
     )
+    details = [] if identify is None else [identify]
+    details.append(
+        pass_detail(call.inputs.prompt_name, call.inputs.prompt_version, call.usage).model_dump()
+    )
+    if passes == 2:  # the verify model call answered
+        details.append(pass_detail(verify.NAME, verify.VERSION, verify_usage).model_dump())
+    snapshot["passes_detail"] = details
+    snapshot["template_version"] = template_version.model_dump()
+    snapshot["schema_sha256"] = call.inputs.schema_sha256
     return verdicts, usage, snapshot
 
 
@@ -179,7 +239,8 @@ async def _verify(
     inputs: _SnapshotInputs,
     log_context: dict[str, Any],
 ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage, str, int]:
-    """``(verdicts | None, usage, mode_executed, passes)``.
+    """``(verdicts | None, usage, mode_executed, passes)``; ``passes`` is 2
+    only when the verify model call answered.
 
     Fast mode is a no-op. A ``quality_assessment`` run SKIPS the pass even
     when the engine says verified: the prompt judges whether the text states
@@ -256,6 +317,8 @@ def _section_snapshot(
             file_name=info.file_name if info else None,
             truncated=info.truncated if info else False,
             est_tokens=info.est_tokens if info else None,
+            content_version=info.content_version if info else None,
+            text_sha256=info.text_sha256 if info else None,
         ),
         fields_requested=[str(f.name) for f in inputs.fields],
         llm_calls=inputs.llm_calls,

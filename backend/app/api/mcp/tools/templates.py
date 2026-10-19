@@ -8,6 +8,12 @@ manager-only -- mirrors the REST config-status/diff endpoints, which are
 when `is_project_manager` is true for the caller; any other role gets
 `null` for both, and neither read runs.
 
+`view` picks what is paged: `published` (the default above), `draft` (the
+live tree and instruction, with the diff fingerprint and `lint_tree`
+findings on page 1) or `changes` (every diff row, paged by
+`template_changes`). The last two are manager-only: anyone else gets
+MANAGER_REQUIRED before any draft read runs.
+
 `draft_open` is `template.config_draft_since is not None` -- the exact
 predicate `TemplateConfigStatusRead.has_pending_changes` mirrors -- read
 directly off the row `owned_template` already fetched, not through
@@ -32,94 +38,162 @@ question's JSON against it.
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import is_project_manager
+from app.api.mcp.apps import DRAFT_REVIEW_URI
 from app.api.mcp.asgi_auth import current_principal
+from app.api.mcp.draft_diff import capped_diff
 from app.api.mcp.errors import McpErrorCode, McpToolError
 from app.api.mcp.server import agent_tool
+from app.api.mcp.template_changes import changes_view
 from app.llm.claim_value import normalize_options
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
-from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_templates import (
-    McpDraftChange,
-    McpDraftDiff,
+    McpOption,
     McpTemplateQuestion,
     McpTemplateSection,
     McpTemplateView,
 )
-from app.services.extraction_snapshot import live_entity_types
-from app.services.project_read_service import template_summaries
+from app.services.extraction_snapshot import general_instructions_for_version, live_entity_types
+from app.services.project_read_service import project_name, template_summaries
 from app.services.project_template_active_service import owned_template
+from app.services.template_instruction_service import get_template_instruction
+from app.services.template_lint import lint_tree
 from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
     get_template_config_diff,
 )
+from app.utils import app_urls
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.opaque_cursor import (
+    CURSOR_RESERVE,
     InvalidCursorError,
     cursor_position,
     decode_cursor,
     encode_cursor,
 )
+from app.utils.text_caps import cap_text
 
-_DIFF_ROW_CAP = 40
-_TIER_ORDER = ("additive", "cosmetic", "semantic", "destructive")
-#: Reserved for `next_cursor` itself: the envelope is measured with it
-#: `None`, but a page that is NOT the last one replaces that with an
-#: opaque base64 cursor string a caller's later page count could grow
-#: (larger ints encode to a few more base64 chars).
-_CURSOR_RESERVE = 64
+#: (flag, RunViewField attribute) in the order `flags` lists the true ones.
+_FLAGS = (
+    ("required", "is_required"),
+    ("entity_key", "is_entity_key"),
+    ("allows_not_applicable", "allows_not_applicable"),
+    ("allows_not_evaluated", "allows_not_evaluated"),
+    ("allows_no_information", "allows_no_information"),
+    ("allow_other", "allow_other"),
+)
 
 
 def _json_len(model: BaseModel) -> int:
     """Length of `compact_json` (task 2c's one serializer): the same measure
-    the size-cap tests apply (`len(json.dumps(page))`) and the dispatcher
+    the size-cap tests apply (`len(compact_json(page))`) and the dispatcher
     uses for a result's text copy, which is longer than pydantic's own
     compact `model_dump_json()` -- every key and every list item gets extra
-    `", "` / `": "` spacing. All size accounting in this module uses this,
+    `", "` / `": "` spacing. Non-ASCII renders raw (one char each); only
+    quotes, backslashes and control characters grow when escaped. All size accounting in this module uses this,
     never the raw `model_dump_json()` length, or the budget under-charges
     and a page can clear the compact count while still exceeding the real
     32,000-char cap."""
     return len(compact_json(model.model_dump(mode="json")))
 
 
+_NO_DRAFT = "No draft is open; this is the published questionnaire."
+_MANAGER_ONLY = "Only a project manager can read the draft."
+
+
 @agent_tool(
     requires="read",
     project_arg="project_id",
     title="Get template",
+    ui_resource=DRAFT_REVIEW_URI,
+    destructive=False,
     description=(
-        "Return a questionnaire: sections -> questions (type, options, instructions), whether a "
-        "draft is open, the published version and the draft's changes vs published. Paged: pass "
-        "next_cursor until it is null. Draft edits are invisible to reviewers and AI until a "
-        "manager publishes in prumo."
+        "Return a questionnaire: the template instruction (and whether it is still the "
+        "imported default), sections (description, entry label, required) -> questions "
+        "(type, options, instructions, unit, allowed units, flags), whether a draft is open, "
+        "the published version and the draft's changes vs published. `instrument` is the "
+        "stable code of the tool the template comes from (custom for an in-house one). "
+        "`narrow` is true when the published version is empty or in an older format (a "
+        "publish in prumo refreshes it), null when nothing is published. `flags` lists "
+        "only the flags that are true. Paged: pass next_cursor until it is null. "
+        'Three views: view="published" (default) is what reviewers and AI use; its '
+        "first page carries a capped draft_diff for managers. "
+        'view="draft" (managers only) is the unpublished questionnaire as edited; its '
+        "first page carries `fingerprint` and `lint` (problems that block or weaken AI "
+        'extraction). view="changes" (managers only) pages every row Publish would '
+        "apply, with affects_recorded_data and affects_ai; page it to read every row "
+        "when draft_diff is truncated. `fingerprint` is the one Publish checks. Draft "
+        "edits are invisible to reviewers and AI until a manager publishes in prumo."
     ),
 )
 async def get_template(
-    db: AsyncSession, project_id: UUID, template_id: UUID, cursor: str | None = None
+    db: AsyncSession,
+    project_id: UUID,
+    template_id: UUID,
+    view: Literal["published", "draft", "changes"] = "published",
+    cursor: str | None = None,
 ) -> McpTemplateView:
     # ProjectTemplateNotFoundError (foreign or missing) propagates: the dispatcher answers NOT_FOUND.
     template = await owned_template(db, project_id=project_id, template_id=template_id)
+    is_manager = await is_project_manager(db, project_id, current_principal().user_sub)
+    if view != "published" and not is_manager:
+        raise McpToolError(McpErrorCode.MANAGER_REQUIRED, _MANAGER_ONLY)
     summary = next(
         t
         for t in await template_summaries(db, project_id=project_id)
         if t.template_id == template_id
     )
-    try:
-        tree = (
-            await get_active_version_tree(db, project_id=project_id, template_id=template_id)
-        ).entity_types
-    except NoActiveTemplateVersionError:
-        tree = await live_entity_types(db, template_id=template_id)
+    # config-status/diff are manager-only over REST; same here
+    draft_open = (template.config_draft_since is not None) if is_manager else None
+    envelope = McpTemplateView(
+        template_id=template.id,
+        template_name=cap_text(template.name)[0],
+        project_name=cap_text(await project_name(db, project_id))[0],
+        view=view,
+        kind=template.kind,
+        instrument=summary.instrument,
+        published_version=summary.published_version,
+        narrow=summary.narrow,
+        instruction=None,
+        instruction_is_default=False,
+        draft_open=draft_open,
+        sections=[],
+        draft_diff=None,
+        next_cursor=None,
+        editor_url=app_urls.editor_url(project_id, template.kind) if is_manager else None,
+    )
+    if view == "changes":
+        return await changes_view(
+            db, project_id=project_id, template_id=template_id, cursor=cursor, envelope=envelope
+        )
 
-    is_manager = await is_project_manager(db, project_id, current_principal().user_sub)
-    draft_open = None
-    if is_manager:  # config-status/diff are manager-only over REST; same here
-        draft_open = template.config_draft_since is not None
+    instruction: str | None = None
+    if view == "draft":
+        tree = await live_entity_types(db, template_id=template_id)
+        instruction = template.llm_template_instruction
+    else:
+        try:
+            active = await get_active_version_tree(
+                db, project_id=project_id, template_id=template_id
+            )
+        except NoActiveTemplateVersionError:
+            tree = await live_entity_types(db, template_id=template_id)
+        else:
+            tree = active.entity_types
+            instruction = await general_instructions_for_version(db, active.version_id)
+    is_default = False
+    if template.global_template_id is not None:
+        default = (
+            await get_template_instruction(db, project_id=project_id, template_id=template_id)
+        ).default_instruction
+        is_default = instruction == default
 
     try:
         raw = decode_cursor(cursor, arity=2)
@@ -129,29 +203,25 @@ async def get_template(
         ) from exc
     start = _validated_start(raw, tree)
 
-    diff = None
-    if raw is None and is_manager:
-        diff = _capped_diff(
-            await get_template_config_diff(db, project_id=project_id, template_id=template_id)
-        )
+    page1: dict[str, object] = {}
+    if raw is None and is_manager:  # draft state rides on page 1 only
+        diff = await get_template_config_diff(db, project_id=project_id, template_id=template_id)
+        if view == "published":
+            page1["draft_diff"] = capped_diff(diff)
+        else:
+            page1.update(fingerprint=diff.fingerprint, lint=lint_tree(tree, instruction))
+    if view == "draft" and not draft_open:
+        page1["note"] = _NO_DRAFT
 
     # The diff (built above, since it rides on page 1 only) and every fixed
     # envelope field are charged against the 32,000-char result cap FIRST;
     # what is left is the budget `_page_sections` may spend on section
     # headers and questions (B1: the old fixed 24,000 budget counted
     # questions only and let the diff and section headers ride free).
-    envelope = McpTemplateView(
-        template_id=template.id,
-        name=template.name,
-        kind=template.kind,
-        published_version=summary.published_version,
-        narrow=summary.narrow,
-        draft_open=draft_open,
-        sections=[],
-        draft_diff=diff,
-        next_cursor=None,
+    envelope = envelope.model_copy(
+        update={"instruction": instruction, "instruction_is_default": is_default, **page1}
     )
-    section_budget = max(1, RESULT_CAP - _json_len(envelope) - _CURSOR_RESERVE)
+    section_budget = max(1, RESULT_CAP - _json_len(envelope) - CURSOR_RESERVE)
     sections, nxt = _page_sections(tree, start, budget=section_budget)
 
     return envelope.model_copy(
@@ -252,6 +322,9 @@ def _section(
         section_id=et.id,
         name=et.name,
         label=et.label,
+        description=et.description,
+        entry_label=et.entry_label,
+        required=et.is_required,
         parent_section_id=et.parent_entity_type_id,
         cardinality=et.cardinality,
         continued=continued,
@@ -268,53 +341,18 @@ def _question(field: RunViewField) -> McpTemplateQuestion:
         type=field.field_type,
         options=_options(field.allowed_values),
         instructions=field.llm_description,
-        required=field.is_required,
+        unit=field.unit,
+        allowed_units=_unit_strings(field.allowed_units),
+        flags=[flag for flag, attr in _FLAGS if getattr(field, attr)],
     )
 
 
-def _options(allowed_values: object) -> list[str] | None:
-    opts = normalize_options(allowed_values)
-    if not opts:
+def _unit_strings(allowed_units: object) -> list[str] | None:
+    """The string units of a list; any other stored shape reads as None."""
+    if not isinstance(allowed_units, list):
         return None
-    return [
-        str(opt.get("label") or opt.get("value")) if isinstance(opt, dict) else str(opt)
-        for opt in opts
-    ]
+    return [u for u in allowed_units if isinstance(u, str)]
 
 
-def _capped_diff(diff: TemplateConfigDiffRead) -> McpDraftDiff:
-    buckets = {
-        "additive": diff.changes.additive,
-        "cosmetic": diff.changes.cosmetic,
-        "semantic": diff.changes.semantic,
-        "destructive": diff.changes.destructive,
-    }
-    counts = {tier: len(rows) for tier, rows in buckets.items()}
-    changes: list[McpDraftChange] = []
-    truncated = False
-    for tier in _TIER_ORDER:
-        for row in buckets[tier]:
-            if len(changes) >= _DIFF_ROW_CAP:
-                truncated = True
-                break
-            changes.append(
-                McpDraftChange(
-                    tier=tier,
-                    variant=str(row.variant),
-                    label_path=row.label_path,
-                    attribute=row.attribute,
-                    before=_trunc(row.before),
-                    after=_trunc(row.after),
-                )
-            )
-        if truncated:
-            break
-    return McpDraftDiff(
-        status=str(diff.status), counts=counts, changes=changes, changes_truncated=truncated
-    )
-
-
-def _trunc(value: str | bool | None) -> str | None:
-    if value is None:
-        return None
-    return str(value)[:200]
+def _options(allowed_values: object) -> list[McpOption] | None:
+    return [McpOption(**o) for o in normalize_options(allowed_values)] or None

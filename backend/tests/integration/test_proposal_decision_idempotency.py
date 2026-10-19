@@ -231,7 +231,7 @@ async def test_identical_decision_rerecord_is_a_noop(db_session: AsyncSession) -
         "field_id": field_id,
         "reviewer_id": user_id,
         "decision": "edit",
-        "value": {"value": "v"},
+        "value": {"value": 9},
     }
     first = await svc.record_decision(**args)
     second = await svc.record_decision(**args)  # identical re-record
@@ -249,5 +249,5 @@ async def test_identical_decision_rerecord_is_a_noop(db_session: AsyncSession) -
     assert count == 1, "identical re-record must not append a duplicate decision"
     assert second.id == first.id
 
-    changed = await svc.record_decision(**{**args, "value": {"value": "v2"}})
+    changed = await svc.record_decision(**{**args, "value": {"value": 10}})
     assert changed.id != first.id, "a changed value must still append"

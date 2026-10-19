@@ -4,9 +4,11 @@ Project Repository.
 Project and membership persistence layer.
 """
 
+from collections.abc import Callable
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
@@ -24,6 +26,39 @@ class ProjectRepository(BaseRepository[Project]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, Project)
 
+    async def lock_for_update(self, project_id: UUID) -> Project | None:
+        """Row-locked read; populate_existing so a stale identity-map copy is never served.
+
+        The refresh also discards unflushed edits on that ``Project`` (app
+        sessions run ``autoflush=False``): flush them before calling this.
+        """
+        return (
+            await self.db.execute(
+                select(Project)
+                .where(Project.id == project_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
+    async def update_settings_key(
+        self, project_id: UUID, key: str, update: Callable[[Any], Any]
+    ) -> Project | None:
+        """THE projects.settings writer: lock, update(old) -> new, reassign, flush.
+
+        Plain JSONB (not MutableDict): a new dict is reassigned so the change is
+        tracked; only ``key`` changes, sibling keys survive. Re-locking a row this
+        transaction already holds is a no-op.
+        """
+        project = await self.lock_for_update(project_id)
+        if project is None:
+            return None
+        settings = dict(project.settings or {})
+        settings[key] = update(settings.get(key))
+        project.settings = settings
+        await self.db.flush()
+        return project
+
 
 class ProjectMemberRepository(BaseRepository[ProjectMember]):
     """
@@ -35,24 +70,41 @@ class ProjectMemberRepository(BaseRepository[ProjectMember]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectMember)
 
-    async def list_for_user(self, user_id: UUID | str) -> list[ProjectMember]:
+    async def count_reviewer_capable(self, project_id: UUID) -> int:
+        """Members the same SQL predicate the RLS policies use counts as reviewers."""
+        stmt = (
+            select(func.count())
+            .select_from(ProjectMember)
+            .where(
+                ProjectMember.project_id == project_id,
+                func.public.is_project_reviewer(ProjectMember.project_id, ProjectMember.user_id),
+            )
+        )
+        return int((await self.db.execute(stmt)).scalar_one())
+
+    async def list_for_user(
+        self, user_id: UUID | str, *, project_ids: frozenset[UUID] | None = None
+    ) -> list[ProjectMember]:
         """The caller's own membership rows, each with `.project` loaded.
 
         The ONE membership predicate of a `list_projects` read: `user_id` is
         the verified principal, never a client-supplied id, so there is
         nothing to bind against a second party — unlike `get_member`, which
-        checks a specific project a caller names.
+        checks a specific project a caller names. `project_ids` (a token's
+        restriction, server-stored) narrows the rows in the same WHERE clause.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
 
-        result = await self.db.execute(
+        stmt = (
             select(ProjectMember)
             .join(ProjectMember.project)
             .options(contains_eager(ProjectMember.project))
             .where(ProjectMember.user_id == user_id)
-            .order_by(Project.name, Project.id)
         )
+        if project_ids is not None:
+            stmt = stmt.where(ProjectMember.project_id.in_(project_ids))
+        result = await self.db.execute(stmt.order_by(Project.name, Project.id))
         return list(result.scalars().all())
 
     async def get_member(

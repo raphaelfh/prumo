@@ -10,6 +10,10 @@ structured-output mode its probe found it working. One path:
   :class:`ConnectionUnavailableError` (409); there is NO cloud fallback.
 * otherwise — :func:`resolve_provider_key`, the one ladder (caller's key →
   project's shared key → the deployment's global setting).
+
+:func:`assert_engine_ready` is the read-only kickoff precheck over the same
+two paths: it proves a credential exists before anything is queued, without
+decrypting it or stamping ``last_used_at``.
 """
 
 from __future__ import annotations
@@ -25,12 +29,20 @@ from app.services.llm_connection_service import (
     ConnectionUnavailableError,
     KeyScope,
     LlmConnectionService,
+    MissingCredentialError,
+    availability_map,
     capabilities_of,
     owned_user_connection,
     resolve_provider_key,
 )
+from app.services.llm_engine_service import resolve_engine
 
-__all__ = ["EngineCredentials", "rekey_for_adopted_engine", "resolve_engine_credentials"]
+__all__ = [
+    "EngineCredentials",
+    "assert_engine_ready",
+    "rekey_for_adopted_engine",
+    "resolve_engine_credentials",
+]
 
 
 @dataclass(frozen=True)
@@ -69,8 +81,15 @@ def _unavailable(connection_id: str) -> ConnectionUnavailableError:
 
 
 async def resolve_engine_credentials(
-    db: AsyncSession, *, user_id: UUID | str, project_id: UUID, engine: LlmTarget
+    db: AsyncSession,
+    *,
+    user_id: UUID | str,
+    project_id: UUID,
+    engine: LlmTarget,
+    allow_global_key: bool = True,
 ) -> EngineCredentials:
+    """``allow_global_key=False`` (agent-started batches): a catalogue engine
+    never resolves to the deployment key; host engines never use it anyway."""
     caller = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
     if engine.connection_id is not None:
         try:
@@ -89,7 +108,11 @@ async def resolve_engine_credentials(
             output_mode=capabilities_of(row).output_mode,
         )
     resolved = await resolve_provider_key(
-        db, provider=engine.provider, project_id=project_id, user_id=caller
+        db,
+        provider=engine.provider,
+        project_id=project_id,
+        user_id=caller,
+        allow_global=allow_global_key,
     )
     return EngineCredentials(
         api_key=resolved.key if resolved is not None else None,
@@ -108,6 +131,7 @@ async def rekey_for_adopted_engine(
     engine: LlmTarget,
     current: EngineCredentials,
     keyed_for: str | None,
+    allow_global_key: bool = True,
 ) -> EngineCredentials | None:
     """Credentials for ``engine`` when ``current`` was resolved for another
     engine — ``None`` when they still fit. The identity is the PAIR
@@ -120,5 +144,41 @@ async def rekey_for_adopted_engine(
     elif keyed_for == engine.provider and current.connection_id == engine.connection_id:
         return None
     return await resolve_engine_credentials(
-        db, user_id=user_id, project_id=project_id, engine=engine
+        db,
+        user_id=user_id,
+        project_id=project_id,
+        engine=engine,
+        allow_global_key=allow_global_key,
     )
+
+
+async def assert_engine_ready(
+    db: AsyncSession, *, project_id: UUID, user_id: UUID, allow_global: bool = True
+) -> LlmTarget:
+    """The ONE kickoff precheck: the engine resolves and a credential exists.
+
+    ``allow_global=False`` refuses a catalogue engine whose only credential is
+    the deployment key (agent-started runs); host engines never use it.
+
+    Read-only: no decryption, no ``last_used_at`` write, no provider call. The
+    worker refuses the deployment key again at execution
+    (:func:`resolve_engine_credentials` with ``allow_global_key=False``).
+    """
+    engine = await resolve_engine(db, project_id, user_id)
+    if engine.connection_id is not None:
+        try:
+            connection_id = UUID(engine.connection_id)
+        except ValueError:  # a corrupt pinned id is a typed 409, not a 500
+            raise _unavailable(engine.connection_id) from None
+        if await owned_user_connection(db, connection_id, user_id) is None:
+            raise _unavailable(engine.connection_id)
+        return engine
+    available = await availability_map(
+        db, project_id=project_id, user_id=user_id, providers=[engine.provider]
+    )
+    rung = available[engine.provider]
+    if rung is None:
+        raise MissingCredentialError(engine.provider)
+    if rung == "global" and not allow_global:
+        raise MissingCredentialError(engine.provider, reason="DEPLOYMENT_KEY_NOT_ALLOWED")
+    return engine

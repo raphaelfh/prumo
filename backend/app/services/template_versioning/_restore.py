@@ -39,6 +39,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -136,6 +137,15 @@ def _live_columns(
     row: ExtractionEntityType | ExtractionField, keys: tuple[str, ...]
 ) -> dict[str, Any]:
     return {key: getattr(row, key) for key in keys}
+
+
+def _live_field_columns(row: ExtractionField) -> dict[str, Any]:
+    """A live field's columns, options read canonically like the baseline's,
+    so a legacy option shape alone never counts as a field to restore."""
+    columns = _live_columns(row, _FIELD_KEYS)
+    if columns[OPTION_KEY] is not None:
+        columns[OPTION_KEY] = normalize_options(columns[OPTION_KEY])
+    return columns
 
 
 def _index_snapshot(
@@ -310,7 +320,7 @@ async def restore_snapshot(
         for fid, columns in baseline_fields.items()
         if fid in live_fields
         and fid not in name_conflicted
-        and _live_columns(live_fields[fid], _FIELD_KEYS) != columns
+        and _live_field_columns(live_fields[fid]) != columns
     ]
     # Every phase-0 decision is taken from the pre-write reads above.
     park_field_ids = [

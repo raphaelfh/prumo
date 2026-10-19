@@ -286,6 +286,54 @@ describe('buildTemplateTree', () => {
   });
 });
 
+describe('buildTemplateTree — options', () => {
+  it('reads legacy string[] and canonical {value, label} options as OptionItem[]', () => {
+    const tree = buildTemplateTree(
+      [section({id: 'a'})],
+      [
+        field({id: 'legacy', entity_type_id: 'a', field_type: 'select', allowed_values: ['Cohort', 'RCT']}),
+        field({
+          id: 'canon',
+          entity_type_id: 'a',
+          field_type: 'select',
+          sort_order: 1,
+          allowed_values: [{value: 'coh', label: 'Cohort'}],
+        }),
+        field({id: 'none', entity_type_id: 'a', sort_order: 2, allowed_values: []}),
+      ],
+    );
+    const [legacy, canon, none] = tree[0].fields;
+    expect(legacy.allowedValues).toEqual([
+      {value: 'Cohort', label: 'Cohort'},
+      {value: 'RCT', label: 'RCT'},
+    ]);
+    expect(legacy.optionCount).toBe(2);
+    expect(canon.allowedValues).toEqual([{value: 'coh', label: 'Cohort'}]);
+    expect(canon.optionCount).toBe(1);
+    expect(none.allowedValues).toBeNull();
+    expect(none.optionCount).toBe(0);
+  });
+
+  it('searches a canonical field by its option labels', () => {
+    const tree = buildTemplateTree(
+      [section({id: 'a'})],
+      [
+        field({
+          id: 'design',
+          entity_type_id: 'a',
+          label: 'Design',
+          field_type: 'select',
+          allowed_values: [{value: 'coh', label: 'Cohort'}],
+        }),
+      ],
+    );
+    const r = filterTemplateTree(tree, 'cohort');
+    expect(r.matchCount).toBe(1);
+    expect(r.sections[0].fields[0].matchHint).toBe('options');
+    expect(filterTemplateTree(tree, 'object').matchCount).toBe(0);
+  });
+});
+
 describe('buildTemplateTree — depth (trees B5b)', () => {
   it('nests a group under a group, at any depth, and stamps depth on each level', () => {
     const tree = buildTemplateTree(

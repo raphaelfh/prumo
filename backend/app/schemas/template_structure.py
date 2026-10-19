@@ -37,8 +37,11 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    field_validator,
     model_validator,
 )
+
+from app.llm.claim_value import normalize_options
 
 # Re-declared from ExtractionFieldType (app.models.extraction) — see the
 # layering note in the module docstring.
@@ -56,10 +59,27 @@ def _reject_duplicate_items(items: list[str]) -> list[str]:
     return items
 
 
+class OptionItem(BaseModel):
+    """One select/multiselect option: ``value`` is the stored code an answer
+    carries, ``label`` what a person reads. Renaming an option changes only
+    its label."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=100)
+
+
+def _reject_duplicate_option_values(items: list[OptionItem]) -> list[OptionItem]:
+    if len({item.value for item in items}) != len(items):
+        raise ValueError("option values must be unique")
+    return items
+
+
 AllowedValues = Annotated[
-    list[str],
+    list[OptionItem],
     Field(min_length=1, max_length=100),
-    AfterValidator(_reject_duplicate_items),
+    AfterValidator(_reject_duplicate_option_values),
 ]
 AllowedUnits = Annotated[
     list[Annotated[str, StringConstraints(max_length=50)]],
@@ -215,7 +235,7 @@ class TemplateFieldRead(BaseModel):
     unit: str | None = None
     allowed_units: list[str] | None = None
     llm_description: str | None = None
-    allowed_values: list[str] | None = None
+    allowed_values: list[OptionItem] | None = None
     allow_other: bool = False
     other_label: str | None = None
     other_placeholder: str | None = None
@@ -226,6 +246,14 @@ class TemplateFieldRead(BaseModel):
     validation_schema: dict[str, Any] | None = None
     sort_order: int
     created_at: datetime
+
+    @field_validator("allowed_values", mode="before")
+    @classmethod
+    def _canonical_options(cls, raw: Any) -> list[dict[str, str]] | None:
+        # Legacy rows still hold bare strings; read every shape canonical.
+        if raw is None:
+            return None
+        return normalize_options(raw) or None
 
 
 class TemplateFieldDeleteResponse(BaseModel):

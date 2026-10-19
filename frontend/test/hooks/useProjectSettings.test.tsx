@@ -37,6 +37,7 @@ import {server} from '@/test/mocks/server';
 import {t} from '@/lib/copy';
 import {projectKeys} from '@/lib/query-keys';
 import {projectsListKey} from '@/hooks/useProjectsQuery';
+import {runsKeys} from '@/hooks/runs/types';
 import {useProjectSettings} from '@/hooks/useProjectSettings';
 
 const BASE_ROW = {
@@ -164,6 +165,48 @@ describe('useProjectSettings save', () => {
     expect(result.current.project?.name).toBe('New');
     expect(result.current.staleFields).toEqual([]);
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('a details save refreshes the run reads so the drift chip is current', async () => {
+    const {result, invalidate} = await harness();
+
+    act(() => result.current.updateProject({study_design: {types: ['RCT'], notes: ''}}));
+    await act(() => result.current.saveProject());
+
+    expect(invalidate).toHaveBeenCalledWith({queryKey: runsKeys.all});
+  });
+
+  it('a legacy eligibility row saves without unknown keys in fields, echoing the raw row as expected', async () => {
+    h.serverRow.eligibility_criteria = {inclusion: ['a'], exclusion: [], notes: '', extra: 'legacy'};
+    const {result, invalidate} = await harness();
+
+    act(() =>
+      result.current.updateProject({
+        eligibility_criteria: {inclusion: ['a', 'b'], exclusion: [], notes: '', extra: 'legacy'},
+      }),
+    );
+    await act(() => result.current.saveProject());
+
+    expect(requests).toEqual([
+      {
+        fields: {eligibility_criteria: {inclusion: ['a', 'b'], exclusion: [], notes: ''}},
+        expected: {eligibility_criteria: {inclusion: ['a'], exclusion: [], notes: '', extra: 'legacy'}},
+      },
+    ]);
+    expect(toast.success).toHaveBeenCalledWith(t('project', 'settingsSaveSuccess'));
+    expect(invalidate).toHaveBeenCalledWith({queryKey: projectKeys.aiContext('p1')});
+  });
+
+  it('a 422 toasts the save error and keeps the edit', async () => {
+    const {result} = await harness();
+    replies.push({status: 422, body: {ok: false, error: {code: 'VALIDATION_ERROR', message: 'bad'}}});
+
+    act(() => result.current.updateProject({study_design: {types: ['RCT'], notes: ''}}));
+    await act(() => result.current.saveProject());
+
+    expect(toast.error).toHaveBeenCalledWith(t('project', 'settingsSaveError'));
+    expect(result.current.project?.study_design).toEqual({types: ['RCT'], notes: ''});
+    expect(result.current.hasUnsavedChanges).toBe(true);
   });
 
   it('an edit back to the loaded value sends nothing', async () => {

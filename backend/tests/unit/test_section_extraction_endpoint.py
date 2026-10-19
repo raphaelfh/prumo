@@ -35,8 +35,11 @@ from app.services.extraction_run_read_service import RunNotFoundError
 from app.services.extraction_run_write import RunWriteError
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_section_service import SectionNotFoundError
+from app.worker import queue_health
 
 CALLER_USER_ID = str(uuid4())
+#: What the kickoff gate returns: the engine the endpoint logs at enqueue.
+_ENGINE = SimpleNamespace(provider="openai", model="gpt-4o")
 OTHER_USER_ID = str(uuid4())
 
 _PROJECT_ID = str(uuid4())
@@ -127,12 +130,12 @@ class TestExtractSectionDispatch:
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=True,
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
+                new=AsyncMock(return_value=_ENGINE),
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction.run_section_extraction_task.apply_async",
@@ -177,12 +180,12 @@ class TestExtractSectionDispatch:
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=True,
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
+                new=AsyncMock(return_value=_ENGINE),
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction.run_section_extraction_task.apply_async",
@@ -205,12 +208,12 @@ class TestExtractSectionDispatch:
         """Redis ping fails → 503 before dispatching."""
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=False,
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
+                new=AsyncMock(return_value=_ENGINE),
             ),
         ):
             res = await client.post(_DISPATCH_URL, json=_SINGLE_PAYLOAD)
@@ -230,12 +233,12 @@ class TestExtractSectionDispatch:
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=True,
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
+                new=AsyncMock(return_value=_ENGINE),
             ),
             patch(
                 "app.api.v1.endpoints.section_extraction.run_section_extraction_task.apply_async",
@@ -636,22 +639,12 @@ class TestGetSectionExtractionStatus:
 
 
 # ======================================================================
-# Module helpers — direct unit coverage (Redis helpers + BOLA scope).
+# Module helpers — direct unit coverage (Redis owner helpers + BOLA scope).
 # All endpoint tests patch these out, so cover their bodies directly.
 # ======================================================================
 
 
 class TestQueueAndOwnerHelpers:
-    def test_is_queue_available_true_when_ping_ok(self) -> None:
-        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
-            redis_cls.from_url.return_value.ping.return_value = True
-            assert se._is_queue_available() is True
-
-    def test_is_queue_available_false_when_ping_raises(self) -> None:
-        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
-            redis_cls.from_url.return_value.ping.side_effect = Exception("down")
-            assert se._is_queue_available() is False
-
     def test_remember_job_owner_sets_key_with_ttl(self) -> None:
         with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
             client = redis_cls.from_url.return_value
@@ -716,11 +709,17 @@ class TestCheckRequestScope:
 
     @pytest.mark.asyncio
     async def test_the_coordinate_binding_is_delegated(self, gates: SimpleNamespace) -> None:
-        """Shared with /extraction/models — see TestAssertKickoffScope."""
+        """The one kickoff gate — see TestAssertKickoffScope."""
         payload = self._payload()
         await se._check_request_scope(MagicMock(), payload, uuid4())
         assert gates.coordinate.await_args.kwargs["project_id"] == payload.project_id
         assert gates.coordinate.await_args.kwargs["run_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_returns_the_engine_the_gate_resolved(self, gates: SimpleNamespace) -> None:
+        """The endpoint logs the engine the gate already resolved: no second lookup."""
+        gates.coordinate.return_value = _ENGINE
+        assert await se._check_request_scope(MagicMock(), self._payload(), uuid4()) is _ENGINE
 
     @pytest.mark.asyncio
     async def test_entity_type_outside_the_template_raises_400(
@@ -769,14 +768,17 @@ class TestCheckRequestScope:
 
 
 class TestAssertKickoffScope:
-    """The coordinate binding itself — shared by BOTH AI kickoff endpoints.
-
-    It lives in ``app.api.deps.scope`` precisely so /extraction/sections and
-    /extraction/models cannot disagree about it, so it is tested once, here,
-    rather than once per endpoint.
+    """The coordinate binding itself, tested once here; each branch ends in
+    the one AI kickoff gate (``assert_ai_kickoff``), patched below.
     """
 
     _PID, _AID, _TID = uuid4(), uuid4(), uuid4()
+
+    @pytest.fixture(autouse=True)
+    def kickoff(self) -> Iterator[AsyncMock]:
+        gate = AsyncMock(return_value=_ENGINE)
+        with patch("app.api.deps.scope.assert_ai_kickoff", new=gate):
+            yield gate
 
     def _kwargs(self, **over: object) -> dict:
         base = {
@@ -790,22 +792,24 @@ class TestAssertKickoffScope:
         return base
 
     @pytest.mark.asyncio
-    async def test_no_run_binds_the_template_to_the_project(self) -> None:
+    async def test_no_run_binds_the_template_to_the_project(self, kickoff: AsyncMock) -> None:
         """Without a run there is nothing else binding them — and the worker
         binds too late to keep the response code from leaking."""
         with (
             patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()) as member,
             patch("app.api.deps.scope.owned_template", new=AsyncMock()) as template,
         ):
-            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
+            engine = await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
         member.assert_awaited_once()
         assert template.await_args.kwargs == {
             "project_id": self._PID,
             "template_id": self._TID,
         }
+        assert engine is _ENGINE
+        assert kickoff.await_args.kwargs["project_id"] == self._PID
 
     @pytest.mark.asyncio
-    async def test_foreign_template_raises_400(self) -> None:
+    async def test_foreign_template_raises_400(self, kickoff: AsyncMock) -> None:
         with (
             patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()),
             patch(
@@ -817,9 +821,10 @@ class TestAssertKickoffScope:
             await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
         assert exc.value.status_code == 400
         assert exc.value.detail == "templateId does not belong to projectId"
+        kickoff.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_membership_precedes_the_template_lookup(self) -> None:
+    async def test_membership_precedes_the_template_lookup(self, kickoff: AsyncMock) -> None:
         """A non-member must not learn whether a template id exists."""
         template = AsyncMock(side_effect=ProjectTemplateNotFoundError("nope"))
         with (
@@ -833,6 +838,7 @@ class TestAssertKickoffScope:
             await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
         assert exc.value.status_code == 403
         template.assert_not_awaited()
+        kickoff.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_run_not_found_raises_404(self) -> None:
@@ -847,7 +853,7 @@ class TestAssertKickoffScope:
         assert exc.value.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_run_mismatch_raises_400(self) -> None:
+    async def test_run_mismatch_raises_400(self, kickoff: AsyncMock) -> None:
         run = SimpleNamespace(project_id=uuid4(), article_id=uuid4(), template_id=uuid4())
         with (
             patch("app.api.deps.scope.get_run_or_raise", new=AsyncMock(return_value=run)),
@@ -856,9 +862,10 @@ class TestAssertKickoffScope:
         ):
             await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
         assert exc.value.status_code == 400
+        kickoff.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_run_match_passes_and_skips_the_template_lookup(self) -> None:
+    async def test_run_match_passes_and_skips_the_template_lookup(self, kickoff: AsyncMock) -> None:
         """The run already carries a project-bound template; re-checking it
         would be a second query for a rule create_run enforced."""
         run = SimpleNamespace(project_id=self._PID, article_id=self._AID, template_id=self._TID)
@@ -867,9 +874,47 @@ class TestAssertKickoffScope:
             patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()) as member,
             patch("app.api.deps.scope.owned_template", new=AsyncMock()) as template,
         ):
-            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
+            engine = await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
         member.assert_awaited_once()
         template.assert_not_awaited()
+        assert engine is _ENGINE
+        assert kickoff.await_args.kwargs["project_id"] == run.project_id
+
+
+class TestAssertAiKickoff:
+    """THE AI kickoff gate: reviewer role first (403), then the credential
+    precheck (409) — a viewer or outsider never learns the project's engine
+    configuration."""
+
+    @pytest.mark.asyncio
+    async def test_role_precedes_the_engine_check(self) -> None:
+        engine_ready = AsyncMock(return_value=_ENGINE)
+        with (
+            patch(
+                "app.api.deps.scope.ensure_project_reviewer",
+                new=AsyncMock(side_effect=HTTPException(status_code=403, detail="no")),
+            ),
+            patch.object(scope.engine_credentials, "assert_engine_ready", new=engine_ready),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await scope.assert_ai_kickoff(MagicMock(), project_id=uuid4(), current_user_sub=uuid4())
+        assert exc.value.status_code == 403
+        engine_ready.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_the_ready_engine(self) -> None:
+        pid, uid = uuid4(), uuid4()
+        engine_ready = AsyncMock(return_value=_ENGINE)
+        with (
+            patch("app.api.deps.scope.ensure_project_reviewer", new=AsyncMock()) as role,
+            patch.object(scope.engine_credentials, "assert_engine_ready", new=engine_ready),
+        ):
+            engine = await scope.assert_ai_kickoff(
+                MagicMock(), project_id=pid, current_user_sub=uid
+            )
+        assert engine is _ENGINE
+        assert role.await_args.args[1:] == (pid, uid)
+        assert engine_ready.await_args.kwargs == {"project_id": pid, "user_id": uid}
 
 
 async def test_direct_endpoint_uses_durable_identity_and_reports_enqueue_failure():
@@ -891,13 +936,8 @@ async def test_direct_endpoint_uses_durable_identity_and_reports_enqueue_failure
         id=uuid4(), job_id="durable-job", request_payload=payload.model_dump(mode="json")
     )
     with (
-        patch.object(se, "_check_request_scope", new=AsyncMock()),
-        patch.object(
-            se,
-            "resolve_engine",
-            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
-        ),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
         ),
@@ -940,13 +980,8 @@ async def test_direct_endpoint_logs_the_enqueue_failure_without_the_payload():
         id=uuid4(), job_id="durable-job", request_payload=payload.model_dump(mode="json")
     )
     with (
-        patch.object(se, "_check_request_scope", new=AsyncMock()),
-        patch.object(
-            se,
-            "resolve_engine",
-            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
-        ),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
         ),
@@ -981,13 +1016,8 @@ async def test_direct_endpoint_closed_run_is_400():
 
     request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
     with (
-        patch.object(se, "_check_request_scope", new=AsyncMock()),
-        patch.object(
-            se,
-            "resolve_engine",
-            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
-        ),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService,
             "prepare_request",
@@ -1003,3 +1033,33 @@ async def test_direct_endpoint_closed_run_is_400():
             uuid4(),
         )
     assert error.value.status_code == 400
+
+
+async def test_direct_endpoint_finalized_run_is_typed_409():
+    from starlette.requests import Request
+
+    rid = uuid4()
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    with (
+        patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
+        patch.object(queue_health, "is_queue_available", return_value=True),
+        patch.object(
+            se.ExtractionAttemptService,
+            "prepare_request",
+            new=AsyncMock(
+                side_effect=se.RunWriteError("x", reason="stage", run_id=rid, stage="finalized")
+            ),
+        ),
+        patch.object(se.run_section_extraction_task, "apply_async") as enqueue,
+        pytest.raises(se.RunFinalizedError) as error,
+    ):
+        await se.extract_section.__wrapped__(
+            request,
+            SectionExtractionRequest(**_SINGLE_PAYLOAD),
+            MagicMock(),
+            SimpleNamespace(sub=CALLER_USER_ID),
+            uuid4(),
+        )
+    assert (error.value.status_code, error.value.code) == (409, "RUN_FINALIZED")
+    assert error.value.details == {"run_id": str(rid)}
+    enqueue.assert_not_called()

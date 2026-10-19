@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -17,6 +17,7 @@ from app.services.pat_service import create_token
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 from tests.integration.helpers.engine_setup import client_as
+from tests.integration.helpers.pat_rows import insert_oauth_client, insert_oauth_connection
 
 client_as_reviewer = engine_setup.client_as_reviewer
 
@@ -111,6 +112,45 @@ async def test_expires_in_days_bounds(
 
 
 @pytest.mark.asyncio
+async def test_ai_run_is_off_by_default_and_at_most_30_days(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    plain = await client_as_reviewer.post(
+        _BASE, json={"name": "plain", "scope": "read_write", "expires_in_days": 90}
+    )
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["data"]["token"]["ai_run"] is False
+
+    too_long = await client_as_reviewer.post(
+        _BASE,
+        json={"name": "agent", "scope": "read_write", "expires_in_days": 31, "ai_run": True},
+    )
+    assert too_long.status_code == 422, too_long.text
+    assert too_long.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    granted = await client_as_reviewer.post(
+        _BASE,
+        json={"name": "agent", "scope": "read_write", "expires_in_days": 30, "ai_run": True},
+    )
+    assert granted.status_code == 201, granted.text
+    token = granted.json()["data"]["token"]
+    assert token["ai_run"] is True
+    stored = (
+        await db_session.execute(
+            text("SELECT ai_run FROM public.personal_access_tokens WHERE id = :id"),
+            {"id": token["id"]},
+        )
+    ).scalar_one()
+    assert stored is True
+
+    listed = (await client_as_reviewer.get(_BASE)).json()["data"]
+    assert {r["id"]: r["ai_run"] for r in listed} == {
+        plain.json()["data"]["token"]["id"]: False,
+        token["id"]: True,
+    }
+
+
+@pytest.mark.asyncio
 async def test_cap_is_409_with_code(client_as_reviewer: AsyncClient) -> None:
     for i in range(10):
         resp = await client_as_reviewer.post(
@@ -193,3 +233,253 @@ async def test_token_routes_rate_limited(client_as_reviewer: AsyncClient) -> Non
         assert resp.status_code == 200, resp.text
     limited_get = await client_as_reviewer.get(_BASE)
     assert limited_get.status_code == 429, limited_get.text
+
+
+# --- optional per-project restriction ----------------------------------------
+
+
+async def _reviewer_token_count(db_session: AsyncSession) -> int:
+    return (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.personal_access_tokens WHERE user_id = :uid"),
+            {"uid": str(SEED.reviewer_profile)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_create_with_and_without_project_ids(client_as_reviewer: AsyncClient) -> None:
+    unrestricted = await client_as_reviewer.post(
+        _BASE, json={"name": "all", "scope": "read", "expires_in_days": 30}
+    )
+    assert unrestricted.status_code == 201, unrestricted.text
+    assert unrestricted.json()["data"]["token"]["project_ids"] is None
+
+    restricted = await client_as_reviewer.post(
+        _BASE,
+        json={
+            "name": "a-only",
+            "scope": "read",
+            "expires_in_days": 30,
+            "project_ids": [str(SEED.primary_project)],
+        },
+    )
+    assert restricted.status_code == 201, restricted.text
+    assert restricted.json()["data"]["token"]["project_ids"] == [str(SEED.primary_project)]
+
+
+@pytest.mark.asyncio
+async def test_unreachable_project_is_one_422_for_foreign_and_missing(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    before = await _reviewer_token_count(db_session)
+    bodies = []
+    for project_id in (SEED.secondary_project, uuid4()):
+        resp = await client_as_reviewer.post(
+            _BASE,
+            json={
+                "name": "x",
+                "scope": "read",
+                "expires_in_days": 30,
+                "project_ids": [str(project_id)],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        body.pop("trace_id", None)
+        bodies.append(body)
+
+    assert bodies[0]["error"]["code"] == "PROJECT_NOT_ACCESSIBLE"
+    assert bodies[0] == bodies[1]
+    assert await _reviewer_token_count(db_session) == before
+
+
+@pytest.mark.parametrize(
+    "project_ids",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([str(uuid4()) for _ in range(21)], id="twenty-one"),
+        pytest.param([str(SEED.primary_project)] * 2, id="duplicate"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bad_project_ids_are_validation_errors(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession, project_ids: list[str]
+) -> None:
+    before = await _reviewer_token_count(db_session)
+    resp = await client_as_reviewer.post(
+        _BASE,
+        json={"name": "x", "scope": "read", "expires_in_days": 30, "project_ids": project_ids},
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert await _reviewer_token_count(db_session) == before
+
+
+def test_create_422_contract_types_both_refusals() -> None:
+    spec = create_app().openapi()
+    schema = spec["paths"]["/api/v1/me/tokens"]["post"]["responses"]["422"]["content"][
+        "application/json"
+    ]["schema"]
+    refs = {item["$ref"].rsplit("/", 1)[-1] for item in schema["anyOf"]}
+    assert refs == {"PersonalAccessTokenRefusalResponse", "ApiResponse_NoneType_"}
+
+    components = spec["components"]["schemas"]
+    error_ref = components["PersonalAccessTokenRefusalResponse"]["properties"]["error"]["$ref"]
+    error = components[error_ref.rsplit("/", 1)[-1]]
+    code_ref = error["properties"]["code"]["$ref"]
+    codes = set(components[code_ref.rsplit("/", 1)[-1]]["enum"])
+    assert {"TOKEN_LIMIT_REACHED", "PROJECT_NOT_ACCESSIBLE"} <= codes
+
+
+# --- OAuth connections (connected apps, ADR 0022) ------------------------------
+
+_CONNECTIONS = "/api/v1/me/oauth-connections"
+_CONNECTION_FIELDS = {
+    "id",
+    "client_name",
+    "scope",
+    "ai_run",
+    "status",
+    "created_at",
+    "last_used_at",
+    "expires_at",
+}
+
+
+async def _connection_for(db_session: AsyncSession, user_id: UUID, name: str = "Claude") -> UUID:
+    client_id = await insert_oauth_client(db_session, client_name=name)
+    return await insert_oauth_connection(
+        db_session, user_id=user_id, client_id=client_id, name=name
+    )
+
+
+@pytest.mark.asyncio
+async def test_connections_list_is_owner_only_and_kind_scoped(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    mine = await _connection_for(db_session, SEED.reviewer_profile, name="Claude")
+    foreign = await _connection_for(db_session, SEED.primary_profile, name="Other")
+    pat = await client_as_reviewer.post(
+        _BASE, json={"name": "cli", "scope": "read", "expires_in_days": 30}
+    )
+    assert pat.status_code == 201, pat.text
+    pat_id = pat.json()["data"]["token"]["id"]
+
+    resp = await client_as_reviewer.get(_CONNECTIONS)
+
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()["data"]
+    ids = {r["id"] for r in rows}
+    assert str(mine) in ids
+    assert str(foreign) not in ids
+    assert pat_id not in ids
+    row = next(r for r in rows if r["id"] == str(mine))
+    assert set(row) == _CONNECTION_FIELDS
+    assert row["client_name"] == "Claude"
+    assert row["scope"] == "read_write"
+    assert row["status"] == "active"
+    assert row["last_used_at"] is None
+
+    tokens = (await client_as_reviewer.get(_BASE)).json()["data"]
+    assert str(mine) not in {t["id"] for t in tokens}
+    assert pat_id in {t["id"] for t in tokens}
+
+
+@pytest.mark.asyncio
+async def test_expired_connection_lists_as_expired(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    connection_id = await _connection_for(db_session, SEED.reviewer_profile)
+    await db_session.execute(
+        text(
+            "UPDATE public.personal_access_tokens "
+            "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day' "
+            "WHERE id = :id"
+        ),
+        {"id": str(connection_id)},
+    )
+
+    rows = (await client_as_reviewer.get(_CONNECTIONS)).json()["data"]
+
+    assert next(r for r in rows if r["id"] == str(connection_id))["status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_revoke_connection_twice_is_200_revoked(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    connection_id = await _connection_for(db_session, SEED.reviewer_profile)
+
+    for _ in range(2):
+        resp = await client_as_reviewer.delete(f"{_CONNECTIONS}/{connection_id}")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["id"] == str(connection_id)
+        assert resp.json()["data"]["status"] == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_revoke_foreign_missing_or_pat_through_connections_is_404(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    foreign = await _connection_for(db_session, SEED.primary_profile, name="Secret App")
+    pat = await client_as_reviewer.post(
+        _BASE, json={"name": "cli", "scope": "read", "expires_in_days": 30}
+    )
+    pat_id = pat.json()["data"]["token"]["id"]
+
+    responses = [
+        await client_as_reviewer.delete(f"{_CONNECTIONS}/{target}")
+        for target in (foreign, uuid4(), pat_id)
+    ]
+
+    assert [r.status_code for r in responses] == [404, 404, 404], [r.text for r in responses]
+    messages = {r.json()["error"]["message"] for r in responses}
+    assert messages == {"Connection not found"}
+    assert "Secret App" not in responses[0].text
+    still_active = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM public.personal_access_tokens "
+                "WHERE id IN (:a, :b) AND revoked_at IS NULL"
+            ),
+            {"a": str(foreign), "b": pat_id},
+        )
+    ).scalar_one()
+    assert still_active == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_connections_route_is_unchanged(
+    client_as_reviewer: AsyncClient, db_session: AsyncSession
+) -> None:
+    oauth_id = await _connection_for(db_session, SEED.reviewer_profile)
+
+    resp = await client_as_reviewer.get("/api/v1/me/connections")
+
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()["data"]
+    assert isinstance(rows, list)
+    assert str(oauth_id) not in {r["id"] for r in rows}
+    spec = create_app().openapi()
+    schema = spec["paths"]["/api/v1/me/connections"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert schema["$ref"].endswith("ApiResponse_list_LlmConnectionRead__")
+
+
+@pytest.mark.asyncio
+async def test_connection_routes_rate_limited(client_as_reviewer: AsyncClient) -> None:
+    for _ in range(60):
+        resp = await client_as_reviewer.get(_CONNECTIONS)
+        assert resp.status_code == 200, resp.text
+    limited_get = await client_as_reviewer.get(_CONNECTIONS)
+    assert limited_get.status_code == 429, limited_get.text
+
+    # slowapi buckets by URL, so the budget is per connection id: one id throughout.
+    missing = f"{_CONNECTIONS}/{uuid4()}"
+    for _ in range(20):
+        resp = await client_as_reviewer.delete(missing)
+        assert resp.status_code == 404, resp.text
+    limited_delete = await client_as_reviewer.delete(missing)
+    assert limited_delete.status_code == 429, limited_delete.text

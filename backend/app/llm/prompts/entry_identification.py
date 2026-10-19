@@ -20,12 +20,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.llm.claim_value import normalize_options
 from app.llm.prompts import (
     Ancestor,
     content_version,
     render_ancestry,
     render_general_instructions_section,
-    render_review_context_section,
+    render_review_question_section,
 )
 
 NAME = "entry_identification"
@@ -120,20 +121,9 @@ def _render_ancestry_section(entry_label: str, ancestors: tuple[Ancestor, ...]) 
 
 
 def _allowed_value_names(allowed_values: Any) -> list[str]:
-    """The choices a ``select`` key accepts, in the shape the field stores
-    them: a list of strings, or a list of ``{value, label}`` objects (the
-    VALUE is what an extracted key must equal)."""
-    if not isinstance(allowed_values, list):
-        return []
-    names: list[str] = []
-    for item in allowed_values:
-        if isinstance(item, str):
-            names.append(item)
-        elif isinstance(item, dict):
-            value = item.get("value") or item.get("label")
-            if isinstance(value, str):
-                names.append(value)
-    return names
+    """The choices a ``select`` key accepts: each option's VALUE, which is
+    what an extracted key must equal."""
+    return [o["value"] for o in normalize_options(allowed_values)]
 
 
 def _render_allowed_values_section(key_label: str, allowed_values: Any) -> str:
@@ -152,7 +142,7 @@ VERSION = content_version(
     _INSTRUCTION_TEMPLATE,
     _ANCESTRY_TEMPLATE,
     _ALLOWED_VALUES_TEMPLATE,
-    render_review_context_section("x"),
+    render_review_question_section("x"),
     render_general_instructions_section("x"),
     render_ancestry((Ancestor("x", "x"),)),
 )
@@ -167,7 +157,7 @@ def render(
     instruction: str | None = None,
     allowed_values: Any = None,
     general_instructions: str | None = None,
-    review_context: str | None = None,
+    review_question: str | None = None,
     existing_keys: list[str] | None = None,
     ancestors: tuple[Ancestor, ...] = (),
 ) -> str:
@@ -186,6 +176,6 @@ def render(
         instruction_section=_render_instruction_section(instruction),
         allowed_values_section=_render_allowed_values_section(key_label, allowed_values),
         general_instructions_section=render_general_instructions_section(general_instructions),
-        review_context_section=render_review_context_section(review_context),
+        review_context_section=render_review_question_section(review_question),
         existing_section=_render_existing_section(entry_label, key_label, existing_keys),
     )

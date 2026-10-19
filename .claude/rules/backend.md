@@ -87,7 +87,8 @@ guard that drifted or was never made.
   `llm_connection_service.owned_user_connection` (a user-scope connection
   in its owner), `llm_connection_service.owned_project_connection` (a
   project-scope connection in its project), `pat_service.owned_token` (a
-  personal access token in its owner). Need a new pair? Add
+  personal access token or OAuth connection in its owner; `kind` is part
+  of the predicate). Need a new pair? Add
   ONE guard and import it — never copy a sibling. This list is load-bearing:
   the CI gate matches WHERE-clause shapes, so it cannot see a
   `db.get`-then-compare copy — the enumeration is what prevents copy #3.
@@ -95,6 +96,12 @@ guard that drifted or was never made.
   `api/deps/scope.assert_kickoff_scope` (`POST /extraction/sections`). A new
   kickoff endpoint imports it: the retired `/extraction/models` shipped
   without the binding because the logic lived inline in its sibling.
+- **The AI kickoff gate** (reviewer role 403, then the engine-credential
+  precheck 409) → `api/deps/scope.assert_ai_kickoff`. `assert_kickoff_scope`
+  ends in it. A batch is started only through
+  `ExtractionBatchService.start` (engine precheck → queue probe → flush-only
+  create): its caller passes `ensure_project_reviewer` first, commits, then
+  `kick_batch`. Never re-check the role or credentials inline.
 - **An MCP tool's project** → the `@agent_tool(requires=…, project_arg=…)`
   choke point in `app/api/mcp/server.py`, in order: token scope, per-token
   rate limit, project resolution (`get_article_project_id` for

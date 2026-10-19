@@ -30,14 +30,18 @@ interface OpenApiProperty {
   items?: OpenApiProperty;
   anyOf?: OpenApiProperty[];
   type?: string;
+  $ref?: string;
+}
+
+interface OpenApiSchema {
+  properties: Record<string, OpenApiProperty>;
+  required?: string[];
+  additionalProperties?: boolean;
 }
 
 interface OpenApiDocument {
   components: {
-    schemas: Record<
-      string,
-      {properties: Record<string, OpenApiProperty>; required?: string[]}
-    >;
+    schemas: Record<string, OpenApiSchema>;
   };
 }
 
@@ -58,6 +62,18 @@ function shapeOf(name: string): OpenApiProperty {
   const nonNull = property.anyOf.find((variant) => variant.type !== 'null');
   if (!nonNull) throw new Error(`only-null anyOf in openapi: ${name}`);
   return nonNull;
+}
+
+/** Follow an array property's `items.$ref` (directly or inside its
+ * non-null `anyOf` variant) to the named component schema. */
+function refOf(prop: OpenApiProperty): {name: string; schema: OpenApiSchema} {
+  const ref =
+    prop.items?.$ref ?? prop.anyOf?.find((variant) => variant.items?.$ref)?.items?.$ref;
+  if (!ref) throw new Error('no items.$ref on property');
+  const name = ref.replace('#/components/schemas/', '');
+  const schema = openapi.components.schemas[name];
+  if (!schema) throw new Error(`unresolved $ref in openapi: ${ref}`);
+  return {name, schema};
 }
 
 const BASE = {name: 'field_name', label: 'Label', field_type: 'text'};
@@ -86,6 +102,15 @@ describe('create-field contract — server literals (openapi.json)', () => {
     expect(shapeOf('field_type').enum).toEqual([
       ...ExtractionFieldSchema.shape.field_type.options,
     ]);
+  });
+
+  it('allowed_values items are strict OptionItem {value ≤100, label ≤100}', () => {
+    const {name, schema} = refOf(createRequest.properties.allowed_values);
+    expect(name).toBe('OptionItem');
+    expect(schema.properties.value.maxLength).toBe(100);
+    expect(schema.properties.label.maxLength).toBe(100);
+    expect(schema.required).toEqual(expect.arrayContaining(['value', 'label']));
+    expect(schema.additionalProperties).toBe(false);
   });
 
   it('allowed_values 1..100 items; allowed_units 1..20 items of ≤50 chars', () => {
@@ -149,14 +174,23 @@ describe('create-field contract — Zod behavioral probes (same literals)', () =
   });
 
   it('allowed_values 1..100 unique; allowed_units 1..20 unique of ≤50 chars', () => {
+    const options = (n: number) =>
+      Array.from({length: n}, (_, i) => ({value: `v${i}`, label: `V${i}`}));
     expect(zodAccepts({allowed_values: []})).toBe(false);
+    expect(zodAccepts({allowed_values: options(100)})).toBe(true);
+    expect(zodAccepts({allowed_values: options(101)})).toBe(false);
     expect(
-      zodAccepts({allowed_values: Array.from({length: 100}, (_, i) => `v${i}`)}),
-    ).toBe(true);
-    expect(
-      zodAccepts({allowed_values: Array.from({length: 101}, (_, i) => `v${i}`)}),
+      zodAccepts({
+        allowed_values: [
+          {value: 'dup', label: 'One'},
+          {value: 'dup', label: 'Two'},
+        ],
+      }),
     ).toBe(false);
-    expect(zodAccepts({allowed_values: ['dup', 'dup']})).toBe(false);
+    expect(zodAccepts({allowed_values: ['Yes']})).toBe(false);
+    expect(
+      zodAccepts({allowed_values: [{value: 'y', label: 'Yes', extra: 1}]}),
+    ).toBe(false);
     expect(zodAccepts({allowed_units: []})).toBe(false);
     expect(
       zodAccepts({allowed_units: Array.from({length: 20}, (_, i) => `u${i}`)}),
