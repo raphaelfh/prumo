@@ -1,4 +1,7 @@
-"""AI batch runs: the ownership guard, reads, and (Task 7) create/cancel."""
+"""AI batch runs: the ownership guard, reads, the one start path, create and cancel.
+
+Writes only flush: the caller commits, then kicks the dispatcher.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ from app.schemas.extraction_batch import (
     ExtractionBatchSummary,
     ItemRow,
 )
+from app.services import engine_credentials
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.article_read_service import ArticleNotFoundError, owned_articles
 from app.services.extraction_batch_view import derive_batch
@@ -24,6 +28,7 @@ from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
 )
+from app.worker import queue_health
 
 LIST_WINDOW = timedelta(days=7)
 
@@ -34,6 +39,10 @@ class BatchNotFoundError(Exception):
 
 class BatchScopeError(Exception):
     """The template or an article is missing or outside the project (one error, G2/G3)."""
+
+
+class QueueUnavailableError(Exception):
+    """The extraction queue did not answer the probe; nothing was written."""
 
 
 class BatchAlreadyActiveError(AppError):
@@ -117,8 +126,22 @@ class ExtractionBatchService:
             counts=view.counts,
         )
 
+    async def start(self, owner_id: UUID, request: CreateExtractionBatchRequest) -> UUID:
+        """THE batch start path: engine check -> queue probe -> flush-only create.
+
+        The caller checked the role (G1), commits, then calls ``kick_batch``.
+        The engine errors (409) and :class:`QueueUnavailableError` are raised
+        before any row is written.
+        """
+        await engine_credentials.assert_engine_ready(
+            self.db, project_id=request.project_id, user_id=owner_id
+        )
+        if not queue_health.is_queue_available():
+            raise QueueUnavailableError
+        return await self.create(owner_id, request)
+
     async def create(self, owner_id: UUID, request: CreateExtractionBatchRequest) -> UUID:
-        """G2, G3, G5b, then the rows. The caller checked G1 and G5 and enqueues after."""
+        """G2, G3, G5b, then the rows (flushed, not committed)."""
         try:
             await owned_template(
                 self.db, project_id=request.project_id, template_id=request.template_id
@@ -141,7 +164,6 @@ class ExtractionBatchService:
             skip_articles_with_ai_suggestions=request.skip_articles_with_ai_suggestions,
         )
         await self.batches.add(batch, article_ids)
-        await self.db.commit()
         return batch.id
 
     async def cancel(self, owner_id: UUID, batch_id: UUID, *, now: datetime) -> None:
@@ -150,4 +172,4 @@ class ExtractionBatchService:
         if batch.cancelled_at is None:
             batch.cancelled_at = now
         await self.batches.cancel_queued(batch.id, "CANCELLED")
-        await self.db.commit()
+        await self.db.flush()
