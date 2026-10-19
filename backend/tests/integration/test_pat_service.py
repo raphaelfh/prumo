@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -25,9 +26,11 @@ from app.services.pat_service import (
     resolve_principal,
     revoke_owned,
     revoke_token,
+    token_is_usable,
     touch_last_used,
 )
 from tests.integration.conftest import SEED
+from tests.integration.helpers.batch_fixtures import batch_halt, make_agent_batch
 from tests.integration.helpers.pat_rows import insert_oauth_client, insert_oauth_connection
 
 
@@ -251,7 +254,7 @@ async def test_resolve_principal_matches_only_active_well_formed(db_session: Asy
     assert principal == McpPrincipal(
         user_sub=SEED.reviewer_profile,
         token_id=created.token.id,
-        scope="read_write",
+        scopes=frozenset({"read", "write"}),
         token_expires_at=created.token.expires_at,
         project_ids=None,
     )
@@ -272,6 +275,49 @@ async def test_resolve_principal_matches_only_active_well_formed(db_session: Asy
         {"id": str(aged.token.id)},
     )
     assert await resolve_principal(db_session, aged.secret) is None
+
+
+@pytest.mark.asyncio
+async def test_ai_run_defaults_to_false(db_session: AsyncSession) -> None:
+    created = await create_token(
+        db_session, user_id=SEED.reviewer_profile, payload=_req(scope="read_write")
+    )
+
+    ai_run = (
+        await db_session.execute(
+            text("SELECT ai_run FROM public.personal_access_tokens WHERE id = :id"),
+            {"id": str(created.token.id)},
+        )
+    ).scalar_one()
+    assert ai_run is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scope", "ai_run", "expected"),
+    [
+        ("read", False, {"read"}),
+        ("read", True, {"read", "ai_run"}),
+        ("read_write", False, {"read", "write"}),
+        ("read_write", True, {"read", "write", "ai_run"}),
+    ],
+    ids=["read", "read-ai_run", "read_write", "read_write-ai_run"],
+)
+async def test_resolve_principal_yields_the_four_scope_sets(
+    db_session: AsyncSession, scope: str, ai_run: bool, expected: set[str]
+) -> None:
+    created = await create_token(
+        db_session, user_id=SEED.reviewer_profile, payload=_req(scope=scope)
+    )
+    await db_session.execute(
+        text("UPDATE public.personal_access_tokens SET ai_run = :ai_run WHERE id = :id"),
+        {"ai_run": ai_run, "id": str(created.token.id)},
+    )
+
+    principal = await resolve_principal(db_session, created.secret)
+
+    assert principal is not None
+    assert principal.scopes == frozenset(expected)
 
 
 @pytest.mark.asyncio
@@ -341,6 +387,41 @@ async def test_resolve_principal_refuses_banned_or_deleted_user(
 
     await db_session.execute(text(update_user), {"id": str(SEED.reviewer_profile)})
     assert (await resolve_principal(db_session, created.secret) is not None) is resolves
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("change", "usable"),
+    [
+        (None, True),
+        ("UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid", False),
+        (
+            "UPDATE public.personal_access_tokens "
+            "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 minute' "
+            "WHERE id = :tid",
+            False,
+        ),
+        ("UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :uid", False),
+        ("UPDATE auth.users SET deleted_at = now() WHERE id = :uid", False),
+    ],
+    ids=["active", "revoked", "expired", "banned", "soft-deleted"],
+)
+async def test_token_is_usable(db_session: AsyncSession, change: str | None, usable: bool) -> None:
+    """The dispatcher's credential check shares the /mcp lookup's predicate."""
+    created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
+    if change is not None:
+        await db_session.execute(
+            text(change), {"tid": str(created.token.id), "uid": str(SEED.reviewer_profile)}
+        )
+
+    assert await token_is_usable(db_session, created.token.id) is usable
+    assert (await resolve_principal(db_session, created.secret) is not None) is usable
+
+
+@pytest.mark.asyncio
+async def test_token_is_usable_is_false_without_a_token(db_session: AsyncSession) -> None:
+    assert await token_is_usable(db_session, None) is False
+    assert await token_is_usable(db_session, uuid4()) is False
 
 
 # --- optional per-project restriction ----------------------------------------
@@ -544,3 +625,89 @@ async def test_revoke_owned_oauth_is_idempotent(db_session: AsyncSession) -> Non
         await revoke_owned(
             db_session, user_id=SEED.reviewer_profile, token_id=connection_id, kind="oauth"
         )
+
+
+# --- revocation cascade (ADR 0021): revoking a credential stops its agent batches
+
+
+async def _batch(db: AsyncSession, token_id, **fields):  # noqa: ANN001, ANN003, ANN202
+    return await make_agent_batch(
+        db,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        token_id=token_id,
+        **fields,
+    )
+
+
+_STOPPED = ("AGENT_TOKEN_INACTIVE", [("cancelled", "STOPPED_AGENT_GUARD")] * 2)
+_UNTOUCHED = (None, [("queued", None)] * 2)
+
+
+@pytest.mark.asyncio
+async def test_revoke_stops_only_that_tokens_agent_batches(db_session: AsyncSession) -> None:
+    a = await create_token(db_session, user_id=SEED.primary_profile, payload=_req(name="a"))
+    b = await create_token(db_session, user_id=SEED.primary_profile, payload=_req(name="b"))
+    a_batch = await _batch(db_session, a.token.id)
+    b_batch = await _batch(db_session, b.token.id)
+    ui_batch = await _batch(db_session, None)
+
+    await revoke_token(db_session, user_id=SEED.primary_profile, token_id=a.token.id)
+
+    assert await batch_halt(db_session, a_batch) == _STOPPED
+    assert await batch_halt(db_session, b_batch) == _UNTOUCHED
+    assert await batch_halt(db_session, ui_batch) == _UNTOUCHED
+    stop_message = (
+        await db_session.execute(
+            text("SELECT stop_message FROM public.extraction_batches WHERE id = :b"),
+            {"b": str(a_batch)},
+        )
+    ).scalar_one()
+    assert stop_message == "The access token that started this run was revoked."
+    assert await resolve_principal(db_session, a.secret) is None
+
+
+@pytest.mark.asyncio
+async def test_revoke_cascade_is_idempotent(db_session: AsyncSession) -> None:
+    created = await create_token(db_session, user_id=SEED.primary_profile, payload=_req())
+    batch_id = await _batch(db_session, created.token.id)
+    await revoke_token(db_session, user_id=SEED.primary_profile, token_id=created.token.id)
+    first = await batch_halt(db_session, batch_id)
+
+    await revoke_token(db_session, user_id=SEED.primary_profile, token_id=created.token.id)
+
+    assert first == _STOPPED
+    assert await batch_halt(db_session, batch_id) == _STOPPED
+
+
+_FINISHED = {
+    "cancelled": {"cancelled_at": datetime(2026, 1, 1, tzinfo=UTC)},
+    "stopped": {"stop_code": "AGENT_RUNS_DISABLED"},
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("halt", list(_FINISHED), ids=list(_FINISHED))
+async def test_revoke_skips_halted_batches(db_session: AsyncSession, halt: str) -> None:
+    created = await create_token(db_session, user_id=SEED.primary_profile, payload=_req())
+    batch_id = await _batch(db_session, created.token.id, **_FINISHED[halt])
+
+    await revoke_token(db_session, user_id=SEED.primary_profile, token_id=created.token.id)
+
+    expected_code = _FINISHED[halt].get("stop_code")
+    assert await batch_halt(db_session, batch_id) == (expected_code, [("queued", None)] * 2)
+
+
+@pytest.mark.asyncio
+async def test_revoke_skips_a_batch_with_nothing_queued(db_session: AsyncSession) -> None:
+    created = await create_token(db_session, user_id=SEED.primary_profile, payload=_req())
+    batch_id = await _batch(db_session, created.token.id)
+    await db_session.execute(
+        text("UPDATE public.extraction_batch_items SET status = 'skipped' WHERE batch_id = :b"),
+        {"b": str(batch_id)},
+    )
+
+    await revoke_token(db_session, user_id=SEED.primary_profile, token_id=created.token.id)
+
+    assert await batch_halt(db_session, batch_id) == (None, [("skipped", None)] * 2)

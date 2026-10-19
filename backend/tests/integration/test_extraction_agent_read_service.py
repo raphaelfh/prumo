@@ -466,7 +466,8 @@ async def test_detailed_evidence_is_raw_and_scoped(db_session: AsyncSession) -> 
         if r.instance_id == instance_id and r.field_id == field_id and r.decider == "ai"
     )
     assert ai_row.evidence
-    assert ai_row.evidence[0].locator == "p4"
+    # A bare page_number with no anchor is ungrounded: never a locator.
+    assert (ai_row.evidence[0].locator, ai_row.evidence[0].grounded) == (None, False)
     # The stored text_content, capped, returned raw (the result's
     # untrusted_fields declares the quote).
     assert ai_row.evidence[0].quote == "QUOTE"

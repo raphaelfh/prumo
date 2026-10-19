@@ -63,9 +63,9 @@ from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ExtractionTemplateGlobal,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.seed_instruction_defaults import (
     CHARMS_INSTRUCTION,

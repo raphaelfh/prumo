@@ -337,6 +337,7 @@ async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_s
     await db_session.flush()
 
     pages = await _walk_all_pages(mcp_client, pat_primary_read, project_id, template_id)
+    assert pages[0]["editor_url"]  # charged against the cap with everything else
     for page in pages:
         assert len(json.dumps(page)) <= 32_000
 

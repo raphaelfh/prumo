@@ -35,6 +35,7 @@ from app.services.extraction_run_read_service import RunNotFoundError
 from app.services.extraction_run_write import RunWriteError
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_section_service import SectionNotFoundError
+from app.worker import queue_health
 
 CALLER_USER_ID = str(uuid4())
 #: What the kickoff gate returns: the engine the endpoint logs at enqueue.
@@ -129,7 +130,7 @@ class TestExtractSectionDispatch:
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=True,
             ),
             patch(
@@ -179,7 +180,7 @@ class TestExtractSectionDispatch:
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=True,
             ),
             patch(
@@ -207,7 +208,7 @@ class TestExtractSectionDispatch:
         """Redis ping fails → 503 before dispatching."""
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=False,
             ),
             patch(
@@ -232,7 +233,7 @@ class TestExtractSectionDispatch:
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                "app.worker.queue_health.is_queue_available",
                 return_value=True,
             ),
             patch(
@@ -638,22 +639,12 @@ class TestGetSectionExtractionStatus:
 
 
 # ======================================================================
-# Module helpers — direct unit coverage (Redis helpers + BOLA scope).
+# Module helpers — direct unit coverage (Redis owner helpers + BOLA scope).
 # All endpoint tests patch these out, so cover their bodies directly.
 # ======================================================================
 
 
 class TestQueueAndOwnerHelpers:
-    def test_is_queue_available_true_when_ping_ok(self) -> None:
-        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
-            redis_cls.from_url.return_value.ping.return_value = True
-            assert se._is_queue_available() is True
-
-    def test_is_queue_available_false_when_ping_raises(self) -> None:
-        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
-            redis_cls.from_url.return_value.ping.side_effect = Exception("down")
-            assert se._is_queue_available() is False
-
     def test_remember_job_owner_sets_key_with_ttl(self) -> None:
         with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
             client = redis_cls.from_url.return_value
@@ -946,7 +937,7 @@ async def test_direct_endpoint_uses_durable_identity_and_reports_enqueue_failure
     )
     with (
         patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
         ),
@@ -990,7 +981,7 @@ async def test_direct_endpoint_logs_the_enqueue_failure_without_the_payload():
     )
     with (
         patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
         ),
@@ -1026,7 +1017,7 @@ async def test_direct_endpoint_closed_run_is_400():
     request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
     with (
         patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService,
             "prepare_request",
@@ -1051,7 +1042,7 @@ async def test_direct_endpoint_finalized_run_is_typed_409():
     request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
     with (
         patch.object(se, "_check_request_scope", new=AsyncMock(return_value=_ENGINE)),
-        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(queue_health, "is_queue_available", return_value=True),
         patch.object(
             se.ExtractionAttemptService,
             "prepare_request",

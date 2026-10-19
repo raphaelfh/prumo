@@ -9,8 +9,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.extraction_batch import CreateExtractionBatchRequest
+from app.services.extraction_batch_service import ExtractionBatchService
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article
+from tests.integration.helpers.pat_rows import insert_pat_row
 from tests.integration.helpers.template_fixtures import fresh_charms
 
 
@@ -129,3 +132,85 @@ async def test_client_roles_cannot_read_batch_tables(
         async with db_session.begin_nested():
             await db_session.execute(text(f"SET LOCAL ROLE {role}"))
             await db_session.execute(text(f"SELECT 1 FROM public.{table} LIMIT 1"))
+
+
+_ENGINE_JSON = '{"provider": "openai", "model": "m", "mode": "fast", "connection_id": null}'
+
+
+async def _insert_batch(db: AsyncSession, **agent: str | None) -> None:
+    columns = ", ".join(agent)
+    values = ", ".join(
+        f"CAST(:{name} AS jsonb)" if name == "agent_engine" else f":{name}" for name in agent
+    )
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_batches "
+            f"(id, owner_id, project_id, template_id, {columns}) "
+            f"VALUES (:id, :owner, :pid, :tid, {values})"
+        ),
+        {
+            "id": str(uuid4()),
+            "owner": str(SEED.primary_profile),
+            "pid": str(SEED.primary_project),
+            "tid": str(SEED.primary_template),
+            **agent,
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"agent_engine": _ENGINE_JSON},
+        {"agent_plan_digest": "d" * 64},
+        {"agent_token_id": "token"},
+    ],
+    ids=["engine-without-digest", "digest-without-engine", "token-alone"],
+)
+async def test_agent_columns_move_together(db_session: AsyncSession, fields: dict) -> None:
+    if "agent_token_id" in fields:
+        fields = {"agent_token_id": str(await insert_pat_row(db_session))}
+    with pytest.raises(DBAPIError, match="agent_fields_check"):
+        async with db_session.begin_nested():
+            await _insert_batch(db_session, **fields)
+
+
+@pytest.mark.asyncio
+async def test_agent_columns_all_set_are_accepted(db_session: AsyncSession) -> None:
+    token = str(await insert_pat_row(db_session))
+    await _insert_batch(
+        db_session, agent_token_id=token, agent_engine=_ENGINE_JSON, agent_plan_digest="a" * 64
+    )
+    await _insert_batch(db_session, agent_engine=_ENGINE_JSON, agent_plan_digest="b" * 64)
+
+
+@pytest.mark.asyncio
+async def test_one_digest_one_batch(db_session: AsyncSession) -> None:
+    await _insert_batch(db_session, agent_engine=_ENGINE_JSON, agent_plan_digest="c" * 64)
+    with pytest.raises(DBAPIError, match="uq_extraction_batches_agent_plan_digest"):
+        async with db_session.begin_nested():
+            await _insert_batch(db_session, agent_engine=_ENGINE_JSON, agent_plan_digest="c" * 64)
+
+
+@pytest.mark.asyncio
+async def test_rest_batch_keeps_null_agent_columns(db_session: AsyncSession) -> None:
+    article_id = await make_article(db_session, SEED.primary_project)
+    batch_id = await ExtractionBatchService(db_session).create(
+        SEED.primary_profile,
+        CreateExtractionBatchRequest(
+            project_id=SEED.primary_project,
+            template_id=SEED.primary_template,
+            article_ids=[article_id],
+        ),
+    )
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT agent_token_id, agent_engine, agent_plan_digest "
+                "FROM public.extraction_batches WHERE id = :id"
+            ),
+            {"id": str(batch_id)},
+        )
+    ).one()
+    assert tuple(row) == (None, None, None)

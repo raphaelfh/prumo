@@ -107,6 +107,28 @@ async def test_get_read_only_request_offers_no_write(
 
 
 @pytest.mark.usefixtures("oauth_on")
+@pytest.mark.parametrize(
+    ("requested", "offers_ai_run"),
+    [(("read", "write", "ai_run"), True), (("read", "write"), False)],
+    ids=["asked", "not-asked"],
+)
+async def test_get_offers_ai_run_only_when_asked(
+    as_primary: AsyncClient,
+    db_session: AsyncSession,
+    requested: tuple[str, ...],
+    offers_ai_run: bool,
+) -> None:
+    _, request_id = await _pending(db_session, requested_scopes=requested)
+
+    resp = await as_primary.get(f"{_BASE}/{request_id}")
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["requested_scopes"] == list(requested)
+    assert data["offers_ai_run"] is offers_ai_run
+
+
+@pytest.mark.usefixtures("oauth_on")
 async def test_get_unknown_or_expired_is_404(
     as_primary: AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -189,6 +211,61 @@ async def test_approve_grants_the_scope(
         )
     ).scalar_one()
     assert scope == expected
+
+
+async def _grant(db: AsyncSession, client_id: UUID) -> Any:
+    return (
+        await db.execute(
+            text(
+                "SELECT scope, ai_run, expires_at - created_at AS lifetime "
+                "FROM public.personal_access_tokens "
+                "WHERE oauth_client_id = :cid AND user_id = :uid AND revoked_at IS NULL"
+            ),
+            {"cid": str(client_id), "uid": str(SEED.primary_profile)},
+        )
+    ).one()
+
+
+@pytest.mark.usefixtures("oauth_on")
+@pytest.mark.parametrize(
+    ("requested", "body", "ai_run", "lifetime"),
+    [
+        (("read", "write", "ai_run"), {}, False, timedelta(days=90)),
+        (("read", "write", "ai_run"), {"ai_run": False}, False, timedelta(days=90)),
+        (("read", "write", "ai_run"), {"ai_run": True}, True, timedelta(days=30)),
+        (("read", "write"), {"ai_run": True}, False, timedelta(days=90)),
+    ],
+    ids=["unchecked-by-default", "unchecked", "checked", "not-requested"],
+)
+async def test_approve_grants_ai_run_only_when_asked_and_ticked(
+    as_primary: AsyncClient,
+    db_session: AsyncSession,
+    requested: tuple[str, ...],
+    body: dict[str, bool],
+    ai_run: bool,
+    lifetime: timedelta,
+) -> None:
+    client_id, request_id = await _pending(db_session, requested_scopes=requested)
+
+    resp = await _decide(as_primary, request_id, write=True, **body)
+
+    assert resp.status_code == 200, resp.text
+    row = await _grant(db_session, client_id)
+    assert row.scope == "read_write"
+    assert row.ai_run is ai_run
+    assert row.lifetime == lifetime
+
+
+@pytest.mark.usefixtures("oauth_on")
+async def test_connection_list_shows_the_ai_run_grant(
+    as_primary: AsyncClient, db_session: AsyncSession
+) -> None:
+    _, request_id = await _pending(db_session, requested_scopes=("read", "write", "ai_run"))
+    assert (await _decide(as_primary, request_id, write=True, ai_run=True)).status_code == 200
+
+    rows = (await as_primary.get("/api/v1/me/oauth-connections")).json()["data"]
+
+    assert [r["ai_run"] for r in rows if r["status"] == "active"] == [True]
 
 
 @pytest.mark.usefixtures("oauth_on")

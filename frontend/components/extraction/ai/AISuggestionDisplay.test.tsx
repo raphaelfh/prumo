@@ -55,7 +55,7 @@ describe('AISuggestionDisplay — no-information handling', () => {
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
   });
 
-  it('a not_applicable marker also renders the quiet no-info card', () => {
+  it('a not_applicable marker renders the quiet card under its own label', () => {
     render(
       <AISuggestionDisplay
         suggestion={makeSuggestion({
@@ -64,7 +64,8 @@ describe('AISuggestionDisplay — no-information handling', () => {
         })}
       />,
     );
-    expect(screen.getByText('reviewNoInformation')).toBeInTheDocument();
+    expect(screen.getByText('dispositionNotApplicable')).toBeInTheDocument();
+    expect(screen.queryByText('reviewNoInformation')).not.toBeInTheDocument();
   });
 
   it('renders a real value with its confidence (regression)', () => {

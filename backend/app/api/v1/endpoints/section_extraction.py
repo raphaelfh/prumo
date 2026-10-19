@@ -43,6 +43,7 @@ from app.services.extraction_run_write import (
 )
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
+from app.worker import queue_health
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
 
 router = APIRouter()
@@ -56,18 +57,6 @@ _SECTION_JOB_OWNER_TTL_SECONDS = 3600
 # ----------------------------------------------------------------------
 # Redis helpers
 # ----------------------------------------------------------------------
-
-
-def _is_queue_available() -> bool:
-    try:
-        Redis.from_url(
-            settings.REDIS_URL,
-            socket_connect_timeout=0.25,
-            socket_timeout=0.25,
-        ).ping()
-        return True
-    except Exception:
-        return False
 
 
 def _remember_job_owner(job_id: str, user_id: str) -> None:
@@ -209,7 +198,7 @@ async def extract_section(
 
     engine = await _check_request_scope(db, payload, current_user_sub)
 
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ApiResponse.failure(

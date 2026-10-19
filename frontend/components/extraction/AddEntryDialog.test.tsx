@@ -2,6 +2,8 @@ import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
+import {ApiError} from '@/integrations/api/client';
+
 import {AddEntryDialog, RenameEntryDialog} from './AddEntryDialog';
 
 /**
@@ -121,6 +123,37 @@ describe('RenameEntryDialog', () => {
     await user.click(screen.getByRole('button', {name: 'Save'}));
     expect(screen.getByText('A model with this model name already exists')).toBeInTheDocument();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  async function confirmRekey(
+    onConfirm: React.ComponentProps<typeof RenameEntryDialog>['onConfirm'],
+  ) {
+    const user = userEvent.setup();
+    render(<RenameEntryDialog {...base} onConfirm={onConfirm} />);
+    const key = screen.getByLabelText(/Model name/);
+    await user.clear(key);
+    await user.type(key, 'CatBoost');
+    await user.click(screen.getByRole('button', {name: 'Save'}));
+  }
+
+  it('rename shows duplicate-key 409 message', async () => {
+    const message = "An entry with the key 'catboost' already exists here.";
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValue(new ApiError('ENTRY_KEY_DUPLICATE', message, 409));
+    await confirmRekey(onConfirm);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('heading', {name: /Rename model/})).toBeInTheDocument();
+  });
+
+  it.each([
+    ['404', new ApiError('NOT_FOUND', 'Instance abc not found', 404)],
+    ['403', new ApiError('FORBIDDEN', 'Not a reviewer of project abc', 403)],
+    ['network', new TypeError('Failed to fetch')],
+  ])('rename shows the generic message for a %s failure', async (_name, err) => {
+    await confirmRekey(vi.fn().mockRejectedValue(err));
+    expect(await screen.findByText('Error updating model')).toBeInTheDocument();
+    expect(screen.queryByText(err.message)).toBeNull();
   });
 
   it('has no identity input on a keyless section and confirms a null key', async () => {

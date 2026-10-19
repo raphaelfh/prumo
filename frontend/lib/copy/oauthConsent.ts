@@ -11,6 +11,9 @@ export const oauthConsent = {
     readItem: 'Read your projects',
     editLabel: 'Edit project setup',
     editHint: 'Manager-only; nothing goes live until a manager publishes.',
+    aiRunLabel: 'Start AI extraction runs',
+    aiRunHint:
+        "Your own AI key pays for these runs, or else the project's shared key does. Reviewers of those articles see the AI suggestions. Works only in projects whose manager allowed agent runs. This connection lasts 30 days.",
     allow: 'Allow',
     deny: 'Deny',
     submitting: 'Sending your answer…',

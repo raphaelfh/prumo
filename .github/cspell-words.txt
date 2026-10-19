@@ -85,6 +85,7 @@ gunicorn
 healthcheck
 HIPAA
 hitl
+HKDF
 HMAC
 hono
 hosmer
@@ -122,6 +123,7 @@ monkeypatch
 mook
 msw
 multimodal
+multiplicatively
 multiset
 multivariable
 mypy
@@ -188,6 +190,7 @@ ratchet
 ratcheted
 ratcheting
 rationalisation
+reanchor
 reask
 reasks
 REASND

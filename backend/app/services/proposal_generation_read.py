@@ -46,7 +46,14 @@ def _snapshot(raw: object) -> dict[str, Any] | None:
     if not isinstance(raw, dict) or not raw:
         return None
     result = _scalars(
-        raw, {**_ENGINE_FIELDS, "strategy": str, "prompt_version": str, "prompt_text": str}
+        raw,
+        {
+            **_ENGINE_FIELDS,
+            "strategy": str,
+            "prompt_version": str,
+            "prompt_text": str,
+            "schema_sha256": str,
+        },
     )
     containers: dict[str, dict[str, type | tuple[type, ...]]] = {
         "params": {
@@ -55,6 +62,7 @@ def _snapshot(raw: object) -> dict[str, Any] | None:
             "timeout_seconds": (int, float),
         },
         "tokens": {"prompt": int, "completion": int, "total": int},
+        "template_version": {"version": int},
     }
     for key, fields in containers.items():
         if isinstance(raw.get(key), dict):
@@ -77,7 +85,16 @@ def _snapshot(raw: object) -> dict[str, Any] | None:
             ]
         ref = pc.get("article_ref")
         if isinstance(ref, dict):
-            article = _scalars(ref, {"file_name": str, "truncated": bool, "est_tokens": int})
+            article = _scalars(
+                ref,
+                {
+                    "file_name": str,
+                    "truncated": bool,
+                    "est_tokens": int,
+                    "content_version": int,
+                    "text_sha256": str,
+                },
+            )
             # A mutable file id proves no retained revision. Never hand it to
             # historical-input consumers as the original document.
             article.update(file_id=None, historical_input_available=False)

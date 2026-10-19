@@ -26,7 +26,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.services.derived_judgment_payload import (
     build_derived_judgments_payload,

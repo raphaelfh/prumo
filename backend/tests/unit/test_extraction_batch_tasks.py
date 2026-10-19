@@ -43,3 +43,20 @@ def test_a_retry_keeps_the_callbacks() -> None:
     retried = run_section_extraction_task.signature_from_request(request)
     assert retried.options["link"] == [link]
     assert retried.options["link_error"] == [link]
+
+
+def test_kick_batch_enqueues_the_dispatcher_with_reenqueue_stale() -> None:
+    batch_id = uuid4()
+    with patch.object(tasks.advance_extraction_batch, "delay") as delay:
+        tasks.kick_batch(batch_id, reenqueue_stale=True)
+    delay.assert_called_once_with(str(batch_id), True)
+
+
+def test_kick_batch_swallows_enqueue_failure() -> None:
+    batch_id = uuid4()
+    with (
+        patch.object(tasks.advance_extraction_batch, "delay", side_effect=OSError("broker down")),
+        patch.object(tasks, "logger") as logger,
+    ):
+        tasks.kick_batch(batch_id)
+    logger.exception.assert_called_once_with("extraction_batch.kick_failed", batch_id=str(batch_id))

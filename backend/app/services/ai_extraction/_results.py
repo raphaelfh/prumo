@@ -5,6 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.llm.extractor import LlmUsage
+
+
+def tokens_of(usage: LlmUsage) -> dict[str, int]:
+    """A per-section outcome's ``tokens`` — the sum of the ``ok`` usage-ledger
+    rows behind it; the run's ``results.tokens`` has the same shape and is
+    accumulated by ``ExtractionRunRepository.add_tokens``."""
+    return {
+        "prompt": usage.prompt_tokens,
+        "completion": usage.completion_tokens,
+        "total": usage.total_tokens,
+    }
+
 
 @dataclass
 class SectionExtractionResult:

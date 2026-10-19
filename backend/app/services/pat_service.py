@@ -49,13 +49,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_handler import AppError
 from app.models.personal_access_token import PersonalAccessToken
 from app.models.user import Profile
-from app.schemas.mcp_auth import McpPrincipal
+from app.schemas.mcp_auth import McpPrincipal, scope_set
 from app.schemas.personal_access_token import (
     PersonalAccessTokenCreated,
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenRead,
     PersonalAccessTokenRefusalCode,
 )
+from app.services.extraction_batch_service import ExtractionBatchService
 
 PAT_PREFIX = "prumo_pat_"
 MAX_ACTIVE_TOKENS = 10
@@ -123,6 +124,24 @@ def user_locked_out() -> ColumnElement[bool]:
     )
 
 
+def usable_clause() -> ColumnElement[bool]:
+    """THE usable predicate: an active credential of a user who is not locked out."""
+    return and_(active_clause(), ~user_locked_out())
+
+
+async def token_is_usable(db: AsyncSession, token_id: UUID | None, *, ai_run: bool = False) -> bool:
+    """Whether the credential ``token_id`` may still act; ``False`` for ``None``.
+
+    ``ai_run=True`` also requires the row to carry the AI-run grant.
+    """
+    if token_id is None:
+        return False
+    usable = usable_clause()
+    if ai_run:
+        usable = and_(usable, PersonalAccessToken.ai_run.is_(True))
+    return bool(await db.scalar(select(exists().where(PersonalAccessToken.id == token_id, usable))))
+
+
 def new_secret(prefix: str) -> str:
     """``prefix`` + 43 base62 characters (256 bits of entropy)."""
     n = int.from_bytes(secrets.token_bytes(32), "big")
@@ -142,6 +161,7 @@ def _read(
         name=row.name,
         token_prefix=row.token_prefix,
         scope=row.scope,
+        ai_run=row.ai_run,
         status=token_status,
         expires_at=row.expires_at,
         last_used_at=row.last_used_at,
@@ -173,12 +193,16 @@ async def revoke_credential(db: AsyncSession, token_id: UUID) -> None:
     id-only WHERE: the caller has already proven ownership (``owned_token``)
     or holds a capability for the row — never re-state ``user_id`` here, or
     check_scope_guards would count a second predicate.
+
+    Cascade (ADR 0021): in the same transaction, the credential's active
+    agent-started batches stop — even when the row was already revoked.
     """
     await db.execute(
         update(PersonalAccessToken)
         .where(PersonalAccessToken.id == token_id, PersonalAccessToken.revoked_at.is_(None))
         .values(revoked_at=func.now())
     )
+    await ExtractionBatchService(db).stop_agent_batches(token_id)
 
 
 async def revoke_owned(
@@ -241,6 +265,7 @@ async def create_token(
                 token_prefix=secret[: len(PAT_PREFIX) + 6],
                 token_hash=hash_secret(secret),
                 scope=payload.scope,
+                ai_run=payload.ai_run,
                 expires_at=func.now() + func.make_interval(0, 0, 0, payload.expires_in_days),
                 project_ids=payload.project_ids,
             )
@@ -284,8 +309,7 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
         await db.execute(
             select(PersonalAccessToken).where(
                 PersonalAccessToken.token_hash == hash_secret(secret),
-                active_clause(),
-                ~user_locked_out(),
+                usable_clause(),
             )
         )
     ).scalar_one_or_none()
@@ -294,7 +318,7 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
     return McpPrincipal(
         user_sub=row.user_id,
         token_id=row.id,
-        scope=row.scope,
+        scopes=scope_set(row.scope, row.ai_run),
         token_expires_at=row.expires_at,
         project_ids=None if row.project_ids is None else frozenset(row.project_ids),
     )

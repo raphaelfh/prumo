@@ -202,3 +202,17 @@ def test_hosted_row_dispatches_the_ladders_key_to_its_builder(
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "global-key")
     build_model("fake", "m", base_url="https://ignored.example/v1")
     assert seen == [("m", "global-key", None, "prompted")]
+
+
+def test_refused_global_key_raises_even_when_one_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An agent batch may not run on the deployment key: with no key of its
+    own the builder refuses instead of falling back; its own key still builds
+    and every other caller keeps the fallback."""
+    monkeypatch.setattr("app.llm.provider.global_key_for", lambda _p: "sk-test")
+
+    with pytest.raises(MissingLLMKeyError, match="deployment's key"):
+        build_model("openai", "gpt-x", allow_global_key=False)
+
+    own = build_model("openai", "gpt-x", api_key="k", allow_global_key=False)
+    assert isinstance(own, OpenAIChatModel)
+    assert isinstance(build_model("openai", "gpt-x"), OpenAIChatModel)

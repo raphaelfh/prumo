@@ -28,6 +28,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.extractor import LlmUsage
 from app.llm.prompts import entry_identification
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.extraction import ExtractionErrorCode
@@ -37,7 +38,12 @@ from app.services.extraction_errors import classify_extraction_error
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.fakes.recorded_llm import Call, RecordedLlm
 from tests.integration.conftest import SEED, first_entity_type_id
-from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
+from tests.integration.helpers.ai_extraction import (
+    attempt_on,
+    extraction,
+    request,
+    seed_article_text,
+)
 from tests.integration.helpers.template_fixtures import add_instance, fresh_charms
 from tests.integration.test_pinned_prompt_structure import _pin_run_to_snapshot
 
@@ -405,6 +411,41 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
     assert "already been identified" in fake.prompts(IDENTIFY)[1].lower()
     assert "apparent" in fake.prompts(IDENTIFY)[1]
     assert "already been identified" not in first_prompt.lower()
+
+
+async def test_identify_pass_in_snapshot(db_session: AsyncSession) -> None:
+    """The group's ONE identification call is recorded in every entry's
+    snapshot, ahead of that entry's own extract pass."""
+    entity_type_id, _key_id, _value_id = await _group(db_session)
+    run = await _run_in_extract(db_session)
+    fake = _fake(["apparent", "internal"])
+    fake.usages = {IDENTIFY: LlmUsage(30, 3, ["i1"])}
+    attempt = await attempt_on(db_session, run)
+    await seed_article_text(db_session)
+
+    await extraction(db_session, fake, attempt_id=attempt.id).run_from_request(
+        request(entity_type_id=entity_type_id, run_id=run.id)
+    )
+
+    rows = await db_session.execute(
+        text(
+            "SELECT instance_id, generation_snapshot->'passes_detail' AS passes "
+            "FROM public.extraction_proposal_records WHERE run_id = :run"
+        ),
+        {"run": run.id},
+    )
+    by_instance = {row.instance_id: row.passes for row in rows}
+    assert len(by_instance) == 2, "one snapshot per entry"
+    identify = {
+        "kind": "identify",
+        "prompt_name": IDENTIFY,
+        "prompt_version": entry_identification.VERSION,
+        "tokens": {"prompt": 30, "completion": 3, "total": 33},
+        "request_ids": ["i1"],
+    }
+    for passes in by_instance.values():
+        assert [p["kind"] for p in passes] == ["identify", "extract"]
+        assert passes[0] == identify
 
 
 async def test_the_authored_noun_reaches_the_identification_prompt(

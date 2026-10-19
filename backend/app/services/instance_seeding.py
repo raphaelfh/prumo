@@ -21,8 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
-    ExtractionInstance,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.services.advisory_locks import take_advisory_xact_lock
 
 

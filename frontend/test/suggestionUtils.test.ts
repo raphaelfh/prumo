@@ -15,6 +15,7 @@ import {
   formatFullSuggestionValue,
   formatSuggestionValue,
   valuelessProposalKind,
+  valuelessProposalLabel,
 } from '@/lib/ai-extraction/suggestionUtils';
 
 const YES_NO = [
@@ -129,6 +130,25 @@ describe('valuelessProposalKind — the one valueless-proposal discriminator', (
     // A garbage code must never read as a resolved answer. It is an object, so
     // it is not 'unmarked' either — it stays an ordinary value.
     expect(valuelessProposalKind({ value: null, absent_reason: 'garbage' })).toBeNull();
+  });
+});
+
+describe('valuelessProposalLabel — what the review list shows for a valueless AI proposal', () => {
+  it('an AI not_applicable marker reads "Not applicable", never "No information found"', () => {
+    expect(valuelessProposalLabel({ value: null, absent_reason: 'not_applicable' })).toBe(
+      'Not applicable',
+    );
+  });
+
+  it('a no_information marker keeps the AI wording', () => {
+    expect(valuelessProposalLabel({ value: null, absent_reason: 'no_information' })).toBe(
+      'No information found',
+    );
+  });
+
+  it('a bare null reads "No value proposed"; a real value has no label', () => {
+    expect(valuelessProposalLabel(null)).toBe('No value proposed');
+    expect(valuelessProposalLabel('Unclear')).toBeNull();
   });
 });
 

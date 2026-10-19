@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.mcp_oauth_service import revoke_connection
 from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
-from tests.integration.mcp.conftest import expected_challenge
+from tests.integration.mcp.conftest import expected_challenge, seed_oauth_principal
 from tests.integration.mcp.oauth_flow import (
     OAuthTokens,
     authorize,
@@ -213,7 +214,9 @@ async def test_failed_oauth_lookups_count_in_mcp401_bucket(
     assert (await _list_tools(oauth_http_client, _UNKNOWN_OAT)).status_code == 429
 
 
-async def test_ai_run_scope_never_reachable(oauth_http_client: AsyncClient) -> None:
+async def test_ai_run_scope_needs_a_client_registered_for_it(
+    oauth_http_client: AsyncClient,
+) -> None:
     client_id = await registered_client_id(oauth_http_client, scope="read write")
     _, challenge = pkce_pair()
 
@@ -240,3 +243,73 @@ async def test_revoke_connection_ends_mcp_and_refresh(
     r = await refresh(oauth_http_client, tokens.client_id, tokens.refresh)
     assert r.status_code == 400, r.text
     assert r.json()["error"] == "invalid_grant"
+
+
+_AI_RUN_TOOLS = {"plan_ai_run", "start_ai_run", "cancel_ai_run"}
+
+
+@pytest.mark.parametrize("ai_run", [True, False], ids=["ticked", "unticked"])
+async def test_ai_run_connection_lists_the_ai_run_tools(
+    oauth_http_client: AsyncClient, db_session: AsyncSession, ai_run: bool
+) -> None:
+    tokens = await connect(
+        oauth_http_client, db_session, SEED.primary_profile, ask_ai_run=True, ai_run=ai_run
+    )
+
+    r = await _list_tools(oauth_http_client, tokens.access)
+
+    assert r.status_code == 200, r.text
+    names = {t["name"] for t in r.json()["result"]["tools"]}
+    assert "update_project_details" in names
+    assert (names >= _AI_RUN_TOOLS) is ai_run
+    assert names.isdisjoint(_AI_RUN_TOOLS) is not ai_run
+
+
+async def test_refresh_of_an_ai_run_connection_may_repeat_ai_run(
+    oauth_http_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await connect(
+        oauth_http_client, db_session, SEED.primary_profile, ask_ai_run=True, ai_run=True
+    )
+
+    r = await refresh(oauth_http_client, tokens.client_id, tokens.refresh, scope="read ai_run")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["scope"] == "read write ai_run"
+
+
+@pytest.mark.parametrize("ask_ai_run", [True, False], ids=["asked-unticked", "never-asked"])
+async def test_refresh_never_widens_to_ai_run(
+    oauth_http_client: AsyncClient, db_session: AsyncSession, ask_ai_run: bool
+) -> None:
+    tokens = await connect(
+        oauth_http_client, db_session, SEED.primary_profile, ask_ai_run=ask_ai_run
+    )
+
+    r = await refresh(
+        oauth_http_client, tokens.client_id, tokens.refresh, scope="read write ai_run"
+    )
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "invalid_scope"
+    plain = await refresh(oauth_http_client, tokens.client_id, tokens.refresh)
+    assert plain.status_code == 200, plain.text
+    assert plain.json()["scope"] == "read write"
+
+
+@pytest.mark.parametrize(
+    ("ai_run", "expected"),
+    [(False, {"read", "write"}), (True, {"read", "write", "ai_run"})],
+    ids=["no-grant", "ai_run"],
+)
+async def test_connection_scope_set_carries_the_ai_run_grant(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    ai_run: bool,
+    expected: set[str],
+) -> None:
+    seeded = await seed_oauth_principal(
+        db_session, monkeypatch, SEED.primary_profile, "read_write", ai_run=ai_run
+    )
+
+    assert seeded.principal.scopes == frozenset(expected)

@@ -9,13 +9,13 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
     ProjectExtractionTemplate,
     TemplateKind,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,

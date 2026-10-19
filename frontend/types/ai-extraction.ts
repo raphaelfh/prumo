@@ -29,6 +29,10 @@ export interface EvidenceCitation {
   blockIds: number[];
   attributionLabel?: 'entailed' | 'weak' | 'unsupported' | 'ungroundable' | null;
   rank: number;
+  /** The stored position resolves to a parsed-text anchor; false → verify manually, no Locate. */
+  grounded: boolean;
+  /** Grounded, but the article was re-parsed since: the page and block hints may be wrong. */
+  stale: boolean;
 }
 
 /**
@@ -44,6 +48,10 @@ interface PromptCompositionArticleRef {
   fileName?: string | null;
   truncated?: boolean;
   estTokens?: number | null;
+  /** The integer article version the prompt's blocks were read at (not a prompt hash). */
+  contentVersion?: number | null;
+  /** SHA-256 of the exact article text substituted for the marker. */
+  textSha256?: string | null;
 }
 
 /**

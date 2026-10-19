@@ -8,10 +8,13 @@ with zero heavy deps for unit testing.
 
 Wiring status:
 * ``StubParser`` — fully working; used by tests and ``--dry-run``.
+* ``PyMuPDFRunner`` / ``DoclingRunner`` — measure the app's own parsers
+  (``app.infrastructure.parsing``) followed by the ingest normalization pass,
+  i.e. exactly the blocks ingest stores.
 * ``LlamaParseRunner`` — grounded against the documented ``llama_cloud`` API
   (agentic tier + granular bounding boxes); needs ``LLAMA_CLOUD_API_KEY`` and
   egresses to a cloud API; needs ``LLAMA_CLOUD_API_KEY``.
-* ``DoclingRunner`` / ``MinerURunner`` / ``OpenDataLoaderRunner`` — the
+* ``MinerURunner`` / ``OpenDataLoaderRunner`` — the
   ``available()`` import check is real; the lib-output → ``ParseRun`` mapping
   is the documented integration point, wired when the lib is installed during
   the actual Phase 0 run (we do not fabricate an unverified API here).
@@ -19,14 +22,16 @@ Wiring status:
 
 from __future__ import annotations
 
-import contextlib
 import importlib.util
 import os
-import statistics
+import time
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from parsing_bakeoff.scoring import Box
+from parsing_bakeoff.scoring import Block, Box
+
+if TYPE_CHECKING:
+    from app.infrastructure.parsing.base import DocumentParser, ParsedBlock
 
 
 @dataclass
@@ -37,6 +42,10 @@ class ParseRun:
     pred_cells: list[str] = field(default_factory=list)
     pred_sections: list[str] = field(default_factory=list)
     pred_references: list[str] = field(default_factory=list)
+    #: Stored blocks in reading order (page, then block index).
+    blocks: list[Block] = field(default_factory=list)
+    #: Page height in points per 1-indexed page (chrome bands).
+    page_heights: dict[int, float] = field(default_factory=dict)
     elapsed_s: float = 0.0
     est_cost_usd: float = 0.0
     error: str | None = None
@@ -82,48 +91,77 @@ class StubParser:
         return self.preset
 
 
+def run_from_parsed_blocks(
+    parsed: list[ParsedBlock],
+    page_heights: dict[int, float],
+    *,
+    elapsed_s: float,
+    bottom_left_origin: bool = False,
+) -> ParseRun:
+    """Map app ``ParsedBlock``s to a ``ParseRun``: blocks in reading order with
+    top-left boxes, regions from every block, cells from ``table_cell`` blocks
+    and sections from ``heading`` blocks. ``bottom_left_origin`` flips a
+    parser's bottom-left boxes using the page height."""
+    blocks: list[Block] = []
+    for pb in sorted(parsed, key=lambda b: (b.page_number, b.block_index)):
+        bb = pb.bbox
+        y = bb["y"]
+        if bottom_left_origin:
+            y = page_heights.get(pb.page_number, 0.0) - (bb["y"] + bb["height"])
+        box = Box(bb["x"], y, bb["width"], bb["height"])
+        blocks.append(Block(pb.page_number, pb.text, pb.block_type, box))
+    return ParseRun(
+        pred_regions=[b.box for b in blocks],
+        pred_cells=[b.text for b in blocks if b.block_type == "table_cell" and b.text],
+        pred_sections=[b.text for b in blocks if b.block_type == "heading" and b.text],
+        pred_references=[],
+        blocks=blocks,
+        page_heights=page_heights,
+        elapsed_s=elapsed_s,
+        est_cost_usd=0.0,
+    )
+
+
+def _page_heights(pdf_bytes: bytes) -> dict[int, float]:
+    import fitz  # PyMuPDF
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        return {i + 1: float(page.rect.height) for i, page in enumerate(doc)}
+
+
+def _run_app_parser(
+    parser: DocumentParser, pdf_path: str, *, bottom_left_origin: bool = False
+) -> ParseRun:
+    """Time ``parse`` + the ingest normalization pass on one PDF (what ingest stores)."""
+    from app.infrastructure.parsing.base import normalize_blocks
+
+    with open(pdf_path, "rb") as fh:
+        pdf_bytes = fh.read()
+    started = time.perf_counter()
+    parsed = normalize_blocks(parser.parse(pdf_bytes))
+    elapsed = time.perf_counter() - started
+    return run_from_parsed_blocks(
+        parsed,
+        _page_heights(pdf_bytes),
+        elapsed_s=elapsed,
+        bottom_left_origin=bottom_left_origin,
+    )
+
+
 @dataclass
 class DoclingRunner:
+    """The app's ``DoclingParser`` (OCR off, TableFormer FAST, CPU). Its boxes
+    keep docling's bottom-left origin, so they are flipped for the chrome band."""
+
     name: str = "docling"
 
     def available(self) -> bool:
         return _installed("docling")
 
     def parse(self, pdf_path: str) -> ParseRun:
-        import time
+        from app.infrastructure.parsing.docling_parser import DoclingParser
 
-        from docling.document_converter import DocumentConverter
-        from docling_core.types.doc import TableItem
-
-        started = time.perf_counter()
-        doc = DocumentConverter().convert(pdf_path).document
-        regions: list[Box] = []
-        cells: list[str] = []
-        sections: list[str] = []
-        for item, _level in doc.iterate_items():
-            for prov in getattr(item, "prov", None) or []:
-                bb = prov.bbox  # min/abs → positive extent regardless of coord origin
-                regions.append(
-                    Box(min(bb.l, bb.r), min(bb.t, bb.b), abs(bb.r - bb.l), abs(bb.t - bb.b))
-                )
-            if isinstance(item, TableItem):
-                cells.extend(
-                    c.text.strip() for c in item.data.table_cells if getattr(c, "text", "").strip()
-                )
-            else:
-                label = getattr(getattr(item, "label", None), "value", "")
-                if label in ("section_header", "title"):
-                    text = getattr(item, "text", "").strip()
-                    if text:
-                        sections.append(text)
-        return ParseRun(
-            pred_regions=regions,
-            pred_cells=cells,
-            pred_sections=sections,
-            pred_references=[],
-            elapsed_s=time.perf_counter() - started,
-            est_cost_usd=0.0,
-        )
+        return _run_app_parser(DoclingParser(), pdf_path, bottom_left_origin=True)
 
 
 @dataclass
@@ -172,8 +210,6 @@ class LlamaParseRunner:
         return _installed("llama_cloud") and bool(os.environ.get("LLAMA_CLOUD_API_KEY"))
 
     def parse(self, pdf_path: str) -> ParseRun:  # noqa: ARG002 - port signature; arg unused in stub/unwired runners  # pragma: no cover - needs network+key
-        import time
-
         from llama_cloud import LlamaCloud  # lazy: not a unit-test dep
 
         client = LlamaCloud()  # reads LLAMA_CLOUD_API_KEY
@@ -215,11 +251,9 @@ def _map_llamaparse_result(result: object):  # noqa: ARG001 - mapping filled in 
 
 @dataclass
 class PyMuPDFRunner:
-    """Fast, self-hosted baseline using PyMuPDF (fitz). No model downloads, no
-    egress. Native per-block bboxes; tables via PyMuPDF's ``find_tables``;
-    headings by a font-size/bold heuristic. A useful lower bound — strong on
-    text + bboxes, weak on complex table structure (the rule-based tier in the
-    research). Install with ``uv pip install pymupdf`` (single wheel)."""
+    """The app's ``PymupdfParser`` (the free default ingest parser): block
+    bboxes, chrome typing, column-aware reading order, ``find_tables`` cells.
+    No model downloads, no egress."""
 
     name: str = "pymupdf"
 
@@ -227,57 +261,9 @@ class PyMuPDFRunner:
         return _installed("pymupdf") or _installed("fitz")
 
     def parse(self, pdf_path: str) -> ParseRun:
-        import time
+        from app.infrastructure.parsing.pymupdf_parser import PymupdfParser
 
-        import fitz  # PyMuPDF
-
-        started = time.perf_counter()
-        regions: list[Box] = []
-        cells: list[str] = []
-        sections: list[str] = []
-        sizes: list[float] = []
-
-        with fitz.open(pdf_path) as doc:
-            # Pass 1: span-size distribution → a body-text baseline.
-            for page in doc:
-                for block in page.get_text("dict").get("blocks", []):
-                    for line in block.get("lines", []):
-                        for span in line.get("spans", []):
-                            if span.get("text", "").strip():
-                                sizes.append(float(span["size"]))
-            body_size = statistics.median(sizes) if sizes else 0.0
-
-            # Pass 2: blocks (bboxes + heading heuristic) + table cells.
-            for page in doc:
-                for block in page.get_text("dict").get("blocks", []):
-                    if block.get("type") != 0:
-                        continue  # image block
-                    x0, y0, x1, y1 = block["bbox"]
-                    regions.append(Box(x0, y0, x1 - x0, y1 - y0))
-                    parts: list[str] = []
-                    max_size = 0.0
-                    bold = False
-                    for line in block.get("lines", []):
-                        for span in line.get("spans", []):
-                            parts.append(span.get("text", ""))
-                            max_size = max(max_size, float(span.get("size", 0)))
-                            bold = bold or bool(int(span.get("flags", 0)) & 16)
-                    text = " ".join(p for p in parts if p).strip()
-                    if text and len(text) <= 120 and (max_size >= body_size * 1.15 or bold):
-                        sections.append(text)
-                with contextlib.suppress(Exception):  # find_tables is best-effort
-                    for table in page.find_tables().tables:
-                        for row in table.extract():
-                            cells.extend(str(c).strip() for c in row if c and str(c).strip())
-
-        return ParseRun(
-            pred_regions=regions,
-            pred_cells=cells,
-            pred_sections=sections,
-            pred_references=[],
-            elapsed_s=time.perf_counter() - started,
-            est_cost_usd=0.0,
-        )
+        return _run_app_parser(PymupdfParser(), pdf_path)
 
 
 def _sections_from_markdown(md: str) -> list[str]:
@@ -320,8 +306,6 @@ class MarkItDownRunner:
         return _installed("markitdown")
 
     def parse(self, pdf_path: str) -> ParseRun:
-        import time
-
         from markitdown import MarkItDown
 
         started = time.perf_counter()

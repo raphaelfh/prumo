@@ -25,17 +25,25 @@ from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
 
 
-async def insert_pat_row(db: AsyncSession, name: str = "audit-probe") -> UUID:
+async def insert_pat_row(
+    db: AsyncSession, name: str = "audit-probe", *, ai_run: bool = False
+) -> UUID:
     """Insert a throwaway, valid ``personal_access_tokens`` row and return its id."""
     token_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.personal_access_tokens "
-            "(id, user_id, name, token_prefix, token_hash, scope, expires_at) "
+            "(id, user_id, name, token_prefix, token_hash, scope, ai_run, expires_at) "
             "VALUES (:id, :uid, :name, 'prumo_pat_abcdef', :hash, "
-            "'read_write', now() + interval '30 days')"
+            "'read_write', :ai_run, now() + interval '30 days')"
         ),
-        {"id": str(token_id), "uid": str(SEED.primary_profile), "name": name, "hash": uuid4().hex},
+        {
+            "id": str(token_id),
+            "uid": str(SEED.primary_profile),
+            "name": name,
+            "hash": uuid4().hex,
+            "ai_run": ai_run,
+        },
     )
     return token_id
 
@@ -113,14 +121,18 @@ async def insert_oauth_connection(
     scope: str = "read_write",
     name: str = "Claude",
     expires_in: timedelta = timedelta(days=90),
+    ai_run: bool = False,
 ) -> UUID:
-    """Insert an unrevoked ``kind='oauth'`` credential row (no hash, no prefix)."""
+    """Insert an unrevoked ``kind='oauth'`` credential row (no hash, no prefix).
+
+    ``ai_run=True`` needs ``expires_in <= 30 days`` (``ai_run_lifetime_check``)."""
     connection_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.personal_access_tokens "
-            "(id, user_id, kind, oauth_client_id, name, scope, expires_at) "
-            "VALUES (:id, :uid, 'oauth', :cid, :name, :scope, now() + CAST(:interval AS interval))"
+            "(id, user_id, kind, oauth_client_id, name, scope, ai_run, expires_at) "
+            "VALUES (:id, :uid, 'oauth', :cid, :name, :scope, :ai_run, "
+            "now() + CAST(:interval AS interval))"
         ),
         {
             "id": str(connection_id),
@@ -128,6 +140,7 @@ async def insert_oauth_connection(
             "cid": str(client_id),
             "name": name,
             "scope": scope,
+            "ai_run": ai_run,
             "interval": expires_in,
         },
     )

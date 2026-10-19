@@ -1,8 +1,9 @@
 /**
  * `/oauth/consent?request=<id>`: an app (an MCP client) asks to connect to the
  * signed-in user's prumo account. The user allows (optionally with "Edit
- * project setup", when the app asked for it) or denies; either way the
- * browser goes back to the redirect URL the server built.
+ * project setup" and, separately, "Start AI extraction runs", each only when
+ * the app asked for it, both unchecked) or denies; either way the browser
+ * goes back to the redirect URL the server built.
  */
 import {useId, useState} from 'react';
 import {useSearchParams} from 'react-router';
@@ -103,8 +104,11 @@ function ReadyView({
   onDecide: (body: OAuthConsentDecisionRequest) => void;
 }) {
   const [write, setWrite] = useState(false);
+  const [aiRun, setAiRun] = useState(false);
   const writeId = useId();
   const hintId = useId();
+  const aiRunId = useId();
+  const aiRunHintId = useId();
 
   return (
     <ConsentFrame>
@@ -150,6 +154,26 @@ function ReadyView({
             </div>
           </li>
         )}
+        {request.offers_ai_run && (
+          <li className="flex items-start gap-2">
+            <Checkbox
+              id={aiRunId}
+              checked={aiRun}
+              onCheckedChange={(checked) => setAiRun(checked === true)}
+              disabled={pending}
+              aria-describedby={aiRunHintId}
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor={aiRunId} className="text-[13px] font-normal">
+                {t('oauthConsent', 'aiRunLabel')}
+              </Label>
+              <p id={aiRunHintId} className="text-xs text-muted-foreground">
+                {t('oauthConsent', 'aiRunHint')}
+              </p>
+            </div>
+          </li>
+        )}
       </ul>
 
       <div className="mt-6 flex gap-2">
@@ -158,7 +182,7 @@ function ReadyView({
           size="default"
           className="flex-1"
           disabled={pending}
-          onClick={() => onDecide({approve: false, write: false})}
+          onClick={() => onDecide({approve: false, write: false, ai_run: false})}
         >
           {t('oauthConsent', 'deny')}
         </Button>
@@ -166,7 +190,9 @@ function ReadyView({
           size="default"
           className="flex-1"
           disabled={pending}
-          onClick={() => onDecide({approve: true, write: request.offers_write && write})}
+          onClick={() =>
+            onDecide({approve: true, write: request.offers_write && write, ai_run: request.offers_ai_run && aiRun})
+          }
         >
           {t('oauthConsent', 'allow')}
         </Button>

@@ -16,10 +16,17 @@ SYSTEM_PROMPT = (
     "You are an expert at extracting structured data from scientific "
     "articles. For each field, provide the value, your confidence level "
     "(0-1), and brief reasoning. "
-    'If the article does not contain the value, set status="not_found", value=null, and evidence=null'
-    ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
+    "When the article is silent about a field: if the field's allowed values include a"
+    " no-information answer (for example NI), return it as the value; otherwise, if"
+    " absent_reason offers no_information, set it; otherwise return value=null with"
+    ' status="not_found". Never invent a value or a quote.'
+    ' When a criterion does not apply to this study, set absent_reason="not_applicable"'
+    " where it is offered."
+    ' Use status="ambiguous" when the value is present but'
     ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
-    " the value."
+    " the value. The article text marks each block with a citation ref such as [p3·b12]"
+    " (page 3, block 12) or [p3·b12\u2013b18] for a table; refs are not part of the"
+    " article's words."
 )
 
 _USER_TEMPLATE = """{review_context_section}{general_instructions_section}Extract the following information from the scientific article:
@@ -34,7 +41,7 @@ For EACH field in the response schema, return an object with:
 - "value": the extracted value (matching the field type and allowed values if specified); null when the article does not contain it
 - "confidence": a number between 0 and 1 indicating your confidence in the extraction (1 = very confident, 0 = not found/uncertain)
 - "reasoning": a brief explanation (1-2 sentences) of why you extracted this value or why you're uncertain
-- "evidence": an object with "text" (short quoted passage from the article supporting the value) and "page_number" (integer, if known), or null
+- "evidence": a list of up to 3 objects {{"block_ref": the ref shown before the quoted block, e.g. "p3·b12", "quote": a short verbatim passage from that block}}; [] when status is not_found
 """
 
 # The canary arguments hash each shared block renderer's literal prefix:

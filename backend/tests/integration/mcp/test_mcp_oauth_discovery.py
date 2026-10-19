@@ -22,7 +22,7 @@ async def test_prm_document(oauth_http_client: AsyncClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["resource"] == OAUTH_BASE_URL + "/mcp"
-    assert body["scopes_supported"] == ["read", "write"]
+    assert body["scopes_supported"] == ["read", "write", "ai_run"]
     assert body["bearer_methods_supported"] == ["header"]
 
 
@@ -35,11 +35,28 @@ async def test_as_metadata_document(oauth_http_client: AsyncClient) -> None:
     assert body["response_types_supported"] == ["code"]
     assert body["token_endpoint_auth_methods_supported"] == ["none"]
     assert body["revocation_endpoint_auth_methods_supported"] == ["none"]
-    assert body["scopes_supported"] == ["read", "write", "offline_access"]
+    assert body["scopes_supported"] == ["read", "write", "ai_run", "offline_access"]
     assert body["authorization_endpoint"] == OAUTH_BASE_URL + "/authorize"
     assert body["token_endpoint"] == OAUTH_BASE_URL + "/token"
     assert body["registration_endpoint"] == OAUTH_BASE_URL + "/register"
     assert body["revocation_endpoint"] == OAUTH_BASE_URL + "/revoke"
+
+
+@pytest.mark.parametrize(
+    ("asked", "stored"),
+    [(None, "read write"), ("read write ai_run", "read write ai_run")],
+    ids=["default", "named"],
+)
+async def test_registration_names_ai_run_only_when_the_client_does(
+    oauth_http_client: AsyncClient, asked: str | None, stored: str
+) -> None:
+    body = {"redirect_uris": ["https://claude.ai/api/mcp/auth_callback"]}
+    if asked is not None:
+        body["scope"] = asked
+    r = await oauth_http_client.post("/register", json=body)
+
+    assert r.status_code == 201, r.text
+    assert r.json()["scope"] == stored
 
 
 async def test_prm_issuer_matches_as_metadata_issuer(oauth_http_client: AsyncClient) -> None:

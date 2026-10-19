@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Questionnaire draft review</title>
+<style>
+  :root { color-scheme: light dark; --muted: #6b7280; --line: #e5e7eb; --accent: #2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --muted: #9ca3af; --line: #374151; --accent: #60a5fa; } }
+  body { margin: 0; padding: 12px 14px; font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  h2 { font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .meta, .state, .more { color: var(--muted); }
+  .state { padding: 8px 0; }
+  .error { color: #b91c1c; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 4px 0; border-top: 1px solid var(--line); }
+  .path { font-weight: 600; }
+  .attr { color: var(--muted); margin-left: 6px; }
+  .delta { display: block; overflow-wrap: anywhere; }
+  .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); font-size: 11px; }
+  button { margin-top: 12px; padding: 6px 10px; font: inherit; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main id="root" aria-live="polite"></main>
+<script>
+(function () {
+  "use strict";
+  var root = document.getElementById("root");
+  var host = window.parent;
+  var nextId = 1;
+  var pending = {};
+
+  function send(message) { host.postMessage(message, "*"); }
+
+  function request(method, params, onResult) {
+    var id = nextId++;
+    if (onResult) { pending[id] = onResult; }
+    send({ jsonrpc: "2.0", id: id, method: method, params: params });
+  }
+
+  function notify(method, params) { send({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  function el(tag, text, cls) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) { node.textContent = String(text); }
+    if (cls) { node.className = cls; }
+    return node;
+  }
+
+  function show(nodes) {
+    root.replaceChildren();
+    nodes.forEach(function (n) { if (n) { root.appendChild(n); } });
+  }
+
+  function state(text, cls) { return el("p", text, "state" + (cls ? " " + cls : "")); }
+
+  function sum(counts) {
+    var total = 0;
+    Object.keys(counts || {}).forEach(function (k) { total += Number(counts[k]) || 0; });
+    return total;
+  }
+
+  function header(v) {
+    var box = el("div");
+    box.appendChild(el("h1", v.template_name));
+    var version = v.published_version === null || v.published_version === undefined
+      ? "Nothing live yet" : "Version " + v.published_version;
+    box.appendChild(el("div", version, "meta"));
+    return box;
+  }
+
+  function changeRows(rows, showAffectsAi) {
+    var groups = {};
+    var order = [];
+    rows.forEach(function (r) {
+      if (!groups[r.tier]) { groups[r.tier] = []; order.push(r.tier); }
+      groups[r.tier].push(r);
+    });
+    var box = el("div");
+    order.forEach(function (tier) {
+      box.appendChild(el("h2", tier));
+      var list = el("ul");
+      groups[tier].forEach(function (r) {
+        var item = el("li");
+        item.appendChild(el("span", (r.label_path || []).join(" › "), "path"));
+        if (r.attribute) { item.appendChild(el("span", r.attribute, "attr")); }
+        if (showAffectsAi && r.affects_ai) { item.appendChild(el("span", "affects AI", "tag")); }
+        var before = r.before === null || r.before === undefined ? "—" : r.before;
+        var after = r.after === null || r.after === undefined ? "—" : r.after;
+        item.appendChild(el("span", before + " → " + after, "delta"));
+        list.appendChild(item);
+      });
+      box.appendChild(list);
+    });
+    return box;
+  }
+
+  function countsLine(counts) {
+    var parts = Object.keys(counts || {}).map(function (k) { return k + ": " + counts[k]; });
+    return parts.length ? el("div", parts.join(" · "), "meta") : null;
+  }
+
+  function lintList(findings) {
+    var box = el("div");
+    box.appendChild(el("h2", "Lint"));
+    if (!findings.length) { box.appendChild(state("No lint findings")); return box; }
+    var list = el("ul");
+    findings.forEach(function (f) {
+      var item = el("li");
+      item.appendChild(el("span", f.status, "tag"));
+      item.appendChild(el("span", f.code, "path"));
+      if (f.section_label) { item.appendChild(el("span", f.section_label, "attr")); }
+      var labels = (f.question_labels || []).join(", ");
+      item.appendChild(el("span", (labels ? labels + " · " : "") + "count " + f.count, "delta"));
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+    return box;
+  }
+
+  function isWebLink(value) {
+    try {
+      var protocol = new URL(value).protocol;
+      return protocol === "https:" || protocol === "http:";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function linkButton(editorUrl) {
+    if (typeof editorUrl !== "string" || editorUrl === "") { return null; }
+    var button = el("button", "Review and publish in prumo");
+    button.type = "button";
+    button.addEventListener("click", function () {
+      if (isWebLink(editorUrl)) { request("ui/open-link", { url: editorUrl }); }
+    });
+    return button;
+  }
+
+  function summary(v) {
+    var sections = v.sections || [];
+    var questions = 0;
+    sections.forEach(function (s) { questions += (s.questions || []).length; });
+    return el("div", sections.length + " sections, " + questions + " questions on this page", "meta");
+  }
+
+  function renderView(v) {
+    var nodes = [header(v)];
+    if (v.draft_open === null || v.draft_open === undefined) {
+      nodes.push(summary(v));
+      show(nodes);
+      return;
+    }
+    if (v.draft_open === false || v.note) {
+      nodes.push(state("No unpublished changes"));
+    } else if (v.view === "changes") {
+      var rows = v.changes || [];
+      nodes.push(countsLine(v.counts));
+      nodes.push(changeRows(rows, true));
+      if (v.next_cursor) {
+        nodes.push(el("p", "Showing " + rows.length + " of " + sum(v.counts) + " — open in prumo", "more"));
+      }
+    } else if (v.view === "draft") {
+      nodes.push(lintList(v.lint || []));
+    } else if (v.draft_diff) {
+      var diff = v.draft_diff;
+      nodes.push(countsLine(diff.counts));
+      nodes.push(changeRows(diff.changes || [], false));
+      if (diff.changes_truncated) {
+        nodes.push(el("p", "Showing " + (diff.changes || []).length + " of " + sum(diff.counts), "more"));
+      }
+    }
+    nodes.push(linkButton(v.editor_url));
+    show(nodes);
+  }
+
+  function renderError(body) {
+    var code = body && body.code;
+    if (code === "MANAGER_REQUIRED") { show([state("Only managers can review the draft")]); return; }
+    if (code === "NOT_FOUND") { show([state("This questionnaire was not found.")]); return; }
+    show([state(code || "Error", "error"), state(body && body.message)]);
+  }
+
+  function payload(result) {
+    if (result.structuredContent && typeof result.structuredContent === "object") {
+      return result.structuredContent;
+    }
+    var first = (result.content || [])[0];
+    if (!first || typeof first.text !== "string") { return null; }
+    try { return JSON.parse(first.text); } catch (e) { return { message: first.text }; }
+  }
+
+  function onToolResult(result) {
+    if (!result || typeof result !== "object") { return; }
+    var body = payload(result);
+    if (result.isError) { renderError(body || {}); return; }
+    if (!body) { show([state("No result to show", "error")]); return; }
+    renderView(body);
+  }
+
+  window.addEventListener("message", function (event) {
+    if (event.source !== host) { return; }
+    var data = event.data;
+    if (!data || typeof data !== "object" || data.jsonrpc !== "2.0") { return; }
+    if (data.method === undefined && typeof data.id === "number") {
+      var callback = pending[data.id];
+      delete pending[data.id];
+      if (callback && data.error === undefined) { callback(data.result); }
+      return;
+    }
+    if (data.method === "ui/notifications/tool-result") { onToolResult(data.params); return; }
+    if (data.id !== undefined && typeof data.method === "string") {
+      send({ jsonrpc: "2.0", id: data.id, result: {} });
+    }
+  });
+
+  show([state("Waiting for the questionnaire…")]);
+  request(
+    "ui/initialize",
+    {
+      appInfo: { name: "prumo-draft-review", version: "1" },
+      appCapabilities: {},
+      protocolVersion: "2026-01-26"
+    },
+    function () { notify("ui/notifications/initialized"); }
+  );
+})();
+</script>
+</body>
+</html>

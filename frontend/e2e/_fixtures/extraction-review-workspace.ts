@@ -6,7 +6,7 @@ import {adminDelete, adminInsert, adminSelect, resolveActiveExtractionTemplateId
 export const REVIEW_VALUE = 'Recruitment took place between January 2018 and December 2022 across three regional hospitals. Eligibility was assessed prospectively with independent adjudication of every outcome.';
 export const SECONDARY_VALUE = 'Participants with missing predictor values were excluded before model development; the exact count is not reported.';
 export const REVIEW_QUOTES = ['Participants were recruited in three regional hospitals.', 'Outcomes were assessed by independent adjudicators.', 'The recruitment period ran from January 2018 through December 2022.'];
-/** Stored with no page or anchor and absent from the document: the reader cannot locate it. */
+/** Stored with no page or anchor and absent from the document: ungrounded, so it offers no Locate. */
 export const UNAVAILABLE_QUOTE = 'Figure 2 lists withdrawals by site.';
 
 /** Small real PDF: text streams and byte-accurate xref, no renderer mock. */

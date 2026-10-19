@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from app.llm.claim_value import normalize_options
-from app.llm.schema import _enum_values
+from app.llm.schema import option_codes
 from app.models.extraction import ExtractionField
 from app.seed import (
     _PROBAST_JUDGMENT,
@@ -168,13 +168,13 @@ async def test_quadas2_has_no_disposition_flags() -> None:
 
 
 def test_llm_enum_values_exclude_disposition_codes() -> None:
-    """The LLM output-model Literal is built from ``_enum_values`` over a field's
+    """The LLM output-model Literal is built from ``option_codes`` over a field's
     allowed_values. With the disposition codes gone from the seed, the model can
     no longer express NI/NA — no_information is only expressible via a not_found
     status (Phase 1). Locks the seed→schema consequence explicitly."""
     field = _signaling(_SENTINEL_EID, "q", "Question?", 0, _PROBAST_SIGNALING)
-    assert _enum_values(field) == ["Y", "PY", "PN", "N"]
-    assert _DISPOSITION_STRINGS.isdisjoint(_enum_values(field))
+    assert option_codes(field) == ["Y", "PY", "PN", "N"]
+    assert _DISPOSITION_STRINGS.isdisjoint(option_codes(field))
 
 
 # --- explicit helper knobs (spec 2026-08-22 §5: the v2 seed needs optional

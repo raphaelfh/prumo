@@ -1,7 +1,8 @@
 """AI batch runs over many articles (spec 2026-09-15 §7).
 
-The batch runs server-side: POST writes it and kicks
-``advance_extraction_batch``; GETs derive its state from items and attempts.
+The batch runs server-side: POST writes it through the one start path,
+commits, then kicks the dispatcher; GETs derive its state from items and
+attempts.
 """
 
 from __future__ import annotations
@@ -13,11 +14,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.deps.scope import assert_ai_kickoff
-from app.api.deps.security import get_current_user_sub
-from app.api.v1.endpoints.section_extraction import _is_queue_available
+from app.api.deps.security import ensure_project_reviewer, get_current_user_sub
 from app.core.deps import DbSession
-from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_batch import (
     CreateExtractionBatchRequest,
@@ -28,12 +26,13 @@ from app.services.extraction_batch_service import (
     BatchNotFoundError,
     BatchScopeError,
     ExtractionBatchService,
+    QueueUnavailableError,
 )
 from app.utils.rate_limiter import limiter
-from app.worker.tasks.extraction_batch_tasks import advance_extraction_batch
+from app.worker import queue_health
+from app.worker.tasks.extraction_batch_tasks import kick_batch
 
 router = APIRouter()
-logger = get_logger(__name__)
 
 
 def _trace_id(request: Request) -> str:
@@ -49,14 +48,6 @@ def _queue_unavailable(trace_id: str) -> JSONResponse:
             trace_id=trace_id,
         ).model_dump(),
     )
-
-
-def _kick(batch_id: UUID, *, reenqueue_stale: bool = False) -> None:
-    try:
-        advance_extraction_batch.delay(str(batch_id), reenqueue_stale)
-    except Exception:
-        # The rows are committed: the batch reads stalled and Resume recovers it.
-        logger.exception("extraction_batch.kick_failed", batch_id=str(batch_id))
 
 
 async def _detail(db: DbSession, owner_id: UUID, batch_id: UUID) -> ExtractionBatchDetail:
@@ -79,15 +70,16 @@ async def start_extraction_batch(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> JSONResponse | ApiResponse[ExtractionBatchDetail]:
     trace_id = _trace_id(request)
-    await assert_ai_kickoff(db, project_id=payload.project_id, current_user_sub=current_user_sub)
-    if not _is_queue_available():
-        return _queue_unavailable(trace_id)
+    await ensure_project_reviewer(db, payload.project_id, current_user_sub)
     try:
-        batch_id = await ExtractionBatchService(db).create(current_user_sub, payload)
+        started = await ExtractionBatchService(db).start(current_user_sub, payload)
+    except QueueUnavailableError:
+        return _queue_unavailable(trace_id)
     except BatchScopeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _kick(batch_id)
-    detail = await _detail(db, current_user_sub, batch_id)
+    await db.commit()
+    kick_batch(started.batch_id)
+    detail = await _detail(db, current_user_sub, started.batch_id)
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content=ApiResponse.success(detail, trace_id=trace_id).model_dump(mode="json"),
@@ -134,6 +126,7 @@ async def cancel_extraction_batch(
         await ExtractionBatchService(db).cancel(current_user_sub, batch_id, now=datetime.now(UTC))
     except BatchNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Batch not found") from exc
+    await db.commit()
     return ApiResponse.success(
         await _detail(db, current_user_sub, batch_id), trace_id=_trace_id(request)
     )
@@ -149,7 +142,7 @@ async def resume_extraction_batch(
 ) -> JSONResponse | ApiResponse[ExtractionBatchDetail]:
     trace_id = _trace_id(request)
     detail = await _detail(db, current_user_sub, batch_id)
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return _queue_unavailable(trace_id)
-    _kick(batch_id, reenqueue_stale=True)
+    kick_batch(batch_id, reenqueue_stale=True)
     return ApiResponse.success(detail, trace_id=trace_id)

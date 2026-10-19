@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -20,7 +21,10 @@ import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from mcp import Client
+from mcp.client.extension import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.mcp import server
@@ -180,12 +184,18 @@ async def _seed_pat(
     user_id: UUID,
     scope: Literal["read", "read_write"],
     project_ids: list[UUID] | None = None,
+    *,
+    ai_run: bool = False,
 ) -> SeededPat:
     created = await create_token(
         db,
         user_id=user_id,
         payload=PersonalAccessTokenCreateRequest(
-            name=f"pytest-{scope}", scope=scope, expires_in_days=30, project_ids=project_ids
+            name=f"pytest-{scope}",
+            scope=scope,
+            expires_in_days=30,
+            project_ids=project_ids,
+            ai_run=ai_run,
         ),
     )
     principal = await resolve_principal(db, created.secret)
@@ -198,16 +208,21 @@ async def seed_oauth_principal(
     monkeypatch: pytest.MonkeyPatch,
     user_id: UUID,
     scope: Literal["read", "read_write"],
+    *,
+    ai_run: bool = False,
 ) -> SeededPat:
     """An OAuth connection of ``scope`` for ``user_id`` with one live access
     token, resolved through the OAuth lookup. Turns OAuth on (the access token
-    is bound to ``settings.mcp_resource_url``)."""
+    is bound to ``settings.mcp_resource_url``). ``ai_run`` connections live
+    30 days (``ai_run_lifetime_check``)."""
     monkeypatch.setattr(settings, "PUBLIC_API_URL", OAUTH_BASE_URL)
     connection_id = await insert_oauth_connection(
         db,
         user_id=user_id,
         client_id=await insert_oauth_client(db),
         scope=scope,
+        ai_run=ai_run,
+        expires_in=timedelta(days=30 if ai_run else 90),
     )
     secret = new_secret(mcp_oauth_service.ACCESS_PREFIX)
     await insert_oauth_access_token(
@@ -248,6 +263,35 @@ async def pat_outsider_rw(db_session: AsyncSession) -> SeededPat:
     return await _seed_pat(db_session, SEED.outsider_profile, "read_write")
 
 
+@pytest_asyncio.fixture
+async def pat_primary_rw_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.primary_profile, "read_write", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_primary_read_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.primary_profile, "read", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_viewer_ai_run(db_session: AsyncSession) -> SeededPat:
+    """``reviewer_profile`` demoted to ``viewer`` on ``SEED.primary_project``
+    (in the test transaction), holding a ``read`` + ``ai_run`` token."""
+    await db_session.execute(
+        text(
+            "UPDATE public.project_members SET role = 'viewer' "
+            "WHERE project_id = :p AND user_id = :u"
+        ),
+        {"p": str(SEED.primary_project), "u": str(SEED.reviewer_profile)},
+    )
+    return await _seed_pat(db_session, SEED.reviewer_profile, "read", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_outsider_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.outsider_profile, "read_write", ai_run=True)
+
+
 @pytest.fixture
 def mcp_client() -> Callable[[SeededPat], AbstractAsyncContextManager[Client]]:
     """A factory: ``async with mcp_client(pat) as client:`` — an in-memory SDK
@@ -258,10 +302,15 @@ def mcp_client() -> Callable[[SeededPat], AbstractAsyncContextManager[Client]]:
     ``async with`` shares that one session, like one /mcp request."""
 
     @asynccontextmanager
-    async def connect(pat: SeededPat) -> AsyncIterator[Client]:
+    async def connect(pat: SeededPat, *, apps: bool = False) -> AsyncIterator[Client]:
+        # apps=True advertises MCP Apps support, as an Apps-rendering host does.
+        extensions = [advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})] if apps else None
         token = principal_var.set(pat.principal)
         try:
-            async with mcp_session.request_session(), Client(server.mcp) as client:
+            async with (
+                mcp_session.request_session(),
+                Client(server.mcp, extensions=extensions) as client,
+            ):
                 yield client
         finally:
             principal_var.reset(token)
@@ -279,6 +328,14 @@ async def probe_read(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noqa
 
 
 async def probe_write(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noqa: ARG001
+    return ProbeResult(ok=True)
+
+
+async def probe_ai_read(db: AsyncSession, project_id: UUID, note: str = "") -> ProbeResult:  # noqa: ARG001
+    return ProbeResult(ok=True)
+
+
+async def probe_ai_write(db: AsyncSession, project_id: UUID, note: str = "") -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True)
 
 
@@ -347,6 +404,30 @@ def probe_tools() -> Iterator[None]:
             description="test",
             destructive=False,
         )(probe_boom),
+        agent_tool(
+            requires="ai_run",
+            role="reviewer",
+            tier="ai_plan",
+            read_only=True,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg="project_id",
+            title="Probe ai read",
+            description="test",
+            destructive=False,
+        )(probe_ai_read),
+        agent_tool(
+            requires="ai_run",
+            role="member",
+            tier="ai_cancel",
+            read_only=False,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg="project_id",
+            title="Probe ai write",
+            description="test",
+            destructive=False,
+        )(probe_ai_write),
     ]
     try:
         yield
