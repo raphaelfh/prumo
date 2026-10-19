@@ -120,9 +120,10 @@ def changes(plan: PlanCore, claims: dict[str, Any]) -> list[Change]:
     return out
 
 
-def start_error(exc: Exception, plan: PlanCore) -> McpToolError | None:
-    """The code of a start-path exception; ``None``: not ours, re-raise it."""
-    if isinstance(exc, DailyAgentCapError):
+def start_error(exc: Exception, plan: PlanCore | None) -> McpToolError | None:
+    """The code of a start-path exception; ``None``: not ours, re-raise it.
+    ``plan`` is ``None`` when the exception came before the recompute."""
+    if isinstance(exc, DailyAgentCapError) and plan is not None:
         return _limit(exc.args[0], plan)
     if isinstance(exc, BatchAlreadyActiveError):
         return _active((exc.details or {})["batch_id"])

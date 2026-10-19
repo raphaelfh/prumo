@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -14,6 +18,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp import ai_run_plan_token
+from app.api.mcp import session as mcp_session
 from app.api.mcp.tools import ai_runs
 from app.services.extraction_batch_service import ExtractionBatchService
 from app.services.template_versioning import TemplateVersionService
@@ -28,7 +33,7 @@ from tests.integration.mcp.ai_run_helpers import (
     set_rung,
     start_args,
 )
-from tests.integration.mcp.conftest import _seed_pat
+from tests.integration.mcp.conftest import SeededPat, _seed_pat
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 from tests.integration.test_extraction_batch_guards import _ai_proposal, _extract_run
 
@@ -263,6 +268,38 @@ async def test_a_deadlock_is_a_retry(
     assert err["code"] == "RETRY"
     assert err["retryable"] is True
     assert await _batches(db_session) == 0
+
+
+@pytest.mark.parametrize(
+    ("target", "attr"),
+    [
+        (ExtractionBatchService, "lock_agent_starts"),
+        (ai_runs, "is_project_manager"),
+        (ai_runs, "build_plan"),
+    ],
+    ids=["lock", "manager-check", "plan"],
+)
+async def test_a_deadlock_before_the_start_is_an_audited_retry(
+    mcp_client,
+    pat_primary_rw_ai_run,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    target: Any,
+    attr: str,
+) -> None:
+    first, second = await _two_articles(db_session)
+    plan = await ready_plan(mcp_client, pat_primary_rw_ai_run, first, second)
+
+    async def deadlock(*_a: Any, **_k: Any) -> None:
+        raise DBAPIError("SELECT", {}, _Pg())
+
+    monkeypatch.setattr(target, attr, deadlock)
+
+    err = error_payload(await _start(mcp_client, pat_primary_rw_ai_run, plan))
+
+    assert (err["code"], err["retryable"]) == ("RETRY", True)
+    assert await _batches(db_session) == 0
+    assert await _actions(db_session, "refused", "RETRY") == 1
 
 
 def _tampered(token: str) -> str:
@@ -547,3 +584,121 @@ async def test_hidden_and_refused_without_the_grant(mcp_client, pat_primary_rw) 
 
     assert "start_ai_run" not in names
     assert (err["code"], err["required_scope"]) == ("SCOPE_INSUFFICIENT", "ai_run")
+
+
+# --- concurrent starts on committed, separate sessions ----------------------
+
+
+@dataclass(frozen=True)
+class _Committed:
+    pats: list[SeededPat]
+    articles: list[UUID]
+
+
+@asynccontextmanager
+async def _committed(
+    users: list[UUID], article_count: int, daily: int
+) -> AsyncIterator[_Committed]:
+    """Policy, parsed articles and one ai_run PAT per user in SEED.primary_project,
+    all committed; every row is deleted (and the settings restored) afterwards."""
+    project = str(SEED.primary_project)
+    async with mcp_session.session_factory() as db:
+        settings_before = (
+            await db.execute(
+                text("SELECT settings FROM public.projects WHERE id = :p"), {"p": project}
+            )
+        ).scalar_one()
+        await set_policy(db, per_run=10, daily=daily)
+        articles = [await ready_article(db, f"race {i}") for i in range(article_count)]
+        pats = [await _seed_pat(db, user, "read_write", ai_run=True) for user in users]
+        await db.commit()
+    tokens = [str(p.principal.token_id) for p in pats]
+    try:
+        yield _Committed(pats, articles)
+    finally:
+        async with mcp_session.session_factory() as db:
+            for table, column in (
+                ("extraction_batches", "agent_token_id"),
+                ("agent_actions", "token_id"),
+                ("personal_access_tokens", "id"),
+            ):
+                await db.execute(
+                    text(f"DELETE FROM public.{table} WHERE {column} = ANY(:t)"),  # noqa: S608
+                    {"t": tokens},
+                )
+            await db.execute(
+                text("DELETE FROM public.articles WHERE id = ANY(:a)"),
+                {"a": [str(a) for a in articles]},
+            )
+            await db.execute(
+                text("UPDATE public.projects SET settings = CAST(:s AS jsonb) WHERE id = :p"),
+                {"s": json.dumps(settings_before), "p": project},
+            )
+            await db.commit()
+
+
+async def _committed_count(sql: str, tokens: list[str]) -> int:
+    async with mcp_session.session_factory() as db:
+        return (await db.execute(text(sql), {"t": tokens})).scalar_one()
+
+
+@pytest.mark.mcp_real_sessions
+async def test_concurrent_same_plan_starts_replay(mcp_client, kicks: list[UUID]) -> None:
+    async with _committed([SEED.primary_profile], 2, daily=100) as world:
+        (pat,) = world.pats
+        plan = await ready_plan(mcp_client, pat, *world.articles)
+
+        results = await asyncio.gather(_start(mcp_client, pat, plan), _start(mcp_client, pat, plan))
+
+        started = [structured(r) for r in results]
+        assert started[0]["batch_id"] == started[1]["batch_id"]
+        assert sorted(s["replayed"] for s in started) == [False, True]
+        tokens = [str(pat.principal.token_id)]
+        batches = await _committed_count(
+            "SELECT count(*) FROM public.extraction_batches WHERE agent_token_id = ANY(:t)", tokens
+        )
+        async with mcp_session.session_factory() as db:
+            outcomes = (
+                (
+                    await db.execute(
+                        text(
+                            "SELECT outcome FROM public.agent_actions "
+                            "WHERE tool = 'start_ai_run' AND token_id = ANY(:t)"
+                        ),
+                        {"t": tokens},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert batches == 1
+        assert outcomes == ["applied"]  # the replay writes no row, refused or applied
+        assert kicks == [UUID(started[0]["batch_id"])]
+
+
+@pytest.mark.mcp_real_sessions
+async def test_concurrent_starts_over_the_daily_cap_one_wins(mcp_client, kicks: list[UUID]) -> None:
+    users = [SEED.primary_profile, SEED.reviewer_profile]
+    async with _committed(users, 4, daily=3) as world:
+        plans = [
+            await ready_plan(mcp_client, pat, *world.articles[i * 2 : i * 2 + 2])
+            for i, pat in enumerate(world.pats)
+        ]
+
+        results = await asyncio.gather(
+            *(_start(mcp_client, pat, plan) for pat, plan in zip(world.pats, plans, strict=True))
+        )
+
+        won = [r for r in results if not r.is_error]
+        lost = [error_payload(r) for r in results if r.is_error]
+        assert len(won) == 1 and len(lost) == 1, results
+        assert (lost[0]["code"], lost[0]["remaining_today"]) == ("AI_RUN_LIMIT", 1)
+        tokens = [str(p.principal.token_id) for p in world.pats]
+        assert (
+            await _committed_count(
+                "SELECT count(*) FROM public.extraction_batches WHERE agent_token_id = ANY(:t)",
+                tokens,
+            )
+            == 1
+        )
+        assert len(kicks) == 1

@@ -378,31 +378,32 @@ async def _start(
     principal = current_principal()
     owner, project_id = principal.user_sub, scope.project_id
     svc = ExtractionBatchService(db)
-    # Held to the commit (or the refusal's rollback): the replay check below
-    # sees any earlier start of this plan as a committed batch.
-    await svc.lock_agent_starts(project_id)
-    found = await svc.batch_for_plan(owner, digest, project_id=project_id)
-    if found is not None:
-        return await _replay(svc, principal, found, claims, now)
-
-    plan = await build_plan(
-        db,
-        owner_id=owner,
-        project_id=project_id,
-        template_id=UUID(claims["template_id"]),
-        article_ids=_selected_ids(claims["selection"]),
-        rerun=claims["rerun"],
-        caller_is_manager=await is_project_manager(db, project_id, owner),
-        now=now,
-    )
-    refusal = blocker_error(plan)
-    if refusal is not None:
-        raise refusal
-    drift = changes(plan, claims)
-    if drift or plan.engine_identity is None:
-        raise plan_stale("changed", changes=drift or ["engine"])
-
+    plan: PlanCore | None = None
     try:
+        # Held to the commit (or the refusal's rollback): the replay check below
+        # sees any earlier start of this plan as a committed batch.
+        await svc.lock_agent_starts(project_id)
+        found = await svc.batch_for_plan(owner, digest, project_id=project_id)
+        if found is not None:
+            return await _replay(svc, principal, found, claims, now)
+
+        plan = await build_plan(
+            db,
+            owner_id=owner,
+            project_id=project_id,
+            template_id=UUID(claims["template_id"]),
+            article_ids=_selected_ids(claims["selection"]),
+            rerun=claims["rerun"],
+            caller_is_manager=await is_project_manager(db, project_id, owner),
+            now=now,
+        )
+        refusal = blocker_error(plan)
+        if refusal is not None:
+            raise refusal
+        drift = changes(plan, claims)
+        if drift or plan.engine_identity is None:
+            raise plan_stale("changed", changes=drift or ["engine"])
+
         started = await svc.start(
             owner,
             CreateExtractionBatchRequest(
