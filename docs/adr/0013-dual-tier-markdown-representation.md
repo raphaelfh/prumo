@@ -41,9 +41,9 @@ yet been built.
 ## Amendment (2026-10)
 
 **Block refs in the prompt projection.** The extraction prompt's article text
-prefixes every kept block with its citation ref: `[p{page}·b{block}] ` before a
+prefixes every kept block with its citation ref and a space: `[p{page}·b{block}]` before a
 paragraph or caption, after the marker of a heading (`## [p1·b0] Methods`) or a
-list item (`- [p2·b2] item`), and a range ref `[p{page}·b{first}–b{last}] ` on
+list item (`- [p2·b2] item`), and a range ref `[p{page}·b{first}–b{last}]` on
 its own line above a coalesced table. This is the same locator vocabulary
 `get_article_text` already prints and evidence cites, from one formatter
 (`chunk_locator_prefix`, with `block_range_prefix` as its table form).
