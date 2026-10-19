@@ -81,7 +81,7 @@ def match_anchor(text_content: str, blocks: Sequence[ParsedBlock]) -> PositionV1
     )
 
 
-def ai_evidence_filter() -> ColumnElement[bool]:
+def _ai_evidence_filter() -> ColumnElement[bool]:
     """Evidence attached to an AI proposal and to no human decision."""
     return and_(
         ExtractionEvidence.proposal_record_id.is_not(None),
@@ -99,7 +99,7 @@ def _page(pos: PositionV1) -> int:
     return anchor.page if anchor.kind == "region" else anchor.range.page
 
 
-def reanchored_position(stored: PositionV1 | None, pos: PositionV1) -> tuple[dict[str, Any], int]:
+def _reanchored_position(stored: PositionV1 | None, pos: PositionV1) -> tuple[dict[str, Any], int]:
     """The ``position`` and ``page_number`` a row re-anchored to *pos* takes.
 
     The stored ``anchor.quote`` is copied back: the quote is history.
@@ -122,7 +122,7 @@ async def reanchor_file(
     rows = (
         await db.scalars(
             select(ExtractionEvidence).where(
-                ai_evidence_filter(),
+                _ai_evidence_filter(),
                 ExtractionEvidence.article_file_id == file_id,
                 func.jsonb_typeof(ExtractionEvidence.position) == "object",
                 ExtractionEvidence.position.has_key("anchor"),
@@ -146,7 +146,7 @@ async def reanchor_file(
                 row.content_version = old_version
             stale += 1
             continue
-        row.position, row.page_number = reanchored_position(stored, pos)
+        row.position, row.page_number = _reanchored_position(stored, pos)
         row.content_version = new_version
         reanchored += 1
 
