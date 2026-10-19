@@ -5,9 +5,12 @@
  * pure helper.
  */
 
-export type ClientId = 'claude-code' | 'cursor' | 'vscode' | 'gemini-cli' | 'codex' | 'windsurf';
+export type ClientId = 'claude-code' | 'claude-ai' | 'cursor' | 'vscode' | 'gemini-cli' | 'codex' | 'windsurf';
 
-export const CLIENT_IDS: readonly ClientId[] = ['claude-code', 'cursor', 'vscode', 'gemini-cli', 'codex', 'windsurf'] as const;
+export const CLIENT_IDS: readonly ClientId[] = ['claude-code', 'claude-ai', 'cursor', 'vscode', 'gemini-cli', 'codex', 'windsurf'] as const;
+
+/** Clients that send a personal access token; claude.ai connects through OAuth instead (ADR 0022). */
+export const TOKEN_CLIENT_IDS: readonly ClientId[] = CLIENT_IDS.filter((id) => id !== 'claude-ai');
 
 /** Shown in the permanent card, where there is no real secret yet. */
 export const TOKEN_PLACEHOLDER = '<YOUR_PRUMO_TOKEN>';
@@ -18,6 +21,8 @@ export function buildClientSnippet(client: ClientId, {url, token}: {url: string;
   switch (client) {
     case 'claude-code':
       return `claude mcp add --transport http prumo ${url} --header "Authorization: Bearer ${token}"`;
+    case 'claude-ai':
+      return url;
     case 'cursor':
       return JSON.stringify({mcpServers: {prumo: {url, headers}}}, null, 2);
     case 'vscode':
