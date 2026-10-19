@@ -40,10 +40,11 @@ class _PgLike(Exception):
 
 
 def test_every_code_renders_with_its_retryability() -> None:
-    assert len(McpErrorCode) == 17
+    assert len(McpErrorCode) == 18
     assert {c.value for c in McpErrorCode} == {
         "NOT_FOUND",
         "MANAGER_REQUIRED",
+        "REVIEWER_REQUIRED",
         "SCOPE_INSUFFICIENT",
         "INVALID_ARGUMENT",
         "DRAFT_LOCK_HELD",

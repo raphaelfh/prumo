@@ -57,6 +57,20 @@ async def pat_primary_read(
     return await seed_oauth_principal(db_session, monkeypatch, SEED.primary_profile, "read")
 
 
+@pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_read_ai_run(
+    request: pytest.FixtureRequest,
+    pat_primary_read_ai_run: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_read_ai_run
+    return await seed_oauth_principal(
+        db_session, monkeypatch, SEED.primary_profile, "read", ai_run=True
+    )
+
+
 async def test_tools_list_is_scope_filtered(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_read: SeededPat,
@@ -170,7 +184,7 @@ async def test_rate_limit_per_token(
     probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(server, "_READ_LIMIT", parse("2/minute"))
+    monkeypatch.setitem(server._TIERS, "read", parse("2/minute"))
 
     async with mcp_client(pat_primary_read) as client:
         r1 = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
@@ -188,13 +202,216 @@ async def test_rate_limit_per_token(
     assert r_other.is_error is False
 
 
+# --- the ai_run grant and the tier table (ADR 0021) ---------------------------
+
+_AI_PROBES = {"probe_ai_read", "probe_ai_write"}
+
+
+async def test_ai_run_probe_hidden_without_grant(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    pat_primary_rw: SeededPat,
+    pat_primary_read_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    for pat in (pat_primary_read, pat_primary_rw):
+        async with mcp_client(pat) as client:
+            names = {t.name for t in (await client.list_tools()).tools}
+        assert "probe_read" in names
+        assert not names & _AI_PROBES
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+    assert names >= _AI_PROBES
+
+
+async def test_ai_run_direct_call_without_grant_is_scope_insufficient_and_free(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        results = [
+            await client.call_tool("probe_ai_read", {"project_id": str(SEED.primary_project)})
+            for _ in range(15)  # above the ai_plan tier's 10/minute
+        ]
+    for r in results:
+        assert r.structured_content is not None
+        assert r.structured_content["code"] == "SCOPE_INSUFFICIENT"
+        assert r.structured_content["required_scope"] == "ai_run"
+
+
+async def test_viewer_with_grant_is_reviewer_required(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_viewer_ai_run: SeededPat,
+    db_session: AsyncSession,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    name = (
+        await db_session.execute(
+            text("SELECT name FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    async with mcp_client(pat_viewer_ai_run) as client:
+        r = await client.call_tool("probe_ai_read", {"project_id": str(SEED.primary_project)})
+        r_member = await client.call_tool(
+            "probe_ai_write", {"project_id": str(SEED.primary_project)}
+        )
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "REVIEWER_REQUIRED"
+    assert r.structured_content["retryable"] is False
+    assert r.structured_content["project_name"] == name
+    assert r.structured_content["untrusted_fields"] == ["project_name"]
+    assert r_member.is_error is False
+
+
+async def test_read_ai_run_token_cannot_call_write_tools(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+        r = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
+    assert "probe_write" not in names
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "SCOPE_INSUFFICIENT"
+    assert r.structured_content["required_scope"] == "write"
+
+
+async def test_tiers_never_share_counters(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    args = {"project_id": str(SEED.primary_project)}
+    async with mcp_client(pat_primary_rw_ai_run) as client:
+        writes = [await client.call_tool("probe_write", args) for _ in range(21)]
+        r_ai = await client.call_tool("probe_ai_write", args)
+    assert all(r.is_error is False for r in writes[:20])
+    assert writes[20].structured_content is not None
+    assert writes[20].structured_content["code"] == "RATE_LIMITED"  # write tier exhausted
+    assert r_ai.is_error is False
+
+
+def _register_bad(**kwargs: Any) -> None:
+    async def probe_never(db: AsyncSession, project_id: Any) -> dict:  # noqa: ARG001
+        return {}
+
+    server.agent_tool(
+        **{"project_arg": "project_id", **kwargs},
+        title="never",
+        description="test",
+        destructive=False,
+    )(probe_never)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "missing"),
+    [
+        pytest.param(
+            {
+                "requires": "ai_run",
+                "role": "member",
+                "read_only": True,
+                "open_world": False,
+                "requires_user_interaction": False,
+            },
+            "tier",
+            id="ai_run-without-tier",
+        ),
+        pytest.param({"requires": "read", "role": "member"}, "role", id="read-with-role"),
+        pytest.param({"requires": "write", "tier": "ai_plan"}, "tier", id="write-with-tier"),
+        pytest.param(
+            {
+                "requires": "ai_run",
+                "role": "member",
+                "tier": "nope",
+                "read_only": True,
+                "open_world": False,
+                "requires_user_interaction": False,
+            },
+            "tier",
+            id="ai_run-unknown-tier",
+        ),
+        pytest.param(
+            {
+                "requires": "ai_run",
+                "project_arg": None,
+                "role": "reviewer",
+                "tier": "ai_plan",
+                "read_only": True,
+                "open_world": False,
+                "requires_user_interaction": False,
+            },
+            "project_arg",
+            id="role-without-project",
+        ),
+    ],
+)
+def test_ai_run_rule_requires_explicit_fields(kwargs: dict[str, Any], missing: str) -> None:
+    with pytest.raises(TypeError, match=missing):
+        _register_bad(**kwargs)
+    assert "probe_never" not in server._RULES
+
+
+async def test_requires_user_interaction_renders_the_meta(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw_ai_run: SeededPat,
+) -> None:
+    async def probe_prompted(db: AsyncSession, project_id: Any) -> dict:  # noqa: ARG001
+        return {}
+
+    server.agent_tool(
+        requires="ai_run",
+        role="reviewer",
+        tier="ai_start",
+        read_only=False,
+        open_world=True,
+        requires_user_interaction=True,
+        project_arg="project_id",
+        title="Probe prompted",
+        description="test",
+        destructive=True,
+        idempotent=False,
+    )(probe_prompted)
+    try:
+        async with mcp_client(pat_primary_rw_ai_run) as client:
+            tools = {t.name: t for t in (await client.list_tools()).tools}
+    finally:
+        server.mcp.remove_tool("probe_prompted")
+        server._RULES.pop("probe_prompted", None)
+    tool = tools["probe_prompted"]
+    assert tool.meta == {"anthropic/requiresUserInteraction": True}
+    assert tool.annotations is not None
+    assert (tool.annotations.read_only_hint, tool.annotations.open_world_hint) == (False, True)
+    assert all(not (t.meta or {}) for name, t in tools.items() if name != "probe_prompted")
+
+
+async def test_read_only_ai_tool_rejects_nul_in_dispatcher(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read_ai_run: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    args = {"project_id": str(SEED.primary_project), "note": "a\x00b"}
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        r = await client.call_tool("probe_ai_read", args)
+        # A mutating tool (read_only=False) gets the NUL: it rejects it inside its
+        # own audited try, so the dispatcher keys on read_only, not the scope.
+        r_mutating = await client.call_tool("probe_ai_write", args)
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "INVALID_ARGUMENT"
+    assert r.structured_content["field"] == "note"
+    assert r_mutating.is_error is False
+
+
 async def test_write_tools_use_the_write_bucket(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
     probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(server, "_WRITE_LIMIT", parse("1/minute"))
+    monkeypatch.setitem(server._TIERS, "write", parse("1/minute"))
 
     async with mcp_client(pat_primary_rw) as client:
         r1 = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
@@ -367,7 +584,7 @@ async def test_bad_arguments_are_charged_to_the_rate_tier(
     probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(server, "_READ_LIMIT", parse("1/minute"))
+    monkeypatch.setitem(server._TIERS, "read", parse("1/minute"))
     async with mcp_client(pat_primary_read) as client:
         r1 = await client.call_tool("probe_read", {"project_id": "abc"})
         r2 = await client.call_tool("probe_read", {"project_id": "abc"})

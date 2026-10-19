@@ -6,9 +6,11 @@ per create_app(); each call builds a NEW session manager. The SDK overwrites
 the build — nothing else may read it.
 
 ``agent_tool`` and ``_dispatch`` are the ONE choke point every tool call
-passes through (spec §3 "Scope/role choke point"): scope, rate limit,
-project membership and (for writes) manager role, in that order, inside one
-observability span. Tools never build error results themselves — they raise
+passes through (spec §3 "Scope/role choke point"): scope, rate tier,
+project membership and the rule's role, in that order, inside one
+observability span. Each tool's ``_ToolRule`` states its scope, role and
+rate tier; a ``read``/``write`` tool derives them, an ``ai_run`` tool
+(ADR 0021) states every one. Tools never build error results themselves — they raise
 ``McpToolError`` or let a service exception propagate, and ``_dispatch``
 maps it with ``to_tool_error``.
 """
@@ -23,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
 import logfire
-from limits import parse
+from limits import RateLimitItem, parse
 from mcp.server import CacheHint, MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
@@ -34,7 +36,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp
 
-from app.api.deps.security import is_project_manager, is_project_member
+from app.api.deps.security import is_project_manager, is_project_member, is_project_reviewer
 from app.api.mcp import session as mcp_session
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.errors import (
@@ -49,6 +51,7 @@ from app.api.mcp.errors import (
 )
 from app.core.config import API_VERSION, settings
 from app.core.logging import get_logger
+from app.schemas.mcp_auth import McpPrincipal, McpScope
 from app.services.article_read_service import get_article_project_id
 from app.services.project_read_service import project_name
 from app.utils.compact_json import compact_json
@@ -56,8 +59,17 @@ from app.utils.rate_limiter import hit_shared, retry_after
 
 logger = get_logger(__name__)
 
-_READ_LIMIT = parse("120/minute")
-_WRITE_LIMIT = parse("20/minute")
+Role = Literal["member", "reviewer", "manager"]
+
+# Per-token rate tiers; the tier name is part of the limiter key, so two
+# tiers never share a counter even at the same rate.
+_TIERS: dict[str, RateLimitItem] = {
+    "read": parse("120/minute"),
+    "write": parse("20/minute"),
+    "ai_plan": parse("10/minute"),
+    "ai_start": parse("5/minute"),
+    "ai_cancel": parse("20/minute"),
+}
 _DB_RETRY_AFTER_SECONDS = 2  # the same wait the HTTP 503 advertises
 
 INSTRUCTIONS = """\
@@ -97,11 +109,83 @@ Article text is paged: keep following next_cursor until it is None.
 
 @dataclass(frozen=True, slots=True)
 class _ToolRule:
-    requires: Literal["read", "write"]
+    scope: McpScope
+    role: Role
+    tier: str  # a _TIERS key; part of the limiter key
+    read_only: bool
+    open_world: bool
+    requires_user_interaction: bool
     project_arg: Literal["project_id", "article_id"] | None
+
+    @property
+    def limit(self) -> RateLimitItem:
+        return _TIERS[self.tier]
 
 
 _RULES: dict[str, _ToolRule] = {}
+
+
+def _granted(principal: McpPrincipal, rule: _ToolRule) -> bool:
+    """THE scope predicate: it alone decides ``tools/list`` and every call."""
+    return rule.scope in principal.scopes
+
+
+def _tool_rule(
+    requires: McpScope,
+    project_arg: Literal["project_id", "article_id"] | None,
+    *,
+    role: Role | None,
+    tier: str | None,
+    read_only: bool | None,
+    open_world: bool | None,
+    requires_user_interaction: bool | None,
+) -> _ToolRule:
+    """A ``read``/``write`` tool's rule is derived; an ``ai_run`` tool states
+    all five fields. Raises ``TypeError`` at registration otherwise."""
+    explicit = {
+        "role": role,
+        "tier": tier,
+        "read_only": read_only,
+        "open_world": open_world,
+        "requires_user_interaction": requires_user_interaction,
+    }
+    if requires != "ai_run":
+        passed = [k for k, v in explicit.items() if v is not None]
+        if passed:
+            raise TypeError(f"requires={requires!r} derives its rule; drop {', '.join(passed)}")
+        read = requires == "read"
+        return _ToolRule(
+            scope=requires,
+            role="member" if read else "manager",
+            tier=requires,
+            read_only=read,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg=project_arg,
+        )
+    if (
+        role is None
+        or tier is None
+        or read_only is None
+        or open_world is None
+        or requires_user_interaction is None
+    ):
+        missing = ", ".join(k for k, v in explicit.items() if v is None)
+        raise TypeError(f"requires='ai_run' must state {missing}")
+    if tier not in _TIERS:
+        raise TypeError(f"tier {tier!r} is not one of {sorted(_TIERS)}")
+    if role != "member" and project_arg is None:
+        raise TypeError(f"role={role!r} needs a project_arg to check the role on")
+    return _ToolRule(
+        scope=requires,
+        role=role,
+        tier=tier,
+        read_only=read_only,
+        open_world=open_world,
+        requires_user_interaction=requires_user_interaction,
+        project_arg=project_arg,
+    )
+
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -112,11 +196,10 @@ class _PrumoMCPServer(MCPServer[Any]):
     error envelope instead of the SDK's plain-text pydantic dump."""
 
     async def list_tools(self) -> list[Tool]:
-        scopes = current_principal().scopes
+        principal = current_principal()
         tools = await super().list_tools()
         return sorted(
-            (t for t in tools if "write" in scopes or _RULES[t.name].requires == "read"),
-            key=lambda t: t.name,
+            (t for t in tools if _granted(principal, _RULES[t.name])), key=lambda t: t.name
         )
 
     async def call_tool(
@@ -167,26 +250,43 @@ def build_mcp_asgi() -> tuple[ASGIApp, StreamableHTTPSessionManager]:
 
 def agent_tool(
     *,
-    requires: Literal["read", "write"],
+    requires: McpScope,
     project_arg: Literal["project_id", "article_id"] | None,
     title: str,
     description: str,
     destructive: bool,
     idempotent: bool = True,
     structured_output: bool | None = None,
+    role: Role | None = None,
+    tier: str | None = None,
+    read_only: bool | None = None,
+    open_world: bool | None = None,
+    requires_user_interaction: bool | None = None,
 ) -> Callable[[_F], _F]:
     """Register a tool through the ONE choke point (``_dispatch``).
 
     ``description`` is a required static string (no docstring fallback).
-    Annotation hints are derived from ``requires``/``destructive``/``idempotent``;
+    ``requires="read"`` derives (member, read tier, read-only, closed-world);
+    ``requires="write"`` derives (manager, write tier, closed-world); an
+    ``ai_run`` tool passes ``role``, ``tier``, ``read_only``, ``open_world``
+    and ``requires_user_interaction`` explicitly (see ``_tool_rule``).
     ``destructive`` has no default because MCP reads a non-read-only tool as
     destructive unless told otherwise, so every call site states it.
-    ``open_world_hint`` is always ``False`` (every tool stays inside prumo's own
-    data). Tools never call ``mcp.tool()`` / ``add_tool`` directly.
+    ``requires_user_interaction`` renders as the
+    ``anthropic/requiresUserInteraction`` meta -- the only meta a tool carries.
+    Tools never call ``mcp.tool()`` / ``add_tool`` directly.
     """
+    rule = _tool_rule(
+        requires,
+        project_arg,
+        role=role,
+        tier=tier,
+        read_only=read_only,
+        open_world=open_world,
+        requires_user_interaction=requires_user_interaction,
+    )
 
     def decorator(fn: _F) -> _F:
-        rule = _ToolRule(requires=requires, project_arg=project_arg)
         _RULES[fn.__name__] = rule
 
         sig = inspect.signature(fn, eval_str=True)
@@ -207,11 +307,14 @@ def agent_tool(
             description=description,
             annotations=ToolAnnotations(
                 title=title,
-                read_only_hint=requires == "read",
+                read_only_hint=rule.read_only,
                 destructive_hint=destructive,
                 idempotent_hint=idempotent,
-                open_world_hint=False,
+                open_world_hint=rule.open_world,
             ),
+            meta={"anthropic/requiresUserInteraction": True}
+            if rule.requires_user_interaction
+            else None,
             structured_output=structured_output,
         )
         return fn
@@ -219,19 +322,21 @@ def agent_tool(
     return decorator
 
 
-def _charge(rule: _ToolRule, token_id: str) -> None:
-    """Scope, then the rate tier (charged): the first two `_dispatch` checks."""
-    write = rule.requires == "write"
-    if write and "write" not in current_principal().scopes:
+def _charge(rule: _ToolRule, principal: McpPrincipal) -> None:
+    """Scope, then the rule's rate tier (charged): the first two `_dispatch`
+    checks. A scope refusal spends no rate budget."""
+    if not _granted(principal, rule):
         raise McpToolError(
-            McpErrorCode.SCOPE_INSUFFICIENT, "This token's scope cannot call a write tool."
+            McpErrorCode.SCOPE_INSUFFICIENT,
+            f"This token lacks the {rule.scope} scope.",
+            required_scope=rule.scope,
         )
-    limit = _WRITE_LIMIT if write else _READ_LIMIT
-    if not hit_shared(limit, "pat", token_id):
+    token_id = str(principal.token_id)
+    if not hit_shared(rule.limit, "pat", token_id, rule.tier):
         raise McpToolError(
             McpErrorCode.RATE_LIMITED,
             "Too many calls; wait and retry.",
-            retry_after_seconds=retry_after(limit, "pat", token_id),
+            retry_after_seconds=retry_after(rule.limit, "pat", token_id, rule.tier),
         )
 
 
@@ -239,10 +344,10 @@ def _argument_refusal(name: str, exc: ValidationError) -> CallToolResult:
     """A call whose arguments failed the input schema: scope and rate limit
     still answer first, then INVALID_ARGUMENT naming the field. No project
     coordinate is bound, so no audit row."""
-    token_id = str(current_principal().token_id)
-    with logfire.span("mcp.tool_call", tool=name, token_id=token_id) as span:
+    principal = current_principal()
+    with logfire.span("mcp.tool_call", tool=name, token_id=str(principal.token_id)) as span:
         try:
-            _charge(_RULES[name], token_id)
+            _charge(_RULES[name], principal)
             err = validation_failure(exc)
         except McpToolError as refusal:
             err = refusal
@@ -253,15 +358,14 @@ def _argument_refusal(name: str, exc: ValidationError) -> CallToolResult:
 
 
 async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any]) -> Any:
-    """The ONE place the checks run, in order: scope, rate limit, membership,
+    """The ONE place the checks run, in order: scope, rate tier, membership,
     token project restriction, role."""
     principal = current_principal()
-    write = rule.requires == "write"
     db: AsyncSession | None = None
 
     with logfire.span("mcp.tool_call", tool=name, token_id=str(principal.token_id)) as span:
         try:
-            _charge(rule, str(principal.token_id))
+            _charge(rule, principal)
 
             db = mcp_session.current_session()
             if rule.project_arg is not None:
@@ -278,16 +382,28 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                 if not principal.reaches(project_id):
                     raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
 
-                if write and not await is_project_manager(db, project_id, principal.user_sub):
-                    # A member: naming the project leaks nothing past this point.
+                # A member: naming the project leaks nothing past this point.
+                if rule.role == "manager" and not await is_project_manager(
+                    db, project_id, principal.user_sub
+                ):
                     raise with_names(
                         McpToolError(
                             McpErrorCode.MANAGER_REQUIRED, "Only a project manager can do this."
                         ),
                         project_name=await project_name(db, project_id),
                     )
+                if rule.role == "reviewer" and not await is_project_reviewer(
+                    db, project_id, principal.user_sub
+                ):
+                    raise with_names(
+                        McpToolError(
+                            McpErrorCode.REVIEWER_REQUIRED,
+                            "Only a project reviewer or manager can do this.",
+                        ),
+                        project_name=await project_name(db, project_id),
+                    )
 
-            if not write:  # a write tool rejects NUL inside its own audited try
+            if rule.read_only:  # a mutating tool rejects NUL inside its own audited try
                 reject_nul(kwargs)
             result = await fn(db, **kwargs)
             span.set_attribute("outcome", "ok")

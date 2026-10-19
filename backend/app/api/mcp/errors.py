@@ -39,6 +39,7 @@ from app.utils.text_caps import cap_text
 class McpErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     MANAGER_REQUIRED = "MANAGER_REQUIRED"
+    REVIEWER_REQUIRED = "REVIEWER_REQUIRED"
     SCOPE_INSUFFICIENT = "SCOPE_INSUFFICIENT"
     INVALID_ARGUMENT = "INVALID_ARGUMENT"
     DRAFT_LOCK_HELD = "DRAFT_LOCK_HELD"
@@ -68,7 +69,12 @@ class _CodeSpec:
 _SPECS: dict[McpErrorCode, _CodeSpec] = {  # one entry per code; next_step text from spec §7
     McpErrorCode.NOT_FOUND: _CodeSpec(False, "call list_projects / list_articles"),
     McpErrorCode.MANAGER_REQUIRED: _CodeSpec(False, "ask a project manager"),
-    McpErrorCode.SCOPE_INSUFFICIENT: _CodeSpec(False, "use a read_write token"),
+    McpErrorCode.REVIEWER_REQUIRED: _CodeSpec(False, "ask a project manager for the reviewer role"),
+    McpErrorCode.SCOPE_INSUFFICIENT: _CodeSpec(
+        False,
+        "this token lacks required_scope; a token with that access is created by the researcher "
+        "in prumo Settings → Integrations",
+    ),
     McpErrorCode.INVALID_ARGUMENT: _CodeSpec(False, "fix that argument and resend"),
     McpErrorCode.DRAFT_LOCK_HELD: _CodeSpec(
         False, "tell the user who holds the draft; do not retry"

@@ -326,6 +326,14 @@ async def probe_write(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noq
     return ProbeResult(ok=True)
 
 
+async def probe_ai_read(db: AsyncSession, project_id: UUID, note: str = "") -> ProbeResult:  # noqa: ARG001
+    return ProbeResult(ok=True)
+
+
+async def probe_ai_write(db: AsyncSession, project_id: UUID, note: str = "") -> ProbeResult:  # noqa: ARG001
+    return ProbeResult(ok=True)
+
+
 async def probe_article(db: AsyncSession, article_id: UUID) -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True)
 
@@ -391,6 +399,30 @@ def probe_tools() -> Iterator[None]:
             description="test",
             destructive=False,
         )(probe_boom),
+        agent_tool(
+            requires="ai_run",
+            role="reviewer",
+            tier="ai_plan",
+            read_only=True,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg="project_id",
+            title="Probe ai read",
+            description="test",
+            destructive=False,
+        )(probe_ai_read),
+        agent_tool(
+            requires="ai_run",
+            role="member",
+            tier="ai_cancel",
+            read_only=False,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg="project_id",
+            title="Probe ai write",
+            description="test",
+            destructive=False,
+        )(probe_ai_write),
     ]
     try:
         yield

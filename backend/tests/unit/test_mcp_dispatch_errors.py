@@ -22,7 +22,15 @@ from app.api.mcp import asgi_auth, server
 from app.api.mcp import session as mcp_session
 from app.schemas.mcp_auth import McpPrincipal
 
-_RULE = server._ToolRule(requires="read", project_arg=None)
+_RULE = server._tool_rule(
+    "read",
+    None,
+    role=None,
+    tier=None,
+    read_only=None,
+    open_world=None,
+    requires_user_interaction=None,
+)
 
 
 class _Recorder:

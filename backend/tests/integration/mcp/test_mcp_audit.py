@@ -158,6 +158,7 @@ async def _build_drivers(
     pat_primary_rw,
     pat_reviewer_rw,
     pat_primary_read,
+    pat_viewer_ai_run,
 ) -> dict[McpErrorCode, Callable[[], Awaitable[CallToolResult]]]:
     """One driver per :class:`McpErrorCode`; a missing entry fails
     ``test_audit_row_matrix`` outright, so a new enum member needs a case here."""
@@ -186,6 +187,15 @@ async def _build_drivers(
                 "fields": {"description": "x"},
                 "expected": {"description": None},
             },
+        )
+
+    async def reviewer_required() -> CallToolResult:
+        # No shipped tool requires the reviewer role yet: the ai_run probe does.
+        return await call_tool(
+            mcp_client,
+            pat_viewer_ai_run,
+            "probe_ai_read",
+            {"project_id": str(SEED.primary_project)},
         )
 
     async def scope_insufficient() -> CallToolResult:
@@ -455,6 +465,7 @@ async def _build_drivers(
     return {
         McpErrorCode.NOT_FOUND: not_found,
         McpErrorCode.MANAGER_REQUIRED: manager_required,
+        McpErrorCode.REVIEWER_REQUIRED: reviewer_required,
         McpErrorCode.SCOPE_INSUFFICIENT: scope_insufficient,
         McpErrorCode.INVALID_ARGUMENT: invalid_argument,
         McpErrorCode.DRAFT_LOCK_HELD: draft_lock_held,
@@ -482,9 +493,17 @@ async def test_audit_row_matrix(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     code: McpErrorCode,
+    pat_viewer_ai_run,
+    probe_tools: None,  # noqa: ARG001 - the reviewer_required driver calls a probe tool
 ) -> None:
     drivers = await _build_drivers(
-        mcp_client, db_session, monkeypatch, pat_primary_rw, pat_reviewer_rw, pat_primary_read
+        mcp_client,
+        db_session,
+        monkeypatch,
+        pat_primary_rw,
+        pat_reviewer_rw,
+        pat_primary_read,
+        pat_viewer_ai_run,
     )
     result = await drivers[code]()
     assert error_payload(result)["code"] == code.value
