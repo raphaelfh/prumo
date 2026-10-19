@@ -104,7 +104,7 @@ describe('OAuthConsent', () => {
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(APPROVED_URL));
-    expect(posts).toEqual([{approve: true, write: true}]);
+    expect(posts).toEqual([{approve: true, write: true, ai_run: false}]);
     expect(screen.getByText(t('oauthConsent', 'returning'))).toBeInTheDocument();
   });
 
@@ -115,7 +115,7 @@ describe('OAuthConsent', () => {
     await user.click(await screen.findByRole('button', {name: t('oauthConsent', 'allow')}));
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(APPROVED_URL));
-    expect(posts).toEqual([{approve: true, write: false}]);
+    expect(posts).toEqual([{approve: true, write: false, ai_run: false}]);
   });
 
   it('Deny posts approve: false, write: false and leaves to the access_denied URL', async () => {
@@ -127,7 +127,7 @@ describe('OAuthConsent', () => {
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'deny')}));
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(DENIED_URL));
-    expect(posts).toEqual([{approve: false, write: false}]);
+    expect(posts).toEqual([{approve: false, write: false, ai_run: false}]);
   });
 
   it('a read-only request renders no checkbox and posts write: false', async () => {
@@ -140,7 +140,7 @@ describe('OAuthConsent', () => {
     expect(screen.queryByText(t('oauthConsent', 'editHint'))).toBeNull();
 
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
-    await waitFor(() => expect(posts).toEqual([{approve: true, write: false}]));
+    await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: false}]));
   });
 
   it('GET 404 shows the expired state', async () => {
@@ -212,8 +212,8 @@ describe('OAuthConsent', () => {
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(APPROVED_URL));
     expect(posts).toEqual([
-      {approve: true, write: true},
-      {approve: true, write: true},
+      {approve: true, write: true, ai_run: false},
+      {approve: true, write: true, ai_run: false},
     ]);
   });
 

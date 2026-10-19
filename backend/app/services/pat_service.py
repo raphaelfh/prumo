@@ -161,6 +161,7 @@ def _read(
         name=row.name,
         token_prefix=row.token_prefix,
         scope=row.scope,
+        ai_run=row.ai_run,
         status=token_status,
         expires_at=row.expires_at,
         last_used_at=row.last_used_at,
@@ -264,6 +265,7 @@ async def create_token(
                 token_prefix=secret[: len(PAT_PREFIX) + 6],
                 token_hash=hash_secret(secret),
                 scope=payload.scope,
+                ai_run=payload.ai_run,
                 expires_at=func.now() + func.make_interval(0, 0, 0, payload.expires_in_days),
                 project_ids=payload.project_ids,
             )

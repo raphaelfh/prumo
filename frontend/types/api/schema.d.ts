@@ -5077,6 +5077,11 @@ export interface components {
          */
         OAuthConnectionRead: {
             /**
+             * Ai Run
+             * @description Whether the user let the app start AI extraction runs.
+             */
+            ai_run: boolean;
+            /**
              * Client Name
              * @description The name the app registered with.
              */
@@ -5131,6 +5136,12 @@ export interface components {
          * @description Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.
          */
         OAuthConsentDecisionRequest: {
+            /**
+             * Ai Run
+             * @description Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it.
+             * @default false
+             */
+            ai_run: boolean;
             /**
              * Approve
              * @description True to connect the app, false to deny it.
@@ -5189,6 +5200,11 @@ export interface components {
              * @description When the request stops accepting a decision.
              */
             expires_at: string;
+            /**
+             * Offers Ai Run
+             * @description True when the app asked for `ai_run`, so the page may offer it (a separate box, unchecked by default).
+             */
+            offers_ai_run: boolean;
             /**
              * Offers Write
              * @description True when the app asked for `write`, so the page may offer it.
@@ -5294,6 +5310,12 @@ export interface components {
          */
         PersonalAccessTokenCreateRequest: {
             /**
+             * Ai Run
+             * @description Allow this token to start AI extraction runs in projects whose manager allowed agent runs. At most 30 days.
+             * @default false
+             */
+            ai_run: boolean;
+            /**
              * Expires In Days
              * @description Token lifetime, in days, from creation.
              */
@@ -5335,6 +5357,11 @@ export interface components {
          * @description A token row, never including the secret.
          */
         PersonalAccessTokenRead: {
+            /**
+             * Ai Run
+             * @description Whether the token may start AI extraction runs.
+             */
+            ai_run: boolean;
             /**
              * Created At
              * Format: date-time

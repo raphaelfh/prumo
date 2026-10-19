@@ -158,7 +158,7 @@ function ReadyView({
           size="default"
           className="flex-1"
           disabled={pending}
-          onClick={() => onDecide({approve: false, write: false})}
+          onClick={() => onDecide({approve: false, write: false, ai_run: false})}
         >
           {t('oauthConsent', 'deny')}
         </Button>
@@ -166,7 +166,7 @@ function ReadyView({
           size="default"
           className="flex-1"
           disabled={pending}
-          onClick={() => onDecide({approve: true, write: request.offers_write && write})}
+          onClick={() => onDecide({approve: true, write: request.offers_write && write, ai_run: false})}
         >
           {t('oauthConsent', 'allow')}
         </Button>

@@ -11,12 +11,16 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TokenScope = Literal["read", "read_write"]
 """``read`` allows only MCP read tools; ``read_write`` also allows write tools."""
 
 TokenStatus = Literal["active", "expired", "revoked"]
+
+#: The longest lifetime of a credential carrying the AI-run grant
+#: (``ai_run_lifetime_check`` on ``personal_access_tokens``).
+AI_RUN_MAX_DAYS = 30
 
 
 class PersonalAccessTokenRefusalCode(StrEnum):
@@ -54,6 +58,13 @@ class PersonalAccessTokenCreateRequest(BaseModel):
             "belongs to). Omit or null for every project of the caller."
         ),
     )
+    ai_run: bool = Field(
+        default=False,
+        description=(
+            "Allow this token to start AI extraction runs in projects whose manager "
+            "allowed agent runs. At most 30 days."
+        ),
+    )
 
     @field_validator("project_ids")
     @classmethod
@@ -61,6 +72,12 @@ class PersonalAccessTokenCreateRequest(BaseModel):
         if value is not None and len(set(value)) != len(value):
             raise ValueError("project_ids must not repeat a project")
         return value
+
+    @model_validator(mode="after")
+    def _ai_run_lifetime(self) -> PersonalAccessTokenCreateRequest:
+        if self.ai_run and self.expires_in_days > AI_RUN_MAX_DAYS:
+            raise ValueError(f"a token with ai_run lives at most {AI_RUN_MAX_DAYS} days")
+        return self
 
 
 class PersonalAccessTokenRead(BaseModel):
@@ -72,6 +89,7 @@ class PersonalAccessTokenRead(BaseModel):
         description="First characters of the secret, shown for identification."
     )
     scope: TokenScope
+    ai_run: bool = Field(description="Whether the token may start AI extraction runs.")
     status: TokenStatus
     project_ids: list[UUID] | None = Field(
         description="Projects the token is restricted to; null means every project of its user."

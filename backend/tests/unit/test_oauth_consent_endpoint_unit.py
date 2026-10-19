@@ -43,6 +43,7 @@ def _view() -> OAuthConsentRequestRead:
         redirect_host="claude.ai",
         requested_scopes=["read", "write"],
         offers_write=True,
+        offers_ai_run=False,
         expires_at=datetime.now(UTC),
     )
 
@@ -119,11 +120,43 @@ async def test_post_decides_for_the_caller_and_commits_once(
         user_id=CALLER,
     )
 
-    assert seen == {"request_id": REQUEST_ID, "user_id": CALLER, "approve": True, "write": False}
+    assert seen == {
+        "request_id": REQUEST_ID,
+        "user_id": CALLER,
+        "approve": True,
+        "write": False,
+        "ai_run": False,
+    }
     db.commit.assert_awaited_once()
     assert result.data is not None
     assert result.data.redirect_url == "https://claude.ai/cb?code=c&state=st"
     assert result.trace_id == "t2"
+
+
+@pytest.mark.usefixtures("oauth_on")
+async def test_post_forwards_ai_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    async def _fake(_db: object, **kwargs: object) -> str:
+        seen.update(kwargs)
+        return "https://claude.ai/cb?code=c&state=st"
+
+    monkeypatch.setattr(oauth_consent, "decide_request", _fake)
+    db = SimpleNamespace(commit=AsyncMock())
+
+    await _decide(
+        request_id=REQUEST_ID,
+        body=OAuthConsentDecisionRequest.model_validate(
+            {"approve": True, "write": True, "ai_run": True}
+        ),
+        request=_request("t3"),
+        db=db,
+        user_id=CALLER,
+    )
+
+    assert seen["ai_run"] is True
+    assert seen["write"] is True
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.usefixtures("oauth_on")

@@ -280,7 +280,7 @@ describe('PersonalAccessTokensGroup', () => {
       await userEvent.click(submitButton(dialog));
 
       await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
-      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({name: 'cli', scope: 'read', expires_in_days: 90});
+      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false});
     });
 
     it('"Only these projects": lists the user\'s projects and posts the selected ids', async () => {
@@ -294,7 +294,7 @@ describe('PersonalAccessTokensGroup', () => {
 
       await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
       expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({
-        name: 'cli', scope: 'read', expires_in_days: 90, project_ids: [P2],
+        name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false, project_ids: [P2],
       });
     });
 
@@ -374,7 +374,7 @@ describe('PersonalAccessTokensGroup', () => {
       await userEvent.click(submitButton(dialog));
       await waitFor(() => expect(svc.createMyToken).toHaveBeenCalledTimes(2));
       expect(vi.mocked(svc.createMyToken).mock.calls[1][0]).toEqual({
-        name: 'cli', scope: 'read', expires_in_days: 90, project_ids: [P2],
+        name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false, project_ids: [P2],
       });
     });
 

@@ -189,15 +189,13 @@ async def _seed_pat(
         db,
         user_id=user_id,
         payload=PersonalAccessTokenCreateRequest(
-            name=f"pytest-{scope}", scope=scope, expires_in_days=30, project_ids=project_ids
+            name=f"pytest-{scope}",
+            scope=scope,
+            expires_in_days=30,
+            project_ids=project_ids,
+            ai_run=ai_run,
         ),
     )
-    if ai_run:
-        # No issuance path sets the grant yet; the 30-day expiry already fits its CHECK.
-        await db.execute(
-            text("UPDATE public.personal_access_tokens SET ai_run = true WHERE id = :id"),
-            {"id": str(created.token.id)},
-        )
     principal = await resolve_principal(db, created.secret)
     assert principal is not None
     return SeededPat(created.secret, principal)

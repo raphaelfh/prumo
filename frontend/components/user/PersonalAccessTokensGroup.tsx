@@ -314,7 +314,7 @@ function CreateDialog({
   const submit = ({name: tokenName, scope, expires_in_days, projectMode, project_ids}: CreateValues) => {
     setFormError(null);
     create.mutate(
-      {name: tokenName, scope, expires_in_days, ...(projectMode === 'only' ? {project_ids} : {})},
+      {name: tokenName, scope, expires_in_days, ai_run: false, ...(projectMode === 'only' ? {project_ids} : {})},
       {
         onSuccess: (data) => {
           reset();

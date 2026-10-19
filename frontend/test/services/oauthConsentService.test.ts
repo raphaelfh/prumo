@@ -32,11 +32,11 @@ describe('oauthConsentService', () => {
     const data = {redirect_url: 'https://claude.ai/cb?code=c&state=s'};
     apiClientMock.mockResolvedValue(data);
 
-    const result = await decideConsentRequest(ID, {approve: true, write: false});
+    const result = await decideConsentRequest(ID, {approve: true, write: false, ai_run: false});
 
     expect(apiClientMock).toHaveBeenCalledWith(`/api/v1/oauth/requests/${ID}/decision`, {
       method: 'POST',
-      body: {approve: true, write: false},
+      body: {approve: true, write: false, ai_run: false},
     });
     expect(result).toEqual({ok: true, data});
   });
