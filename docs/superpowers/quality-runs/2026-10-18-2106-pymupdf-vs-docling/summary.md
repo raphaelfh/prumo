@@ -121,5 +121,6 @@ PMCIDs above reproduce the set.
 
 ## Decision
 
-Recorded in ADR-0011's 2026-10 amendment: the parser policy is **pending the
-maintainer's ruling**. This run changes no parser selection.
+Status quo (option c), ruled by the maintainer on 2026-10-19 and recorded in
+ADR-0011's 2026-10 amendment: PyMuPDF stays the default parser and Docling
+stays a per-project option a project manager turns on.

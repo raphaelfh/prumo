@@ -325,10 +325,13 @@ and breaks reading order less often (5 backward jumps vs 19). PyMuPDF is about
 vs 5.7 GB peak). Both leave no page chrome typed as body and no invisible
 characters. Bbox, reference recall and scanned inputs are not measured.
 
-**Decision: pending.** The parser policy is the maintainer's call and is not
-yet made. The options on the table are (a) Docling as the default parser,
-(b) Docling for some cases only (for example papers where PyMuPDF finds no
-table), or (c) the status quo, PyMuPDF as the default with Docling opt-in. Until
-the ruling, the Decision Outcome above stands unchanged: the per-project
-setting defaults to `pymupdf`, and no parser selection code changes with this
-run.
+**Decision (2026-10-19): status quo (option c).** The maintainer ruled
+against making Docling the default (a) or routing some papers to it (b).
+PyMuPDF stays the default: `auto` resolves to LlamaParse when a `llama_cloud`
+key resolves and to `pymupdf` otherwise. Docling stays opt-in per project,
+set only by a project manager (`PUT /projects/{id}/parser-settings` requires
+the manager role). The Decision Outcome above stands unchanged, and no parser
+selection code changes with this run. The trade-off accepted: PyMuPDF's
+missed tables without full rulings and weaker heading and paragraph segmentation, in
+exchange for ~4× faster parses and a worker that does not need ~6 GB per
+parse.
