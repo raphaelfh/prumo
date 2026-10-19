@@ -225,6 +225,11 @@ prompts: *Set up the review question*, *Build the extraction form* and
 tools above in order and takes an optional project id. Read-only tokens
 do not see them, and publishing stays a person's action in prumo.
 
+In hosts that render MCP Apps, `get_template` also shows a read-only
+draft-review card: the draft's changes by tier, its lint, and for managers
+a "Review and publish in prumo" link. The card changes nothing and has no
+publish button; other hosts get the same data as text.
+
 Changes to the review question, eligibility, study design or review type
 reach only AI runs started afterwards; a run that already made its first
 AI call keeps the review question it started with.

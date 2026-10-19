@@ -97,6 +97,7 @@ class McpTemplateView(BaseModel):
     changes: list[McpTemplateChangeRow] | None = None
     lint: list[LintFinding] | None = None
     note: str | None = None
+    editor_url: str | None
     untrusted_content: Literal[True] = True
     untrusted_fields: list[str] = [
         "template_name",

@@ -21,6 +21,8 @@ import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from mcp import Client
+from mcp.client.extension import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -300,10 +302,15 @@ def mcp_client() -> Callable[[SeededPat], AbstractAsyncContextManager[Client]]:
     ``async with`` shares that one session, like one /mcp request."""
 
     @asynccontextmanager
-    async def connect(pat: SeededPat) -> AsyncIterator[Client]:
+    async def connect(pat: SeededPat, *, apps: bool = False) -> AsyncIterator[Client]:
+        # apps=True advertises MCP Apps support, as an Apps-rendering host does.
+        extensions = [advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})] if apps else None
         token = principal_var.set(pat.principal)
         try:
-            async with mcp_session.request_session(), Client(server.mcp) as client:
+            async with (
+                mcp_session.request_session(),
+                Client(server.mcp, extensions=extensions) as client,
+            ):
                 yield client
         finally:
             principal_var.reset(token)

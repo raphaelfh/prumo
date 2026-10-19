@@ -48,6 +48,7 @@ from starlette.types import ASGIApp
 
 from app.api.deps.security import is_project_manager, is_project_member, is_project_reviewer
 from app.api.mcp import session as mcp_session
+from app.api.mcp.apps import apps
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.errors import (
     NOT_FOUND_MESSAGE,
@@ -274,6 +275,7 @@ mcp = _PrumoMCPServer(
     description="Read and carefully edit prumo systematic-review projects.",
     instructions=INSTRUCTIONS,
     cache_hints={"tools/list": CacheHint(ttl_ms=3_600_000, scope="private")},
+    extensions=[apps],
 )
 
 
@@ -308,6 +310,7 @@ def agent_tool(
     read_only: bool | None = None,
     open_world: bool | None = None,
     requires_user_interaction: bool | None = None,
+    ui_resource: str | None = None,
 ) -> Callable[[_F], _F]:
     """Register a tool through the ONE choke point (``_dispatch``).
 
@@ -318,9 +321,9 @@ def agent_tool(
     and ``requires_user_interaction`` explicitly (see ``_tool_rule``).
     ``destructive`` has no default because MCP reads a non-read-only tool as
     destructive unless told otherwise, so every call site states it.
-    ``requires_user_interaction`` renders as the
-    ``anthropic/requiresUserInteraction`` meta -- the only meta a tool carries.
-    Tools never call ``mcp.tool()`` / ``add_tool`` directly.
+    ``requires_user_interaction`` renders the ``anthropic/requiresUserInteraction``
+    meta and ``ui_resource`` (a registered ``ui://`` App) the ``ui`` meta (MCP
+    Apps) -- the only meta keys a tool carries. Tools never call ``mcp.tool()`` / ``add_tool`` directly.
     """
     rule = _tool_rule(
         requires,
@@ -331,6 +334,13 @@ def agent_tool(
         open_world=open_world,
         requires_user_interaction=requires_user_interaction,
     )
+    if ui_resource is not None and ui_resource not in {b.resource.uri for b in apps.resources()}:
+        raise TypeError(f"ui_resource {ui_resource!r} is not a registered App")
+    meta: dict[str, Any] = {}
+    if rule.requires_user_interaction:
+        meta["anthropic/requiresUserInteraction"] = True
+    if ui_resource is not None:
+        meta["ui"] = {"resourceUri": ui_resource}
 
     def decorator(fn: _F) -> _F:
         _RULES[fn.__name__] = rule
@@ -358,9 +368,7 @@ def agent_tool(
                 idempotent_hint=idempotent,
                 open_world_hint=rule.open_world,
             ),
-            meta={"anthropic/requiresUserInteraction": True}
-            if rule.requires_user_interaction
-            else None,
+            meta=meta or None,
             structured_output=structured_output,
         )
         return fn

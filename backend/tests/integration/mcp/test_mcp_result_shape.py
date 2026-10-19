@@ -120,6 +120,7 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
             "changes[].variant",
             "changes[].attribute",
             "note",
+            "editor_url",
             "next_cursor",
         }
     ),

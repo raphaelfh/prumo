@@ -179,6 +179,13 @@ async def test_read_token_get_is_refused_like_an_unknown_prompt(mcp_client, pat_
     assert ungranted.data == unknown.data
 
 
+async def test_read_ai_run_token_lists_no_setup_prompt(mcp_client, pat_primary_read_ai_run):
+    async with mcp_client(pat_primary_read_ai_run) as client:
+        listed = await client.list_prompts()
+    assert listed.prompts  # precondition: the ai_run prompt is listed
+    assert not {p.name for p in listed.prompts} & set(_SETUP)
+
+
 async def test_write_token_lists_exactly_the_setup_prompts(mcp_client, pat_primary_rw):
     async with mcp_client(pat_primary_rw) as client:
         listed = await client.list_prompts()

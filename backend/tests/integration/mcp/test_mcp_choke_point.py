@@ -401,7 +401,7 @@ async def test_requires_user_interaction_renders_the_meta(
     assert tool.annotations is not None
     assert (tool.annotations.read_only_hint, tool.annotations.open_world_hint) == (False, True)
     assert all(
-        not (t.meta or {})
+        set(t.meta or {}) <= {"ui"}
         for name, t in tools.items()
         if name != "probe_prompted" and name not in _HINT_ALLOWLIST
     )
