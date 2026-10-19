@@ -85,6 +85,7 @@ gunicorn
 healthcheck
 HIPAA
 hitl
+HKDF
 HMAC
 hono
 hosmer
@@ -122,6 +123,7 @@ monkeypatch
 mook
 msw
 multimodal
+multiplicatively
 multiset
 multivariable
 mypy

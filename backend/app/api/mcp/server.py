@@ -31,7 +31,17 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import CallToolResult, InputRequiredResult, TextContent, Tool, ToolAnnotations
+from mcp.shared.exceptions import MCPError
+from mcp.types import (
+    INVALID_PARAMS,
+    CallToolResult,
+    GetPromptResult,
+    InputRequiredResult,
+    Prompt,
+    TextContent,
+    Tool,
+    ToolAnnotations,
+)
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp
@@ -128,11 +138,18 @@ class _ToolRule:
 
 
 _RULES: dict[str, _ToolRule] = {}
+# A prompt's only rule is its scope: no role, tier, annotations or project.
+_PROMPT_SCOPES: dict[str, McpScope] = {}
+
+
+def _has_scope(principal: McpPrincipal, scope: McpScope) -> bool:
+    """THE scope test: tools (through ``_granted``) and prompts both use it."""
+    return scope in principal.scopes
 
 
 def _granted(principal: McpPrincipal, rule: _ToolRule) -> bool:
-    """THE scope predicate: it alone decides ``tools/list`` and every call."""
-    return rule.scope in principal.scopes
+    """THE tool predicate: it alone decides ``tools/list`` and every call."""
+    return _has_scope(principal, rule.scope)
 
 
 def _tool_rule(
@@ -196,9 +213,10 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 
 class _PrumoMCPServer(MCPServer[Any]):
-    """Filters ``tools/list`` to what the caller's token scope may call, and
-    answers a call whose arguments fail the tool's input schema inside the
-    error envelope instead of the SDK's plain-text pydantic dump."""
+    """Filters ``tools/list`` and ``prompts/list`` to what the caller's token
+    scope may use, refuses an ungranted prompt as an unknown one, and answers
+    a call whose arguments fail the tool's input schema inside the error
+    envelope instead of the SDK's plain-text pydantic dump."""
 
     async def list_tools(self) -> list[Tool]:
         principal = current_principal()
@@ -225,6 +243,24 @@ class _PrumoMCPServer(MCPServer[Any]):
                 raise
             return _argument_refusal(name, exc.__cause__)
 
+    async def list_prompts(self) -> list[Prompt]:
+        principal = current_principal()
+        prompts = await super().list_prompts()
+        return [p for p in prompts if _has_scope(principal, _PROMPT_SCOPES[p.name])]
+
+    async def get_prompt(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        context: Context[Any, Any] | None = None,
+    ) -> GetPromptResult | InputRequiredResult:
+        # An ungranted prompt answers exactly like an unknown name: no text,
+        # no hint that it exists.
+        scope = _PROMPT_SCOPES.get(name)
+        if scope is None or not _has_scope(current_principal(), scope):
+            raise MCPError(INVALID_PARAMS, f"Unknown prompt: {name}")
+        return await super().get_prompt(name, arguments, context)
+
 
 mcp = _PrumoMCPServer(
     name="prumo",
@@ -237,10 +273,10 @@ mcp = _PrumoMCPServer(
 
 
 def build_mcp_asgi() -> tuple[ASGIApp, StreamableHTTPSessionManager]:
-    importlib.import_module(
-        "app.api.mcp.tools"
-    )  # registers every @agent_tool; a top-level import would be circular
-    # (tool modules import agent_tool from here)
+    # Registers every @agent_tool and @agent_prompt; a top-level import would
+    # be circular (those modules import the decorators from here).
+    importlib.import_module("app.api.mcp.tools")
+    importlib.import_module("app.api.mcp.prompts")
     app = mcp.streamable_http_app(
         streamable_http_path="/mcp",  # the SDK app's own Route matches the outer /mcp Route's path
         stateless_http=True,

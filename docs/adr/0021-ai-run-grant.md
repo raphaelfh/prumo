@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 adr_number: '0021'
 ---
@@ -112,6 +112,10 @@ owner-only data.
 
 prumo ships one `run_ai_extraction` prompt, visible only to credentials that
 hold the grant. Low priority.
+Shipped: `app/api/mcp/prompts.py` renders static steps (plan, show the
+confirmation, wait for an explicit yes, start, check status only when asked);
+`prompts/list` and `prompts/get` use the same scope test as the tools, and a
+request without the grant is refused like an unknown prompt.
 
 ### R12 — Template publishing
 

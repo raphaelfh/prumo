@@ -202,6 +202,7 @@ ignore_decorators = [
     "@event.listens_for",
     "@*.connect",
     "@agent_tool",
+    "@agent_prompt",
 ]
 # `cls` is the classmethod receiver Pydantic's @field_validator mandates —
 # a validator that ignores it still cannot drop the parameter, so the
