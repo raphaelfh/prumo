@@ -17,6 +17,7 @@ from pydantic import Field
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mcp.apps import AI_RUN_URI
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
 from app.api.mcp.errors import NOT_FOUND_MESSAGE, McpErrorCode, McpToolError, reject_nul
@@ -140,6 +141,7 @@ async def _run_detail(
         "Owner-only. Check status only when the user asks; do not poll."
     ),
     destructive=False,
+    ui_resource=AI_RUN_URI,
 )
 async def get_ai_runs(
     db: AsyncSession,

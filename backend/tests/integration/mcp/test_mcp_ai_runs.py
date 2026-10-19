@@ -404,6 +404,50 @@ async def test_get_ai_runs_lists_nothing_in_a_project_without_batches(
     assert body["project_name"]
 
 
+async def _with_and_without_apps(mcp_client, pat, tool: str, args: dict) -> tuple[Any, Any]:
+    async with mcp_client(pat) as client:
+        plain = await client.call_tool(tool, args)
+    async with mcp_client(pat, apps=True) as client:
+        with_apps = await client.call_tool(tool, args)
+    return plain, with_apps
+
+
+async def test_blocked_plan_is_identical_with_and_without_apps(
+    mcp_client, pat_primary_rw_ai_run, db_session: AsyncSession
+) -> None:
+    article = await _article(db_session, "apps plan")
+    await db_session.flush()
+
+    plain, with_apps = await _with_and_without_apps(
+        mcp_client, pat_primary_rw_ai_run, "plan_ai_run", _args(article)
+    )
+
+    assert not plain.is_error
+    assert plain.structured_content["can_start"] is False  # precondition: no policy set
+    assert plain.structured_content["plan_token"] is None
+    assert plain.structured_content["expires_at"] is None
+    assert plain.structured_content == with_apps.structured_content
+    assert plain.content[0].text == with_apps.content[0].text
+
+
+@pytest.mark.parametrize("mode", ["list", "detail"])
+async def test_get_ai_runs_is_identical_with_and_without_apps(
+    mcp_client, pat_primary_rw_ai_run, db_session: AsyncSession, mode: str
+) -> None:
+    batch_id = await _ui_batch(db_session)
+    args = _project(batch_id=str(batch_id)) if mode == "detail" else _project()
+
+    plain, with_apps = await _with_and_without_apps(
+        mcp_client, pat_primary_rw_ai_run, "get_ai_runs", args
+    )
+
+    assert not plain.is_error
+    assert plain.structured_content["mode"] == mode
+    assert plain.structured_content["runs"] or plain.structured_content["run"]
+    assert plain.structured_content == with_apps.structured_content
+    assert plain.content[0].text == with_apps.content[0].text
+
+
 async def test_get_ai_runs_labels_ui_and_agent_runs_active_first(
     mcp_client, pat_primary_read, db_session: AsyncSession
 ) -> None:

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI run</title>
+<style>
+  :root { color-scheme: light dark; --muted: #6b7280; --line: #e5e7eb; --accent: #2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --muted: #9ca3af; --line: #374151; --accent: #60a5fa; } }
+  body { margin: 0; padding: 12px 14px; font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  h2 { font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .meta, .state { color: var(--muted); }
+  .state { padding: 8px 0; }
+  .error { color: #b91c1c; }
+  .confirmation { margin: 8px 0 0; padding: 6px 8px; border-left: 3px solid var(--line); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 4px 0; border-top: 1px solid var(--line); }
+  .name { font-weight: 600; }
+  .detail { display: block; overflow-wrap: anywhere; }
+  .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); font-size: 11px; }
+  button { margin-top: 12px; padding: 6px 10px; font: inherit; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main id="root" aria-live="polite"></main>
+<script>
+(function () {
+  "use strict";
+  var REFRESH_MS = 30000;
+  var root = document.getElementById("root");
+  var host = window.parent;
+  var nextId = 1;
+  var pending = {};
+  var current = null;
+  var timer = null;
+  var inFlight = false;
+  var generation = 0;
+
+  function send(message) { host.postMessage(message, "*"); }
+
+  function request(method, params, onReply) {
+    var id = nextId++;
+    if (onReply) { pending[id] = onReply; }
+    send({ jsonrpc: "2.0", id: id, method: method, params: params });
+  }
+
+  function notify(method, params) { send({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  function el(tag, text, cls) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) { node.textContent = String(text); }
+    if (cls) { node.className = cls; }
+    return node;
+  }
+
+  function show(nodes) {
+    root.replaceChildren();
+    nodes.forEach(function (n) { if (n) { root.appendChild(n); } });
+  }
+
+  function state(text, cls) { return el("p", text, "state" + (cls ? " " + cls : "")); }
+
+  function list(items, render) {
+    var box = el("ul");
+    items.forEach(function (x) { box.appendChild(render(x)); });
+    return box;
+  }
+
+  // --- plan --------------------------------------------------------------
+
+  var PAYERS = { your_key: "Your key", project_key: "The project's key" };
+
+  function renderPlan(p) {
+    var nodes = [el("h1", p.can_start ? "Plan ready" : "Plan blocked")];
+    var names = [p.template && p.template.name, p.project && p.project.name].filter(Boolean);
+    if (names.length) { nodes.push(el("div", names.join(" · "), "meta")); }
+    if (!p.can_start) {
+      nodes.push(el("h2", "Blockers"));
+      nodes.push(list(p.blockers || [], function (b) {
+        var row = el("li");
+        row.appendChild(el("span", b.message, "name"));
+        row.appendChild(el("span", b.fix, "detail"));
+        return row;
+      }));
+      show(nodes);
+      return;
+    }
+    var c = p.counts || {};
+    nodes.push(el("div", "Will run: " + c.will_run + " · Skipped: " + c.skipped +
+      " · Beyond the cap: " + c.remaining_beyond_cap));
+    var reasons = Object.keys(p.skipped_by_reason || {});
+    if (reasons.length) {
+      nodes.push(el("h2", "Skipped"));
+      nodes.push(list(reasons, function (r) { return el("li", r + ": " + p.skipped_by_reason[r]); }));
+    }
+    if (p.engine) { nodes.push(el("div", "Model: " + p.engine.model, "meta")); }
+    if (p.payer) { nodes.push(el("div", "Paid with: " + (PAYERS[p.payer] || p.payer), "meta")); }
+    if ((p.warnings || []).length) {
+      nodes.push(el("h2", "Warnings"));
+      nodes.push(list(p.warnings, function (w) { return el("li", w.message); }));
+    }
+    if (p.confirmation) { nodes.push(el("p", p.confirmation, "confirmation")); }
+    show(nodes);
+  }
+
+  // --- progress ----------------------------------------------------------
+
+  function stateLabel(run) {
+    if (run.state === "active") { return run.stalled ? "Stalled" : "Active"; }
+    if (run.state === "finished") { return "Finished"; }
+    if (run.state === "stopped") { return "Stopped"; }
+    if (run.state === "cancelled") { return "Cancelled"; }
+    return String(run.state);
+  }
+
+  function countsText(c) {
+    if (!c) { return ""; }
+    return c.done + " of " + c.total + " done · " + c.queued + " queued · " + c.running +
+      " running · " + c.needs_attention + " need attention · " + c.done_with_issues +
+      " with issues · " + c.skipped + " skipped · " + c.not_run + " not run";
+  }
+
+  function runBox(run, tag) {
+    var box = el(tag);
+    box.appendChild(el("span", run.template_name, "name"));
+    box.appendChild(el("span", stateLabel(run), "tag"));
+    box.appendChild(el("span", countsText(run.counts), "detail"));
+    if (run.state === "stopped") {
+      box.appendChild(el("span", [run.stop_code, run.stop_message].filter(Boolean).join(": "), "detail"));
+    }
+    return box;
+  }
+
+  function renderList(v) {
+    var nodes = [el("h1", v.project_name)];
+    var runs = v.runs || [];
+    if (!runs.length) { nodes.push(state("No AI runs in this project yet.")); }
+    else { nodes.push(list(runs, function (r) { return runBox(r, "li"); })); }
+    show(nodes);
+  }
+
+  function renderDetail(v) {
+    var run = v.run;
+    var nodes = [el("h1", v.project_name), runBox(run, "div")];
+    var items = run.attention_items || [];
+    if (items.length) {
+      nodes.push(el("h2", "Needs attention"));
+      nodes.push(list(items, function (a) {
+        var row = el("li");
+        row.appendChild(el("span", a.title, "name"));
+        row.appendChild(el("span", a.outcome, "tag"));
+        if (a.message) { row.appendChild(el("span", a.message, "detail")); }
+        return row;
+      }));
+    }
+    if (run.next_cursor) {
+      var more = el("button", "Load more");
+      more.type = "button";
+      more.disabled = inFlight;
+      more.addEventListener("click", loadMore);
+      nodes.push(more);
+    }
+    if (run.review_hint) { nodes.push(el("p", run.review_hint, "meta")); }
+    show(nodes);
+  }
+
+  function renderProgress(v) {
+    current = v;
+    if (v.mode === "detail" && v.run) { renderDetail(v); } else { renderList(v); }
+  }
+
+  function keepsRefreshing(v) {
+    if (v.mode === "detail") { return !!v.run && v.run.state === "active"; }
+    return (v.runs || []).some(function (r) { return r.state === "active"; });
+  }
+
+  function stop() {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+  }
+
+  function schedule() {
+    stop();
+    if (current && keepsRefreshing(current)) { timer = setTimeout(tick, REFRESH_MS); }
+  }
+
+  function readArguments(cursor) {
+    var args = { project_id: current.project_id };
+    if (current.mode === "detail") { args.batch_id = current.run.batch_id; }
+    if (cursor) { args.cursor = cursor; }
+    return args;
+  }
+
+  function callRuns(args, onBody) {
+    var mine = generation;
+    inFlight = true;
+    request("tools/call", { name: "get_ai_runs", arguments: args }, function (result, error) {
+      inFlight = false;
+      if (mine !== generation) { return; }
+      if (error !== undefined) { stop(); renderError(error); return; }
+      var body = payload(result || {});
+      if (!result || result.isError || !body) { stop(); renderError(body || {}); return; }
+      onBody(body);
+    });
+  }
+
+  function tick() {
+    timer = null;
+    if (document.visibilityState !== "visible" || inFlight) { schedule(); return; }
+    callRuns(readArguments(null), function (body) { renderProgress(body); schedule(); });
+  }
+
+  function loadMore() {
+    if (inFlight || !current || !current.run || !current.run.next_cursor) { return; }
+    var seen = current.run.attention_items || [];
+    callRuns(readArguments(current.run.next_cursor), function (body) {
+      if (body.run) {
+        body.run.attention_items = seen.concat(body.run.attention_items || []);
+      }
+      var refreshing = timer !== null;
+      renderProgress(body);
+      if (!keepsRefreshing(body)) { stop(); } else if (!refreshing) { schedule(); }
+    });
+    renderDetail(current);
+  }
+
+  // --- results -----------------------------------------------------------
+
+  function renderError(body) {
+    var code = body && body.code;
+    if (code === "NOT_FOUND") { show([state("This run was not found.")]); return; }
+    show([state(code === undefined || code === null ? "Error" : code, "error"), state(body && body.message)]);
+  }
+
+  function payload(result) {
+    if (result.structuredContent && typeof result.structuredContent === "object") {
+      return result.structuredContent;
+    }
+    var first = (result.content || [])[0];
+    if (!first || typeof first.text !== "string") { return null; }
+    try { return JSON.parse(first.text); } catch (e) { return { message: first.text }; }
+  }
+
+  function onToolResult(result) {
+    if (!result || typeof result !== "object") { return; }
+    var body = payload(result);
+    stop();
+    current = null;
+    generation++;
+    if (result.isError) { renderError(body || {}); return; }
+    if (!body) { show([state("No result to show", "error")]); return; }
+    if (typeof body.can_start === "boolean") { renderPlan(body); return; }
+    if (body.mode === "list" || body.mode === "detail") { renderProgress(body); schedule(); return; }
+    show([state("No result to show", "error")]);
+  }
+
+  window.addEventListener("message", function (event) {
+    if (event.source !== host) { return; }
+    var data = event.data;
+    if (!data || typeof data !== "object" || data.jsonrpc !== "2.0") { return; }
+    if (data.method === undefined && typeof data.id === "number") {
+      var callback = pending[data.id];
+      delete pending[data.id];
+      if (callback) { callback(data.result, data.error); }
+      return;
+    }
+    if (data.method === "ui/notifications/tool-result") { onToolResult(data.params); return; }
+    if (data.id !== undefined && typeof data.method === "string") {
+      send({ jsonrpc: "2.0", id: data.id, result: {} });
+    }
+  });
+
+  show([state("Waiting for the AI run…")]);
+  request(
+    "ui/initialize",
+    {
+      appInfo: { name: "prumo-ai-run", version: "1" },
+      appCapabilities: {},
+      protocolVersion: "2026-01-26"
+    },
+    function (result, error) { if (error === undefined) { notify("ui/notifications/initialized"); } }
+  );
+})();
+</script>
+</body>
+</html>

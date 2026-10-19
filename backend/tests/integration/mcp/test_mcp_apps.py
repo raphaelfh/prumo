@@ -1,7 +1,8 @@
-"""MCP Apps: the read-only draft-review card bound to ``get_template``.
+"""MCP Apps: the read-only draft-review card bound to ``get_template`` and the
+AI-run card bound to ``plan_ai_run`` and ``get_ai_runs``.
 
-The App is a static HTML resource with a strict CSP; only ``get_template``
-carries ``ui`` meta; the tool result is the same whether or not the client
+Each App is a static HTML resource with a strict CSP; only those three tools
+carry ``ui`` meta; the tool result is the same whether or not the client
 advertises Apps support; ``editor_url`` is manager-only."""
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from tests.integration.helpers.template_fixtures import add_section, fresh_charm
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 
 _DRAFT_REVIEW = "ui://prumo/draft-review.html"
-_UI_MAP = {"get_template": _DRAFT_REVIEW}
+_AI_RUN = "ui://prumo/ai-run.html"
+_FILES = {_DRAFT_REVIEW: "draft_review.html", _AI_RUN: "ai_run.html"}
+_UI_MAP = {"get_template": _DRAFT_REVIEW, "plan_ai_run": _AI_RUN, "get_ai_runs": _AI_RUN}
 _STRICT_CSP = {
     "connectDomains": [],
     "resourceDomains": [],
@@ -33,26 +36,33 @@ _STRICT_CSP = {
 }
 
 
-def _html() -> str:
-    return Path(mcp_apps.__file__).with_name("draft_review.html").read_text(encoding="utf-8")
+def _html(file: str = "draft_review.html") -> str:
+    return Path(mcp_apps.__file__).with_name(file).read_text(encoding="utf-8")
 
 
-async def test_only_the_draft_review_app_is_listed(mcp_client, pat_primary_read):
+async def test_only_the_two_apps_are_listed(mcp_client, pat_primary_read):
     async with mcp_client(pat_primary_read) as client:
         listed = await client.list_resources()
-        read = await client.read_resource(_DRAFT_REVIEW)
 
-    assert {str(r.uri) for r in listed.resources} == {_DRAFT_REVIEW}
+    assert {str(r.uri) for r in listed.resources} == {_DRAFT_REVIEW, _AI_RUN}
+
+
+@pytest.mark.parametrize("uri", [_DRAFT_REVIEW, _AI_RUN])
+async def test_app_is_served_with_a_strict_csp(mcp_client, pat_primary_read, uri):
+    async with mcp_client(pat_primary_read) as client:
+        read = await client.read_resource(uri)
+
     assert len(read.contents) == 1
     content = read.contents[0]
     assert content.mime_type == APP_MIME_TYPE
-    assert content.text == _html()
+    assert content.text == _html(_FILES[uri])
     assert content.meta == {"ui": {"csp": _STRICT_CSP}}
 
 
-def test_card_html_is_inert():
-    html = _html()
-    for banned in ("tools/call", "innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+@pytest.mark.parametrize("file", ["draft_review.html", "ai_run.html"])
+def test_card_html_is_static(file):
+    html = _html(file)
+    for banned in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
         assert banned not in html, banned
     assert "eval(" not in html
     assert "Function(" not in html
@@ -60,15 +70,32 @@ def test_card_html_is_inert():
     assert re.search(r"https?://", html) is None
     assert "url(" not in html
     assert "@import" not in html
+    for needed in ("ui/initialize", "ui/notifications/tool-result", "textContent"):
+        assert needed in html, needed
+    assert html.count("<script") == 1
+
+
+def test_draft_card_calls_no_tool():
+    html = _html()
+    assert "tools/call" not in html
+    assert "ui/open-link" in html
     # "publish" only in the link label, the no-draft state text and the
     # result field the summary reads: no publish control, no "is live" claim.
     rest = html.lower()
     for allowed in ("review and publish in prumo", "no unpublished changes", "published_version"):
         rest = rest.replace(allowed, "")
     assert "publish" not in rest
-    for needed in ("ui/initialize", "ui/notifications/tool-result", "ui/open-link", "textContent"):
+
+
+def test_ai_run_card_calls_only_get_ai_runs():
+    html = _html("ai_run.html")
+    assert html.count("tools/call") == 1
+    for needed in ("get_ai_runs", "30000", "visibilityState", "Load more"):
         assert needed in html, needed
-    assert html.count("<script") == 1
+    for banned in ("start_ai_run", "cancel_ai_run", "plan_ai_run", "<button", "ui/open-link"):
+        assert banned not in html, banned
+    names = re.findall(r"\b(?:get|set|edit|update|start|cancel|plan|list)_[a-z_]+\b", html)
+    assert names and set(names) == {"get_ai_runs"}
 
 
 async def test_ui_meta_map_is_pinned(mcp_client, pat_primary_rw_ai_run):

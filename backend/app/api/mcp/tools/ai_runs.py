@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import is_project_manager
 from app.api.mcp import ai_run_plan_token
+from app.api.mcp.apps import AI_RUN_URI
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
 from app.api.mcp.errors import McpErrorCode, McpToolError, reject_nul
@@ -170,6 +171,7 @@ def _skip_counts(plan: PlanCore) -> dict[str, int]:
         "run, what is skipped and why, the model, who pays, a token estimate, blockers, and a "
         "`confirmation` text to show the user verbatim. Runs no AI and changes nothing."
     ),
+    ui_resource=AI_RUN_URI,
 )
 async def plan_ai_run(
     db: AsyncSession,

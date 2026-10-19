@@ -15,6 +15,7 @@ from pathlib import Path
 from mcp.server.apps import Apps, ResourceCsp
 
 DRAFT_REVIEW_URI = "ui://prumo/draft-review.html"
+AI_RUN_URI = "ui://prumo/ai-run.html"
 
 _STRICT_CSP = ResourceCsp(
     connect_domains=[], resource_domains=[], frame_domains=[], base_uri_domains=[]
@@ -27,5 +28,13 @@ apps.add_html_resource(
     name="draft-review",
     title="Questionnaire draft review",
     description="A read-only view of a questionnaire's unpublished changes and lint.",
+    csp=_STRICT_CSP,
+)
+apps.add_html_resource(
+    AI_RUN_URI,
+    Path(__file__).with_name("ai_run.html").read_text(encoding="utf-8"),
+    name="ai-run",
+    title="AI extraction run",
+    description="A read-only view of an AI run plan or of AI run progress.",
     csp=_STRICT_CSP,
 )

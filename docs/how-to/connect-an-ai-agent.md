@@ -357,6 +357,12 @@ your key or a shared key, the plan reports that the AI engine is not ready.
    an agent), or one run's detail with the articles that need attention.
    It needs only `read`. Agents are told to check it when you ask, not to
    poll.
+
+   In hosts that render MCP Apps, `plan_ai_run` and `get_ai_runs` show a
+   read-only card. The progress card refreshes itself at most every 30
+   seconds while it is visible and stops when the run ends; a run's
+   attention list pages with **Load more**. The card has no start or
+   cancel button.
 5. `cancel_ai_run` cancels one of your runs at any time; repeating it is
    safe. You can also cancel from the notification bell in prumo, where an
    agent-started run is labelled **Started by agent** with the token's name.
