@@ -25,6 +25,7 @@ import {listExtractionBatches} from '@/services/extractionBatchService';
 import {extractionBatchKeys} from '@/lib/query-keys/extractionBatch';
 import {useAiBatchJobSync} from '@/hooks/useAiBatchJobSync';
 import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
+import type {AiBatchJob} from '@/types/background-jobs';
 
 function summary(state: 'active' | 'finished', overrides: Partial<ReturnType<typeof baseCounts>> = {}) {
   return {
@@ -96,6 +97,28 @@ describe('useAiBatchJobSync', () => {
     expect(job?.type).toBe('ai-batch');
     expect(job?.status).toBe('running');
     expect(job?.completedAt).toBeUndefined();
+  });
+
+  it('maps an agent-started batch to its origin and token name', async () => {
+    vi.mocked(listExtractionBatches).mockResolvedValue([
+      {...summary('active'), started_by_agent: true, agent_token_name: 'CLI token'},
+    ]);
+    renderWithClient();
+
+    await waitFor(() => expect(useBackgroundJobs.getState().getJob('ai-batch-b1')).toBeDefined());
+    const job = useBackgroundJobs.getState().getJob('ai-batch-b1') as AiBatchJob;
+    expect(job.metadata.startedByAgent).toBe(true);
+    expect(job.metadata.agentTokenName).toBe('CLI token');
+  });
+
+  it('maps a batch started in the app as not agent-started, with no token name', async () => {
+    vi.mocked(listExtractionBatches).mockResolvedValue([summary('active')]);
+    renderWithClient();
+
+    await waitFor(() => expect(useBackgroundJobs.getState().getJob('ai-batch-b1')).toBeDefined());
+    const job = useBackgroundJobs.getState().getJob('ai-batch-b1') as AiBatchJob;
+    expect(job.metadata.startedByAgent).toBe(false);
+    expect(job.metadata.agentTokenName).toBeNull();
   });
 
   it('observes a batch that finished — through the real list response, not a hand-fed summary', async () => {
