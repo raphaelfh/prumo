@@ -57,6 +57,9 @@ class McpPlanTemplate(BaseModel):
 
 
 class McpPlanEngine(BaseModel):
+    """``model`` is untrusted text (a custom host's id is user-entered),
+    capped at 200 chars."""
+
     provider: str
     model: str
     label: str | None
@@ -132,13 +135,17 @@ class McpAiRunPlan(BaseModel):
     untrusted_fields: list[str] = [
         "project.name",
         "template.name",
+        "engine.model",
         "engine.label",
         "articles[].title",
+        "confirm.model",
         "confirmation",
     ]
 
 
 class McpStartedEngine(BaseModel):
+    """``model`` is untrusted text, capped at 200 chars."""
+
     provider: str
     model: str
     mode: str
@@ -153,6 +160,8 @@ class McpAiRunStarted(BaseModel):
     counts: ExtractionBatchCounts
     engine: McpStartedEngine
     payer: Payer
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = ["engine.model"]
     note: Literal[
         "AI only adds suggestions; reviewers must check them in prumo. Check progress with "
         "get_ai_runs when the user asks; do not poll in a loop."

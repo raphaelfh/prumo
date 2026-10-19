@@ -332,11 +332,14 @@ your key or a shared key, the plan reports that the AI engine is not ready.
    run and which are skipped and why, the model, who pays, a token
    estimate, any blockers with their fix, and a `confirmation` text the
    agent shows you verbatim. By default it uses the project's active
-   template and the articles without AI suggestions yet.
+   template and the articles without AI suggestions yet. A custom host's
+   model id is text its owner typed, so `engine.model` is listed in
+   `untrusted_fields` and cut to 200 characters.
 3. Say yes. The agent then calls `start_ai_run` with the plan's token and
    the confirmed values. `start_ai_run` is the only tool marked as needing
    your approval, so clients that honour that mark ask you before the
-   call. If anything changed since the plan, nothing starts
+   call. If anything changed since the plan (the articles, the model, its
+   endpoint or who pays), nothing starts
    and the call answers `PLAN_STALE`; the agent plans again and asks you
    again. Repeating the same approved start does not start a second run.
 4. `get_ai_runs` lists your own runs in the project (started in prumo or by

@@ -266,7 +266,7 @@ async def plan_ai_run(
         ),
         engine=McpPlanEngine(
             provider=plan.engine.provider,
-            model=plan.engine.model,
+            model=cap_text(plan.engine.model)[0],  # a host's model id is typed text
             label=plan.engine.label,
             mode=plan.engine.mode,  # type: ignore[arg-type]
             cost_tier=plan.engine.cost_tier,
@@ -370,7 +370,7 @@ async def _reply(
         state=detail.state,
         counts=detail.counts,
         engine=McpStartedEngine(
-            provider=engine["provider"], model=engine["model"], mode=engine["mode"]
+            provider=engine["provider"], model=cap_text(engine["model"])[0], mode=engine["mode"]
         ),
         payer=claims["payer"],
     )

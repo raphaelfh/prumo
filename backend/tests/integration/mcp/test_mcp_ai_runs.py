@@ -738,3 +738,39 @@ async def test_concurrent_cancels_write_one_applied_row(mcp_client) -> None:
                 {"t": str(pat.principal.token_id)},
             )
             await db.commit()
+
+
+async def test_a_host_model_id_is_capped_untrusted_text(
+    mcp_client, pat_primary_rw_ai_run, db_session: AsyncSession
+) -> None:
+    """A host connection's model id is text its owner typed: capped at 200
+    chars in ``engine.model``; ``confirm.model`` stays the exact echo."""
+    from app.services.user_engine_service import set_user_engine
+    from tests.integration.helpers.engine_setup import make_host_connection
+
+    await _policy(db_session)
+    long_model = "m" * 230  # older than the 200-char create cap
+    cid = await make_host_connection(db_session, label="long-model")
+    await db_session.execute(
+        text("UPDATE public.llm_connections SET allowed_models = CAST(:m AS jsonb) WHERE id = :id"),
+        {"m": json.dumps([long_model]), "id": str(cid)},
+    )
+    await set_user_engine(
+        db_session,
+        user_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        provider="openai_compatible",
+        model=long_model,
+        mode="fast",
+        connection_id=cid,
+        is_manager=True,
+    )
+
+    plan = structured(
+        await call_tool(
+            mcp_client, pat_primary_rw_ai_run, "plan_ai_run", _args(await _article(db_session))
+        )
+    )
+
+    assert plan["engine"]["model"] == "m" * 200
+    assert {"engine.model", "confirm.model"} <= set(plan["untrusted_fields"])

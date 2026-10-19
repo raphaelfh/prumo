@@ -144,15 +144,13 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
         {
             "template.kind",
             "engine.provider",
-            "engine.model",
             "blockers[].message",
             "blockers[].fix",
             "warnings[].message",
             "plan_token",
-            "confirm.model",
         }
     ),
-    "start_ai_run": frozenset({"engine.provider", "engine.model", "engine.mode"}),
+    "start_ai_run": frozenset({"engine.provider", "engine.mode"}),
     "get_ai_runs": frozenset(
         {
             "runs[].stop_code",
