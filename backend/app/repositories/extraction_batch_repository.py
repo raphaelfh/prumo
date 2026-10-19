@@ -180,6 +180,24 @@ class ExtractionBatchRepository:
             )
         ).scalar_one_or_none()
 
+    async def stop(self, batch_id: UUID, stop_code: str, stop_message: str | None) -> bool:
+        """Stop a batch nobody halted yet; ``False`` when a cancel or stop got there first.
+
+        Conditional in the WHERE clause, so a concurrent cancel is never
+        overwritten by a stop read from an older snapshot of the row.
+        """
+        stopped = await self.db.execute(
+            update(ExtractionBatch)
+            .where(
+                ExtractionBatch.id == batch_id,
+                ExtractionBatch.cancelled_at.is_(None),
+                ExtractionBatch.stop_code.is_(None),
+            )
+            .values(stop_code=stop_code, stop_message=stop_message)
+            .returning(ExtractionBatch.id)
+        )
+        return stopped.first() is not None
+
     async def cancel_queued(self, batch_id: UUID, reason_code: str) -> None:
         await self.db.execute(
             update(ExtractionBatchItem)

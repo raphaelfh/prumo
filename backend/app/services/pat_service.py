@@ -123,6 +123,20 @@ def user_locked_out() -> ColumnElement[bool]:
     )
 
 
+def usable_clause() -> ColumnElement[bool]:
+    """THE usable predicate: an active credential of a user who is not locked out."""
+    return and_(active_clause(), ~user_locked_out())
+
+
+async def token_is_usable(db: AsyncSession, token_id: UUID | None) -> bool:
+    """Whether the credential ``token_id`` may still act; ``False`` for ``None``."""
+    if token_id is None:
+        return False
+    return bool(
+        await db.scalar(select(exists().where(PersonalAccessToken.id == token_id, usable_clause())))
+    )
+
+
 def new_secret(prefix: str) -> str:
     """``prefix`` + 43 base62 characters (256 bits of entropy)."""
     n = int.from_bytes(secrets.token_bytes(32), "big")
@@ -284,8 +298,7 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
         await db.execute(
             select(PersonalAccessToken).where(
                 PersonalAccessToken.token_hash == hash_secret(secret),
-                active_clause(),
-                ~user_locked_out(),
+                usable_clause(),
             )
         )
     ).scalar_one_or_none()

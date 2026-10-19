@@ -25,6 +25,7 @@ from app.services.pat_service import (
     resolve_principal,
     revoke_owned,
     revoke_token,
+    token_is_usable,
     touch_last_used,
 )
 from tests.integration.conftest import SEED
@@ -384,6 +385,41 @@ async def test_resolve_principal_refuses_banned_or_deleted_user(
 
     await db_session.execute(text(update_user), {"id": str(SEED.reviewer_profile)})
     assert (await resolve_principal(db_session, created.secret) is not None) is resolves
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("change", "usable"),
+    [
+        (None, True),
+        ("UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid", False),
+        (
+            "UPDATE public.personal_access_tokens "
+            "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 minute' "
+            "WHERE id = :tid",
+            False,
+        ),
+        ("UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :uid", False),
+        ("UPDATE auth.users SET deleted_at = now() WHERE id = :uid", False),
+    ],
+    ids=["active", "revoked", "expired", "banned", "soft-deleted"],
+)
+async def test_token_is_usable(db_session: AsyncSession, change: str | None, usable: bool) -> None:
+    """The dispatcher's credential check shares the /mcp lookup's predicate."""
+    created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
+    if change is not None:
+        await db_session.execute(
+            text(change), {"tid": str(created.token.id), "uid": str(SEED.reviewer_profile)}
+        )
+
+    assert await token_is_usable(db_session, created.token.id) is usable
+    assert (await resolve_principal(db_session, created.secret) is not None) is usable
+
+
+@pytest.mark.asyncio
+async def test_token_is_usable_is_false_without_a_token(db_session: AsyncSession) -> None:
+    assert await token_is_usable(db_session, None) is False
+    assert await token_is_usable(db_session, uuid4()) is False
 
 
 # --- optional per-project restriction ----------------------------------------

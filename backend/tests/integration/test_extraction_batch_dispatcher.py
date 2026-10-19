@@ -614,6 +614,7 @@ async def _start(db: AsyncSession, *, agent: bool) -> tuple[UUID, UUID]:
     )
     origin = None
     if agent:
+        await _set_policy(db, "reviewers")
         origin = AgentRunOrigin(
             token_id=await insert_pat_row(db, "agent-key-probe"),
             engine=EngineIdentity(provider=provider, model=model, mode="fast", connection_id=None),
@@ -709,3 +710,330 @@ async def test_keyless_host_row_passes_the_start_rung_but_never_unlocks_the_depl
     assert available == {engine.provider: "user"}
     assert (refused.api_key, refused.key_scope) == (None, None)
     assert default.key_scope is KeyScope.GLOBAL_SERVICE, "the ladder would have fallen through"
+
+
+# --- agent guards (ADR 0021): token, policy, engine, before each advance ------
+
+_AGENT_PROVIDER, _AGENT_MODEL = settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL
+
+
+async def _set_policy(db: AsyncSession, agent_runs: str) -> None:
+    from app.schemas.ai_policy import AiPolicyUpdateRequest
+    from app.services import ai_policy_service
+
+    await ai_policy_service.set_for_project(
+        db,
+        project_id=SEED.primary_project,
+        update=AiPolicyUpdateRequest(
+            agent_runs=agent_runs,  # type: ignore[arg-type]
+            max_articles_per_run=25,
+            daily_agent_article_cap=100,
+        ),
+        user_id=SEED.primary_profile,
+    )
+
+
+async def _agent_batch(
+    db: AsyncSession, count: int, *, owner: UUID = SEED.primary_profile
+) -> tuple[UUID, UUID]:
+    """An agent-started batch whose token, policy and engine all still allow it."""
+    from app.schemas.llm_target import EngineIdentity
+    from tests.integration.helpers.engine_setup import set_project_engine
+    from tests.integration.helpers.pat_rows import insert_pat_row
+
+    await set_project_engine(db, _AGENT_PROVIDER, _AGENT_MODEL)
+    await _set_policy(db, "reviewers")
+    token_id = await insert_pat_row(db, "agent-guard")
+    engine = EngineIdentity(
+        provider=_AGENT_PROVIDER, model=_AGENT_MODEL, mode="fast", connection_id=None
+    )
+    articles = [await make_article(db, SEED.primary_project, f"G{i}") for i in range(count)]
+    batch_id = await make_batch(
+        db,
+        owner_id=owner,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=articles,
+        agent_token_id=str(token_id),
+        agent_engine=engine.model_dump_json(),
+        agent_plan_digest=uuid4().hex,
+    )
+    await db.commit()
+    return batch_id, token_id
+
+
+async def _stop(db: AsyncSession, batch_id: UUID) -> tuple[str | None, str | None]:
+    row = (
+        await db.execute(
+            text("SELECT stop_code, stop_message FROM public.extraction_batches WHERE id=:b"),
+            {"b": str(batch_id)},
+        )
+    ).one()
+    return row[0], row[1]
+
+
+async def _state(db: AsyncSession, batch_id: UUID, owner: UUID = SEED.primary_profile) -> str:
+    from app.services.extraction_batch_service import ExtractionBatchService
+
+    detail = await ExtractionBatchService(db).detail(owner, batch_id, now=datetime.now(UTC))
+    return detail.state
+
+
+async def _assert_guard_stop(
+    db: AsyncSession, batch_id: UUID, queue: FakeQueue, code: str, count: int
+) -> None:
+    assert (await _stop(db, batch_id))[0] == code
+    assert [(s, r) for s, r, _ in await _items(db, batch_id)] == [
+        ("cancelled", "STOPPED_AGENT_GUARD")
+    ] * count
+    assert queue.calls == []
+
+
+_TOKEN_KILLS = {
+    "revoked": "UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid",
+    "expired": (
+        "UPDATE public.personal_access_tokens "
+        "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 minute' "
+        "WHERE id = :tid"
+    ),
+    "banned": "UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :uid",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kill", list(_TOKEN_KILLS), ids=list(_TOKEN_KILLS))
+async def test_inactive_token_stops_agent_batch(db_session: AsyncSession, kill: str) -> None:
+    batch_id, token_id = await _agent_batch(db_session, 2)
+    await db_session.execute(
+        text(_TOKEN_KILLS[kill]), {"tid": str(token_id), "uid": str(SEED.primary_profile)}
+    )
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_TOKEN_INACTIVE", 2)
+    assert (await _stop(db_session, batch_id))[1] == (
+        "The access token that started this run was revoked or expired."
+    )
+    assert await _state(db_session, batch_id) == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_deleted_token_row_leaves_agent_token_id_null_and_stops(
+    db_session: AsyncSession,
+) -> None:
+    batch_id, token_id = await _agent_batch(db_session, 1)
+    await db_session.execute(
+        text("DELETE FROM public.personal_access_tokens WHERE id = :tid"), {"tid": str(token_id)}
+    )
+    token_after = (
+        await db_session.execute(
+            text("SELECT agent_token_id FROM public.extraction_batches WHERE id=:b"),
+            {"b": str(batch_id)},
+        )
+    ).scalar_one()
+    assert token_after is None, "precondition: the FK nulls the column"
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_TOKEN_INACTIVE", 1)
+
+
+@pytest.mark.asyncio
+async def test_policy_off_stops_agent_batch(db_session: AsyncSession) -> None:
+    batch_id, _ = await _agent_batch(db_session, 2)
+    await _set_policy(db_session, "off")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_RUNS_DISABLED", 2)
+    assert (await _stop(db_session, batch_id))[1] == (
+        "A project manager turned off agent-started runs."
+    )
+
+
+@pytest.mark.asyncio
+async def test_policy_managers_stops_reviewer_owned_agent_batch(db_session: AsyncSession) -> None:
+    batch_id, _ = await _agent_batch(db_session, 1, owner=SEED.reviewer_profile)
+    await _set_policy(db_session, "managers")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_RUNS_DISABLED", 1)
+
+
+@pytest.mark.asyncio
+async def test_policy_managers_keeps_manager_owned_agent_batch_running(
+    db_session: AsyncSession,
+) -> None:
+    batch_id, _ = await _agent_batch(db_session, 1)
+    await _set_policy(db_session, "managers")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert await _stop(db_session, batch_id) == (None, None)
+    assert len(queue.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_engine_change_stops_agent_batch(db_session: AsyncSession) -> None:
+    from tests.integration.helpers.engine_setup import set_project_engine
+
+    batch_id, _ = await _agent_batch(db_session, 2)
+    await set_project_engine(db_session, _AGENT_PROVIDER, _AGENT_MODEL, mode="verified")
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    await _assert_guard_stop(db_session, batch_id, queue, "AGENT_ENGINE_CHANGED", 2)
+    assert (await _stop(db_session, batch_id))[1] == (
+        "The project's AI engine changed after this run was approved."
+    )
+
+
+@pytest.mark.asyncio
+async def test_retired_engine_stops_agent_batch_as_engine_retired(
+    db_session: AsyncSession,
+) -> None:
+    batch_id, _ = await _agent_batch(db_session, 1)
+    await db_session.execute(
+        text(
+            "UPDATE public.projects SET settings = COALESCE(settings, '{}'::jsonb) "
+            '|| CAST(\'{"llm_engine": {"provider": "openai", "model": "gpt-long-gone"}}\' '
+            "AS jsonb) WHERE id = :pid"
+        ),
+        {"pid": str(SEED.primary_project)},
+    )
+    await db_session.commit()
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    code, message = await _stop(db_session, batch_id)
+    assert code == "ENGINE_RETIRED" and message and "gpt-long-gone" in message
+    assert [(s, r) for s, r, _ in await _items(db_session, batch_id)] == [
+        ("cancelled", "STOPPED_AGENT_GUARD")
+    ]
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_in_flight_items_finish_after_a_guard_stop(db_session: AsyncSession) -> None:
+    batch_id, token_id = await _agent_batch(db_session, 3)
+    queue = FakeQueue()
+    dispatcher = ExtractionBatchDispatcher(db_session, enqueue=queue)
+    await dispatcher.advance(batch_id)
+    assert [s for s, _, _ in await _items(db_session, batch_id)] == [
+        "dispatched",
+        "dispatched",
+        "queued",
+    ], "precondition: every guard passed and two items are in flight"
+    await db_session.execute(
+        text("UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid"),
+        {"tid": str(token_id)},
+    )
+    await db_session.commit()
+
+    await dispatcher.advance(batch_id)
+
+    items = await _items(db_session, batch_id)
+    assert [(s, r) for s, r, _ in items] == [
+        ("dispatched", None),
+        ("dispatched", None),
+        ("cancelled", "STOPPED_AGENT_GUARD"),
+    ]
+    live = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_attempts WHERE id = ANY(:ids)"),
+            {"ids": [items[0][2], items[1][2]]},
+        )
+    ).scalar_one()
+    assert live == 2 and len(queue.calls) == 2
+    assert await _state(db_session, batch_id) == "active", "in-flight items still run"
+
+
+@pytest.mark.asyncio
+async def test_ui_batch_ignores_agent_guards(db_session: AsyncSession) -> None:
+    await _set_policy(db_session, "off")
+    batch_id, _ = await _batch(db_session, 2)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert await _stop(db_session, batch_id) == (None, None)
+    assert [s for s, _, _ in await _items(db_session, batch_id)] == ["dispatched"] * 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stop_code", "item_reason"),
+    [
+        ("MISSING_API_KEY", "STOPPED_ENGINE_ERROR"),
+        ("ENGINE_RETIRED", "STOPPED_ENGINE_ERROR"),
+        ("AGENT_TOKEN_INACTIVE", "STOPPED_AGENT_GUARD"),
+        ("AGENT_RUNS_DISABLED", "STOPPED_AGENT_GUARD"),
+        ("AGENT_ENGINE_CHANGED", "STOPPED_AGENT_GUARD"),
+    ],
+    ids=["missing-key", "retired", "token", "policy", "engine"],
+)
+async def test_a_stopped_batch_cancels_queued_items_with_the_reason_of_its_stop(
+    db_session: AsyncSession, stop_code: str, item_reason: str
+) -> None:
+    batch_id, _ = await _batch(db_session, 1, stop_code=stop_code)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert [(s, r) for s, r, _ in await _items(db_session, batch_id)] == [
+        ("cancelled", item_reason)
+    ]
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_landing_during_the_guard_check_is_not_overwritten(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop is a conditional write: a cancel that lands between the batch
+    read and the stop keeps the batch cancelled, never also stopped."""
+    batch_id, token_id = await _agent_batch(db_session, 1)
+    real_guard = dispatcher_module.agent_stop_reason
+
+    async def cancel_then_check(db: AsyncSession, batch):  # noqa: ANN001, ANN202
+        await db.execute(
+            text("UPDATE public.extraction_batches SET cancelled_at = now() WHERE id = :b"),
+            {"b": str(batch_id)},
+        )
+        await db.execute(
+            text(
+                "UPDATE public.extraction_batch_items SET status = 'cancelled', "
+                "reason_code = 'CANCELLED' WHERE batch_id = :b AND status = 'queued'"
+            ),
+            {"b": str(batch_id)},
+        )
+        await db.execute(
+            text("UPDATE public.personal_access_tokens SET revoked_at = now() WHERE id = :tid"),
+            {"tid": str(token_id)},
+        )
+        return await real_guard(db, batch)
+
+    monkeypatch.setattr(dispatcher_module, "agent_stop_reason", cancel_then_check)
+    queue = FakeQueue()
+
+    await ExtractionBatchDispatcher(db_session, enqueue=queue).advance(batch_id)
+
+    assert await _stop(db_session, batch_id) == (None, None)
+    assert [(s, r) for s, r, _ in await _items(db_session, batch_id)] == [
+        ("cancelled", "CANCELLED")
+    ]
+    assert await _state(db_session, batch_id) == "cancelled"
+    assert queue.calls == []
