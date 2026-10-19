@@ -650,7 +650,7 @@ which always assembles it from the persisted blocks through
 `app/llm/assembler.py::assemble_for_model` (a deterministic
 `render_blocks_to_markdown(..., block_refs=True)` + IMRaD-aware whole-section
 dropping under `LLM_ASSEMBLY_BUDGET_TOKENS`). Every kept block carries its
-citation ref (`[p3·b12] `, or `[p3·b12–b18] ` above a table); the refs are
+citation ref followed by a space (`[p3·b12]`, or `[p3·b12–b18]` above a table); the refs are
 prompt-only and the stored `content_markdown` the reader shows is unchanged
 (ADR-0013 Amendment 2026-10). The assembly event is logged as
 `extraction.assembly`. When an article has never been parsed,

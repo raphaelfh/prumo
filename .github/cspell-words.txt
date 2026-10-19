@@ -188,6 +188,7 @@ ratchet
 ratcheted
 ratcheting
 rationalisation
+reanchor
 reask
 reasks
 REASND
