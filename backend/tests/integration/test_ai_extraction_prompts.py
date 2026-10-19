@@ -33,8 +33,10 @@ pytestmark = pytest.mark.asyncio
 
 async def _section(db: AsyncSession, name: str, *fields: str, publish: bool = True) -> UUID:
     section = await add_section(db, SEED.primary_template, name)
-    for field in fields:
-        await add_field(db, section, field)
+    # Explicit sort_order: equal orders tie-break on random UUIDs, which made
+    # the asserted field order flaky.
+    for order, field in enumerate(fields):
+        await add_field(db, section, field, sort_order=order)
     if publish:
         await TemplateVersionService(db).republish(
             project_id=SEED.primary_project,
@@ -245,9 +247,7 @@ async def test_a_stale_exclusion_filters_nothing(db_session: AsyncSession) -> No
 
     fake = await _ask(db_session, run, entity_type_id=section)
 
-    # Both fields share add_field's default sort_order and the snapshot
-    # orders by sort_order alone, so their relative order is unspecified.
-    assert [sorted(c.field_names) for c in fake.field_calls()] == [["q1", "quality_score"]]
+    assert [c.field_names for c in fake.field_calls()] == [["q1", "quality_score"]]
 
 
 async def test_a_study_type_classification_never_narrows_the_ask(
