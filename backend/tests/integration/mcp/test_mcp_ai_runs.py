@@ -7,19 +7,22 @@ import hashlib
 import json
 import re
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, settings
-from app.schemas.ai_policy import AiPolicyUpdateRequest
-from app.services import ai_policy_service, engine_credentials, llm_connection_service
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.worker import queue_health
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
+from tests.integration.mcp.ai_run_helpers import plan_args as _args
+from tests.integration.mcp.ai_run_helpers import ready_article as _article
+from tests.integration.mcp.ai_run_helpers import ready_env
+from tests.integration.mcp.ai_run_helpers import set_policy as _policy
+from tests.integration.mcp.ai_run_helpers import set_rung as _rung
 from tests.integration.mcp.article_seed import insert_pdf
 from tests.integration.mcp.conftest import _seed_pat
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
@@ -27,53 +30,9 @@ from tests.integration.mcp.tool_calls import call_tool, error_payload, structure
 _TOKEN = re.compile(r"^aip1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
 
-def _rung(monkeypatch: pytest.MonkeyPatch, rung: str | None) -> None:
-    async def availability(_db: Any, *, providers: list[str], **_kw: Any) -> dict:
-        return dict.fromkeys(providers, rung)
-
-    monkeypatch.setattr(engine_credentials, "availability_map", availability)
-    monkeypatch.setattr(llm_connection_service, "availability_map", availability)
-
-
 @pytest.fixture(autouse=True)
 def _ready_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    _rung(monkeypatch, "user")
-    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
-    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "plan-suite-key")
-
-
-async def _policy(
-    db: AsyncSession, agent_runs: str = "reviewers", *, per_run: int = 25, daily: int = 100
-) -> None:
-    await ai_policy_service.set_for_project(
-        db,
-        project_id=SEED.primary_project,
-        update=AiPolicyUpdateRequest(
-            agent_runs=agent_runs,  # type: ignore[arg-type]
-            max_articles_per_run=per_run,
-            daily_agent_article_cap=daily,
-        ),
-        user_id=SEED.primary_profile,
-    )
-
-
-async def _article(db: AsyncSession, title: str = "plan article", *, pdf: bool = True) -> UUID:
-    article_id = await make_article(db, SEED.primary_project, title)
-    if pdf:
-        file_id = await insert_pdf(db, SEED.primary_project, article_id)
-        await db.execute(
-            text("UPDATE public.article_files SET content_markdown = 'body' WHERE id = :id"),
-            {"id": str(file_id)},
-        )
-    return article_id
-
-
-def _args(*article_ids: UUID, **extra: Any) -> dict[str, Any]:
-    return {
-        "project_id": str(SEED.primary_project),
-        "article_ids": [str(a) for a in article_ids],
-        **extra,
-    }
+    ready_env(monkeypatch)
 
 
 def _payload(token: str) -> dict[str, Any]:

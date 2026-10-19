@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import re
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -14,7 +15,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.api.mcp import ai_run_plan_token
-from app.api.mcp.ai_run_plan_token import mint, minting_allowed
+from app.api.mcp.ai_run_plan_token import PlanTokenError, mint, minting_allowed, verify
 from app.core.config import Settings, settings
 
 _TOKEN = re.compile(r"^aip1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
@@ -96,3 +97,84 @@ def test_minting_allowed(
     monkeypatch.setattr(settings, "SUPABASE_ENV", env)
 
     assert minting_allowed() is allowed
+
+
+_NOW = datetime.fromtimestamp(1_760_000_000, UTC)
+
+
+def test_verify_round_trips_claims_and_digest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "unit-test-key")
+    claims = _claims()
+    token, digest = mint(claims)
+
+    verified, verified_digest = verify(token, now=_NOW + timedelta(minutes=29))
+
+    assert verified == {"v": "aip1", **claims}
+    assert verified_digest == digest
+
+
+def _swap_segment(token: str, index: int, value: str) -> str:
+    parts = token.split(".")
+    parts[index] = value
+    return ".".join(parts)
+
+
+def _edited_payload(token: str) -> str:
+    payload = json.loads(_b64decode(token.split(".")[1]))
+    payload["will_run_count"] = 99
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    return _swap_segment(token, 1, base64.urlsafe_b64encode(raw).rstrip(b"=").decode())
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        _edited_payload,
+        lambda t: _swap_segment(t, 2, base64.urlsafe_b64encode(b"\0" * 32).rstrip(b"=").decode()),
+        lambda t: _swap_segment(t, 0, "aip2"),
+        lambda t: t + ".extra",
+        lambda t: t.rsplit(".", 1)[0],
+        lambda t: _swap_segment(t, 1, "!!!"),
+        lambda _t: "",
+    ],
+    ids=["payload", "mac", "prefix", "extra-segment", "no-mac", "bad-base64", "empty"],
+)
+def test_a_tampered_token_is_invalid(monkeypatch: pytest.MonkeyPatch, tamper) -> None:
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "unit-test-key")
+    token, _ = mint(_claims())
+
+    with pytest.raises(PlanTokenError) as raised:
+        verify(tamper(token), now=_NOW)
+
+    assert raised.value.reason == "invalid"
+
+
+def test_a_token_signed_under_another_key_is_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "key-one")
+    token, _ = mint(_claims())
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "key-two")
+
+    with pytest.raises(PlanTokenError) as raised:
+        verify(token, now=_NOW)
+
+    assert raised.value.reason == "invalid"
+
+
+def test_a_signed_payload_of_another_version_is_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "unit-test-key")
+    token, _ = mint({**_claims(), "v": "aip0"})
+
+    with pytest.raises(PlanTokenError) as raised:
+        verify(token, now=_NOW)
+
+    assert raised.value.reason == "invalid"
+
+
+def test_a_token_past_its_ttl_is_expired(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "unit-test-key")
+    token, _ = mint(_claims())
+
+    with pytest.raises(PlanTokenError) as raised:
+        verify(token, now=_NOW + timedelta(minutes=31))
+
+    assert raised.value.reason == "expired"

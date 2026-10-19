@@ -24,9 +24,19 @@ from app.services.template_field_service import (
     FieldInUseError,
 )
 from app.utils.rate_limiter import limiter
+from app.worker import queue_health
 from tests.integration.conftest import SEED, get_config_draft_marker, set_config_draft_marker
+from tests.integration.helpers.batch_fixtures import make_article, make_batch
 from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import field_id, fresh_charms
+from tests.integration.mcp.ai_run_helpers import (
+    ready_article,
+    ready_env,
+    ready_plan,
+    set_policy,
+    set_rung,
+    start_args,
+)
 from tests.integration.mcp.rpc import rpc
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 
@@ -43,6 +53,11 @@ _AUDITED = {
     "IN_USE",
     "STRUCTURE_CONFLICT",
     "RETRY",
+    "AI_RUNS_NOT_ALLOWED",
+    "PLAN_STALE",
+    "AI_NOT_CONFIGURED",
+    "AI_RUN_ACTIVE",
+    "AI_RUN_LIMIT",
 }
 
 
@@ -159,6 +174,7 @@ async def _build_drivers(
     pat_reviewer_rw,
     pat_primary_read,
     pat_viewer_ai_run,
+    pat_primary_rw_ai_run,
 ) -> dict[McpErrorCode, Callable[[], Awaitable[CallToolResult]]]:
     """One driver per :class:`McpErrorCode`; a missing entry fails
     ``test_audit_row_matrix`` outright, so a new enum member needs a case here."""
@@ -462,7 +478,60 @@ async def _build_drivers(
             },
         )
 
+    async def start_after(drift: Callable[[], Awaitable[None]], **override: Any) -> CallToolResult:
+        """Plan a ready run, apply ``drift``, then start it (start_ai_run's codes)."""
+        ready_env(monkeypatch)
+        await set_policy(db_session)
+        articles = [await ready_article(db_session, f"audit {i}") for i in range(2)]
+        plan = await ready_plan(mcp_client, pat_primary_rw_ai_run, *articles)
+        await drift()
+        return await call_tool(
+            mcp_client, pat_primary_rw_ai_run, "start_ai_run", start_args(plan, **override)
+        )
+
+    async def no_drift() -> None:
+        return None
+
+    async def ai_runs_not_allowed() -> CallToolResult:
+        return await start_after(lambda: set_policy(db_session, "off"))
+
+    async def plan_stale() -> CallToolResult:
+        return await start_after(no_drift, expected_article_count=1)
+
+    async def ai_not_configured() -> CallToolResult:
+        async def drift() -> None:
+            set_rung(monkeypatch, None)
+
+        return await start_after(drift)
+
+    async def ai_run_active() -> CallToolResult:
+        async def drift() -> None:
+            await make_batch(
+                db_session,
+                owner_id=SEED.primary_profile,
+                project_id=SEED.primary_project,
+                template_id=SEED.primary_template,
+                article_ids=[await make_article(db_session, SEED.primary_project, "queued")],
+            )
+
+        return await start_after(drift)
+
+    async def ai_run_limit() -> CallToolResult:
+        return await start_after(lambda: set_policy(db_session, daily=1))
+
+    async def service_unavailable() -> CallToolResult:
+        async def drift() -> None:
+            monkeypatch.setattr(queue_health, "is_queue_available", lambda: False)
+
+        return await start_after(drift)
+
     return {
+        McpErrorCode.AI_RUNS_NOT_ALLOWED: ai_runs_not_allowed,
+        McpErrorCode.PLAN_STALE: plan_stale,
+        McpErrorCode.AI_NOT_CONFIGURED: ai_not_configured,
+        McpErrorCode.AI_RUN_ACTIVE: ai_run_active,
+        McpErrorCode.AI_RUN_LIMIT: ai_run_limit,
+        McpErrorCode.SERVICE_UNAVAILABLE: service_unavailable,
         McpErrorCode.NOT_FOUND: not_found,
         McpErrorCode.MANAGER_REQUIRED: manager_required,
         McpErrorCode.REVIEWER_REQUIRED: reviewer_required,
@@ -494,6 +563,7 @@ async def test_audit_row_matrix(
     monkeypatch: pytest.MonkeyPatch,
     code: McpErrorCode,
     pat_viewer_ai_run,
+    pat_primary_rw_ai_run,
     probe_tools: None,  # noqa: ARG001 - the reviewer_required driver calls a probe tool
 ) -> None:
     drivers = await _build_drivers(
@@ -504,6 +574,7 @@ async def test_audit_row_matrix(
         pat_reviewer_rw,
         pat_primary_read,
         pat_viewer_ai_run,
+        pat_primary_rw_ai_run,
     )
     result = await drivers[code]()
     assert error_payload(result)["code"] == code.value

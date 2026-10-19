@@ -258,6 +258,19 @@ BOLA_CASES = [
         "NOT_FOUND",
         id="plan_ai_run-random-project",
     ),
+    pytest.param(
+        "pat_outsider_ai_run",
+        "start_ai_run",
+        {
+            "project_id": str(SEED.primary_project),
+            "plan_token": "aip1.x.y",
+            "expected_article_count": 1,
+            "expected_model": "openai:m",
+            "expected_payer": "your_key",
+        },
+        "NOT_FOUND",
+        id="start_ai_run-outsider-on-foreign-project",
+    ),
 ]
 
 
@@ -601,6 +614,13 @@ def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[s
         "get_setup_readiness": {"project_id": b},
         "set_review_question": {"project_id": b, "expected_revision": 1, "picots_enabled": True},
         "plan_ai_run": {"project_id": b},
+        "start_ai_run": {
+            "project_id": b,
+            "plan_token": "aip1.x.y",
+            "expected_article_count": 1,
+            "expected_model": "openai:m",
+            "expected_payer": "your_key",
+        },
     }
 
 

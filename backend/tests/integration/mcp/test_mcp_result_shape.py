@@ -152,6 +152,7 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
             "confirm.model",
         }
     ),
+    "start_ai_run": frozenset({"engine.provider", "engine.model", "engine.mode"}),
 }
 _FLAG_FIELDS = frozenset({"untrusted_content", "untrusted_fields"})
 _PINNED_FORMATS = frozenset({"uuid", "date-time"})

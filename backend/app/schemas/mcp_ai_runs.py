@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.extraction_batch import BatchState, ExtractionBatchCounts
+
 BlockerCode = Literal[
     "AGENT_RUNS_OFF",
     "MANAGERS_ONLY",
@@ -134,3 +136,27 @@ class McpAiRunPlan(BaseModel):
         "articles[].title",
         "confirmation",
     ]
+
+
+class McpStartedEngine(BaseModel):
+    provider: str
+    model: str
+    mode: str
+
+
+class McpAiRunStarted(BaseModel):
+    """The batch an approved plan started (or, ``replayed``, had already started)."""
+
+    batch_id: UUID
+    replayed: bool
+    state: BatchState
+    counts: ExtractionBatchCounts
+    engine: McpStartedEngine
+    payer: Payer
+    note: Literal[
+        "AI only adds suggestions; reviewers must check them in prumo. Check progress with "
+        "get_ai_runs when the user asks; do not poll in a loop."
+    ] = (
+        "AI only adds suggestions; reviewers must check them in prumo. Check progress with "
+        "get_ai_runs when the user asks; do not poll in a loop."
+    )

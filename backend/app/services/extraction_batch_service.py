@@ -169,6 +169,14 @@ class ExtractionBatchService:
         """The owner's batch started from ``plan_digest`` in the project, if any."""
         return await self.batches.owned_by_plan_digest(owner_id, plan_digest, project_id=project_id)
 
+    async def agent_origin(
+        self, owner_id: UUID, batch_id: UUID
+    ) -> tuple[UUID | None, EngineIdentity | None]:
+        """The token and engine an owned agent batch was started with."""
+        batch = await owned_batch(self.db, owner_id=owner_id, batch_id=batch_id)
+        engine = EngineIdentity.model_validate(batch.agent_engine) if batch.agent_engine else None
+        return batch.agent_token_id, engine
+
     async def start(
         self,
         owner_id: UUID,

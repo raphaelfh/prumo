@@ -24,11 +24,12 @@ from tests.integration.mcp.conftest import SeededPat, seed_oauth_principal
 
 # INSTRUCTIONS length before the untrusted_fields paragraph: that paragraph
 # may spend at most 250 chars and the configuration (Setup) paragraph at most
-# 300 more of the 2,048 budget later tools also need.
+# 300 more, and the AI extraction runs paragraph at most 350 more, of the
+# 2,048 budget later tools also need.
 _PRE_HARDEN_INSTRUCTIONS_LEN = 1095
 
 # Tools allowed a destructive/open-world hint or a requiresUserInteraction meta.
-_HINT_ALLOWLIST: frozenset[str] = frozenset()
+_HINT_ALLOWLIST: frozenset[str] = frozenset({"start_ai_run"})
 
 
 # Every test here runs with a PAT and with an OAuth connection of the same
@@ -399,7 +400,11 @@ async def test_requires_user_interaction_renders_the_meta(
     assert tool.meta == {"anthropic/requiresUserInteraction": True}
     assert tool.annotations is not None
     assert (tool.annotations.read_only_hint, tool.annotations.open_world_hint) == (False, True)
-    assert all(not (t.meta or {}) for name, t in tools.items() if name != "probe_prompted")
+    assert all(
+        not (t.meta or {})
+        for name, t in tools.items()
+        if name != "probe_prompted" and name not in _HINT_ALLOWLIST
+    )
 
 
 async def test_read_only_ai_tool_rejects_nul_in_dispatcher(
@@ -496,7 +501,8 @@ async def test_server_info_instructions_and_cache_hints(
         assert client.server_info.version == API_VERSION
         assert client.instructions is not None
         assert len(client.instructions) <= 2048
-        assert len(client.instructions) <= _PRE_HARDEN_INSTRUCTIONS_LEN + 250 + 300
+        assert len(client.instructions) <= _PRE_HARDEN_INSTRUCTIONS_LEN + 250 + 300 + 350
+        assert "explicitly asks" in client.instructions
         assert "list_projects" in client.instructions
         assert "untrusted" in client.instructions
         assert "untrusted_fields" in client.instructions
@@ -510,7 +516,8 @@ async def test_server_info_instructions_and_cache_hints(
         for tool in result.tools:
             assert tool.title
             assert tool.annotations is not None
-            assert tool.annotations.open_world_hint is False
+            if tool.name not in _HINT_ALLOWLIST:
+                assert tool.annotations.open_world_hint is False
 
 
 async def test_tool_call_span_carries_no_secret(
@@ -751,14 +758,22 @@ async def test_annotation_policy_is_pinned(
     async with mcp_client(pat_primary_rw_ai_run) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     assert "update_project_details" in tools and "edit_template_draft" in tools
-    assert "plan_ai_run" in tools
+    assert "plan_ai_run" in tools and "start_ai_run" in tools
+    start = tools["start_ai_run"]
+    assert (
+        start.annotations.read_only_hint,
+        start.annotations.destructive_hint,
+        start.annotations.idempotent_hint,
+        start.annotations.open_world_hint,
+    ) == (False, True, True, True)
+    assert start.meta == {"anthropic/requiresUserInteraction": True}
     for name, tool in tools.items():
         a = tool.annotations
         assert a is not None, name
         hints = (a.read_only_hint, a.destructive_hint, a.idempotent_hint, a.open_world_hint)
         if a.read_only_hint:
             assert hints == (True, False, True, False), name
-        elif name not in _HINT_ALLOWLIST:
+        if name not in _HINT_ALLOWLIST:
             assert a.destructive_hint is False and a.open_world_hint is False, name
             assert "anthropic/requiresUserInteraction" not in (tool.meta or {}), name
     assert tools["update_project_details"].annotations.idempotent_hint is True

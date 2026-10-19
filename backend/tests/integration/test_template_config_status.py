@@ -291,7 +291,12 @@ async def test_instruction_only_draft_counts_one(db_session: AsyncSession) -> No
 
 
 async def _agent_action(
-    db: AsyncSession, token_id: UUID | None, *, outcome: str = "applied", offset_seconds: int = 0
+    db: AsyncSession,
+    token_id: UUID | None,
+    *,
+    outcome: str = "applied",
+    offset_seconds: int = 0,
+    tool: str = "edit_template_draft",
 ) -> None:
     await db.execute(
         text(
@@ -299,7 +304,7 @@ async def _agent_action(
             "(id, created_at, token_id, user_id, project_id, template_id, tool, input, "
             "before, after, outcome, error_code) "
             "VALUES (:id, now() + make_interval(secs => :s), :tok, :uid, :pid, :tid, "
-            "'edit_template_draft', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :outcome, :code)"
+            ":tool, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :outcome, :code)"
         ),
         {
             "id": str(uuid4()),
@@ -308,6 +313,7 @@ async def _agent_action(
             "uid": str(SEED.primary_profile),
             "pid": str(SEED.primary_project),
             "tid": str(SEED.primary_template),
+            "tool": tool,
             "outcome": outcome,
             "code": None if outcome == "applied" else "STALE_VALUE",
         },
@@ -350,6 +356,18 @@ async def test_refused_agent_row_does_not_light_the_chip(db_session: AsyncSessio
     await _agent_action(db_session, await _pat(db_session), outcome="refused")
 
     status = await _status(db_session)
+    assert status.has_agent_edits is False
+    assert status.agent_edit_token_name is None
+
+
+@pytest.mark.asyncio
+async def test_applied_start_never_raises_the_draft_chip(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (draft)")
+    await _agent_action(db_session, await _pat(db_session), tool="start_ai_run")
+
+    status = await _status(db_session)
+    assert status.has_pending_changes is True
     assert status.has_agent_edits is False
     assert status.agent_edit_token_name is None
 

@@ -55,6 +55,12 @@ class McpErrorCode(StrEnum):
     RETRY = "RETRY"
     RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    AI_RUNS_NOT_ALLOWED = "AI_RUNS_NOT_ALLOWED"
+    PLAN_STALE = "PLAN_STALE"
+    AI_NOT_CONFIGURED = "AI_NOT_CONFIGURED"
+    AI_RUN_ACTIVE = "AI_RUN_ACTIVE"
+    AI_RUN_LIMIT = "AI_RUN_LIMIT"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
 NOT_FOUND_MESSAGE = "Not found, or not in a project this token's user belongs to."
@@ -107,6 +113,16 @@ _SPECS: dict[McpErrorCode, _CodeSpec] = {  # one entry per code; next_step text 
     McpErrorCode.INTERNAL_ERROR: _CodeSpec(
         False, "the error was logged; tell the user and do not retry blindly"
     ),
+    McpErrorCode.AI_RUNS_NOT_ALLOWED: _CodeSpec(
+        False, "a project manager can allow agent runs in prumo Settings → AI engine"
+    ),
+    McpErrorCode.PLAN_STALE: _CodeSpec(
+        False, "call plan_ai_run again, show the new confirmation and get a fresh yes"
+    ),
+    McpErrorCode.AI_NOT_CONFIGURED: _CodeSpec(False, "configure the AI engine or a key in prumo"),
+    McpErrorCode.AI_RUN_ACTIVE: _CodeSpec(False, "check it with get_ai_runs"),
+    McpErrorCode.AI_RUN_LIMIT: _CodeSpec(False, "run fewer articles, or wait for the window"),
+    McpErrorCode.SERVICE_UNAVAILABLE: _CodeSpec(True, "try again in a few minutes"),
 }
 
 
@@ -124,6 +140,11 @@ AUDITED_CODES: frozenset[McpErrorCode] = frozenset(
         McpErrorCode.IN_USE,
         McpErrorCode.STRUCTURE_CONFLICT,
         McpErrorCode.RETRY,
+        McpErrorCode.AI_RUNS_NOT_ALLOWED,
+        McpErrorCode.PLAN_STALE,
+        McpErrorCode.AI_NOT_CONFIGURED,
+        McpErrorCode.AI_RUN_ACTIVE,
+        McpErrorCode.AI_RUN_LIMIT,
     }
 )
 """Codes whose refusal writes one ``agent_actions`` row (spec §6.1/§7). The rest are

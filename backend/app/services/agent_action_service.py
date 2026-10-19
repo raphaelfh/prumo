@@ -18,6 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_action import AgentAction
 
+DRAFT_EDIT_TOOLS: frozenset[str] = frozenset({"edit_template_draft"})
+"""The tools whose applied rows are draft edits: only they light the draft chip."""
+
 _INPUT_CHECK_BYTES = 65_536
 # jsonb's text form can renormalize numbers (1e3 -> 1000), so the stored text may
 # be slightly longer than our measurement; the headroom keeps the table CHECK
