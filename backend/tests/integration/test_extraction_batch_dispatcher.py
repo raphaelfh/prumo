@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -734,9 +735,15 @@ async def _set_policy(db: AsyncSession, agent_runs: str) -> None:
 
 
 async def _agent_batch(
-    db: AsyncSession, count: int, *, owner: UUID = SEED.primary_profile, ai_run: bool = True
+    db: AsyncSession,
+    count: int,
+    *,
+    owner: UUID = SEED.primary_profile,
+    ai_run: bool = True,
+    engine: Any = None,
 ) -> tuple[UUID, UUID]:
-    """An agent-started batch whose token, policy and engine all still allow it."""
+    """An agent-started batch whose token, policy and engine all still allow it.
+    ``engine``: the approved identity (default: the project engine, no own key)."""
     from app.schemas.llm_target import EngineIdentity
     from tests.integration.helpers.engine_setup import set_project_engine
     from tests.integration.helpers.pat_rows import insert_pat_row
@@ -744,7 +751,7 @@ async def _agent_batch(
     await set_project_engine(db, _AGENT_PROVIDER, _AGENT_MODEL)
     await _set_policy(db, "reviewers")
     token_id = await insert_pat_row(db, "agent-guard", ai_run=ai_run)
-    engine = EngineIdentity(
+    engine = engine or EngineIdentity(
         provider=_AGENT_PROVIDER, model=_AGENT_MODEL, mode="fast", connection_id=None
     )
     articles = [await make_article(db, SEED.primary_project, f"G{i}") for i in range(count)]
@@ -906,8 +913,111 @@ async def test_engine_change_stops_agent_batch(db_session: AsyncSession) -> None
 
     await _assert_guard_stop(db_session, batch_id, queue, "AGENT_ENGINE_CHANGED", 2)
     assert (await _stop(db_session, batch_id))[1] == (
-        "The project's AI engine changed after this run was approved."
+        "The project's AI engine, its endpoint or the key that pays for it changed "
+        "after this run was approved."
     )
+
+
+async def _approved_identity(db: AsyncSession) -> Any:
+    """The identity a start would capture now, for the primary manager."""
+    from app.services.engine_identity import engine_identity
+    from app.services.llm_engine_service import resolve_engine
+
+    target = await resolve_engine(db, SEED.primary_project, SEED.primary_profile)
+    return await engine_identity(
+        db, target, project_id=SEED.primary_project, owner_id=SEED.primary_profile
+    )
+
+
+async def _advance_twice_around(
+    db: AsyncSession, batch_id: UUID, change: Any
+) -> tuple[FakeQueue, list[tuple[str, str | None, UUID | None]]]:
+    """Advance (every guard passes), apply ``change``, advance again."""
+    queue = FakeQueue()
+    dispatcher = ExtractionBatchDispatcher(db, enqueue=queue)
+    await dispatcher.advance(batch_id)
+    assert [s for s, _, _ in await _items(db, batch_id)] == [
+        "dispatched",
+        "dispatched",
+        "queued",
+    ], "precondition: the approved identity still holds"
+    await change()
+    await db.commit()
+    await dispatcher.advance(batch_id)
+    return queue, await _items(db, batch_id)
+
+
+@pytest.mark.asyncio
+async def test_payer_change_stops_agent_batch(db_session: AsyncSession) -> None:
+    """The owner's key is deleted mid-run: the run must not fall back to
+    another payer (the project's key) the human never approved."""
+    from pydantic import SecretStr
+
+    from app.schemas.llm_connection import UserConnectionCreateRequest
+    from app.services.llm_connection_service import LlmConnectionService
+    from tests.integration.helpers.engine_setup import set_project_engine
+
+    await set_project_engine(db_session, _AGENT_PROVIDER, _AGENT_MODEL)
+    key = await LlmConnectionService(db_session).create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider=_AGENT_PROVIDER, label="own key", api_key=SecretStr("sk-own")
+        ),
+    )
+    approved = await _approved_identity(db_session)
+    assert approved.payer == "your_key", "precondition: the owner's own key pays"
+    batch_id, _ = await _agent_batch(db_session, 3, engine=approved)
+
+    async def delete_key() -> None:
+        await db_session.execute(
+            text("DELETE FROM public.llm_connections WHERE id = :id"), {"id": str(key.id)}
+        )
+
+    _queue, items = await _advance_twice_around(db_session, batch_id, delete_key)
+
+    assert await _stop(db_session, batch_id) == (
+        "AGENT_ENGINE_CHANGED",
+        "The project's AI engine, its endpoint or the key that pays for it changed "
+        "after this run was approved.",
+    )
+    assert items[2][:2] == ("cancelled", "STOPPED_AGENT_GUARD")
+
+
+@pytest.mark.asyncio
+async def test_endpoint_change_behind_the_same_connection_stops_agent_batch(
+    db_session: AsyncSession,
+) -> None:
+    from app.services.user_engine_service import set_user_engine
+    from tests.integration.helpers.engine_setup import make_host_connection, set_project_engine
+
+    await set_project_engine(db_session, _AGENT_PROVIDER, _AGENT_MODEL)
+    cid = await make_host_connection(db_session, label="guard-host")
+    await set_user_engine(
+        db_session,
+        user_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        provider="openai_compatible",
+        model="endpoint-model-x",
+        mode="fast",
+        connection_id=cid,
+        is_manager=True,
+    )
+    approved = await _approved_identity(db_session)
+    assert approved.connection_id == str(cid) and approved.endpoint_sha256 is not None
+    batch_id, _ = await _agent_batch(db_session, 3, engine=approved)
+
+    async def move_endpoint() -> None:
+        await db_session.execute(
+            text(
+                "UPDATE public.llm_connections SET base_url = 'https://1.1.1.1/v1' WHERE id = :id"
+            ),
+            {"id": str(cid)},
+        )
+
+    _queue, items = await _advance_twice_around(db_session, batch_id, move_endpoint)
+
+    assert (await _stop(db_session, batch_id))[0] == "AGENT_ENGINE_CHANGED"
+    assert items[2][:2] == ("cancelled", "STOPPED_AGENT_GUARD")
 
 
 @pytest.mark.asyncio

@@ -54,10 +54,15 @@ class LlmTarget(BaseModel):
 
 
 class EngineIdentity(BaseModel):
-    """Which engine an agent-started batch was approved to run on.
+    """Which engine an agent-started batch was approved to run on, and who pays.
 
     Compared as a typed value, never by string keys: the approved engine and
-    the project's current one are the same engine only when all four match.
+    the project's current one are the same only when every field matches. A
+    host connection's ``base_url`` rides as its sha256 so an endpoint moved
+    behind the same ``connection_id`` is another engine; ``payer`` is the
+    plan's payer (``"your_key"`` / ``"project_key"``), so a run never falls
+    back to a key the human did not approve. Built by
+    ``services.engine_identity.engine_identity``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -66,13 +71,5 @@ class EngineIdentity(BaseModel):
     model: str
     mode: str  # LlmTarget.mode_requested
     connection_id: str | None  # LlmTarget.connection_id
-
-    @classmethod
-    def from_target(cls, target: LlmTarget) -> EngineIdentity:
-        """The identity of the engine ``target`` resolves to."""
-        return cls(
-            provider=target.provider,
-            model=target.model,
-            mode=target.mode_requested,
-            connection_id=target.connection_id,
-        )
+    endpoint_sha256: str | None = None
+    payer: str | None = None

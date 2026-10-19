@@ -6,6 +6,7 @@ are pinned, ``now`` is injected. One test per stated requirement.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -14,13 +15,14 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mcp.tools._ai_run_errors import changes
 from app.core.config import settings
 from app.llm.catalog import selectable_catalog
 from app.models.extraction import ExtractionRunStage
 from app.schemas.ai_policy import AiPolicyUpdateRequest
 from app.schemas.llm_target import EngineIdentity
 from app.services import ai_policy_service, engine_credentials, llm_connection_service
-from app.services.ai_run_plan_service import PlanCore, build_plan
+from app.services.ai_run_plan_service import PlanCore, build_plan, will_run_digest
 from app.services.llm_engine_service import resolve_engine
 from app.services.template_versioning import TemplateVersionService
 from app.worker import queue_health
@@ -317,8 +319,60 @@ async def test_plan_carries_the_policy_and_engine_identity(db_session: AsyncSess
 
     assert (plan.agent_runs, plan.daily_cap, plan.max_articles_per_run) == ("managers", 42, 7)
     target = await resolve_engine(db_session, SEED.primary_project, SEED.primary_profile)
-    assert plan.engine_identity == EngineIdentity.from_target(target)
+    assert plan.engine_identity == EngineIdentity(
+        provider=target.provider,
+        model=target.model,
+        mode=target.mode_requested,
+        connection_id=None,
+        endpoint_sha256=None,
+        payer="your_key",
+    )
     assert plan.payer == "your_key"
+
+
+async def test_a_host_engine_identity_binds_its_endpoint(db_session: AsyncSession) -> None:
+    """A changed base_url behind the same connection id is another engine: the
+    approved plan's engine claim no longer matches the recomputed plan."""
+    from app.services.user_engine_service import set_user_engine
+    from tests.integration.helpers.engine_setup import make_host_connection
+
+    await _policy(db_session)
+    cid = await make_host_connection(db_session, base_url="https://8.8.8.8/v1")
+    await set_user_engine(
+        db_session,
+        user_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        provider="openai_compatible",
+        model="endpoint-model-x",
+        mode="fast",
+        connection_id=cid,
+        is_manager=True,
+    )
+    ids = [await _ready_article(db_session, "host identity", "t")]
+    approved = await _plan(db_session, ids)
+    assert approved.engine_identity is not None
+    assert approved.engine_identity.connection_id == str(cid)
+    assert (
+        approved.engine_identity.endpoint_sha256
+        == hashlib.sha256(b"https://8.8.8.8/v1").hexdigest()
+    )
+    claims = {
+        "will_run_digest": will_run_digest(approved.will_run_ids),
+        "engine": approved.engine_identity.model_dump(mode="json"),
+        "payer": approved.payer,
+        "template_version_id": str(approved.template.version_id),
+    }
+    assert "engine" not in changes(approved, claims), "precondition: same endpoint, same engine"
+
+    await db_session.execute(
+        text("UPDATE public.llm_connections SET base_url = 'https://1.1.1.1/v1' WHERE id = :id"),
+        {"id": str(cid)},
+    )
+    recomputed = await _plan(db_session, ids)
+
+    assert recomputed.engine_identity is not None
+    assert recomputed.engine_identity.connection_id == str(cid)
+    assert changes(recomputed, claims) == ["engine"]
 
 
 async def test_build_plan_writes_nothing(db_session: AsyncSession) -> None:

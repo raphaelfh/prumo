@@ -109,7 +109,12 @@ def changes(plan: PlanCore, claims: dict[str, Any]) -> list[Change]:
     out: list[Change] = []
     if will_run_digest(plan.will_run_ids) != claims["will_run_digest"]:
         out.append("articles")
-    if plan.engine_identity != EngineIdentity.model_validate(claims["engine"]):
+    approved = EngineIdentity.model_validate(claims["engine"])
+    current = plan.engine_identity
+    # The payer rides in the identity too; it is reported as its own change.
+    if current is None or current.model_copy(update={"payer": None}) != approved.model_copy(
+        update={"payer": None}
+    ):
         out.append("engine")
     if plan.payer != claims["payer"]:
         out.append("payer")

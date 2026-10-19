@@ -25,10 +25,11 @@ from app.repositories.extraction_batch_repository import ExtractionBatchReposito
 from app.schemas.ai_policy import AgentRuns
 from app.schemas.llm_target import EngineIdentity, LlmTarget
 from app.schemas.mcp_ai_runs import BlockerCode, BlockerReason, Payer, SkipReason
-from app.services import ai_policy_service, engine_credentials, llm_connection_service
+from app.services import ai_policy_service, engine_credentials
 from app.services.ai_run_plan_estimate import Estimate, estimate, warnings_for
 from app.services.article_read_service import owned_articles
 from app.services.current_run import CurrentRunResolver
+from app.services.engine_identity import engine_identity
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher
 from app.services.extraction_batch_guards import (
     runs_with_ai_suggestions,
@@ -154,21 +155,6 @@ async def _engine(
     except EngineRetiredError:
         return target, Blocker("AI_NOT_CONFIGURED", "LLM_ENGINE_RETIRED")
     return target, None
-
-
-async def _payer(
-    db: AsyncSession, target: LlmTarget | None, project_id: UUID, owner_id: UUID
-) -> Payer | None:
-    if target is None:
-        return None
-    if target.connection_id is not None:
-        return "your_key"
-    rung = (
-        await llm_connection_service.availability_map(
-            db, project_id=project_id, user_id=owner_id, providers=[target.provider]
-        )
-    ).get(target.provider)
-    return {"user": "your_key", "project": "project_key"}.get(rung or "")  # type: ignore[return-value]
 
 
 def _plan_engine(target: LlmTarget | None) -> PlanEngine | None:
@@ -305,7 +291,11 @@ async def build_plan(
     target, engine_blocker = await _engine(db, project_id, owner_id)
     if engine_blocker is not None:
         blockers.append(engine_blocker)
-    payer = await _payer(db, target, project_id, owner_id)
+    identity = (
+        await engine_identity(db, target, project_id=project_id, owner_id=owner_id)
+        if target is not None
+        else None
+    )
 
     cap = policy.max_articles_per_run
     selection: Literal["remaining"] | list[UUID]
@@ -366,11 +356,11 @@ async def build_plan(
             version=tree.version if tree is not None else None,
         ),
         engine=_plan_engine(target),
-        engine_identity=EngineIdentity.from_target(target) if target is not None else None,
+        engine_identity=identity,
         agent_runs=policy.agent_runs,
         daily_cap=policy.daily_agent_article_cap,
         max_articles_per_run=cap,
-        payer=payer,
+        payer=identity.payer if identity is not None else None,  # type: ignore[arg-type]
         requested=len(selected),
         will_run_ids=will_run,
         skipped=skipped,

@@ -72,7 +72,11 @@ def verify(token: str, *, now: datetime) -> tuple[dict[str, Any], str]:
     """``(claims, plan_digest)`` of an untampered, unexpired token.
 
     The MAC is compared in constant time before the payload is parsed, so an
-    edited token reveals nothing about the claims it would carry."""
+    edited token reveals nothing about the claims it would carry. Nothing
+    verifies while ``minting_allowed()`` is false: the placeholder key is
+    public, so a token under it proves nothing."""
+    if not minting_allowed():
+        raise PlanTokenError("invalid")
     parts = token.split(".")
     if len(parts) != 3 or parts[0] != TOKEN_VERSION:
         raise PlanTokenError("invalid")

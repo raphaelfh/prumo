@@ -38,7 +38,9 @@ from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
 from tests.integration.helpers.pat_rows import insert_pat_row
 
-ENGINE = EngineIdentity(provider="openai", model="gpt-test", mode="fast", connection_id=None)
+ENGINE = EngineIdentity(
+    provider="openai", model="gpt-test", mode="fast", connection_id=None, payer="your_key"
+)
 
 
 def _rung(monkeypatch: pytest.MonkeyPatch, rung: str) -> None:
@@ -111,7 +113,14 @@ async def test_agent_start_writes_origin(db_session: AsyncSession) -> None:
     assert result.replayed is False
     assert await _origin(db_session, result.batch_id) == (
         token_id,
-        {"provider": "openai", "model": "gpt-test", "mode": "fast", "connection_id": None},
+        {
+            "provider": "openai",
+            "model": "gpt-test",
+            "mode": "fast",
+            "connection_id": None,
+            "endpoint_sha256": None,
+            "payer": "your_key",
+        },
         agent.plan_digest,
     )
 

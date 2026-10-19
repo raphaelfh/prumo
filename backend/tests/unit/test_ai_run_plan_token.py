@@ -178,3 +178,19 @@ def test_a_token_past_its_ttl_is_expired(monkeypatch: pytest.MonkeyPatch) -> Non
         verify(token, now=_NOW + timedelta(minutes=31))
 
     assert raised.value.reason == "expired"
+
+
+def test_verify_refuses_while_minting_is_not_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deployment still on the placeholder key verifies nothing: anyone who
+    knows the placeholder could otherwise forge a token."""
+    default = Settings.model_fields["ENCRYPTION_KEY"].default
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", default)
+    monkeypatch.setattr(settings, "SUPABASE_ENV", "local")
+    token, _ = mint(_claims())
+    assert verify(token, now=_NOW)[0]["payer"] == "your_key"  # precondition: valid locally
+
+    monkeypatch.setattr(settings, "SUPABASE_ENV", None)
+
+    with pytest.raises(PlanTokenError) as exc:
+        verify(token, now=_NOW)
+    assert exc.value.reason == "invalid"
