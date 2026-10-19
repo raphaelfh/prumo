@@ -13,12 +13,14 @@ import app.services.engine_credentials as ec
 from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import (
     EngineCredentials,
+    assert_engine_ready,
     rekey_for_adopted_engine,
     resolve_engine_credentials,
 )
 from app.services.llm_connection_service import (
     ConnectionUnavailableError,
     KeyScope,
+    MissingCredentialError,
     ResolvedKey,
 )
 
@@ -268,3 +270,61 @@ def test_legacy_pinned_snapshot_with_endpoint_id_validates() -> None:
         {"provider": "openai_compatible", "model": "m", "endpoint_id": "x"}
     )
     assert target.connection_id is None and target.deviation is False
+
+
+def _stub_catalogue_engine(monkeypatch: pytest.MonkeyPatch, rung: str | None) -> LlmTarget:
+    engine = LlmTarget(provider="openai", model="m")
+
+    async def fake_engine(_db: Any, _project_id: UUID, _user_id: UUID) -> LlmTarget:
+        return engine
+
+    async def fake_availability(_db: Any, *, providers: list[str], **_kw: Any) -> dict:
+        return dict.fromkeys(providers, rung)
+
+    monkeypatch.setattr(ec, "resolve_engine", fake_engine)
+    monkeypatch.setattr(ec, "availability_map", fake_availability)
+    return engine
+
+
+@pytest.mark.asyncio
+async def test_assert_engine_ready_refuses_global_when_not_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _stub_catalogue_engine(monkeypatch, "global")
+
+    with pytest.raises(MissingCredentialError) as refused:
+        await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=False)
+    assert refused.value.code == "MISSING_API_KEY" and refused.value.status_code == 409
+    assert refused.value.details == {"reason": "DEPLOYMENT_KEY_NOT_ALLOWED"}
+    assert "own key" in refused.value.message
+
+    assert await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER) is engine
+    assert (
+        await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=True)
+        is engine
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow_global", [True, False], ids=["global-allowed", "global-refused"])
+async def test_missing_key_reason(monkeypatch: pytest.MonkeyPatch, allow_global: bool) -> None:
+    _stub_catalogue_engine(monkeypatch, None)
+
+    with pytest.raises(MissingCredentialError) as refused:
+        await assert_engine_ready(
+            object(), project_id=_PROJECT, user_id=_USER, allow_global=allow_global
+        )
+    assert refused.value.details == {"reason": "MISSING_API_KEY"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rung", ["user", "project"])
+async def test_own_key_passes_when_global_refused(
+    monkeypatch: pytest.MonkeyPatch, rung: str
+) -> None:
+    engine = _stub_catalogue_engine(monkeypatch, rung)
+
+    assert (
+        await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=False)
+        is engine
+    )

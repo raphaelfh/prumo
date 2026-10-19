@@ -93,14 +93,24 @@ class ConnectionUnavailableError(AppError):
         super().__init__(code="LLM_ENDPOINT_UNAVAILABLE", message=message, status_code=409)
 
 
+MissingCredentialReason = Literal["MISSING_API_KEY", "DEPLOYMENT_KEY_NOT_ALLOWED"]
+
+
 class MissingCredentialError(AppError):
     """No usable credential at any rung for the engine's provider (kickoff precheck)."""
 
-    def __init__(self, provider: str) -> None:
+    def __init__(
+        self, provider: str, *, reason: MissingCredentialReason = "MISSING_API_KEY"
+    ) -> None:
+        if reason == "DEPLOYMENT_KEY_NOT_ALLOWED":
+            message = (
+                f"Agent-started runs need your own or the project's own key for {provider}; "
+                "the deployment key is not used. Add one in Settings."
+            )
+        else:
+            message = f"No API key is configured for {provider}. Add one in Settings."
         super().__init__(
-            code="MISSING_API_KEY",
-            status_code=409,
-            message=f"No API key is configured for {provider}. Add one in Settings.",
+            code="MISSING_API_KEY", status_code=409, message=message, details={"reason": reason}
         )
 
 

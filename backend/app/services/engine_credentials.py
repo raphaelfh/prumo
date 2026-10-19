@@ -136,8 +136,13 @@ async def rekey_for_adopted_engine(
     )
 
 
-async def assert_engine_ready(db: AsyncSession, *, project_id: UUID, user_id: UUID) -> LlmTarget:
+async def assert_engine_ready(
+    db: AsyncSession, *, project_id: UUID, user_id: UUID, allow_global: bool = True
+) -> LlmTarget:
     """The ONE kickoff precheck: the engine resolves and a credential exists.
+
+    ``allow_global=False`` refuses a catalogue engine whose only credential is
+    the deployment key (agent-started runs); host engines never use it.
 
     Read-only: no decryption, no ``last_used_at`` write, no provider call. The
     worker's execution-time :func:`resolve_engine_credentials` is unchanged.
@@ -154,6 +159,9 @@ async def assert_engine_ready(db: AsyncSession, *, project_id: UUID, user_id: UU
     available = await availability_map(
         db, project_id=project_id, user_id=user_id, providers=[engine.provider]
     )
-    if available[engine.provider] is None:
+    rung = available[engine.provider]
+    if rung is None:
         raise MissingCredentialError(engine.provider)
+    if rung == "global" and not allow_global:
+        raise MissingCredentialError(engine.provider, reason="DEPLOYMENT_KEY_NOT_ALLOWED")
     return engine

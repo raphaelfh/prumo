@@ -21,6 +21,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.models.extraction import ExtractionRunStage
+from app.services import extraction_batch_dispatcher as dispatcher_module
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher, batch_request_id
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
@@ -246,10 +247,10 @@ async def test_owner_already_running_ai_on_the_run_is_skipped(db_session: AsyncS
 async def test_existing_ai_suggestions_skip_only_when_asked(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def has_ai(self, run_id):  # noqa: ANN001, ANN202, ARG001
-        return True
+    async def has_ai(_db, run_ids):  # noqa: ANN001, ANN202
+        return set(run_ids)
 
-    monkeypatch.setattr(ExtractionBatchDispatcher, "_run_has_ai_suggestions", has_ai)
+    monkeypatch.setattr(dispatcher_module, "runs_with_ai_suggestions", has_ai)
     skip_on, _ = await _batch(db_session, 1)
     skip_off, _ = await _batch(db_session, 1, skip_articles_with_ai_suggestions=False)
     queue = FakeQueue()

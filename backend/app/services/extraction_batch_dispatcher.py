@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
@@ -54,12 +54,16 @@ from app.models.extraction import ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem
 from app.models.extraction_versioning import TemplateKind
-from app.models.extraction_workflow import ExtractionProposalRecord
 from app.repositories.extraction_batch_repository import ExtractionBatchRepository
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.extraction_batch import ATTEMPT_LIVE
 from app.services.article_read_service import ArticleNotFoundError, owned_articles
 from app.services.extraction_attempt_service import ExtractionAttemptService
+from app.services.extraction_batch_guards import (
+    run_write_reason,
+    runs_with_ai_suggestions,
+    runs_with_owner_live_attempt,
+)
 from app.services.extraction_run_write import RunWriteError, open_run_for_write
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
 from app.services.project_template_active_service import (
@@ -333,41 +337,20 @@ class ExtractionBatchDispatcher:
         try:
             await open_run_for_write(self.db, run_id, expect=ExtractionRunStage.EXTRACT.only())
         except RunWriteError as exc:
-            if exc.reason == "missing":
-                return "NO_LONGER_AVAILABLE"
-            if exc.stage == ExtractionRunStage.FINALIZED.value:
-                return "RUN_FINALIZED"
-            return "RUN_NOT_EDITABLE"
-        running = (
-            await self.db.execute(
-                select(ExtractionAttempt.id)
-                .where(
-                    ExtractionAttempt.owner_id == ctx.owner_id,
-                    ExtractionAttempt.run_id == run_id,
-                    ExtractionAttempt.status.in_(ATTEMPT_LIVE),
-                    ExtractionAttempt.updated_at >= self.now() - self.LIVE_WINDOW,
-                    ExtractionAttempt.request_id != batch_request_id(item_id),
-                )
-                .limit(1)
-            )
-        ).first()
-        if running is not None:
+            return run_write_reason(exc)
+        if run_id in await runs_with_owner_live_attempt(
+            self.db,
+            run_ids=[run_id],
+            owner_id=ctx.owner_id,
+            since=self.now() - self.LIVE_WINDOW,
+            exclude_request_id=batch_request_id(item_id),
+        ):
             return "AI_ALREADY_RUNNING"
-        if ctx.skip_articles_with_ai_suggestions and await self._run_has_ai_suggestions(run_id):
+        if ctx.skip_articles_with_ai_suggestions and run_id in await runs_with_ai_suggestions(
+            self.db, [run_id]
+        ):
             return "ALREADY_HAS_AI_SUGGESTIONS"
         return None
-
-    async def _run_has_ai_suggestions(self, run_id: UUID) -> bool:
-        return (
-            await self.db.execute(
-                select(ExtractionProposalRecord.id)
-                .where(
-                    ExtractionProposalRecord.run_id == run_id,
-                    ExtractionProposalRecord.source == "ai",
-                )
-                .limit(1)
-            )
-        ).first() is not None
 
     async def _skip(self, item_id: UUID, reason: str, *, discard_writes: bool = False) -> None:
         # Only a half-done session open has writes to discard; a guard skip has
