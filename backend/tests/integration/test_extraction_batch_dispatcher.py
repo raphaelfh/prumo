@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher, batch_request_id
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.fakes.recorded_llm import RecordedLlm
+from tests.fakes.usage_sink import RecordingUsageSink
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
 
@@ -502,3 +505,207 @@ async def test_a_rolled_back_skip_does_not_break_the_next_claimed_item(
         assert statuses[0] == ("skipped", "NO_LONGER_AVAILABLE")
         assert statuses[1][0] == "dispatched", "the second claimed item never dispatched"
         assert len(queue.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Execution never reaches the deployment key for an agent batch.
+#
+# The attempt runs through the REAL task body: ``run_task`` is captured so its
+# coroutine runs on the test loop, and every ``worker_session()`` is a fresh
+# session on the test connection (its own SAVEPOINT), so the preparation, the
+# ownership and the domain sessions stay separate as in the worker. Only the
+# model call (``RecordedLlm``), the usage sink and storage are faked; the
+# credential ladder, ``build_model`` and the dispatcher are real.
+# ---------------------------------------------------------------------------
+
+
+def _run_attempt_body(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: RecordedLlm, sink: RecordingUsageSink
+):  # noqa: ANN202
+    from app.services import ai_extraction
+    from app.worker.tasks import extraction_tasks
+
+    connection = db.bind
+
+    @asynccontextmanager
+    async def worker_session(_engine: object = None) -> AsyncIterator[AsyncSession]:
+        async with AsyncSession(
+            bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+        ) as session:
+            yield session
+
+    @asynccontextmanager
+    async def worker_engine() -> AsyncIterator[object]:
+        yield connection
+
+    real_service = ai_extraction.AiExtraction
+
+    def with_fakes(**kwargs):  # noqa: ANN003, ANN202
+        return real_service(**{**kwargs, "llm": llm, "usage_sink": sink})
+
+    captured: list = []
+    monkeypatch.setattr("app.worker._session.worker_session", worker_session)
+    monkeypatch.setattr("app.worker._session.worker_engine", worker_engine)
+    monkeypatch.setattr(ai_extraction, "AiExtraction", with_fakes)
+    monkeypatch.setattr("app.core.deps.get_supabase_client", lambda: None)
+    monkeypatch.setattr("app.core.factories.create_storage_adapter", lambda _c: None)
+    monkeypatch.setattr(extraction_tasks, "run_task", captured.append)
+
+    async def run(attempt_id: UUID) -> None:
+        extraction_tasks.run_section_extraction_task.apply(
+            kwargs={
+                "payload_json": {},
+                "user_id": str(SEED.primary_profile),
+                "attempt_id": str(attempt_id),
+            }
+        )
+        (body,) = captured
+        captured.clear()
+        # The attempt row records the outcome; a failed attempt re-raises here.
+        with contextlib.suppress(Exception):
+            await body()
+
+    return run
+
+
+def _deployment_key_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.llm import provider
+    from app.services import llm_connection_service
+    from app.worker import queue_health
+
+    monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
+    monkeypatch.setattr(provider, "global_key_for", lambda _p: "sk-test")
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
+
+
+async def _attempt_outcome(db: AsyncSession, attempt_id: UUID) -> tuple[str, str | None]:
+    row = (
+        await db.execute(
+            text("SELECT status, error_code FROM public.extraction_attempts WHERE id=:id"),
+            {"id": str(attempt_id)},
+        )
+    ).one()
+    return row[0], row[1]
+
+
+async def _start(db: AsyncSession, *, agent: bool) -> tuple[UUID, UUID]:
+    """A one-article batch started through the real start path, on a user key
+    that is then deleted: the deployment key is the only key left."""
+    from pydantic import SecretStr
+
+    from app.schemas.extraction_batch import CreateExtractionBatchRequest
+    from app.schemas.llm_connection import UserConnectionCreateRequest
+    from app.schemas.llm_target import EngineIdentity
+    from app.services.extraction_batch_service import AgentRunOrigin, ExtractionBatchService
+    from app.services.llm_connection_service import LlmConnectionService, availability_map
+    from tests.integration.helpers.ai_extraction import seed_article_text
+    from tests.integration.helpers.engine_setup import set_project_engine
+    from tests.integration.helpers.pat_rows import insert_pat_row
+
+    provider, model = settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL
+    await set_project_engine(db, provider, model)
+    article = await make_article(db, SEED.primary_project, "deployment-key probe")
+    await seed_article_text(db, "ARTICLE BODY", article_id=article)
+    key = await LlmConnectionService(db).create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider=provider, label="own key", api_key=SecretStr("sk-own")
+        ),
+    )
+    origin = None
+    if agent:
+        origin = AgentRunOrigin(
+            token_id=await insert_pat_row(db, "agent-key-probe"),
+            engine=EngineIdentity(provider=provider, model=model, mode="fast", connection_id=None),
+            plan_digest=uuid4().hex,
+            daily_cap=100,
+        )
+    started = await ExtractionBatchService(db).start(
+        SEED.primary_profile,
+        CreateExtractionBatchRequest(
+            project_id=SEED.primary_project,
+            template_id=SEED.primary_template,
+            article_ids=[article],
+            skip_articles_with_ai_suggestions=False,
+        ),
+        agent=origin,
+    )
+    await db.execute(text("DELETE FROM public.llm_connections WHERE id=:id"), {"id": str(key.id)})
+    available = await availability_map(
+        db, project_id=SEED.primary_project, user_id=SEED.primary_profile, providers=[provider]
+    )
+    assert available == {provider: "global"}, "precondition: only the deployment key is left"
+    await db.commit()
+    return started.batch_id, article
+
+
+@pytest.mark.asyncio
+async def test_agent_batch_with_only_the_deployment_key_stops_before_any_model_call(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _deployment_key_only(monkeypatch)
+    llm, sink = RecordedLlm(), RecordingUsageSink()
+    run_attempt = _run_attempt_body(db_session, monkeypatch, llm, sink)
+    batch_id, _ = await _start(db_session, agent=True)
+    dispatcher = ExtractionBatchDispatcher(db_session, enqueue=FakeQueue())
+    await dispatcher.advance(batch_id)
+    ((_, _, attempt_id),) = await _items(db_session, batch_id)
+
+    await run_attempt(attempt_id)
+
+    assert await _attempt_outcome(db_session, attempt_id) == ("failed", "MISSING_API_KEY")
+    assert llm.calls == [] and sink.entries == []
+    await dispatcher.advance(batch_id)
+    stop_code = (
+        await db_session.execute(
+            text("SELECT stop_code FROM public.extraction_batches WHERE id=:b"),
+            {"b": str(batch_id)},
+        )
+    ).scalar_one()
+    assert stop_code == "MISSING_API_KEY"
+
+
+@pytest.mark.asyncio
+async def test_ui_batch_with_only_the_deployment_key_runs_on_it(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _deployment_key_only(monkeypatch)
+    llm, sink = RecordedLlm(), RecordingUsageSink()
+    run_attempt = _run_attempt_body(db_session, monkeypatch, llm, sink)
+    batch_id, _ = await _start(db_session, agent=False)
+    await ExtractionBatchDispatcher(db_session, enqueue=FakeQueue()).advance(batch_id)
+    ((_, _, attempt_id),) = await _items(db_session, batch_id)
+
+    await run_attempt(attempt_id)
+
+    assert await _attempt_outcome(db_session, attempt_id) == ("completed", None)
+    assert llm.calls, "the UI batch never reached the model"
+    assert {e.ctx.key_scope for e in sink.entries} == {"global_service"}
+
+
+@pytest.mark.asyncio
+async def test_keyless_host_row_passes_the_start_rung_but_never_unlocks_the_deployment_key(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A user host row with a base_url and no key counts as the caller's own
+    credential at start; at execution the ladder skips it (a host's row is
+    never a bare provider key), and an agent batch still gets no deployment key."""
+    from app.schemas.llm_target import LlmTarget
+    from app.services.engine_credentials import resolve_engine_credentials
+    from app.services.llm_connection_service import KeyScope, availability_map
+    from tests.integration.helpers.engine_setup import make_host_connection
+
+    monkeypatch.setattr("app.services.llm_connection_service.global_key_for", lambda _p: "sk-test")
+    await make_host_connection(db_session, api_key=None)
+    engine = LlmTarget(provider="openai_compatible", model="endpoint-model-x")
+    ids = {"user_id": SEED.primary_profile, "project_id": SEED.primary_project}
+
+    available = await availability_map(db_session, providers=[engine.provider], **ids)
+    refused = await resolve_engine_credentials(
+        db_session, engine=engine, allow_global_key=False, **ids
+    )
+    default = await resolve_engine_credentials(db_session, engine=engine, **ids)
+
+    assert available == {engine.provider: "user"}
+    assert (refused.api_key, refused.key_scope) == (None, None)
+    assert default.key_scope is KeyScope.GLOBAL_SERVICE, "the ladder would have fallen through"

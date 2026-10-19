@@ -98,6 +98,15 @@ async def owned_batch(db: AsyncSession, *, owner_id: UUID, batch_id: UUID) -> Ex
     return batch
 
 
+async def agent_batch_for_attempt(db: AsyncSession, attempt_id: UUID) -> UUID | None:
+    """The agent-started batch ``attempt_id`` runs for, else ``None``.
+
+    Worker-side, behind the attempt the worker already owns: an agent batch's
+    attempt never runs on the deployment key.
+    """
+    return await ExtractionBatchRepository(db).agent_batch_of_attempt(attempt_id)
+
+
 class ExtractionBatchService:
     def __init__(self, db: AsyncSession):
         self.db = db

@@ -87,6 +87,7 @@ class AiExtraction:
         owns_transactions: bool = False,
         llm: StructuredCall = extract_structured,
         usage_sink: UsageSink,
+        allow_global_key: bool = True,
     ) -> None:
         """
         Args:
@@ -106,6 +107,8 @@ class AiExtraction:
             llm: the model-call seam (pydantic-ai in production).
             usage_sink: where every model call is metered — the worker's
                 ``LedgerSink``. Required: a caller cannot forget metering.
+            allow_global_key: False for an agent-started batch — neither the
+                re-key nor the model builder may fall back to the deployment key.
         """
         self._db = db
         self._user_id = user_id
@@ -121,6 +124,7 @@ class AiExtraction:
             owns_transactions=owns_transactions,
             llm=llm,
             usage_sink=usage_sink,
+            allow_global_key=allow_global_key,
         )
         self._current_run = CurrentRunResolver(db)
 

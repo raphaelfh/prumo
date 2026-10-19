@@ -448,11 +448,16 @@ async def _scoped_key_row(
 
 
 async def resolve_provider_key(
-    session: AsyncSession, *, provider: str, project_id: UUID, user_id: UUID
+    session: AsyncSession,
+    *,
+    provider: str,
+    project_id: UUID,
+    user_id: UUID,
+    allow_global: bool = True,
 ) -> ResolvedKey | None:
     """THE credential ladder: caller's user-scope key → project's shared key →
     the deployment's global setting. First hit wins; ``None`` when nothing has
-    a key.
+    a key. ``allow_global=False`` (agent-started batches) drops the last rung.
     """
     service = LlmConnectionService(session)
     for scope, column, owner, key_scope in (
@@ -468,7 +473,7 @@ async def resolve_provider_key(
                 row.last_used_at = datetime.now(UTC)
                 await session.flush()
                 return ResolvedKey(key, key_scope)
-    global_key = global_key_for(provider)
+    global_key = global_key_for(provider) if allow_global else None
     return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE) if global_key else None
 
 

@@ -57,6 +57,19 @@ class ExtractionBatchRepository:
             )
         ).scalar_one_or_none()
 
+    async def agent_batch_of_attempt(self, attempt_id: UUID) -> UUID | None:
+        """The agent-started batch whose item ran ``attempt_id``, if any."""
+        return (
+            await self.db.execute(
+                select(ExtractionBatch.id)
+                .join(ExtractionBatchItem, ExtractionBatchItem.batch_id == ExtractionBatch.id)
+                .where(
+                    ExtractionBatchItem.attempt_id == attempt_id,
+                    ExtractionBatch.agent_plan_digest.is_not(None),
+                )
+            )
+        ).scalar_one_or_none()
+
     async def agent_articles_since(self, project_id: UUID, *, since: datetime) -> int:
         """Articles in the project's agent batches since ``since``, cancelled included."""
         return (

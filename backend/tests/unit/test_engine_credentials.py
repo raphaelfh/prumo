@@ -328,3 +328,58 @@ async def test_own_key_passes_when_global_refused(
         await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=False)
         is engine
     )
+
+
+def _only_the_deployment_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No user or project row holds a key; the deployment key is set."""
+    import app.services.llm_connection_service as lcs
+
+    async def no_row(*_a: Any, **_kw: Any) -> None:
+        return None
+
+    monkeypatch.setattr(lcs, "_scoped_key_row", no_row)
+    monkeypatch.setattr(lcs, "global_key_for", lambda _p: "sk-test")
+
+
+@pytest.mark.asyncio
+async def test_refused_deployment_key_leaves_the_engine_keyless(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Agent batches: the ladder's global rung answers nothing, so the
+    credentials carry no key and no scope — every other caller keeps it."""
+    _only_the_deployment_key(monkeypatch)
+    engine = LlmTarget(provider="openai", model="m")
+
+    refused = await resolve_engine_credentials(
+        object(), user_id=_USER, project_id=_PROJECT, engine=engine, allow_global_key=False
+    )
+    default = await resolve_engine_credentials(
+        object(), user_id=_USER, project_id=_PROJECT, engine=engine
+    )
+
+    assert (refused.api_key, refused.key_scope) == (None, None)
+    assert (default.api_key, default.key_scope) == ("sk-test", KeyScope.GLOBAL_SERVICE)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow", [False, True], ids=["refused", "default"])
+async def test_rekey_forwards_the_deployment_key_flag(
+    monkeypatch: pytest.MonkeyPatch, allow: bool
+) -> None:
+    seen: list[bool] = []
+
+    async def spy(_session: Any, *, allow_global: bool = True, **_kw: Any) -> None:
+        seen.append(allow_global)
+        return None
+
+    monkeypatch.setattr(ec, "resolve_provider_key", spy)
+    await rekey_for_adopted_engine(
+        object(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="anthropic", model="m"),
+        current=EngineCredentials(None, None, None, None, None),
+        keyed_for="openai",
+        allow_global_key=allow,
+    )
+    assert seen == [allow]
