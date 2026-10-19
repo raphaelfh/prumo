@@ -27,6 +27,7 @@ import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {SectionAIExtractButton} from '@/components/extraction/ai/shared/SectionAIExtractButton';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
+import {coordKey} from '@/lib/runs/coord';
 
 // =================== INTERFACES ===================
 
@@ -48,6 +49,8 @@ interface SectionAccordionProps {
      * multiple section extractions accumulating on the same run.
      */
     runId?: string | null;
+  /** The page's project-role gate for the per-section AI button. */
+  canRunAI: boolean;
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
@@ -99,12 +102,12 @@ export function SectionAccordion(props: SectionAccordionProps) {
   const completedRequired = requiredFields.reduce((count, field) => {
     if (isMultiple) {
         // For multiple sections, count per instance
-      return count + instances.filter(instance => !isValueEmpty(values[`${instance.id}_${field.id}`])).length;
+      return count + instances.filter(instance => !isValueEmpty(values[coordKey(instance.id, field.id)])).length;
     } else {
         // For single section
       const instance = instances[0];
       if (!instance) return count;
-      return count + (isValueEmpty(values[`${instance.id}_${field.id}`]) ? 0 : 1);
+      return count + (isValueEmpty(values[coordKey(instance.id, field.id)]) ? 0 : 1);
     }
   }, 0);
 
@@ -167,6 +170,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
               entityTypeId={entityType.id}
               entityLabel={entityType.label}
               runId={props.runId}
+              canRunAI={props.canRunAI}
               parentInstanceId={props.parentInstanceId}
               disabled={instances.length === 0 && !isMultiple}
               onExtractionComplete={props.onExtractionComplete}
@@ -255,7 +259,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                 // Single section: show fields directly
               <div className="divide-y divide-border/40">
                 {fields.map(field => {
-                  const key = `${instances[0].id}_${field.id}`;
+                  const key = coordKey(instances[0].id, field.id);
                   
                   return (
                     <MemoizedFieldInput

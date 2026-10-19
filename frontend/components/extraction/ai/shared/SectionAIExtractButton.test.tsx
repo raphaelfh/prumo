@@ -23,6 +23,7 @@ const baseProps = {
   entityTypeId: "et1",
   entityLabel: "Participants",
   runId: "r1",
+  canRunAI: true,
 };
 
 afterEach(() => {
@@ -33,6 +34,16 @@ afterEach(() => {
 });
 
 describe("SectionAIExtractButton", () => {
+  it("renders nothing when the member may not run AI", () => {
+    const { container } = render(<SectionAIExtractButton {...baseProps} canRunAI={false} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the button when the member may run AI in the extract stage", () => {
+    render(<SectionAIExtractButton {...baseProps} canRunAI />);
+    expect(screen.getByTestId("section-ai-extract-et1")).toBeInTheDocument();
+  });
+
   it("subscribes to the full current section coordinate before kickoff", () => {
     render(<SectionAIExtractButton {...baseProps} parentInstanceId="m1" />);
     expect(options).toHaveBeenCalledWith(expect.objectContaining({params: {

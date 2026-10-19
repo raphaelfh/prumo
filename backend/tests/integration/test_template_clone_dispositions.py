@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import TemplateKind
-from app.services.template_clone_service import TemplateCloneService
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import SEED
 
 _PROBAST_TEMPLATE_ID = UUID("00b00000-0000-0000-0000-000000000001")
@@ -34,7 +34,8 @@ async def test_clone_preserves_not_applicable_flag(db_session: AsyncSession) -> 
     ).scalar()
     assert global_na and global_na > 0, "PROBAST global must have NA-enabled fields"
 
-    clone = await TemplateCloneService(db_session).clone(
+    clone = await clone_template(
+        db_session,
         project_id=SEED.primary_project,
         global_template_id=_PROBAST_TEMPLATE_ID,
         user_id=SEED.primary_profile,

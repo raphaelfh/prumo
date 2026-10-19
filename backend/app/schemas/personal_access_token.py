@@ -11,16 +11,24 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TokenScope = Literal["read", "read_write"]
 """``read`` allows only MCP read tools; ``read_write`` also allows write tools."""
 
 TokenStatus = Literal["active", "expired", "revoked"]
 
+#: The longest lifetime of a credential carrying the AI-run grant
+#: (``ai_run_lifetime_check`` on ``personal_access_tokens``).
+AI_RUN_MAX_DAYS = 30
+
 
 class PersonalAccessTokenRefusalCode(StrEnum):
-    """Why ``POST /api/v1/me/tokens`` returned 409.
+    """Why ``POST /api/v1/me/tokens`` refused.
+
+    409 ``TOKEN_LIMIT_REACHED``: the caller already holds the maximum number of
+    active tokens. 422 ``PROJECT_NOT_ACCESSIBLE``: a listed project is missing
+    or the caller is not a member of it (one answer for both).
 
     Slice-local, like ``TemplateDraftLockRefusalCode``
     (``app/schemas/hitl_session.py``): one endpoint's outcome, not part of
@@ -28,6 +36,7 @@ class PersonalAccessTokenRefusalCode(StrEnum):
     """
 
     TOKEN_LIMIT_REACHED = "TOKEN_LIMIT_REACHED"
+    PROJECT_NOT_ACCESSIBLE = "PROJECT_NOT_ACCESSIBLE"
 
 
 class PersonalAccessTokenCreateRequest(BaseModel):
@@ -40,6 +49,35 @@ class PersonalAccessTokenCreateRequest(BaseModel):
     expires_in_days: int = Field(
         ge=1, le=365, description="Token lifetime, in days, from creation."
     )
+    project_ids: list[UUID] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description=(
+            "Projects the token may reach (1-20 distinct ids, each one the caller "
+            "belongs to). Omit or null for every project of the caller."
+        ),
+    )
+    ai_run: bool = Field(
+        default=False,
+        description=(
+            "Allow this token to start AI extraction runs in projects whose manager "
+            "allowed agent runs. At most 30 days."
+        ),
+    )
+
+    @field_validator("project_ids")
+    @classmethod
+    def _distinct_project_ids(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("project_ids must not repeat a project")
+        return value
+
+    @model_validator(mode="after")
+    def _ai_run_lifetime(self) -> PersonalAccessTokenCreateRequest:
+        if self.ai_run and self.expires_in_days > AI_RUN_MAX_DAYS:
+            raise ValueError(f"a token with ai_run lives at most {AI_RUN_MAX_DAYS} days")
+        return self
 
 
 class PersonalAccessTokenRead(BaseModel):
@@ -51,7 +89,11 @@ class PersonalAccessTokenRead(BaseModel):
         description="First characters of the secret, shown for identification."
     )
     scope: TokenScope
+    ai_run: bool = Field(description="Whether the token may start AI extraction runs.")
     status: TokenStatus
+    project_ids: list[UUID] | None = Field(
+        description="Projects the token is restricted to; null means every project of its user."
+    )
     expires_at: datetime
     last_used_at: datetime | None
     revoked_at: datetime | None
@@ -75,7 +117,8 @@ class PersonalAccessTokenRefusalError(BaseModel):
 
 
 class PersonalAccessTokenRefusalResponse(BaseModel):
-    """The 409 body, declared so the generated client types the refusal."""
+    """The 409 (``TOKEN_LIMIT_REACHED``) and 422 (``PROJECT_NOT_ACCESSIBLE``)
+    body, declared so the generated client types the refusal."""
 
     ok: bool = False
     error: PersonalAccessTokenRefusalError

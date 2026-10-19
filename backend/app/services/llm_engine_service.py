@@ -1,9 +1,8 @@
 """Per-project LLM engine setting (§5, C1b).
 
-Owns the ``llm_engine`` sub-key inside ``projects.settings`` — the same
-plain-JSONB storage precedent as ``ParserSettingsService``: build a new dict
-and REASSIGN, or the change is never tracked and never persists. The service
-writes ONLY its own sub-key; sibling keys (``parsing``, …) survive.
+Owns the ``llm_engine`` sub-key inside ``projects.settings``, written through
+``ProjectRepository.update_settings_key`` (row-locked; only this sub-key
+changes, sibling keys such as ``parsing`` survive).
 
 The stored shape is the ``LlmEngineStored`` spine
 (``app/schemas/llm_engine.py``): dumped ``mode="json"`` at the single write
@@ -24,14 +23,14 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
 from app.llm.catalog import canonical, find_entry, selectable_catalog
-from app.llm.registry import llm_provider_ids
+from app.llm.registry import get_provider, llm_provider_ids, needs_host
 from app.models.llm_connection import UserProjectEngine
 from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
@@ -105,7 +104,10 @@ async def user_row_is_retired(db: AsyncSession, row: UserProjectEngine) -> bool:
     """Catalogue miss, or a host row whose connection is gone / unverified /
     no longer allows the model (§3.2 step 2). ONE predicate for the write
     gate (``user_engine_service.set_user_engine``) and for resolution."""
-    if row.provider == "openai_compatible":
+    spec = get_provider(row.provider)
+    if spec is None:
+        return True
+    if spec.needs_host:
         if row.connection_id is None:
             return True
         conn = await owned_user_connection(db, row.connection_id, row.user_id)
@@ -266,44 +268,31 @@ class LlmEngineService:
         """Persist the project default (a catalogue pair) and the lock, with
         attribution. ``updated_by`` comes from the auth dependency and
         ``previous_model`` from the stored value — never client-supplied."""
-        if provider == "openai_compatible":
+        if needs_host(provider):
             raise ValueError("The project default is a catalogue pair; a host is a per-user engine")
         if find_entry(provider, model) is None:
             raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
-        # Row-locked read for the read-modify-reassign below (mirrors
-        # ``freeze_engine``'s reasoning in ``extraction_run_repository``):
-        # ``settings`` is a whole-column JSONB write shared with
-        # ``ParserSettingsService``, so two unlocked writers interleaving
-        # (read A, read B, write A, write B) would silently drop one
-        # sub-key. ``populate_existing`` refreshes any stale identity-map
-        # copy — the lock is useless if a pre-lock read is served.
-        project = (
-            await self.db.execute(
-                select(Project)
-                .where(Project.id == project_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
+        stored: LlmEngineStored | None = None
+
+        def replace(old: Any) -> dict[str, Any]:
+            # Runs on the row-locked value, so ``previous_model`` is the
+            # engine this write replaces, never a concurrent writer's.
+            nonlocal stored
+            previous = _stored_engine({"llm_engine": old})
+            stored = LlmEngineStored(
+                provider=provider,
+                model=model,
+                mode=mode,
+                updated_by=updated_by,
+                updated_at=datetime.now(UTC),
+                previous_model=previous.model if previous is not None else None,
+                user_choice_allowed=user_choice_allowed,
             )
-        ).scalar_one_or_none()
-        if project is None:
+            return stored.model_dump(mode="json")
+
+        if await self._projects.update_settings_key(project_id, "llm_engine", replace) is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
-        previous = _stored_engine(project.settings)
-        stored = LlmEngineStored(
-            provider=provider,
-            model=model,
-            mode=mode,
-            updated_by=updated_by,
-            updated_at=datetime.now(UTC),
-            previous_model=previous.model if previous is not None else None,
-            user_choice_allowed=user_choice_allowed,
-        )
-        # projects.settings is plain JSONB (NOT MutableDict): build a new dict
-        # and REASSIGN, or the change is not tracked and never persists. Only
-        # the llm_engine sub-key is written — sibling keys survive.
-        new_settings = dict(project.settings or {})
-        new_settings["llm_engine"] = stored.model_dump(mode="json")
-        project.settings = new_settings
-        await self.db.flush()
+        assert stored is not None  # the project exists, so ``replace`` ran
         return stored
 
     async def get_engine_read(self, project_id: UUID, viewer_id: UUID) -> LlmEngineRead:

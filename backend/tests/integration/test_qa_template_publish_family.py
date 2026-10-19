@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.extraction import TemplateKind
-from app.services.template_clone_service import TemplateCloneService
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import SEED
 
 # Seeded PROBAST global (``app/seed.py:158``). Cloning the SEEDED global — not
@@ -83,7 +83,8 @@ async def test_qa_template_accepts_instruction_then_publish(
     """
     project_id = SEED.secondary_project
     await _clean_project_clones(db_session, project_id)
-    clone = await TemplateCloneService(db_session).clone(
+    clone = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=PROBAST_GLOBAL_ID,
         user_id=auth_as_manager,

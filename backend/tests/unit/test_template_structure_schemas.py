@@ -14,6 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.template_structure import (
+    OptionItem,
     TemplateFieldCreateRequest,
     TemplateFieldDeleteResponse,
     TemplateFieldMoveRequest,
@@ -33,6 +34,10 @@ VALID_CREATE = {
     "label": "Field Example",
     "field_type": "text",
 }
+
+
+def opts(*values: str) -> list[dict[str, str]]:
+    return [{"value": v, "label": v.upper()} for v in values]
 
 
 def make_create(**overrides: object) -> TemplateFieldCreateRequest:
@@ -139,20 +144,42 @@ class TestCreateRequest:
         with pytest.raises(ValidationError):
             make_create(validation_schema=["not", "a", "dict"])
 
-    # ---- allowed_values: 1..100, unique items, nullable ----
+    # ---- allowed_values: 1..100 {value, label} items, unique by value, nullable ----
 
     def test_allowed_values_boundaries(self) -> None:
-        hundred = [f"v{i}" for i in range(100)]
-        assert make_create(allowed_values=hundred).allowed_values == hundred
+        hundred = opts(*(f"v{i}" for i in range(100)))
+        assert make_create(allowed_values=hundred).allowed_values == [
+            OptionItem(**o) for o in hundred
+        ]
         assert make_create(allowed_values=None).allowed_values is None
         with pytest.raises(ValidationError):
             make_create(allowed_values=[])
         with pytest.raises(ValidationError):
-            make_create(allowed_values=[f"v{i}" for i in range(101)])
+            make_create(allowed_values=opts(*(f"v{i}" for i in range(101))))
 
     def test_allowed_values_duplicates_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="option values must be unique"):
+            make_create(
+                allowed_values=[
+                    {"value": "a", "label": "A"},
+                    {"value": "b", "label": "B"},
+                    {"value": "a", "label": "Again"},
+                ]
+            )
+
+    def test_allowed_values_bare_strings_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            make_create(allowed_values=["a", "b", "a"])
+            make_create(allowed_values=["Yes"])
+
+    def test_allowed_values_unknown_option_key_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            make_create(allowed_values=[{"value": "y", "label": "Yes", "extra": 1}])
+
+    def test_allowed_values_empty_value_or_label_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            make_create(allowed_values=[{"value": "", "label": "Yes"}])
+        with pytest.raises(ValidationError):
+            make_create(allowed_values=[{"value": "y", "label": ""}])
 
     # ---- unit: <=50, nullable ----
 
@@ -274,7 +301,7 @@ class TestUpdateRequest:
         with pytest.raises(ValidationError):
             TemplateFieldUpdateRequest(sort_order=-1)
         with pytest.raises(ValidationError):
-            TemplateFieldUpdateRequest(allowed_values=["a", "a"])
+            TemplateFieldUpdateRequest(allowed_values=opts("a", "a"))
         with pytest.raises(ValidationError):
             TemplateFieldUpdateRequest(field_type="TEXT")
 
@@ -356,7 +383,7 @@ class TestResponses:
             unit=None,
             allowed_units=["mg", "kg"],
             llm_description="Extract carefully",
-            allowed_values=["a", "b"],
+            allowed_values=opts("a", "b"),
             allow_other=True,
             other_label="Other (specify)",
             other_placeholder=None,
@@ -370,10 +397,51 @@ class TestResponses:
         assert model.id == FIELD_ID
         assert model.entity_type_id == ENTITY_TYPE_ID
         assert model.field_type == "select"
-        assert model.allowed_values == ["a", "b"]
+        assert model.allowed_values == [
+            OptionItem(value="a", label="A"),
+            OptionItem(value="b", label="B"),
+        ]
         assert model.allowed_units == ["mg", "kg"]
         assert model.allows_not_evaluated is True
         assert model.sort_order == 2
+
+    def test_field_read_reads_legacy_options_canonical(self) -> None:
+        model = TemplateFieldRead.model_validate(
+            {
+                "id": FIELD_ID,
+                "entity_type_id": ENTITY_TYPE_ID,
+                "name": "field_example",
+                "label": "X",
+                "field_type": "select",
+                "is_required": False,
+                "allowed_values": ["Yes", "No"],
+                "sort_order": 0,
+                "created_at": datetime(2026, 8, 8, tzinfo=UTC),
+            }
+        )
+        assert model.model_dump()["allowed_values"] == [
+            {"value": "Yes", "label": "Yes"},
+            {"value": "No", "label": "No"},
+        ]
+
+    @pytest.mark.parametrize(
+        "raw", [None, [], {"options": []}], ids=["none", "empty", "empty-wrapper"]
+    )
+    def test_field_read_empty_options_read_none(self, raw: object) -> None:
+        model = TemplateFieldRead.model_validate(
+            {
+                "id": FIELD_ID,
+                "entity_type_id": ENTITY_TYPE_ID,
+                "name": "field_example",
+                "label": "X",
+                "field_type": "text",
+                "is_required": False,
+                "allowed_values": raw,
+                "sort_order": 0,
+                "created_at": datetime(2026, 8, 8, tzinfo=UTC),
+            }
+        )
+        assert model.allowed_values is None
 
     def test_field_read_rejects_unknown_field_type(self) -> None:
         with pytest.raises(ValidationError):

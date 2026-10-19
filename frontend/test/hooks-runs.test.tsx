@@ -1,24 +1,18 @@
 /**
- * Tests for /api/v1/runs TanStack Query hooks.
+ * Tests for the run-scoped query keys and the reviewers query. The run view
+ * and the stage commands are covered at their seam, useRunLifecycleScreen.
  *
  * The HTTP transport (`apiClient`) is mocked so each test asserts on the
- * exact URL and request body that the hooks would issue, plus the resolved
- * data flowing back through React Query's state.
+ * exact URL the hook issues, plus the resolved data flowing back through
+ * React Query's state.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runsKeys, type RunDetailResponse } from "@/hooks/runs/types";
-import {
-  useAdvanceRun,
-  useApproveFinalize,
-  useCreateConsensus,
-  useMarkReady,
-  useRun,
-} from "@/hooks/runs";
+import { runsKeys } from "@/hooks/runs/types";
 import { useRunReviewers } from "@/hooks/runs/useRunReviewers";
 
 vi.mock("@/integrations/api", () => ({
@@ -53,205 +47,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("useRun", () => {
-  it("issues GET /api/v1/runs/{runId}/view and exposes the detail payload", async () => {
-    const detail: Pick<RunDetailResponse, "run"> = {
-      run: {
-        id: "run-1",
-        project_id: "project-1",
-        article_id: "article-1",
-        template_id: "template-1",
-        kind: "extraction",
-        version_id: "version-1",
-        stage: "extract",
-        status: "active",
-        hitl_config_snapshot: {},
-        parameters: {},
-        results: {},
-        created_at: "2026-04-26T12:00:00Z",
-        created_by: "user-1",
-      },
-    };
-    apiClientMock.mockResolvedValueOnce({
-      ...detail,
-      proposals: [],
-      decisions: [],
-      consensus_decisions: [],
-      published_states: [],
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useRun("run-1"), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-1/view");
-    expect(result.current.data?.run.id).toBe("run-1");
-  });
-
-  it("does not issue a request when runId is null", async () => {
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useRun(null), { wrapper });
-
-    expect(result.current.isFetching).toBe(false);
-    expect(apiClientMock).not.toHaveBeenCalled();
-  });
-});
-
-
-describe("useCreateConsensus", () => {
-  it("POSTs /api/v1/runs/{runId}/consensus and returns consensus + published payload", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      consensus: {
-        id: "consensus-1",
-        run_id: "run-5",
-        instance_id: "instance-1",
-        field_id: "field-1",
-        consensus_user_id: "user-1",
-        mode: "manual_override",
-        selected_decision_id: null,
-        value: { ok: true },
-        rationale: "documented",
-        created_at: "2026-04-26T12:00:00Z",
-      },
-      published: {
-        id: "published-1",
-        run_id: "run-5",
-        instance_id: "instance-1",
-        field_id: "field-1",
-        value: { ok: true },
-        published_at: "2026-04-26T12:00:00Z",
-        published_by: "user-1",
-        version: 1,
-      },
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useCreateConsensus("run-5"), { wrapper });
-
-    const body = {
-      instance_id: "instance-1",
-      field_id: "field-1",
-      mode: "manual_override" as const,
-      value: { ok: true },
-      rationale: "documented",
-    };
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync(body);
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-5/consensus", {
-      method: "POST",
-      body,
-    });
-    expect(mutationResult?.consensus.id).toBe("consensus-1");
-    expect(mutationResult?.published.id).toBe("published-1");
-  });
-});
-
-describe("useAdvanceRun", () => {
-  it("POSTs /api/v1/runs/{runId}/advance with the target stage", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      id: "run-6",
-      project_id: "project-6",
-      article_id: "article-6",
-      template_id: "template-6",
-      kind: "extraction",
-      version_id: "version-6",
-      stage: "extract",
-      status: "active",
-      hitl_config_snapshot: {},
-      parameters: {},
-      results: {},
-      created_at: "2026-04-26T12:00:00Z",
-      created_by: "user-1",
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useAdvanceRun("run-6"), { wrapper });
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync({ target_stage: "extract" });
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-6/advance", {
-      method: "POST",
-      body: { target_stage: "extract" },
-    });
-    expect(mutationResult?.stage).toBe("extract");
-  });
-});
-
-describe("useMarkReady", () => {
-  it("POSTs /api/v1/runs/{runId}/ready and invalidates detail + reviewers", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      ready_count: 1,
-      reviewer_count: 1,
-      reviewers_ready: ["user-1"],
-    });
-
-    const { wrapper, queryClient } = createWrapper();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useMarkReady("run-ready"), { wrapper });
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync({ ready: true });
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-ready/ready", {
-      method: "POST",
-      body: { ready: true },
-    });
-    expect(mutationResult?.ready_count).toBe(1);
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-ready") });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.reviewers("run-ready") });
-  });
-});
-
-describe("useApproveFinalize", () => {
-  it("POSTs /api/v1/runs/{runId}/approve-finalize and invalidates detail", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      run: {
-        id: "run-af",
-        project_id: "p",
-        article_id: "a",
-        template_id: "t",
-        kind: "extraction",
-        version_id: "v",
-        stage: "finalized",
-        status: "completed",
-        hitl_config_snapshot: {},
-        parameters: {},
-        results: {},
-        created_at: "2026-04-26T12:00:00Z",
-        created_by: "user-1",
-      },
-      published_count: 3,
-    });
-
-    const { wrapper, queryClient } = createWrapper();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useApproveFinalize("run-af"), { wrapper });
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync();
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-af/approve-finalize", {
-      method: "POST",
-    });
-    expect(mutationResult?.run.stage).toBe("finalized");
-    expect(mutationResult?.published_count).toBe(3);
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-af") });
-  });
-});
-
 describe("runsKeys factory — disabled and reviewers keys", () => {
   it("runsKeys.disabled produces ['runs', 'disabled']", () => {
     expect(runsKeys.disabled).toEqual(["runs", "disabled"]);
@@ -263,25 +58,6 @@ describe("runsKeys factory — disabled and reviewers keys", () => {
 
   it("runsKeys.reviewers(runId) produces ['runs', runId, 'reviewers']", () => {
     expect(runsKeys.reviewers("run-42")).toEqual(["runs", "run-42", "reviewers"]);
-  });
-});
-
-describe("useRun disabled key", () => {
-  it("uses runsKeys.disabled as queryKey when runId is null", async () => {
-    const { wrapper, queryClient } = createWrapper();
-    renderHook(() => useRun(null), { wrapper });
-
-    // The cache entry should live under runsKeys.disabled, not some inline literal
-    const state = queryClient.getQueryState(runsKeys.disabled);
-    // Entry may be undefined (never fetched) but the key must exist if we seeded it
-    // The important check: no request was made
-    expect(apiClientMock).not.toHaveBeenCalled();
-    // And no entry under a rogue inline key
-    const rogueState = queryClient.getQueryState(["runs", "disabled"]);
-    // Both point to the same structural key — confirm runsKeys.disabled matches
-    expect(Array.from(runsKeys.disabled)).toEqual(["runs", "disabled"]);
-    void state;
-    void rogueState;
   });
 });
 
@@ -325,27 +101,3 @@ describe("useRunReviewers", () => {
   });
 });
 
-describe("mutation cache invalidation", () => {
-  // Pins the convention that every runs mutation invalidates its owning key
-  // family (stale-cache bugs are a recurring incident class). Vehicle:
-  // useAdvanceRun — the former vehicle (useCreateDecision) was deleted with
-  // the dead accept chain.
-  it("invalidates ['runs', runId] after a successful mutation", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      id: "run-cache",
-      stage: "consensus",
-      status: "running",
-      template_id: "tpl-1",
-    });
-
-    const { wrapper, queryClient } = createWrapper();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useAdvanceRun("run-cache"), { wrapper });
-
-    await act(async () => {
-      await result.current.mutateAsync({ target_stage: "consensus" });
-    });
-
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-cache") });
-  });
-});

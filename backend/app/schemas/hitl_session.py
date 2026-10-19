@@ -580,7 +580,7 @@ class TemplateConfigStatusRead(BaseModel):
 
 
 class TemplateChangeRowRead(BaseModel):
-    """One diff row on the wire, built by ``app.services.template_diff_read``.
+    """One diff row on the wire, built by ``app.services.template_versioning._diff_read``.
 
     Nothing here is typed ``Any``: the baseline side of a diff is raw stored
     JSONB, and an opaque value is summarized server-side rather than
@@ -624,6 +624,11 @@ class TemplateChangeRowRead(BaseModel):
     Field-derived: a section answers from the fields it owns, and a REMOVED
     node is always false (every workflow ``field_id`` FK is RESTRICT, so the
     delete would have been refused)."""
+    affects_ai: bool
+    """True when the change alters the prompt or the AI output schema. Every
+    add, remove, move and reorder of a node is true; an attribute change is
+    true only for an attribute the AI receives (``allows_*``, ``unit``,
+    ``allowed_units`` and ``other_label`` are not)."""
 
 
 class TemplateConfigDiffBuckets(BaseModel):

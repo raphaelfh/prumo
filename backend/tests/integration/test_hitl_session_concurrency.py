@@ -4,7 +4,7 @@ Covers issues #64, #67, #70, #71 — the HITL session bugs.
 
 * #64 — concurrent _ensure_instances calls duplicated singleton instances.
 * #67 — InvalidStageTransitionError from advance_stage surfaced as HTTP 500.
-* #70 — concurrent _reuse_or_create_run calls produced duplicate
+* #70 — concurrent CurrentRunResolver.open_for_session calls produced duplicate
         EXTRACT runs.
 * #71 — _ensure_instances seeded singleton instances even for top-level
         MANY-cardinality entity types.
@@ -264,7 +264,7 @@ async def test_concurrent_ensure_instances_no_duplicates(
             await _cleanup_template(cleanup, template_id)
 
 
-# ====================== Issue #70: concurrent _reuse_or_create_run ======================
+# ====================== Issue #70: concurrent session run resolution ======================
 
 
 @pytest.mark.asyncio
@@ -333,7 +333,7 @@ async def test_open_or_resume_raises_typed_error_when_run_cancelled_midflight(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Issue #67: if the run is cancelled between the SELECT in
-    _reuse_or_create_run and the internal advance to EXTRACT, the
+    CurrentRunResolver.open_for_session and the internal advance to EXTRACT, the
     service must raise InvalidStageTransitionError so the endpoint can
     translate it to a 409. Previously the exception was uncaught and
     bubbled up as a 500."""
@@ -368,7 +368,7 @@ async def test_open_or_resume_raises_typed_error_when_run_cancelled_midflight(
 
     try:
         async with session_factory() as svc_session:
-            # The SELECT inside _reuse_or_create_run filters non-terminal
+            # The resolver behind open_for_session skips cancelled
             # stages, so a CANCELLED run won't match and the service will
             # try to create a NEW one. To trigger the issue #67 path we
             # need the service to *see* the run as PENDING. Force this by

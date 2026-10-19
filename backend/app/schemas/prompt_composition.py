@@ -6,11 +6,16 @@ extraction service writes into ``extraction_runs.results["provenance"]
 ``.model_dump()``; the read service and frontend consume the resulting dict.
 Keeping the shape in one Pydantic model stops a key typo at the write site
 from shipping silently (the payload is otherwise an untyped JSONB dict).
+``PassDetail`` is the same discipline for each ``passes_detail`` entry of a
+proposal's generation snapshot, and ``TemplateVersionRef`` for its
+``template_version``.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel
+
+from app.llm.pass_kinds import PassKind
 
 
 class PromptCompositionArticleRef(BaseModel):
@@ -21,6 +26,18 @@ class PromptCompositionArticleRef(BaseModel):
     file_name: str | None = None
     truncated: bool = False
     est_tokens: int | None = None
+    #: The integer article ``content_version`` the blocks were read at — not
+    #: a prompt hash.
+    content_version: int | None = None
+    #: The full SHA-256 (hex) of the article text substituted for the marker.
+    text_sha256: str | None = None
+
+
+class TemplateVersionRef(BaseModel):
+    """The template version a run was pinned to when its prompt was built."""
+
+    id: str
+    version: int
 
 
 class PromptComposition(BaseModel):
@@ -34,3 +51,23 @@ class PromptComposition(BaseModel):
     article_ref: PromptCompositionArticleRef
     fields_requested: list[str]
     llm_calls: int
+
+
+class PassTokens(BaseModel):
+    """One model pass's token usage."""
+
+    prompt: int
+    completion: int
+    total: int
+
+
+class PassDetail(BaseModel):
+    """One model pass that produced a section's proposals: which prompt (and
+    its content-hash version) ran, what it cost, and the provider's response
+    ids. ``kind`` is derived from ``prompt_name`` (``app.llm.pass_kinds``)."""
+
+    kind: PassKind
+    prompt_name: str
+    prompt_version: str
+    tokens: PassTokens
+    request_ids: list[str]

@@ -127,7 +127,7 @@ async def _drive_run_to_finalized(
             "instance_id": instance_id,
             "field_id": field_id,
             "mode": "manual_override",
-            "value": {"text": "v1"},
+            "value": {"value": 11},
             "rationale": "initial publish",
         },
     )
@@ -225,7 +225,7 @@ async def test_reopen_creates_new_run_seeded_from_published_states(
     for row in seeded:
         assert row[2] == "system"
         # The seeded value mirrors what we published in the old run.
-        assert row[3] == {"text": "v1"}
+        assert row[3] == {"value": 11}
 
     # Old run is untouched.
     old_after = (
@@ -294,7 +294,7 @@ async def test_reopen_again_after_child_finalized_forks_fresh_run(
             "instance_id": instance_id,
             "field_id": field_id,
             "mode": "manual_override",
-            "value": {"text": "v2"},
+            "value": {"value": 12},
             "rationale": "second publish",
         },
     )

@@ -30,7 +30,7 @@ identity and is not edited by hand.
 published snapshot like every other field column (0067 backfilled the
 snapshots that predate that): the publish diff shows a key move, and
 Discard restores the key the baseline granted (see
-``template_restore_service`` for the per-section slot it parks first).
+``template_versioning._restore`` for the per-section slot it parks first).
 :func:`key_field_of` reads the declaration off the tree the run is PINNED
 to (``entity_types_for_version``), never the live row: a key moved in an
 unpublished draft gates nothing until Publish re-pins the run, exactly like
@@ -50,16 +50,20 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
-from app.models.extraction import ExtractionInstance
+from app.core.integrity import violates_constraint
+from app.models.extraction_instance import ExtractionInstance
 from app.schemas.extraction import ExtractionErrorCode
 
 # JSONB keys under ``extraction_instances.metadata``.
 STORE_KEY = "entity_key"
 #: Append-only trail of reviewer re-keys: ``[{who, when, from, to}, ...]``.
 HISTORY_KEY = "entity_key_history"
+#: The partial unique index holding one ``STORE_KEY`` per coordinate (0090).
+ENTITY_KEY_UNIQUE_INDEX = "uq_extraction_instances_entity_key"
 
 
 class MissingEntityKeyError(AppError):
@@ -248,6 +252,10 @@ async def resolve_instance(
     values is the per-field guard's decision, not this function's. A miss
     creates the row with the identity materialized alongside ``metadata``
     and the trimmed key as its human-facing ``label``.
+
+    A concurrent creator can win the race between the miss and the insert:
+    the identity index rejects the second row, the savepoint rolls back, and
+    the winner's row is re-read and returned as a match.
     """
     existing = await match_or_none(
         db,
@@ -269,8 +277,23 @@ async def resolve_instance(
         metadata_=stamp(metadata, key_value),
         created_by=created_by,
     )
-    db.add(instance)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(instance)
+            await db.flush()
+    except IntegrityError as exc:
+        if not violates_constraint(exc, ENTITY_KEY_UNIQUE_INDEX):
+            raise
+        winner = await match_or_none(
+            db,
+            article_id=article_id,
+            entity_type_id=entity_type_id,
+            key_value=key_value,
+            parent_instance_id=parent_instance_id,
+        )
+        if winner is None:  # the winner's row was deleted before the re-read
+            raise
+        return winner, False
     return instance, True
 
 
@@ -309,6 +332,7 @@ async def match_or_none(
     entity_type_id: UUID,
     key_value: str,
     parent_instance_id: UUID | None = None,
+    exclude_id: UUID | None = None,
 ) -> ExtractionInstance | None:
     """The instance already holding this identity, if any.
 
@@ -321,8 +345,8 @@ async def match_or_none(
     row from it is two round trips for one entry, because the identity map
     holds these rows weakly and has dropped them by then.
 
-    Two siblings can hold one normalized key: ``update_instance_identity``
-    re-keys without a uniqueness check, so which one answers is arbitrary.
+    ``exclude_id`` leaves one row out, so a re-key asks "does a SIBLING hold
+    this identity" without matching the entry being re-keyed.
     """
     stmt = (
         select(ExtractionInstance)
@@ -336,4 +360,6 @@ async def match_or_none(
         )
         .limit(1)
     )
+    if exclude_id is not None:
+        stmt = stmt.where(ExtractionInstance.id != exclude_id)
     return (await db.execute(stmt)).scalars().first()

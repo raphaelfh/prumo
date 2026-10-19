@@ -22,7 +22,7 @@ const owed = {
 
 describe("rationaleGapCoords", () => {
   it("returns the rationale coordinate the server says is owed", () => {
-    expect(rationaleGapCoords([owed], INSTANCES)).toEqual(["inst-1::r-1"]);
+    expect(rationaleGapCoords([owed], INSTANCES)).toEqual(["inst-1_r-1"]);
   });
 
   it("keys the rationale to its OWN entity type's instance", () => {
@@ -31,7 +31,7 @@ describe("rationaleGapCoords", () => {
         [{ ...owed, target_entity_type_id: "et-2", rationale_field_id: "r-2" }],
         INSTANCES,
       ),
-    ).toEqual(["inst-2::r-2"]);
+    ).toEqual(["inst-2_r-2"]);
   });
 
   it("ignores entries the server did not flag", () => {
@@ -67,6 +67,6 @@ describe("rationaleGapCoords", () => {
         [owed, { ...owed, target_entity_type_id: "et-2", rationale_field_id: "r-2" }],
         INSTANCES,
       ),
-    ).toEqual(["inst-1::r-1", "inst-2::r-2"]);
+    ).toEqual(["inst-1_r-1", "inst-2_r-2"]);
   });
 });

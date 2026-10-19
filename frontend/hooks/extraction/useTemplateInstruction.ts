@@ -35,5 +35,11 @@ export function useUpdateTemplateInstruction(projectId: string, templateId: stri
         }),
       ]);
     },
+    // A refused save (another manager holds the draft lock) means the chip
+    // is stale: refresh it so it names who is editing.
+    onError: () =>
+      queryClient.invalidateQueries({
+        queryKey: templateConfigStatusKeys.byTemplate(projectId, templateId),
+      }),
   });
 }

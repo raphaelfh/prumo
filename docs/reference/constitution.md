@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-24
+last_reviewed: 2026-10-15
 owner: '@raphaelfh'
 ---
 
@@ -88,11 +88,11 @@ database level.
 
 Security controls are mandatory, not optional additions.
 
-- Authentication: JWT validation via Supabase Auth (RS256/JWKS in production, HS256 in local development). `/mcp` alone also accepts personal access tokens (ADR 0020); their `user_id` comes from the verified token row, never from request input.
+- Authentication: JWT validation via Supabase Auth (RS256/JWKS in production, HS256 in local development). `/mcp` alone also accepts personal access tokens (ADR 0020); their `user_id` comes from the verified token row, never from request input. `/mcp`, and only `/mcp`, also accepts prumo-issued OAuth access tokens (ADR 0022); REST, PostgREST and Storage never accept them.
 - `user_id` MUST always be extracted from `user.sub` (JWT payload). It MUST NEVER be accepted from request bodies, query parameters, or path parameters.
-- Sensitive data (API keys, tokens) MUST be encrypted at rest using per-user or per-row derived keys (`PBKDF2-HMAC-SHA256` with `ENCRYPTION_KEY` env var). Credentials that are only verified, never recovered (personal access tokens), are stored as a SHA-256 hash instead (ADR 0020).
-- Every endpoint MUST apply rate limiting via `@limiter.limit("N/minute")`. The `/mcp` ASGI route applies the same limiter through its non-decorator API (ADR 0020).
-- CORS origins MUST be explicitly listed; wildcard origins (`*`) are forbidden in production.
+- Sensitive data (API keys, tokens) MUST be encrypted at rest using per-user or per-row derived keys (`PBKDF2-HMAC-SHA256` with `ENCRYPTION_KEY` env var). Credentials that are only verified, never recovered (personal access tokens, OAuth authorization codes, access and refresh tokens), are stored as a SHA-256 hash instead (ADR 0020, ADR 0022).
+- Every endpoint MUST apply rate limiting via `@limiter.limit("N/minute")`. The `/mcp` ASGI route and the OAuth routes apply the same limiter through its non-decorator API (ADR 0020, ADR 0022).
+- CORS origins MUST be explicitly listed; wildcard origins (`*`) are forbidden in production. Exception (ADR 0022): five credential-less OAuth endpoints (protected-resource metadata, authorization-server metadata, token, register, revoke) answer `Access-Control-Allow-Origin: *` without credentials.
 - Exposed response headers are limited to `X-Trace-Id` and `X-Response-Time`.
 
 **Rationale**: Defense-in-depth at every layer — authentication, authorization (RLS), encryption, and rate limiting — prevents classes of vulnerabilities rather than individual bugs.
@@ -143,6 +143,7 @@ All API responses MUST use a uniform envelope format.
 - Every endpoint MUST generate and propagate a `trace_id` (UUID) for request tracing.
 - Middleware stack order: `RequestIdMiddleware` → `LoggingMiddleware` → `TimingMiddleware`.
 - Exception: the `/mcp` route speaks the MCP protocol (JSON-RPC results with `isError`), not the `ApiResponse` envelope (ADR 0020).
+- Exception: the OAuth endpoints (metadata, authorize, token, register, revoke) speak RFC 6749/7591/8414/9728 JSON, not the envelope (ADR 0022).
 
 **Rationale**: A uniform response envelope simplifies frontend error handling, enables centralized logging, and makes API behavior predictable for consumers.
 
@@ -239,8 +240,16 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `AGENTS.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.3.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-09-24
+**Version**: 2.4.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-10-15
 
+> 2.4.0: §IV and §VIII materially expanded for OAuth on `/mcp` (ADR 0022) —
+> prumo-issued OAuth access tokens accepted only on that route, codes and
+> tokens hashed at rest, the OAuth routes rate-limited through the
+> non-decorator API, five credential-less endpoints exempt from the explicit
+> CORS list, and an RFC-JSON exception to the `ApiResponse` envelope for the
+> OAuth routes. Neither §IV nor §VIII is NON-NEGOTIABLE, so no migration plan
+> accompanies this MINOR bump.
+>
 > 2.3.0: §IV and §VIII materially expanded for personal-access-token
 > authentication on `/mcp` (ADR 0020) — a second bearer credential accepted
 > only on that route, hashed (not encrypted) at rest because it is only ever

@@ -20,11 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.template_change import ChangeTier, DiffStatus
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.hitl_session import TemplateChangeAck
-from app.services.template_version_read_service import get_template_config_diff
-from app.services.template_version_service import (
+from app.services.template_versioning import (
     PublishDiffDriftedError,
     PublishMissingAcknowledgementError,
     TemplateVersionService,
+    get_template_config_diff,
 )
 from tests.integration.conftest import SEED, make_proposal, open_session
 from tests.integration.helpers.template_fixtures import (

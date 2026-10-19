@@ -27,9 +27,10 @@ Usage inside a Celery task:
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -40,14 +41,12 @@ from app.core.config import settings
 
 
 @asynccontextmanager
-async def worker_session() -> AsyncIterator[AsyncSession]:
-    """Yield a SQLAlchemy AsyncSession backed by a per-call engine.
+async def worker_engine() -> AsyncIterator[AsyncEngine]:
+    """Yield a per-call ``NullPool`` engine, disposed when the context exits.
 
-    The engine uses ``NullPool`` — every connection is opened on demand
-    and closed when the session ends. The engine itself is disposed
-    when the context exits, releasing the underlying asyncpg
-    connection. This guarantees no event-loop primitive survives past
-    the task's ``asyncio.run`` boundary.
+    A task that needs the engine itself — a second session factory whose
+    writes commit apart from the task session (the usage ledger) — opens it
+    here and hands it to :func:`worker_session`.
     """
     engine = create_async_engine(
         settings.async_database_url,
@@ -60,14 +59,28 @@ async def worker_session() -> AsyncIterator[AsyncSession]:
             },
         },
     )
-    factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
     try:
-        async with factory() as session:
-            yield session
+        yield engine
     finally:
         await engine.dispose()
+
+
+@asynccontextmanager
+async def worker_session(engine: AsyncEngine | None = None) -> AsyncIterator[AsyncSession]:
+    """Yield a SQLAlchemy AsyncSession on ``engine``, or on a per-call engine.
+
+    Without ``engine`` a :func:`worker_engine` is opened for this session and
+    disposed when the context exits, releasing the underlying asyncpg
+    connection: no event-loop primitive survives past the task's
+    ``asyncio.run`` boundary. With ``engine`` the caller owns its disposal.
+    """
+    async with AsyncExitStack() as stack:
+        if engine is None:
+            engine = await stack.enter_async_context(worker_engine())
+        factory = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+        yield await stack.enter_async_context(factory())

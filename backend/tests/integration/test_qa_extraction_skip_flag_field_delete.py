@@ -9,30 +9,28 @@ answers:
     Key (id)=(...) is still referenced from table
     "extraction_proposal_records".
 
-Root cause: ``_extract_one_entity_type_for_run`` filtered the fields sent to
-the LLM by *reassigning* the ORM-managed ``entity_type.fields`` collection,
-which has ``cascade="all, delete-orphan"``. The removed fields (precisely the
-ones with a human proposal, hence skipped) were treated as orphans, so the
-flush inside ``_create_suggestions`` emitted ``DELETE FROM extraction_fields``
-for them — blocked by the ``ondelete=RESTRICT`` FK from the very proposal that
-made them "human-settled".
+Root cause: the full-run sweep filtered the fields sent to the LLM by
+*reassigning* the ORM-managed ``entity_type.fields`` collection, which has
+``cascade="all, delete-orphan"``. The removed fields (precisely the ones with
+a human proposal, hence skipped) were treated as orphans, so the landing's
+flush emitted ``DELETE FROM extraction_fields`` for them — blocked by the
+``ondelete=RESTRICT`` FK from the very proposal that made them
+"human-settled".
 
 This is invisible to mocks (no real cascade, no real FK), so it lives here as
 an integration test against the local Postgres. The reproduction requires
-NON-EMPTY LLM output for a kept field so ``_create_suggestions`` actually
-flushes while the skipped field is orphaned.
+NON-EMPTY LLM output for a kept field so the landing actually flushes while
+the skipped field is orphaned.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.extractor import LlmUsage
 from app.models.extraction import (
     ExtractionField,
     ExtractionFieldType,
@@ -45,7 +43,8 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
 )
 from app.services.hitl_session_service import HITLSessionService
-from app.services.section_extraction_service import SectionExtractionService
+from tests.fakes.recorded_llm import RecordedLlm
+from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
 from tests.integration.test_extraction_manual_only_flow import _coords
 
 
@@ -69,7 +68,7 @@ async def test_skip_flag_does_not_delete_human_settled_field(
     entity_type_id = UUID(str(entity_type_id))
 
     # Add a SECOND field the AI is allowed to fill (kept, not human-settled).
-    # Two fields are required: one kept so the LLM runs and _create_suggestions
+    # Two fields are required: one kept so the LLM runs and the landing
     # flushes, one skipped so it becomes the orphan-delete target.
     field_b = ExtractionField(
         entity_type_id=entity_type_id,
@@ -82,7 +81,7 @@ async def test_skip_flag_does_not_delete_human_settled_field(
 
     # The Configuration UI republishes after every edit; without it the new
     # field would (correctly, B-2) be invisible to the pinned prompt tree.
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await TemplateVersionService(db_session).republish(
         project_id=project_id,
@@ -124,42 +123,27 @@ async def test_skip_flag_does_not_delete_human_settled_field(
     )
     await db_session.flush()
 
-    service = SectionExtractionService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-qa-skip-flag",
-    )
-    # Only the LLM is faked; the DB write path (_create_suggestions + flush) is real.
-    service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
-        return_value=(
-            {
-                field_b.name: {
-                    "value": "ai answer",
-                    "confidence": 0.9,
-                    "reasoning": "r",
-                    "evidence": [],
-                }
-            },
-            LlmUsage(prompt_tokens=1, completion_tokens=1),
-        )
-    )
+    # Only the model is faked; the landing (and its flush) is real.
+    await seed_article_text(db_session, project_id=project_id, article_id=article_id)
+    fake = RecordedLlm(fields={field_b.name: {"value": "ai answer", "reasoning": "r"}})
 
     # Before the fix this raises ForeignKeyViolationError on flush; after the
     # fix it completes and field_A survives untouched.
-    pinned_tree = await service._pinned_entity_types(run)
-    pinned_entity = next(et for et in pinned_tree if et.id == entity_type_id)
-    result = await service._extract_one_entity_type_for_run(
-        run=run,
-        entity_type=pinned_entity,
-        pdf_text="irrelevant — LLM is mocked",
-        framework=None,
-        kind="quality_assessment",
-        skip_fields_with_human_proposals=True,
+    result = await extraction(db_session, fake, user_id=profile_id).run_from_request(
+        request(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            run_id=run.id,
+            skip_fields_with_human_proposals=True,
+        )
     )
 
+    # The settled field was never asked; the kept one was.
+    (asked,) = [c.field_names for c in fake.field_calls()]
+    assert asked == [field_b.name]
     # The kept field got an AI proposal ...
-    assert result["suggestions_created"] == 1
+    assert result.total_suggestions_created == 1
     # ... and the human-settled field was NOT deleted.
     survived = (
         await db_session.execute(
@@ -238,33 +222,23 @@ async def test_call_site_passes_pinned_not_live_instruction(
     )
     await db_session.refresh(run)
 
-    service = SectionExtractionService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-pinned-instruction",
-    )
-    # Only IO seams are faked; the pinned-instruction fetch inside
-    # extract_section runs against the real rows above.
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="irrelevant — LLM is mocked"
-    )
-    service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
-        return_value=({}, LlmUsage())
-    )
-
-    await service.extract_section(
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        entity_type_id=entity_type_id,
-        run_id=run.id,
+    await seed_article_text(db_session, project_id=project_id, article_id=article_id)
+    fake = RecordedLlm()
+    # Only the model is faked; the pinned-instruction fetch runs against the
+    # real rows above.
+    await extraction(db_session, fake, user_id=profile_id).run_from_request(
+        request(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            entity_type_id=entity_type_id,
+            run_id=run.id,
+        )
     )
 
-    assert (
-        service._extract_with_llm.call_args.kwargs["prompt_context"].general_instructions
-        == "PINNED"
-    )
+    (prompt,) = [c.user_prompt for c in fake.field_calls()]
+    assert "PINNED" in prompt
+    assert "LIVE" not in prompt
 
 
 @pytest.mark.asyncio
@@ -323,23 +297,18 @@ async def test_batch_call_site_passes_pinned_not_live_instruction(
     )
     await db_session.refresh(run)
 
-    service = SectionExtractionService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-pinned-instruction-batch",
-    )
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="irrelevant — LLM is mocked"
-    )
-    service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
-        return_value=({}, LlmUsage())
+    await seed_article_text(db_session, project_id=project_id, article_id=article_id)
+    fake = RecordedLlm()
+    await extraction(db_session, fake, user_id=profile_id).run_from_request(
+        request(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            run_id=run.id,
+            auto_advance_to_review=False,
+        )
     )
 
-    await service.extract_for_run(run_id=run.id, auto_advance_to_review=False)
-
-    assert service._extract_with_llm.call_count > 0
-    assert all(
-        call.kwargs["prompt_context"].general_instructions == "PINNED"
-        for call in service._extract_with_llm.call_args_list
-    )
+    prompts = [c.user_prompt for c in fake.field_calls()]
+    assert prompts
+    assert all("PINNED" in p and "LIVE" not in p for p in prompts)

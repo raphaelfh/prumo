@@ -32,11 +32,11 @@ from app.schemas.extraction_run import (
     CreateConsensusRequest,
     MarkReadyRequest,
 )
-from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_consensus_service import (
     InvalidConsensusError,
     OptimisticConcurrencyError,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import (
     InvalidStageTransitionError,
     RunLifecycleService,
@@ -139,7 +139,8 @@ async def test_approve_finalize_endpoint_success_returns_count() -> None:
 @pytest.mark.parametrize(
     ("exc", "expected_status"),
     [
-        (CoordinateMismatchError("x"), 422),
+        (RunWriteError("x", reason="coordinate", run_id=None), 422),
+        (RunWriteError("x", reason="stage", run_id=None, stage="extract"), 400),
         (InvalidConsensusError("x"), 400),
         (OptimisticConcurrencyError("x"), 409),
         (InvalidStageTransitionError("x"), 400),
@@ -225,6 +226,28 @@ async def test_consensus_quality_assessment_requires_arbitrator() -> None:
     assert raised.value.status_code == 400
     arb.assert_awaited_once()
     rev.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_consensus_endpoint_enforces_the_value_contract() -> None:
+    """A person's consensus write is always held to the value contract; only
+    the system publish in approve-and-finalize opts out."""
+    db = AsyncMock()
+    with (
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()),
+        patch(f"{_EP}.ExtractionConsensusService") as svc,
+    ):
+        svc.return_value.record_consensus = AsyncMock(side_effect=InvalidConsensusError("stop"))
+        with pytest.raises(HTTPException):
+            await create_consensus(
+                run_id=uuid4(),
+                body=_consensus_body(),
+                request=_request(),
+                db=db,
+                current_user_sub=uuid4(),
+            )
+    assert svc.return_value.record_consensus.await_args.kwargs["enforce_contract"] is True
 
 
 # --------------------------------------------------------------------------

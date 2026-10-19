@@ -7,7 +7,7 @@ labelling. The export's proposal query
 and treats the first-seen row per coord as the latest; ``id`` is the
 deterministic tiebreaker on equal ``created_at`` (same-transaction inserts
 share PostgreSQL's transaction-start ``now()``), matching the canonical
-``ExtractionProposalRepository.get_latest_for_coord`` ordering.
+``ExtractionProposalRepository.latest_by_field`` ordering.
 
 Without the ``id`` tiebreak the FR-037 ``reviewer_outcome`` flips between
 export builds. The existing unit determinism test

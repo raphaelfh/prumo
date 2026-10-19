@@ -25,7 +25,9 @@ from uuid import UUID
 
 from app.domain.template_change import ChangeTier, ChangeVariant, OpaqueValueState
 from app.schemas.hitl_session import TemplateChangeRowRead
-from app.services.template_diff_read import fingerprint
+from app.services.template_versioning._diff_read import (
+    fingerprint,
+)
 
 ACTIVE_VERSION = UUID("11111111-1111-4111-8111-111111111111")
 OTHER_VERSION = UUID("22222222-2222-4222-8222-222222222222")
@@ -43,6 +45,7 @@ def _row(node_id: str, tier: ChangeTier = ChangeTier.DESTRUCTIVE) -> TemplateCha
         variant=ChangeVariant.ENTITY_TYPE_REMOVED,
         tier=tier,
         label_path=[DUPLICATE_LABEL],
+        affects_ai=True,
     )
 
 
@@ -65,6 +68,7 @@ _ALTERNATIVE: dict[str, object] = {
     "after_opaque_state": OpaqueValueState.EMPTY.value,
     "reorder_count": 3,
     "affects_recorded_data": True,
+    "affects_ai": False,
 }
 
 
@@ -125,12 +129,12 @@ def test_hash_is_stable_across_processes() -> None:
         "from uuid import UUID;"
         "from app.domain.template_change import ChangeTier, ChangeVariant;"
         "from app.schemas.hitl_session import TemplateChangeRowRead;"
-        "from app.services.template_diff_read import fingerprint;"
+        "from app.services.template_versioning._diff_read import fingerprint;"
         "row = TemplateChangeRowRead("
         "id='removed:entity_type:x:-:-',"
         "variant=ChangeVariant.ENTITY_TYPE_REMOVED,"
         "tier=ChangeTier.DESTRUCTIVE,"
-        "label_path=['A','B']);"
+        "label_path=['A','B'],affects_ai=True);"
         "print(fingerprint(UUID('11111111-1111-4111-8111-111111111111'), [row]))"
     )
     # Inherit the parent environment and vary ONLY the seed. A minimal env

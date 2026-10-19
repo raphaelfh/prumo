@@ -64,12 +64,11 @@ const DOMAINS = [
   },
 ];
 const INSTANCES_BY_ET = { "et-scope": "inst-scope" };
-const keyOf = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
 
 describe("outOfScopeSectionsOnForm", () => {
   it("reads the classifier through the DECLARED coordinate, not a name convention", () => {
     const values = { "inst-scope_f-type": { value: "development_only" } };
-    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, INSTANCES_BY_ET, values, keyOf)).toEqual(
+    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, INSTANCES_BY_ET, values)).toEqual(
       new Set(["eval_d1_participants", "eval_d4_judgment"]),
     );
   });
@@ -85,25 +84,25 @@ describe("outOfScopeSectionsOnForm", () => {
     };
     const values = { "inst-x_f-q1": { value: "Y" } };
     expect(
-      outOfScopeSectionsOnForm(schema, DOMAINS, { "et-eval": "inst-x" }, values, keyOf),
+      outOfScopeSectionsOnForm(schema, DOMAINS, { "et-eval": "inst-x" }, values),
     ).toEqual(new Set(["assessment_scope"]));
   });
 
   it("excludes nothing while the coordinate cannot be resolved", () => {
     const values = { "inst-scope_f-type": { value: "development_only" } };
-    expect(outOfScopeSectionsOnForm({}, DOMAINS, INSTANCES_BY_ET, values, keyOf)).toEqual(
+    expect(outOfScopeSectionsOnForm({}, DOMAINS, INSTANCES_BY_ET, values)).toEqual(
       new Set(),
     );
     // the named section is absent from this template
     expect(
-      outOfScopeSectionsOnForm(SCHEMA, [DOMAINS[1]], INSTANCES_BY_ET, values, keyOf),
+      outOfScopeSectionsOnForm(SCHEMA, [DOMAINS[1]], INSTANCES_BY_ET, values),
     ).toEqual(new Set());
     // no instance yet
-    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, undefined, values, keyOf)).toEqual(
+    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, undefined, values)).toEqual(
       new Set(),
     );
     // never answered
-    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, INSTANCES_BY_ET, {}, keyOf)).toEqual(
+    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, INSTANCES_BY_ET, {})).toEqual(
       new Set(),
     );
   });
@@ -114,7 +113,7 @@ describe("outOfScopeSectionsOnForm", () => {
     const values = {
       "inst-scope_f-type": { value: null, absent_reason: "no_information" },
     };
-    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, INSTANCES_BY_ET, values, keyOf)).toEqual(
+    expect(outOfScopeSectionsOnForm(SCHEMA, DOMAINS, INSTANCES_BY_ET, values)).toEqual(
       new Set(),
     );
   });

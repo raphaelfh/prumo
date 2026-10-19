@@ -6,6 +6,9 @@
 
 import type {AISuggestion} from '@/types/ai-extraction';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
+import {optionLabelMap} from '@/lib/extraction/options';
+import {absentReasonLabel} from '@/lib/extraction/absentReasonLabel';
+import {t} from '@/lib/copy';
 
 /**
  * Field context needed to resolve a select/multiselect option CODE to its human
@@ -15,44 +18,6 @@ import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 export interface SuggestionFieldContext {
   fieldType?: string | null;
   allowedValues?: unknown;
-}
-
-/**
- * Return the raw option list from an `allowed_values` payload. Tolerates both
- * shapes the template builder emits: `{options: [...]}` or a bare `[...]`;
- * anything else yields `[]`. Mirrors backend `normalize_options`
- * (backend/app/llm/claim_value.py) so a new option encoding is handled once.
- */
-function normalizeOptions(allowedValues: unknown): unknown[] {
-  if (
-    allowedValues &&
-    typeof allowedValues === 'object' &&
-    !Array.isArray(allowedValues) &&
-    'options' in allowedValues
-  ) {
-    const options = (allowedValues as {options?: unknown}).options;
-    return Array.isArray(options) ? options : [];
-  }
-  return Array.isArray(allowedValues) ? allowedValues : [];
-}
-
-/**
- * Map each select option's stored value (code) to its human label. Options are
- * `{value, label}` objects or plain strings; plain strings (and options without
- * a distinct label) map to themselves. Mirrors backend `option_label_map`.
- */
-function optionLabelMap(allowedValues: unknown): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const opt of normalizeOptions(allowedValues)) {
-    if (opt && typeof opt === 'object' && 'value' in opt) {
-      const code = String((opt as {value: unknown}).value);
-      const label = (opt as {label?: unknown}).label;
-      map.set(code, label ? String(label) : code);
-    } else if (typeof opt === 'string') {
-      map.set(opt, opt);
-    }
-  }
-  return map;
 }
 
 /**
@@ -197,6 +162,21 @@ export function valuelessProposalKind(value: unknown): ValuelessProposal | null 
 }
 
 /**
+ * What a review surface shows for a valueless AI proposal, or `null` for an
+ * ordinary value. A `no_information` marker keeps the AI wording ("No
+ * information found"); any other marker reads as its disposition label ("Not
+ * applicable"), so an AI `not_applicable` answer never claims the article was
+ * silent; a bare null reads "No value proposed".
+ */
+export function valuelessProposalLabel(value: unknown): string | null {
+  const kind = valuelessProposalKind(value);
+  if (kind === null) return null;
+  if (kind === 'unmarked') return t('extraction', 'reviewNoValue');
+  if (valueAbsentReason(value) === 'no_information') return t('extraction', 'reviewNoInformation');
+  return absentReasonLabel(value);
+}
+
+/**
  * Count of UNRESOLVED AI proposals awaiting a human decision — the ONE shared
  * "actionable pending" header metric for BOTH the extraction and QA screens
  * (ADR-0016 Phase 4). An unresolved abstention (`no_information`) proposal IS
@@ -232,21 +212,3 @@ export function isSuggestionAccepted(suggestion: AISuggestion): boolean {
 export function isSuggestionPending(suggestion: AISuggestion): boolean {
   return suggestion.status === 'pending';
 }
-
-/**
- * Filters suggestions by confidence threshold
- *
- * @param suggestions - Record of suggestions
- * @param threshold - Minimum confidence threshold (0-1, default: 0.8)
- * @returns Filtered array of [key, suggestion]
- */
-export function filterSuggestionsByConfidence(
-  suggestions: Record<string, AISuggestion>,
-  threshold: number = 0.8
-): Array<[string, AISuggestion]> {
-  return Object.entries(suggestions).filter(
-    ([, suggestion]) => suggestion.confidence >= threshold
-  );
-}
-
-

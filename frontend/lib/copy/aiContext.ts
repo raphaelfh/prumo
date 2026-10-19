@@ -10,13 +10,18 @@
 export const aiContext = {
     // Card / dialog chrome
     sectionDesc:
-        'What this review is asking. Sent to the AI with every extraction and quality assessment.',
+        'What this review is asking. Sent to the AI with every extraction and quality assessment, together with the eligibility criteria and study designs from the project details.',
     save: 'Save',
     cancel: 'Cancel',
     saving: 'Saving…',
     saveSuccess: 'Review question updated',
     saveError: 'Could not save the review question',
     loadError: 'Could not load the review question',
+
+    // A save refused because the protocol moved since the form was seeded.
+    conflictBanner:
+        'The review question changed since you opened it — another manager or an agent saved it. Reload to see it; your unsaved edits will be lost.',
+    conflictReload: 'Reload',
 
     // The switch
     enabledLabel: 'Send to the AI',
@@ -25,7 +30,8 @@ export const aiContext = {
     // Preview
     previewTitle: 'What the AI is sent',
     previewEmpty: 'Nothing yet. Fill in at least one part above.',
-    previewHint: 'Rendered by the server — this is the exact text prefixed to every AI call.',
+    previewHint:
+        'Rendered by the server from this question and the project eligibility and study designs — this is the exact text prefixed to every AI call.',
 
     // Empty / summary states
     managerOnly: 'Only project managers can change the review question.',

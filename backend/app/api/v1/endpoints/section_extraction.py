@@ -21,6 +21,7 @@ from redis import Redis
 
 from app.api.deps.scope import assert_kickoff_scope
 from app.api.deps.security import get_current_user_sub
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.llm.catalog import canonical_pair
@@ -32,16 +33,17 @@ from app.schemas.extraction import (
     ExtractionJobStatusResponse,
     SectionExtractionRequest,
 )
-from app.services.coordinate_coherence import (
-    CoordinateMismatchError,
+from app.schemas.llm_target import LlmTarget
+from app.services.extraction_attempt_service import ExtractionAttemptService
+from app.services.extraction_run_write import (
+    RunBusyError,
+    RunFinalizedError,
+    RunWriteError,
     assert_instance_in_coordinate,
 )
-from app.services.extraction_attempt_service import ExtractionAttemptService
-from app.services.llm_engine_service import resolve_engine
-from app.services.run_lifecycle_service import InvalidStageTransitionError
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
-from app.worker.celery_app import REDIS_URL
+from app.worker import queue_health
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
 
 router = APIRouter()
@@ -57,22 +59,10 @@ _SECTION_JOB_OWNER_TTL_SECONDS = 3600
 # ----------------------------------------------------------------------
 
 
-def _is_queue_available() -> bool:
-    try:
-        Redis.from_url(
-            REDIS_URL,
-            socket_connect_timeout=0.25,
-            socket_timeout=0.25,
-        ).ping()
-        return True
-    except Exception:
-        return False
-
-
 def _remember_job_owner(job_id: str, user_id: str) -> None:
     with contextlib.suppress(Exception):
         Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).set(
@@ -86,7 +76,7 @@ def _lookup_job_owner(job_id: str) -> str | None:
     raw: object = None
     with contextlib.suppress(Exception):
         raw = Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).get(f"{_SECTION_JOB_OWNER_KEY_PREFIX}{job_id}")
@@ -124,13 +114,14 @@ async def _check_request_scope(
     db: DbSession,
     payload: SectionExtractionRequest,
     current_user_sub: UUID,
-) -> None:
-    """Bind every client-supplied id to the caller's project + template.
+) -> LlmTarget:
+    """Bind every client-supplied id to the caller's project + template, and
+    return the engine the AI kickoff gate resolved.
 
-    The coordinate binding is shared with ``/extraction/models``; the two
-    leaf ids below exist only on this endpoint.
+    The coordinate binding and the kickoff gate live in ``assert_kickoff_scope``;
+    the two leaf ids below exist only on this endpoint.
     """
-    await assert_kickoff_scope(
+    engine = await assert_kickoff_scope(
         db,
         project_id=payload.project_id,
         article_id=payload.article_id,
@@ -145,7 +136,7 @@ async def _check_request_scope(
     # ``ExtractionInstance`` against it. That FK is ON DELETE RESTRICT, so
     # the row silently stops the boot-time catalogue replace from
     # converging. Missing and foreign ids answer identically — existence
-    # never leaks. ``section_extraction_service`` re-scopes its own live
+    # never leaks. ``ai_extraction`` re-scopes its own live
     # lookup: this gate spares the caller a job that would die in the worker.
     if payload.entity_type_id is not None:
         try:
@@ -171,11 +162,12 @@ async def _check_request_scope(
                 article_id=payload.article_id,
                 template_id=payload.template_id,
             )
-        except CoordinateMismatchError as exc:
+        except RunWriteError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="parentInstanceId does not belong to this coordinate",
             ) from exc
+    return engine
 
 
 # ======================================================================
@@ -204,22 +196,9 @@ async def extract_section(
     """
     trace_id = getattr(request.state, "trace_id", None) or str(uuid.uuid4())
 
-    await _check_request_scope(db, payload, current_user_sub)
+    engine = await _check_request_scope(db, payload, current_user_sub)
 
-    # C1b enqueue-time gate, AFTER the membership scope (auth precedes engine
-    # work — an outsider gets 403, never this 409). It covers continuations
-    # too, now that a kickoff RE-PINS: every attempt-0 runs the project
-    # engine, so a retired pair is fatal to a ``run_id`` request exactly as
-    # it is to a new one. This gate used to skip continuations because a
-    # pinned run was entitled to its pin and a 409 here could never be
-    # cleared; re-pinning removes both halves of that reasoning — picking a
-    # live model clears it. A retired pair raises EngineRetiredError → the
-    # registered AppError handler serves the typed 409 (error.code
-    # LLM_ENGINE_RETIRED). The worker re-resolves at execution time, so this
-    # only fails fast — and spares the reviewer a queued job that will die.
-    engine = await resolve_engine(db, payload.project_id, current_user_sub)
-
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ApiResponse.failure(
@@ -252,7 +231,11 @@ async def extract_section(
         attempt = await ExtractionAttemptService(db).prepare_request(
             payload, current_user_sub, job_id=str(uuid.uuid4())
         )
-    except InvalidStageTransitionError as exc:
+    except RunWriteError as exc:
+        if exc.run_busy:
+            raise RunBusyError(exc.run_id) from exc
+        if exc.run_finalized:
+            raise RunFinalizedError(exc.run_id) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     assert attempt.job_id is not None
 

@@ -46,6 +46,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.core.security import TokenPayload, get_current_user
+from app.main import app
 from app.utils.rate_limiter import limiter
 
 # =================== AUTO MARKER ===================
@@ -184,9 +186,8 @@ async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -
     A fixture may drop what the product protects, so clear the guarded rows
     first, in FK order: runs before instances, because
     ``extraction_published_states`` hangs off both (CASCADE from the run, NO
-    ACTION from the instance). ``extraction_hitl_configs.scope_id`` has no FK
-    at all and would just be orphaned, so template-scoped overrides go too —
-    mirroring ``template_delete_service``.
+    ACTION from the instance). Template-scoped HITL overrides go with the
+    template through their CASCADE foreign key (migration 0086).
     """
     ids = [str(i) for i in template_ids]
     if not ids:
@@ -194,8 +195,6 @@ async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -
     for statement in (
         "DELETE FROM public.extraction_runs WHERE template_id = ANY(CAST(:ids AS uuid[]))",
         "DELETE FROM public.extraction_instances WHERE template_id = ANY(CAST(:ids AS uuid[]))",
-        "DELETE FROM public.extraction_hitl_configs "
-        "WHERE scope_kind = 'template' AND scope_id = ANY(CAST(:ids AS uuid[]))",
         "DELETE FROM public.project_extraction_templates WHERE id = ANY(CAST(:ids AS uuid[]))",
     ):
         await session.execute(text(statement), {"ids": ids})
@@ -536,9 +535,10 @@ async def clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
 async def clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
     """Clone the seeded CHARMS global template into ``project_id``."""
     from app.models.extraction import TemplateKind
-    from app.services.template_clone_service import TemplateCloneService
+    from app.services.template_versioning import clone_template
 
-    return await TemplateCloneService(db).clone(
+    return await clone_template(
+        db,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -659,13 +659,12 @@ async def make_ai_proposal(
 ) -> UUID:
     """Seed one AI proposal for ``(run, instance, field)``.
 
-    No HTTP route writes proposals — the pipeline's
-    ``SectionExtractionService`` calls
-    ``ExtractionProposalService.record_proposal`` in-process, and the
-    ``/proposals`` endpoint was removed once every source it accepted turned
-    out to be forbidden (ADR-0019). Tests seed the row directly (sibling of
-    :func:`make_proposal`) so fixture setup stays orthogonal to the run's
-    stage.
+    No HTTP route writes proposals — the pipeline lands them in-process
+    through ``ProposalLanding``, and the ``/proposals`` endpoint was removed
+    once every source it accepted turned out to be forbidden (ADR-0019).
+    Tests seed the row directly (sibling of :func:`make_proposal`) so fixture
+    setup stays orthogonal to the run's stage; :func:`land_ai_proposal` is
+    the gated alternative.
     """
     from app.models.extraction_workflow import (
         ExtractionProposalRecord,
@@ -685,3 +684,114 @@ async def make_ai_proposal(
     db.add(record)
     await db.flush()
     return record.id
+
+
+async def land_ai_proposal(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    proposed_value: dict,
+    source: object = None,
+    confidence_score: float | None = None,
+    rationale: str | None = None,
+):
+    """Land ONE proposal through ``ProposalLanding`` — the pipeline's write seam.
+
+    The gated sibling of :func:`make_ai_proposal`: the run lock and stage
+    gate, the coordinate bind, the source refusal and the per-row rules
+    (disposition normalization, value dedupe) all apply, exactly as for a
+    model's candidate. Returns the coordinate's latest row of that source.
+    """
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from app.models.extraction import ExtractionEntityType, ExtractionField
+    from app.models.extraction_workflow import ExtractionProposalSource
+    from app.repositories.extraction_proposal_repository import ExtractionProposalRepository
+    from app.schemas.llm_target import LlmTarget
+    from app.services.ai_extraction import Generation, ProposalCandidate, ProposalLanding
+
+    source = source or ExtractionProposalSource.AI
+    # Plain rows, not entities: the helper leaves the session's identity map
+    # as a direct write would.
+    row = (
+        await db.execute(
+            select(ExtractionField.name, ExtractionEntityType.id, ExtractionEntityType.name)
+            .join(ExtractionEntityType, ExtractionEntityType.id == ExtractionField.entity_type_id)
+            .where(ExtractionField.id == field_id)
+        )
+    ).one_or_none()
+    field_name, section = (
+        (row[0], SimpleNamespace(id=row[1], name=row[2]))
+        if row is not None
+        else ("", SimpleNamespace(id=None, name=None))
+    )
+    from app.models.extraction_workflow import ExtractionProposalRecord
+
+    coordinate = (
+        ExtractionProposalRecord.run_id == run_id,
+        ExtractionProposalRecord.instance_id == instance_id,
+        ExtractionProposalRecord.field_id == field_id,
+    )
+    before = set((await db.scalars(select(ExtractionProposalRecord.id).where(*coordinate))).all())
+    await ProposalLanding(db, user_id=str(SEED.primary_profile)).land(
+        SimpleNamespace(id=run_id),  # type: ignore[arg-type]
+        section,
+        SimpleNamespace(id=instance_id),  # type: ignore[arg-type]
+        [
+            ProposalCandidate(
+                field_id=field_id,
+                field_name=field_name,
+                proposed_value=proposed_value,
+                confidence_score=confidence_score,
+                rationale=rationale,
+            )
+        ],
+        Generation(LlmTarget(provider="openai", model="gpt-test"), None, None),
+        source=source,  # type: ignore[arg-type]
+    )
+    # The row this landing appended, else the one its dedupe matched (rows of
+    # one transaction tie on created_at, so "latest" alone cannot tell).
+    appended = (
+        await db.scalars(
+            select(ExtractionProposalRecord).where(
+                *coordinate, ExtractionProposalRecord.id.not_in(before)
+            )
+        )
+    ).first()
+    if appended is not None:
+        return appended
+    latest = await ExtractionProposalRepository(db).latest_by_field(
+        run_id,
+        instance_id,
+        [field_id],
+        source.value,  # type: ignore[attr-defined]
+    )
+    return latest.get(field_id)
+
+
+@pytest_asyncio.fixture
+async def auth_as_profile(
+    db_session: AsyncSession,
+) -> AsyncGenerator[UUID, None]:
+    """JWT sub must be a real profile id (manager on the seeded projects).
+
+    Files that need a different profile define their own fixture of this
+    name, which shadows this one.
+    """
+    del db_session  # kept for fixture-dependency ordering; the seed runs first
+    profile_id = SEED.primary_profile
+
+    async def override_get_current_user() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    yield profile_id

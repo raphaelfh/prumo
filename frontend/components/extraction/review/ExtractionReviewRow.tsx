@@ -14,10 +14,11 @@ import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion} from '@/types/ai-extraction';
 import type {ExtractionReviewTableProps} from './ExtractionReviewTable';
+import {coordKey} from '@/lib/runs/coord';
 
 export function ExtractionReviewRow({instanceId, field, values, onValueChange, aiSuggestions, getSuggestionsHistory, review, stacked}: ExtractionReviewTableProps & {field: ExtractionField; stacked: boolean}) {
   const coordinate = {instanceId, fieldId: field.id};
-  const key = `${instanceId}_${field.id}`;
+  const key = coordKey(instanceId, field.id);
   const latest = aiSuggestions?.[key];
   const [initialProposalId, setInitialProposalId] = useState<string>();
   const [visited, setVisited] = useState(false);
@@ -31,7 +32,7 @@ export function ExtractionReviewRow({instanceId, field, values, onValueChange, a
   const busy = !!review?.decisions.saving || !!review?.decisions.conflicted;
   const isAccepted = (proposal: AISuggestion) => review?.decisions.isAccepted({...coordinate, id: proposal.id, value: proposal.value}) ?? false;
   const acceptedOlder = history.find(item => item.id === acceptedId && item.id !== latest?.id && review?.decisions.isAccepted({...coordinate, id: item.id, value: unwrapProposedValue(item.proposed_value)}));
-  const toggle = (proposal: AISuggestion) => {void review?.decisions.toggle({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
+  const toggle = (proposal: AISuggestion) => {void review?.decisions.acceptProposal({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
   const rowRef = useRef<HTMLTableRowElement>(null);
   // The panel always opens directly below this row; what used to move was the
   // row itself, because opening here collapses whichever question was open

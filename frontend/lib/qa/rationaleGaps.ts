@@ -18,13 +18,15 @@
  * finalize so the 400 is never reached in the first place.
  */
 
+import { coordKey } from '@/lib/runs/coord';
+
 interface DerivedJudgmentLike {
   rationale_required?: boolean;
   target_entity_type_id?: string | null;
   rationale_field_id?: string | null;
 }
 
-/** `instance::field` keys for every rationale the server says is still owed. */
+/** `coordKey`s of every rationale the server says is still owed. */
 export function rationaleGapCoords(
   derivedJudgments: readonly DerivedJudgmentLike[] | undefined,
   instancesByEntityType: Readonly<Record<string, string>> | undefined,
@@ -39,7 +41,7 @@ export function rationaleGapCoords(
     if (!entry.target_entity_type_id || !entry.rationale_field_id) continue;
     const instanceId = instancesByEntityType[entry.target_entity_type_id];
     if (!instanceId) continue;
-    coords.push(`${instanceId}::${entry.rationale_field_id}`);
+    coords.push(coordKey(instanceId, entry.rationale_field_id));
   }
   return coords;
 }

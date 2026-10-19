@@ -25,17 +25,21 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRunStage
+from app.models.article import ArticleFile
+from app.models.extraction import (
+    ExtractionEvidence,
+    ExtractionRunStage,
+)
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_suggestion_read_service import (
     get_article_instance_ids,
@@ -43,7 +47,8 @@ from app.services.extraction_suggestion_read_service import (
     load_suggestions,
 )
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
+from tests.integration.helpers.value_contract_setup import as_text_field
 
 _ARTICLES_URL = "/api/v1/articles"
 
@@ -114,6 +119,7 @@ async def _build_suggestion_review_run(
         {"pid": str(project_id), "uid": str(SECOND_REVIEWER_ID)},
     )
 
+    await as_text_field(db, field_id)
     manager_id = SEED.primary_profile
     lifecycle = RunLifecycleService(db)
     run = await lifecycle.create_run(
@@ -125,9 +131,8 @@ async def _build_suggestion_review_run(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db)
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -484,21 +489,21 @@ async def test_load_suggestions_dedup_latest_per_coord(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
     # Insert two AI proposals for the same coord — only latest wins.
     # Both proposals land in the same DB transaction so they share the same
     # created_at (PostgreSQL now() is constant within a transaction).  To make
     # the ordering deterministic we back-date the OLDER row by 1 second via a
     # raw UPDATE after the flush, before calling load_suggestions.
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "OLDER"},
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -560,17 +565,17 @@ async def test_load_suggestions_latest_no_info_keeps_earlier_real_value(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
     # Older run found a value; the latest run abstained (no information).
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "REAL-VALUE"},
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -628,16 +633,16 @@ async def test_load_suggestions_newer_marker_wins_over_older_value(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "REAL-VALUE"},
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -690,16 +695,16 @@ async def test_load_suggestions_newer_bare_null_does_not_bury_marker(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value=marker,
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -757,10 +762,9 @@ async def test_load_suggestions_all_no_info_returns_no_info(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
     for _ in range(2):
-        await proposal_svc.record_proposal(
+        await land_ai_proposal(
+            db_session,
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -845,9 +849,9 @@ async def test_get_suggestion_history_limit(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-    proposal_svc = ExtractionProposalService(db_session)
     for i in range(3):
-        await proposal_svc.record_proposal(
+        await land_ai_proposal(
+            db_session,
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -1104,9 +1108,8 @@ async def test_load_suggestions_evidence_block_ids_populated(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1189,9 +1192,8 @@ async def test_get_suggestion_history_evidence_block_ids_populated(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1264,9 +1266,8 @@ async def test_load_suggestions_evidence_block_ids_empty_when_no_position(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1343,9 +1344,8 @@ async def test_load_suggestions_evidence_ordered_list(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1448,9 +1448,8 @@ async def test_load_suggestions_evidence_legacy_length_one(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1818,3 +1817,170 @@ async def test_qa_run_keeps_the_same_identity_contract(db_session: AsyncSession)
     assert prov is not None
     assert prov["model"] == "claude-5-opus", prov
     assert "ran_by_user_id" not in prov, prov
+
+
+# ---------------------------------------------------------------------------
+# grounded / stale flags (derived per read, one article_files read per load)
+# ---------------------------------------------------------------------------
+
+
+def _grounded_position(quote: str) -> dict:
+    return {
+        "version": 1,
+        "anchor": {
+            "kind": "hybrid",
+            "range": {"page": 1, "charStart": 0, "charEnd": len(quote)},
+            "rect": {"x": 0.0, "y": 0.0, "width": 100.0, "height": 20.0},
+            "quote": quote,
+            "blockIds": [1],
+        },
+    }
+
+
+async def _file_at_version(db: AsyncSession, version: int) -> ArticleFile:
+    file = ArticleFile(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        file_type="PDF",
+        storage_key=f"{SEED.primary_project}/{SEED.primary_article}/{uuid4()}.pdf",
+        file_role="SUPPLEMENT",
+        content_version=version,
+    )
+    db.add(file)
+    await db.flush()
+    return file
+
+
+async def _proposal_with_evidence(
+    db: AsyncSession, marker: str, rows: list[tuple[str, dict, UUID | None, int | None]]
+) -> tuple[UUID, UUID]:
+    """Land one AI proposal carrying ``rows`` of (text, position, file_id, version)."""
+    manager_id = SEED.primary_profile
+    lifecycle = RunLifecycleService(db)
+    run = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+    proposal = await land_ai_proposal(
+        db,
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": marker},
+    )
+    for rank, (text_content, position, file_id, version) in enumerate(rows):
+        db.add(
+            ExtractionEvidence(
+                id=uuid4(),
+                project_id=SEED.primary_project,
+                article_id=SEED.primary_article,
+                run_id=run.id,
+                proposal_record_id=proposal.id,
+                article_file_id=file_id,
+                content_version=version,
+                page_number=1 if position else None,
+                text_content=text_content,
+                created_by=manager_id,
+                position=position,
+                rank=rank,
+            )
+        )
+    await db.flush()
+    return run.id, proposal.id
+
+
+async def _flags_both_reads(
+    db: AsyncSession, run_id: UUID, proposal_id: UUID
+) -> tuple[list[tuple[bool, bool]], list[tuple[bool, bool]]]:
+    loaded = await load_suggestions(
+        db,
+        [SEED.primary_instance],
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+        run_id=run_id,
+    )
+    item = next(s for s in loaded.suggestions if s.id == proposal_id)
+    history = await get_suggestion_history(
+        db,
+        SEED.primary_instance,
+        SEED.primary_field,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    hist_item = next(h for h in history if h.id == proposal_id)
+    return (
+        [(e.grounded, e.stale) for e in item.evidence],
+        [(e.grounded, e.stale) for e in hist_item.evidence],
+    )
+
+
+@pytest.mark.asyncio
+async def test_evidence_grounded_and_stale_flags(db_session: AsyncSession) -> None:
+    file = await _file_at_version(db_session, 3)
+    run_id, proposal_id = await _proposal_with_evidence(
+        db_session,
+        "FLAGS-TEST",
+        [
+            ("current quote", _grounded_position("current quote"), file.id, 3),
+            ("older quote", _grounded_position("older quote"), file.id, 2),
+            ("ungrounded quote", {}, file.id, None),
+        ],
+    )
+
+    loaded, history = await _flags_both_reads(db_session, run_id, proposal_id)
+
+    expected = [(True, False), (True, True), (False, False)]
+    assert loaded == expected
+    assert history == expected
+
+
+@pytest.mark.asyncio
+async def test_null_version_is_not_stale(db_session: AsyncSession) -> None:
+    file = await _file_at_version(db_session, 1)
+    run_id, proposal_id = await _proposal_with_evidence(
+        db_session,
+        "NULL-VERSION-TEST",
+        [("unstamped quote", _grounded_position("unstamped quote"), file.id, None)],
+    )
+    # A reparse bumps the file's version; the unstamped row still reads current.
+    file.content_version = 2
+    await db_session.flush()
+
+    loaded, history = await _flags_both_reads(db_session, run_id, proposal_id)
+
+    assert loaded == [(True, False)]
+    assert history == [(True, False)]
+
+
+@pytest.mark.asyncio
+async def test_one_article_files_read_per_load(db_session: AsyncSession) -> None:
+    files = [await _file_at_version(db_session, 2) for _ in range(3)]
+    run_id, proposal_id = await _proposal_with_evidence(
+        db_session,
+        "QUERY-COUNT-TEST",
+        [(f"quote {i}", _grounded_position(f"quote {i}"), f.id, 1) for i, f in enumerate(files)],
+    )
+
+    statements: list[str] = []
+
+    def _record(_conn, _cursor, statement, _params, _context, _many) -> None:
+        statements.append(statement)
+
+    engine = (await db_session.connection()).sync_connection.engine
+    event.listen(engine, "after_cursor_execute", _record)
+    try:
+        loaded, history = await _flags_both_reads(db_session, run_id, proposal_id)
+    finally:
+        event.remove(engine, "after_cursor_execute", _record)
+
+    assert loaded == [(True, True)] * 3
+    assert history == [(True, True)] * 3
+    file_reads = [s for s in statements if "FROM public.article_files" in s]
+    # One read in load_suggestions, one in get_suggestion_history.
+    assert len(file_reads) == 2, file_reads

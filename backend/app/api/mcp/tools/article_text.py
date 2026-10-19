@@ -9,35 +9,48 @@ resolves the file, validates arguments and renders the exact text format.
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.errors import McpErrorCode, McpToolError
 from app.api.mcp.server import agent_tool
 from app.schemas.mcp_article_text import McpTextPage, chunk_locator_prefix
 from app.services import article_read_service
-from app.services.article_text_block_read_service import page_text_blocks
-from app.utils.opaque_cursor import InvalidCursorError
-from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN, neutralize
+from app.services.article_text_block_read_service import last_page_number, page_text_blocks
+from app.utils.opaque_cursor import INT4_MAX, InvalidCursorError
+from app.utils.untrusted import (
+    envelope_close,
+    envelope_open,
+    escape_marker_lines,
+    neutralize,
+    new_nonce,
+)
 
 # Body budget (spec §5.1): each chunk's text + its locator prefix + its
 # newline. Header, delimiter and trailer lines sit outside this budget.
 _BODY_BUDGET = 28_000
+# A page number past int4 would overflow the Postgres `integer` it is compared to.
+_Page = Annotated[int, Field(ge=1, le=INT4_MAX)]
 
 
 def _render(
     article_id: UUID, file_id: UUID | None, page: McpTextPage | None, note: str | None
 ) -> str:
     """The exact result format (spec §5.0): header first, trailer last, in
-    every result, empty or not."""
+    every result, empty or not. They are the only lines starting with
+    `[prumo]`; the body sits in one envelope bound to the nonce the header
+    announces, fresh per response."""
     if page is not None and page.chunks:
         pages = f"{page.chunks[0].page_number}-{page.chunks[-1].page_number}"
     else:
         pages = "none"
 
+    nonce = new_nonce()
     header = (
-        f"[prumo] untrusted_content=true article_id={article_id} "
+        f"[prumo] untrusted_content=true nonce={nonce} article_id={article_id} "
         f"file_id={file_id if file_id is not None else 'none'} pages={pages}"
     )
     next_cursor = page.next_cursor if page is not None else None
@@ -47,16 +60,18 @@ def _render(
         return "\n".join([header, note, trailer])
 
     body_lines = [
-        chunk_locator_prefix(c.page_number, c.block_index, c.char_offset) + neutralize(c.text)
+        chunk_locator_prefix(c.page_number, c.block_index, c.char_offset)
+        + escape_marker_lines(neutralize(c.text))
         for c in (page.chunks if page is not None else [])
     ]
-    return "\n".join([header, UNTRUSTED_OPEN, *body_lines, UNTRUSTED_CLOSE, trailer])
+    return "\n".join([header, envelope_open(nonce), *body_lines, envelope_close(nonce), trailer])
 
 
 @agent_tool(
     requires="read",
     project_arg="article_id",
     title="Get article text",
+    destructive=False,
     structured_output=False,
     description=(
         "Read an article's parsed text as markdown blocks, each prefixed with a citable "
@@ -69,16 +84,10 @@ async def get_article_text(
     db: AsyncSession,
     article_id: UUID,
     file_id: UUID | None = None,
-    page_from: int | None = None,
-    page_to: int | None = None,
+    page_from: _Page | None = None,
+    page_to: _Page | None = None,
     cursor: str | None = None,
 ) -> str:
-    if page_from is not None and page_from < 1:
-        raise McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, "page_from must be >= 1", field="page_from"
-        )
-    if page_to is not None and page_to < 1:
-        raise McpToolError(McpErrorCode.INVALID_ARGUMENT, "page_to must be >= 1", field="page_to")
     if page_from is not None and page_to is not None and page_to < page_from:
         raise McpToolError(
             McpErrorCode.INVALID_ARGUMENT, "page_to must be >= page_from", field="page_to"
@@ -109,5 +118,12 @@ async def get_article_text(
         raise McpToolError(
             McpErrorCode.INVALID_ARGUMENT, "cursor is not valid; restart without it", field="cursor"
         ) from exc
+
+    if page_from is not None and not page.chunks:
+        # Only an empty page pays for the extra read: the normal path stays one query.
+        last = await last_page_number(db, file.id)
+        if last is not None and page_from > last:
+            note = f"page_from {page_from} is beyond the last page ({last})."
+            return _render(article_id, file.id, None, note)
 
     return _render(article_id, file.id, page, None)

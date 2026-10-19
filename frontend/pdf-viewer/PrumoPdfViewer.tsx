@@ -163,8 +163,8 @@ function ViewerContent({
       <Viewer.Pages>
         {(page) => (
           <Viewer.Page pageNumber={page.number}>
-            <CanvasLayer pageNumber={page.number} />
-            <TextLayer pageNumber={page.number} />
+            <CanvasLayer />
+            <TextLayer />
           </Viewer.Page>
         )}
       </Viewer.Pages>

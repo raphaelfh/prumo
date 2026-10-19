@@ -25,10 +25,10 @@ import pytest
 from app.core.error_handler import AuthorizationError
 from app.models.extraction import (
     ExtractionFieldType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.project import ProjectMemberRole
 from app.services.extraction_export_service import (
@@ -116,12 +116,8 @@ def _make_run(
 ) -> ExtractionRun:
     """Construct an ExtractionRun-shaped object without a DB session.
 
-    ``created_at`` is required by ``run_recency_key`` (in
-    ``extraction_current_run``, added by PR #111 to deterministically pick
-    the current run per article after reopen). We default to a stable
-    timestamp so sort comparisons against a MagicMock-typed datetime don't
-    blow up — tests that care about recency ordering pass an explicit
-    ``created_at``.
+    The current-run choice itself is SQL (``CurrentRunResolver``); a mocked
+    ``execute`` hands back already-chosen rows, one per article.
     """
     run = MagicMock(spec=ExtractionRun)
     run.id = uuid4()

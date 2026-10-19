@@ -60,7 +60,7 @@ describe('search on a page that is not mounted', () => {
           <Viewer.Pages>
             {({number}) => (
               <Viewer.Page pageNumber={number}>
-                <TextLayer pageNumber={number} />
+                <TextLayer />
               </Viewer.Page>
             )}
           </Viewer.Pages>

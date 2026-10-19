@@ -24,6 +24,7 @@ import {ScrollArea} from '@/components/ui/scroll-area';
 import {Progress} from '@/components/ui/progress';
 import {countUnreadJobs, selectRecentJobs, useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
+import {agentOriginLabel, isEngineStop, stopCodeMessage} from '@/components/extraction/batch/aiBatchCopy';
 import {useAiBatchJobSync} from '@/hooks/useAiBatchJobSync';
 import {useCancelBatch} from '@/hooks/extraction/useExtractionBatches';
 import {BatchDetailsSheet} from '@/components/extraction/batch/BatchDetailsSheet';
@@ -197,12 +198,12 @@ export function NotificationCenter() {
     },
     onJobFailed: (job) => {
       if (job.type === 'ai-batch') {
-        toast.error(t('aiBatch', 'bellStoppedEngine'), {
+        const {stopCode} = (job as AiBatchJob).metadata;
+        toast.error(stopCodeMessage(stopCode), {
           duration: 7000,
-          action: {
-            label: t('aiBatch', 'startEngineAction'),
-            onClick: () => navigate('/settings?tab=integrations'),
-          },
+          action: isEngineStop(stopCode)
+            ? {label: t('aiBatch', 'startEngineAction'), onClick: () => navigate('/settings?tab=integrations')}
+            : undefined,
         });
         return;
       }
@@ -469,6 +470,20 @@ interface AiBatchNotificationBodyProps {
 }
 
 function AiBatchNotificationBody({job, onCancelBatch}: AiBatchNotificationBodyProps) {
+  const origin = agentOriginLabel(job.metadata.startedByAgent, job.metadata.agentTokenName);
+  return (
+    <>
+      {origin && (
+        <p className="min-w-0 truncate text-xs text-muted-foreground" title={origin}>
+          {origin}
+        </p>
+      )}
+      <AiBatchStatus job={job} onCancelBatch={onCancelBatch} />
+    </>
+  );
+}
+
+function AiBatchStatus({job, onCancelBatch}: AiBatchNotificationBodyProps) {
   const {counts, state, stalled, stopCode, batchId} = job.metadata;
   const done = counts.done + counts.done_with_issues;
 
@@ -506,7 +521,7 @@ function AiBatchNotificationBody({job, onCancelBatch}: AiBatchNotificationBodyPr
             : t('aiBatch', 'bellNeedsAttention').replace('{{n}}', String(counts.needs_attention))}
         </p>
       )}
-      {stopCode && <p>{t('aiBatch', 'bellStoppedEngine')}</p>}
+      {stopCode && <p>{stopCodeMessage(stopCode)}</p>}
       {state === 'cancelled' && (
         <p>
           {t('aiBatch', 'bellCancelled')

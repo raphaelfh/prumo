@@ -4,7 +4,7 @@ import { extractValueForSave } from './selectOther';
 
 // ADR-0016 Phase 1 write contract: extractValueForSave must carry the
 // `absent_reason` disposition sibling out of the `{value}` envelope so a
-// resolved "no information" marker can round-trip through writeRunFieldValue,
+// resolved "no information" marker can round-trip through the run values' decision writer,
 // instead of being stripped to a bare null on save.
 describe('extractValueForSave — absent_reason marker', () => {
   it('carries the absent_reason sibling from a marker envelope', () => {

@@ -22,6 +22,17 @@ class EvidenceResponse(BaseModel):
     )
     rank: int = 0
     attribution_label: str | None = Field(default=None, alias="attributionLabel")
+    grounded: bool = Field(
+        default=False,
+        description="the position resolves to a parsed-text anchor",
+    )
+    stale: bool = Field(
+        default=False,
+        description=(
+            "grounded, and the article was re-parsed since this anchor was made: "
+            "the location may have moved"
+        ),
+    )
 
 
 class AISuggestionItem(BaseModel):

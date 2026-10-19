@@ -6,6 +6,10 @@
  * The rail follows the worklist's rule (`scopedRowProgress`): an out-of-scope
  * domain owes nothing, so it adds to no count and holds no "next required" jump
  * target, open or closed. It stays on the form and on the rail.
+ *
+ * The rules are the RUN's (`scope_rules` on the run view, frozen in its pinned
+ * version), never the template's live `schema`: the fixture gives the two
+ * opposite scopes, so every assertion below fails if the screen reads live.
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -21,6 +25,11 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ userId: "qa-test-reviewer-id" }),
+}));
+
+// The page's AI kickoff gate reads the project role: a reviewer may run AI.
+vi.mock("@/hooks/useProjectMemberRole", () => ({
+  useProjectMemberRole: () => ({ role: "reviewer", isManager: false, loading: false }),
 }));
 
 // SectionAIExtractButton's useSectionExtraction reads the signed-in user from
@@ -40,11 +49,21 @@ const fixture = vi.hoisted(() => ({
   currentValues: [] as Array<Record<string, unknown>>,
 }));
 
+// The run's pinned rules take the evaluation part out of a development-only
+// study; the template's live rules (a later re-import) the development part.
+const rules = vi.hoisted(() => {
+  const classifier = { section: "assessment_scope", field: "study_type" };
+  return {
+    pinned: { classifier, excludes: { development_only: ["eval_d1"] } },
+    live: { classifier, excludes: { development_only: ["dev_d1"] } },
+  };
+});
+
 // A miniature PROBAST+AI: a Step-2 classifier, then one development and one
 // evaluation domain, each owing a single required judgment.
 vi.mock("@/integrations/supabase/client", async () => {
   const { makeSupabaseClientMock, PARTICIPANTS_DOMAIN, PROBAST_TEMPLATE, ROB_FIELD, SIGNALING_QUESTION } =
-    await import("./helpers/qaFullScreenMocks");
+    await import("./helpers/runScreenFixtures");
   const domain = (id: string, name: string, label: string, sortOrder: number, fields: unknown[]) => ({
     ...PARTICIPANTS_DOMAIN,
     id,
@@ -69,21 +88,20 @@ vi.mock("@/integrations/supabase/client", async () => {
     allowed_values: ["development_only", "evaluation_only"],
   };
   return {
-    supabase: makeSupabaseClientMock(fixture.members, {
-      project_extraction_templates: {
-        ...PROBAST_TEMPLATE,
-        schema: {
-          scope_rules: {
-            classifier: { section: "assessment_scope", field: "study_type" },
-            excludes: { development_only: ["eval_d1"] },
-          },
+    supabase: makeSupabaseClientMock({
+      members: fixture.members,
+      userId: "qa-test-reviewer-id",
+      tables: {
+        project_extraction_templates: {
+          ...PROBAST_TEMPLATE,
+          schema: { scope_rules: rules.live },
         },
+        extraction_entity_types: [
+          domain("et-scope", "assessment_scope", "Scope", 1, [studyType]),
+          domain("et-dev", "dev_d1", "Development", 2, [judgment("f-dev", "et-dev")]),
+          domain("et-eval", "eval_d1", "Evaluation", 3, [judgment("f-eval", "et-eval")]),
+        ],
       },
-      extraction_entity_types: [
-        domain("et-scope", "assessment_scope", "Scope", 1, [studyType]),
-        domain("et-dev", "dev_d1", "Development", 2, [judgment("f-dev", "et-dev")]),
-        domain("et-eval", "eval_d1", "Evaluation", 3, [judgment("f-eval", "et-eval")]),
-      ],
     }),
   };
 });
@@ -107,8 +125,8 @@ vi.mock("@prumo/pdf-viewer", async () => {
 });
 
 vi.mock("@/integrations/api", async () => {
-  const { makeApiClientDefault } = await import("./helpers/qaFullScreenMocks");
-  const answer = makeApiClientDefault();
+  const { qaApi } = await import("./helpers/runScreenFixtures");
+  const answer = qaApi();
   return {
     apiClient: vi.fn(async (url: string) => {
       if (url === "/api/v1/hitl/sessions") {
@@ -121,7 +139,7 @@ vi.mock("@/integrations/api", async () => {
       }
       const response = await answer(url);
       return url === "/api/v1/runs/run-1/view"
-        ? { ...response, current_values: fixture.currentValues }
+        ? { ...response, current_values: fixture.currentValues, scope_rules: rules.pinned }
         : response;
     }),
   };
@@ -129,8 +147,8 @@ vi.mock("@/integrations/api", async () => {
 
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 
-import { BLIND_PERMISSIONS } from "./helpers/qaFullScreenMocks";
-import { renderPage } from "./helpers/qaFullScreenRender";
+import { BLIND_PERMISSIONS } from "./helpers/runScreenFixtures";
+import { renderQaPage } from "./helpers/runScreenRender";
 
 const classifiedAs = (studyType: string) => ({
   instance_id: "i-scope",
@@ -144,7 +162,7 @@ const jumpToNextRequired = () => userEvent.keyboard("{Control>}{Enter}{/Control}
 /** A development-only assessment, rendered once the form holds its classification. */
 async function renderDevelopmentOnly(answers: Array<Record<string, unknown>> = []) {
   fixture.currentValues = [classifiedAs("development_only"), ...answers];
-  renderPage();
+  renderQaPage();
   // Precondition: unclassified, nothing is out of scope, and every assertion
   // below would hold or fail for the wrong reason.
   await screen.findByTestId("qa-out-of-scope-eval_d1");
@@ -155,6 +173,12 @@ describe("QualityAssessmentFullScreen — section rail over an out-of-scope doma
     vi.mocked(useComparisonPermissions).mockReturnValue(BLIND_PERMISSIONS);
     // jsdom has no scrollIntoView; the jump scrolls to the row it lands on.
     Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("badges the domains the run's pinned rules take out of scope, not the live ones", async () => {
+    await renderDevelopmentOnly();
+    expect(screen.getByTestId("qa-out-of-scope-eval_d1")).toBeInTheDocument();
+    expect(screen.queryByTestId("qa-out-of-scope-dev_d1")).not.toBeInTheDocument();
   });
 
   it("counts an out-of-scope domain toward neither its own n/N nor the required left", async () => {

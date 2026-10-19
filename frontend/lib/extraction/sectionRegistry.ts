@@ -4,7 +4,6 @@ import type {
   ExtractionEntityTypeWithFields,
   ExtractionField,
   ExtractionInstance,
-  ExtractionValue,
 } from '@/types/extraction';
 
 export type SectionNavState = 'complete' | 'in_progress' | 'empty';
@@ -25,7 +24,7 @@ export interface BuildSectionRegistryArgs {
   /** Every section of the template, so the walk can find children. */
   entityTypes: ExtractionEntityTypeWithFields[];
   instances: ExtractionInstance[];
-  values: Record<string, ExtractionValue>;
+  values: Record<string, unknown>;
   /**
    * Which entry is active in each rendered group, keyed by
    * `entrySlotKey(article, group, parent)`. A group's children are described
@@ -57,7 +56,7 @@ function toState(filled: number, total: number): SectionNavState {
 function sectionItem(
   et: ExtractionEntityTypeWithFields,
   level: number,
-  values: Record<string, ExtractionValue>,
+  values: Record<string, unknown>,
   byType: Map<string, ExtractionInstance[]>,
   parentInstanceId?: string | null,
 ): SectionNavItem {

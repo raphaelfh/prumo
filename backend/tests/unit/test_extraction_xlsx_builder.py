@@ -564,7 +564,7 @@ def test_workbook_emits_sheets_in_section4_order():
                 field_id=fid,
                 label="Design",
                 type=ExtractionFieldType.SELECT,
-                allowed_values=("Cohort", "RCT"),
+                allowed_values=(AllowedValue("Cohort", "Cohort"), AllowedValue("RCT", "RCT")),
             ),
         ),
         cardinality=ExtractionCardinality.ONE,

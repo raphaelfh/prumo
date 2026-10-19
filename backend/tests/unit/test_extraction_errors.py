@@ -23,6 +23,20 @@ class TestClassifyExtractionError:
         # Friendly, actionable copy — not the raw "No PDF for article <uuid>".
         assert message == "PDF not found. Upload a PDF first."
 
+    def test_finalized_run_maps_to_run_finalized(self) -> None:
+        """The run was finalized between enqueue and execution: the typed code
+        and the same friendly copy the kickoff 409 carries, not the raw uuid."""
+        from uuid import uuid4
+
+        from app.services.extraction_run_write import RunFinalizedError, RunWriteError
+
+        code, message = classify_extraction_error(
+            RunWriteError("x", reason="stage", run_id=uuid4(), stage="finalized")
+        )
+        assert code == ExtractionErrorCode.RUN_FINALIZED
+        assert message == RunFinalizedError(None).message
+        assert message == "This article is finalized. Reopen it to run AI again."
+
     def test_missing_llm_key_maps_to_missing_api_key(self) -> None:
         code, message = classify_extraction_error(
             MissingLLMKeyError("No OpenAI API key available: pass a BYOK key.")

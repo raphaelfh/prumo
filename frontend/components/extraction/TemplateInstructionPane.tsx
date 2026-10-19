@@ -62,8 +62,15 @@ export function TemplateInstructionPane({
         toast.success(t("extraction", "instructionSavedToast"));
         onDraftChange(null);
       },
-      onError: () => {
-        toast.error(t("extraction", "errors_saveInstruction"));
+      // The draft is kept: only success clears it. The server's message
+      // (e.g. who holds the draft lock) follows the base copy when present.
+      onError: (err) => {
+        toast.error(
+          `${t("extraction", "errors_saveInstruction")}: ${err instanceof Error && err.message ? err.message : ""}`.replace(
+            /: $/,
+            "",
+          ),
+        );
       },
     });
   };

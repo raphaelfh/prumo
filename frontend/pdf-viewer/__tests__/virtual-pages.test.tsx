@@ -47,7 +47,7 @@ async function renderDocument(numPages: number) {
         <Viewer.Pages>
           {({number}) => (
             <Viewer.Page pageNumber={number}>
-              <CanvasLayer pageNumber={number} />
+              <CanvasLayer />
             </Viewer.Page>
           )}
         </Viewer.Pages>
@@ -167,7 +167,7 @@ describe.each([
           <Viewer.Pages>
             {({number}) => (
               <Viewer.Page pageNumber={number}>
-                <CanvasLayer pageNumber={number} />
+                <CanvasLayer />
               </Viewer.Page>
             )}
           </Viewer.Pages>

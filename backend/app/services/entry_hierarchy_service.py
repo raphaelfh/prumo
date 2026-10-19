@@ -17,22 +17,25 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.core.integrity import violates_constraint
+from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.repositories.extraction_repository import ExtractionInstanceRepository
 from app.schemas.extraction import EntryCreateResponse, ExtractionErrorCode
 from app.services.article_read_service import ArticleNotFoundError, owned_article
-from app.services.entity_key import match_or_none, stamp
+from app.services.entity_key import ENTITY_KEY_UNIQUE_INDEX, match_or_none, stamp
 from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
@@ -42,6 +45,9 @@ from app.services.project_template_active_service import (
     owned_template,
 )
 from app.services.template_section_service import SectionNotFoundError, owned_section
+from app.services.value_contract import ValueContractError
+
+logger = get_logger(__name__)
 
 
 class EntryTargetNotFoundError(Exception):
@@ -165,8 +171,17 @@ class EntryHierarchyService:
             metadata_=metadata,
             created_by=user_id,
         )
-        self.db.add(entry)
-        await self.db.flush()
+        try:
+            # A concurrent creator can pass the pre-check above; the identity
+            # index (0090) refuses the second insert, and the savepoint keeps
+            # the session usable so the reviewer gets the typed 409.
+            async with self.db.begin_nested():
+                self.db.add(entry)
+                await self.db.flush()
+        except IntegrityError as exc:
+            if not violates_constraint(exc, ENTITY_KEY_UNIQUE_INDEX):
+                raise
+            raise EntryKeyDuplicateError(key_value) from exc
 
         await self._materialize_singletons(
             project_id=project_id,
@@ -411,8 +426,18 @@ class EntryHierarchyService:
                 decision="edit",
                 value={"value": value},
             )
-        except InvalidDecisionError:
+        except (InvalidDecisionError, ValueContractError) as exc:
             # The run advanced out of extract between the lookup and the
-            # write. The entry was created fine; losing the prefill must not
-            # 500 the whole creation.
+            # write, or the key text is not a valid value of the key field
+            # (a select key typed as its label). The entry was created fine;
+            # losing the prefill must not fail the whole creation. Ids and
+            # reason only: the key text is reviewer data.
+            details = exc.details if isinstance(exc, ValueContractError) else None
+            logger.info(
+                "entry_key_prefill_skipped",
+                run_id=str(run.id),
+                instance_id=str(instance_id),
+                field_id=str(key_field_id),
+                reason=(details or {}).get("reason", type(exc).__name__),
+            )
             return

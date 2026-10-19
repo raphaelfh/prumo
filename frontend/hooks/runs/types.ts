@@ -4,14 +4,7 @@
  * These mirror the FastAPI schemas in backend/app/schemas/extraction_run.py.
  */
 
-export interface CreateDecisionRequest {
-  instance_id: string;
-  field_id: string;
-  decision: "accept_proposal" | "reject" | "edit";
-  proposal_record_id?: string | null;
-  value?: Record<string, unknown> | null;
-  rationale?: string | null;
-}
+import type {OptionItem} from '@/lib/extraction/options';
 
 export interface CreateConsensusRequest {
   instance_id: string;
@@ -140,7 +133,7 @@ export interface RunViewFieldResponse {
   field_type: string;
   is_required: boolean;
   validation_schema: unknown | null;
-  allowed_values: unknown | null;
+  allowed_values: OptionItem[] | null;
   unit: string | null;
   allowed_units: unknown | null;
   sort_order: number;
@@ -209,6 +202,9 @@ export interface RunViewResponse extends RunDetailResponse {
   ready_count?: number;
   reviewer_count?: number;
   reviewers_ready?: string[];
+  /** Scope rules frozen in the run's pinned template version (QA runs only);
+   * the QA screen's out-of-scope badges read these, never the live template. */
+  scope_rules?: Record<string, unknown> | null;
   /** Computed judgments from the template's derivation spec. Entries with a
    * `target_field_id` are RECOMMENDATIONS (the derived default for that
    * assessor-owned stored field, paired with `rationale_field_id`); entries
@@ -251,6 +247,16 @@ export interface RunViewResponse extends RunDetailResponse {
    * same helper the AI prompts call — so the screen can never show a text the
    * model did not get. Null when the pinned version declares none. */
   general_instructions?: string | null;
+  /** The project's review question this run is PINNED to (null before the
+   * first AI call, or when the review says nothing). */
+  review_question: string | null;
+  /** Protocol revision the pinned question was built from; null when nothing
+   * is pinned yet or the pin predates revisions. */
+  review_question_revision: number | null;
+  /** The project's protocol revision now. */
+  project_protocol_revision: number | null;
+  /** The protocol moved since this run pinned its review question. */
+  review_question_drift: boolean;
 }
 
 /**

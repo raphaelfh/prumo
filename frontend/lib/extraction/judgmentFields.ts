@@ -13,6 +13,8 @@
  * exported workbook agree by construction rather than by convention.
  */
 
+import { normalizeOptions } from "@/lib/extraction/options";
+
 /** Casefolded risk-label vocabulary; mirrors the backend `_RISK_LABELS`. */
 const JUDGMENT_LABELS: ReadonlySet<string> = new Set([
   "critical",
@@ -29,28 +31,16 @@ interface JudgmentCandidate {
   allowed_values?: unknown;
 }
 
-function optionLabels(allowedValues: unknown): string[] {
-  const raw = Array.isArray(allowedValues)
-    ? allowedValues
-    : allowedValues && typeof allowedValues === "object" && "options" in allowedValues
-      ? (allowedValues as { options?: unknown }).options
-      : undefined;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) =>
-      typeof item === "string"
-        ? item
-        : item && typeof item === "object" && "value" in item
-          ? String((item as { value?: unknown }).value ?? "")
-          : "",
-    )
-    .map((label) => label.trim().toLowerCase())
-    .filter((label) => label.length > 0);
+/** Casefolded option VALUES (codes such as `NI`), never labels. */
+function optionCodes(allowedValues: unknown): string[] {
+  return normalizeOptions(allowedValues)
+    .map((o) => o.value.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function isJudgmentField(field: JudgmentCandidate): boolean {
   if (field.field_type !== "select") return false;
-  const labels = optionLabels(field.allowed_values);
+  const labels = optionCodes(field.allowed_values);
   return labels.length > 0 && labels.every((label) => JUDGMENT_LABELS.has(label));
 }
 
@@ -76,6 +66,6 @@ const SIGNALING_LABELS: ReadonlySet<string> = new Set(["y", "py", "pn", "n", "ni
  */
 export function isSignalingSelect(field: JudgmentCandidate): boolean {
   if (field.field_type !== "select") return false;
-  const labels = optionLabels(field.allowed_values);
+  const labels = optionCodes(field.allowed_values);
   return labels.length > 0 && labels.every((label) => SIGNALING_LABELS.has(label));
 }

@@ -27,10 +27,13 @@ import {useMyConnections} from '@/hooks/user/useLlmConnections';
 import {useProjectConnections} from '@/hooks/project/useProjectConnections';
 import {toast} from 'sonner';
 import {SettingsGroup, SettingsPage, SettingsRow, TagInput} from '@/components/settings';
-import type {EligibilityCriteria, StudyDesign} from '@/types/project';
+import type {components} from '@/types/api/schema';
 import type {Json} from '@/integrations/supabase/types';
 import {t} from '@/lib/copy';
 import {HighQualityParsingToggle} from './HighQualityParsingToggle';
+
+type EligibilityCriteria = components['schemas']['EligibilityCriteria'];
+type StudyDesign = components['schemas']['StudyDesign'];
 
 // AdvancedProjectShape mirrors the JSON columns of Project using Json (not narrower
 // domain types) so that Project is assignable here without narrowing casts.
@@ -108,6 +111,7 @@ export function AdvancedSettingsSection({
   const inclusionLabel = t('project', 'advancedInclusionLabel');
   const exclusionLabel = t('project', 'advancedExclusionLabel');
   const studyTypesLabel = t('project', 'advancedCardStudyTypesTitle');
+  const sentToAiHint = t('project', 'advancedSentToAiHint');
 
   const handleDeleteProject = async () => {
     setIsDeleting(true);
@@ -147,34 +151,40 @@ export function AdvancedSettingsSection({
           )}
         </SettingsRow>
 
-        <SettingsRow label={inclusionLabel} htmlFor="advanced-inclusion" align="start">
-          <TagInput
-            id="advanced-inclusion"
-            addLabel={addTo(inclusionLabel)}
-            items={inclusion}
-            onAdd={(value) => onChange({eligibility_criteria: {...eligibility, inclusion: [...inclusion, value]}})}
-            onRemove={(index) =>
-              onChange({eligibility_criteria: {...eligibility, inclusion: inclusion.filter((_, i) => i !== index)}})
-            }
-            placeholder={t('project', 'advancedInclusionPlaceholder')}
-            variant="list"
-            listVariant="neutral"
-          />
+        <SettingsRow label={inclusionLabel} htmlFor="advanced-inclusion" hint={sentToAiHint} align="start">
+          {({describedBy}) => (
+            <TagInput
+              id="advanced-inclusion"
+              aria-describedby={describedBy}
+              addLabel={addTo(inclusionLabel)}
+              items={inclusion}
+              onAdd={(value) => onChange({eligibility_criteria: {...eligibility, inclusion: [...inclusion, value]}})}
+              onRemove={(index) =>
+                onChange({eligibility_criteria: {...eligibility, inclusion: inclusion.filter((_, i) => i !== index)}})
+              }
+              placeholder={t('project', 'advancedInclusionPlaceholder')}
+              variant="list"
+              listVariant="neutral"
+            />
+          )}
         </SettingsRow>
 
-        <SettingsRow label={exclusionLabel} htmlFor="advanced-exclusion" align="start">
-          <TagInput
-            id="advanced-exclusion"
-            addLabel={addTo(exclusionLabel)}
-            items={exclusion}
-            onAdd={(value) => onChange({eligibility_criteria: {...eligibility, exclusion: [...exclusion, value]}})}
-            onRemove={(index) =>
-              onChange({eligibility_criteria: {...eligibility, exclusion: exclusion.filter((_, i) => i !== index)}})
-            }
-            placeholder={t('project', 'advancedExclusionPlaceholder')}
-            variant="list"
-            listVariant="neutral"
-          />
+        <SettingsRow label={exclusionLabel} htmlFor="advanced-exclusion" hint={sentToAiHint} align="start">
+          {({describedBy}) => (
+            <TagInput
+              id="advanced-exclusion"
+              aria-describedby={describedBy}
+              addLabel={addTo(exclusionLabel)}
+              items={exclusion}
+              onAdd={(value) => onChange({eligibility_criteria: {...eligibility, exclusion: [...exclusion, value]}})}
+              onRemove={(index) =>
+                onChange({eligibility_criteria: {...eligibility, exclusion: exclusion.filter((_, i) => i !== index)}})
+              }
+              placeholder={t('project', 'advancedExclusionPlaceholder')}
+              variant="list"
+              listVariant="neutral"
+            />
+          )}
         </SettingsRow>
 
         <SettingsRow label={t('project', 'advancedAdditionalNotesLabel')} htmlFor="eligibility_notes" align="start">
@@ -189,7 +199,7 @@ export function AdvancedSettingsSection({
           />
         </SettingsRow>
 
-        <SettingsRow label={studyTypesLabel} htmlFor="advanced-study-types" hint={t('project', 'advancedCardStudyTypesDesc')} align="start">
+        <SettingsRow label={studyTypesLabel} htmlFor="advanced-study-types" hint={`${t('project', 'advancedCardStudyTypesDesc')} ${sentToAiHint}`} align="start">
           {({describedBy}) => (
             <TagInput
               id="advanced-study-types"

@@ -20,6 +20,7 @@
 import type {TemplateEntityTypeWithFields} from '@/hooks/extraction/useTemplateEntityTypes';
 import type {ExtractionFieldInsert} from '@/types/extraction';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
+import {normalizeOptions, type OptionItem} from '@/lib/extraction/options';
 
 
 /** One section of the captured subtree, in creation order (parents first). */
@@ -42,7 +43,7 @@ interface CapturedField {
   description: string | null;
   fieldType: ExtractionFieldInsert['field_type'];
   isRequired: boolean;
-  allowedValues: string[] | null;
+  allowedValues: OptionItem[] | null;
   unit: string | null;
   allowedUnits: string[] | null;
   /** ✨ AI instruction — present on the raw row; dropping it here made the
@@ -107,27 +108,32 @@ function capture(entityType: TemplateEntityTypeWithFields): CapturedSection {
     entryLabel: entityType.entry_label ?? null,
     fields: [...(entityType.fields ?? [])]
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-      .map((field) => ({
-        name: field.name,
-        label: field.label ?? field.name,
-        description: field.description ?? null,
-        fieldType: field.field_type as ExtractionFieldInsert['field_type'],
-        isRequired: Boolean(field.is_required),
-        allowedValues: field.allowed_values ?? null,
-        unit: field.unit ?? null,
-        allowedUnits: field.allowed_units ?? null,
-        aiInstruction: field.llm_description ?? null,
-        allowOther: Boolean(field.allow_other),
-        otherLabel: field.other_label ?? null,
-        otherPlaceholder: field.other_placeholder ?? null,
-        allowsNotApplicable: Boolean(field.allows_not_applicable),
-        allowsNotEvaluated: Boolean(field.allows_not_evaluated),
-        // Defaults TRUE when absent (migration 0062): dropping it would make
-        // Undo silently switch the marker back ON for every restored field.
-        allowsNoInformation: field.allows_no_information !== false,
-        validationSchema: (field.validation_schema ?? {}) as Record<string, unknown>,
-        sortOrder: field.sort_order ?? 0,
-      })),
+      .map((field) => {
+        const options = normalizeOptions(field.allowed_values);
+        return {
+          name: field.name,
+          label: field.label ?? field.name,
+          description: field.description ?? null,
+          fieldType: field.field_type as ExtractionFieldInsert['field_type'],
+          isRequired: Boolean(field.is_required),
+          // The field POST accepts only {value, label}[]: a legacy row is
+          // replayed in the canonical shape.
+          allowedValues: options.length > 0 ? options : null,
+          unit: field.unit ?? null,
+          allowedUnits: field.allowed_units ?? null,
+          aiInstruction: field.llm_description ?? null,
+          allowOther: Boolean(field.allow_other),
+          otherLabel: field.other_label ?? null,
+          otherPlaceholder: field.other_placeholder ?? null,
+          allowsNotApplicable: Boolean(field.allows_not_applicable),
+          allowsNotEvaluated: Boolean(field.allows_not_evaluated),
+          // Defaults TRUE when absent (migration 0062): dropping it would make
+          // Undo silently switch the marker back ON for every restored field.
+          allowsNoInformation: field.allows_no_information !== false,
+          validationSchema: (field.validation_schema ?? {}) as Record<string, unknown>,
+          sortOrder: field.sort_order ?? 0,
+        };
+      }),
   };
 }
 
@@ -148,7 +154,7 @@ interface ReplayDeps {
     description: string | null;
     field_type: ExtractionFieldInsert['field_type'];
     is_required: boolean;
-    allowed_values: string[] | null;
+    allowed_values: OptionItem[] | null;
     unit: string | null;
     allowed_units: string[] | null;
     llm_description: string | null;

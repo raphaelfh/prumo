@@ -19,10 +19,12 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.endpoints import personal_access_tokens as pat_endpoints
+from app.schemas.mcp_oauth import OAuthConnectionRead
 from app.schemas.personal_access_token import (
     PersonalAccessTokenCreated,
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenRead,
+    TokenStatus,
 )
 from app.services.pat_service import TokenLimitReachedError, TokenNotFoundError
 
@@ -45,11 +47,13 @@ def _read(token_id: UUID | None = None) -> PersonalAccessTokenRead:
         name="cli",
         token_prefix="prumo_pat_abcdef",
         scope="read",
+        ai_run=False,
         status="active",
         expires_at=datetime.now(UTC),
         last_used_at=None,
         revoked_at=None,
         created_at=datetime.now(UTC),
+        project_ids=None,
     )
 
 
@@ -76,6 +80,29 @@ async def test_create_commits_and_carries_trace_id(monkeypatch: pytest.MonkeyPat
     db2 = SimpleNamespace(commit=AsyncMock())
     result2 = await _create(body=_payload(), request=_request(None), db=db2, user_id=CALLER)
     assert result2.trace_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_forwards_ai_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    async def _fake_create_token(_db: object, **kwargs: object) -> PersonalAccessTokenCreated:
+        seen.update(kwargs)
+        return PersonalAccessTokenCreated(token=_read(), secret="prumo_pat_fakefake")
+
+    monkeypatch.setattr(pat_endpoints, "create_token", _fake_create_token)
+    db = SimpleNamespace(commit=AsyncMock())
+    body = PersonalAccessTokenCreateRequest.model_validate(
+        {"name": "agent", "scope": "read_write", "expires_in_days": 30, "ai_run": True}
+    )
+
+    await _create(body=body, request=_request(), db=db, user_id=CALLER)
+
+    payload = seen["payload"]
+    assert isinstance(payload, PersonalAccessTokenCreateRequest)
+    assert payload.ai_run is True
+    assert seen["user_id"] == CALLER
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -129,3 +156,86 @@ async def test_revoke_not_found_is_404_without_commit(monkeypatch: pytest.Monkey
     result = await _revoke(token_id=revoked.id, request=_request(), db=db2, user_id=CALLER)
     assert result.data is revoked
     db2.commit.assert_awaited_once()
+
+
+# --- /me/oauth-connections ----------------------------------------------------
+
+_list_connections = pat_endpoints.list_my_connections.__wrapped__
+_revoke_connection = pat_endpoints.revoke_my_connection.__wrapped__
+
+
+def _connection(status: TokenStatus = "active") -> OAuthConnectionRead:
+    return OAuthConnectionRead(
+        id=uuid4(),
+        client_name="Claude",
+        scope="read_write",
+        ai_run=False,
+        status=status,
+        created_at=datetime.now(UTC),
+        last_used_at=None,
+        expires_at=datetime.now(UTC),
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_connections_carries_trace_id_without_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [_connection(), _connection("revoked")]
+    seen: dict[str, object] = {}
+
+    async def _fake_list(_db: object, **kwargs: object) -> list[OAuthConnectionRead]:
+        seen.update(kwargs)
+        return rows
+
+    monkeypatch.setattr(pat_endpoints, "list_connections", _fake_list)
+    db = SimpleNamespace(commit=AsyncMock())
+
+    result = await _list_connections(request=_request("t1"), db=db, user_id=CALLER)
+    assert result.data == rows
+    assert result.trace_id == "t1"
+    assert seen == {"user_id": CALLER}
+
+    no_trace = await _list_connections(request=_request(None), db=db, user_id=CALLER)
+    assert no_trace.trace_id is None
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_revoke_connection_commits_once_and_returns_the_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revoked = _connection("revoked")
+    seen: dict[str, object] = {}
+
+    async def _fake_revoke(_db: object, **kwargs: object) -> OAuthConnectionRead:
+        seen.update(kwargs)
+        return revoked
+
+    monkeypatch.setattr(pat_endpoints, "revoke_connection", _fake_revoke)
+    db = SimpleNamespace(commit=AsyncMock())
+
+    result = await _revoke_connection(
+        connection_id=revoked.id, request=_request("t2"), db=db, user_id=CALLER
+    )
+    assert result.data is revoked
+    assert result.trace_id == "t2"
+    assert seen == {"user_id": CALLER, "connection_id": revoked.id}
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_revoke_connection_not_found_is_404_without_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_revoke(_db: object, **_kwargs: object) -> OAuthConnectionRead:
+        raise TokenNotFoundError()
+
+    monkeypatch.setattr(pat_endpoints, "revoke_connection", _fake_revoke)
+    db = SimpleNamespace(commit=AsyncMock())
+
+    with pytest.raises(HTTPException) as exc:
+        await _revoke_connection(connection_id=uuid4(), request=_request(), db=db, user_id=CALLER)
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Connection not found"
+    db.commit.assert_not_awaited()

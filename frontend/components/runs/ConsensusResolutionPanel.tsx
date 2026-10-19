@@ -20,17 +20,18 @@ import { t } from '@/lib/copy';
 
 import type { RunDetailResponse } from '@/hooks/runs/types';
 import type { ReviewerSummary } from '@/hooks/runs/useReviewerSummary';
+import { coordKey } from '@/lib/runs/coord';
 
 export interface ConsensusResolutionPanelProps {
   runDetail: RunDetailResponse;
   summary: ReviewerSummary;
   entityTypes: ComparisonEntityType[];
   instances: ComparisonInstance[];
-  /** Form values keyed `${instanceId}_${fieldId}` — the read-only fallback's "You" column. */
+  /** Form values keyed by `coordKey` — the read-only fallback's "You" column. */
   ownValues: Record<string, unknown>;
   reviewerLabelById: Record<string, string>;
   reviewerAvatarById: Record<string, string | null | undefined>;
-  /** Every required template coordKey (`${instance}::${field}`) — drives required gaps + finalize gate. */
+  /** Every required template `coordKey` — drives required gaps + finalize gate. */
   requiredCoords: string[];
   isResolving: boolean;
   isFinalizing: boolean;
@@ -79,7 +80,7 @@ export function ConsensusResolutionPanel({
   const view = deriveConsensusResolution({
     consensusDecisions: runDetail.consensus_decisions,
     publishedCoords: new Set(
-      runDetail.published_states.map((p) => `${p.instance_id}::${p.field_id}`),
+      runDetail.published_states.map((p) => coordKey(p.instance_id, p.field_id)),
     ),
     divergentCoords: summary.divergentCoords,
     decisionCountByCoord: new Map(

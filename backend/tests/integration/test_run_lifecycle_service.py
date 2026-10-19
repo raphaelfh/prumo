@@ -500,7 +500,7 @@ async def test_pending_extract_consensus_finalized_path(
         field_id=SEED.primary_field,
         consensus_user_id=profile_id,
         mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-        value={"value": "lifecycle-test"},
+        value={"value": 7},
         rationale="test_pending_extract_consensus_finalized_path",
     )
 
@@ -743,7 +743,7 @@ async def test_approve_and_finalize_rejects_unresolved_divergence(
         field_id=SEED.primary_field,
         reviewer_id=profile_id,
         decision="edit",
-        value={"value": "M"},
+        value={"value": 1},
     )
     await review.record_decision(
         run_id=run.id,
@@ -751,7 +751,7 @@ async def test_approve_and_finalize_rejects_unresolved_divergence(
         field_id=SEED.primary_field,
         reviewer_id=reviewer_id,
         decision="edit",
-        value={"value": "R"},
+        value={"value": 2},
     )
     await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
 
@@ -770,8 +770,8 @@ async def test_annotated_accept_agrees_with_clean_edit_and_publishes_clean(
     demote the coord to unresolved divergence and brick finalize), and the
     published value carries NO ``verification`` key."""
     from app.models.extraction_workflow import ExtractionProposalSource
-    from app.services.extraction_proposal_service import ExtractionProposalService
     from app.services.extraction_review_service import ExtractionReviewService
+    from tests.integration.conftest import land_ai_proposal
 
     fx = await _fixtures(db_session)
     if fx is None:
@@ -795,12 +795,13 @@ async def test_annotated_accept_agrees_with_clean_edit_and_publishes_clean(
     )
     await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
 
-    proposal = await ExtractionProposalService(db_session).record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=SEED.primary_instance,
         field_id=SEED.primary_field,
         source=ExtractionProposalSource.AI,
-        proposed_value={"value": "42", "verification": {"verdict": "confirmed"}},
+        proposed_value={"value": 42, "verification": {"verdict": "confirmed"}},
     )
     review = ExtractionReviewService(db_session)
     await review.record_decision(
@@ -831,7 +832,7 @@ async def test_annotated_accept_agrees_with_clean_edit_and_publishes_clean(
             {"r": str(run.id)},
         )
     ).scalar_one()
-    assert published_value == {"value": "42"}, (
+    assert published_value == {"value": 42}, (
         f"PublishedState must carry the CLEAN envelope, got {published_value}"
     )
     await db_session.rollback()
@@ -903,10 +904,20 @@ async def test_reopen_carry_over_strips_stale_verification(
         .scalars()
         .all()
     )
-    assert seeded == [{"value": "42"}], (
-        f"the carry-over SYSTEM proposal must be clean, got {seeded}"
-    )
+    assert seeded == [{"value": 42}], f"the carry-over SYSTEM proposal must be clean, got {seeded}"
     await db_session.rollback()
+
+
+async def _give_sample_size_units(db: AsyncSession) -> None:
+    """The seed ``sample_size`` has no unit; the unit-agreement tests need one.
+    The seed template's v1 snapshot is narrow, so the run reads the live row."""
+    await db.execute(
+        text(
+            "UPDATE public.extraction_fields SET unit = 'mg', "
+            'allowed_units = \'["mg", "g"]\'::jsonb WHERE id = :id'
+        ),
+        {"id": str(SEED.primary_field)},
+    )
 
 
 @pytest.mark.asyncio
@@ -936,6 +947,7 @@ async def test_approve_and_finalize_treats_unit_difference_as_divergence(
         ),
         {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
     )
+    await _give_sample_size_units(db_session)
     svc = RunLifecycleService(db_session)
     run = await svc.create_run(
         project_id=project_id,
@@ -1001,6 +1013,7 @@ async def test_approve_and_finalize_publishes_identical_full_envelope(
         ),
         {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
     )
+    await _give_sample_size_units(db_session)
     svc = RunLifecycleService(db_session)
     run = await svc.create_run(
         project_id=project_id,
@@ -1039,7 +1052,8 @@ async def test_approve_and_finalize_publishes_identical_full_envelope(
             {"r": str(run.id)},
         )
     ).scalar()
-    assert published_value == envelope  # full envelope preserved, unit intact
+    # Full envelope preserved, unit intact; the numeric string is stored as a number.
+    assert published_value == {"value": 5, "unit": "mg"}
     await db_session.rollback()
 
 
@@ -1070,6 +1084,7 @@ async def test_approve_and_finalize_real_form_double_wrapped_unit_diverges(
         ),
         {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
     )
+    await _give_sample_size_units(db_session)
     svc = RunLifecycleService(db_session)
     run = await svc.create_run(
         project_id=project_id,
@@ -1124,9 +1139,7 @@ async def test_approve_and_finalize_qa_publishes_agreed_and_finalizes(
     pins that approve-finalize publishes marker envelopes VERBATIM for the QA
     kind ({value: null, absent_reason} — never double-wrapped)."""
     from app.services.extraction_review_service import ExtractionReviewService
-    from tests.integration.test_extraction_proposal_service import (
-        _setup_qa_run_with_instance_field,
-    )
+    from tests.integration.test_proposal_landing import _setup_qa_run_with_instance_field
 
     built = await _setup_qa_run_with_instance_field(db_session)
     if built is None:
@@ -1216,9 +1229,7 @@ async def _qa_run_with_human_proposal(
 
     Returns (run_id, instance_id, field_id, profile_id, newest_proposal_id).
     """
-    from tests.integration.test_extraction_proposal_service import (
-        _setup_qa_run_with_instance_field,
-    )
+    from tests.integration.test_proposal_landing import _setup_qa_run_with_instance_field
 
     built = await _setup_qa_run_with_instance_field(db)
     if built is None:
@@ -1310,7 +1321,16 @@ async def test_qa_materialization_skips_coords_with_existing_decision(
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id, _ = built
 
-    # The reviewer made a REAL decision with a different value — it wins.
+    # The reviewer made a REAL decision with a different value — it wins. A
+    # reviewer write is held to the field's options, so the answer is one.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_fields SET allowed_values = "
+            '\'[{"value": "deliberate answer", "label": "Deliberate"}]\'::jsonb '
+            "WHERE id = :id"
+        ),
+        {"id": str(field_id)},
+    )
     review = ExtractionReviewService(db_session)
     await review.record_decision(
         run_id=run_id,
@@ -1377,14 +1397,15 @@ async def test_qa_materialization_replay_is_noop(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_extraction_advance_does_not_materialize(db_session: AsyncSession) -> None:
-    from tests.integration.test_extraction_proposal_service import (
-        _setup_run_with_instance_field,
-    )
+    from tests.integration.helpers.ai_extraction import run_in_extract
 
-    built = await _setup_run_with_instance_field(db_session)
-    if built is None:
-        pytest.skip("Missing fixtures.")
-    run_id, instance_id, field_id, profile_id = built
+    run = await run_in_extract(db_session)
+    run_id, instance_id, field_id, profile_id = (
+        run.id,
+        SEED.primary_instance,
+        SEED.primary_field,
+        SEED.primary_profile,
+    )
 
     # A stray human proposal on an EXTRACTION run (raw insert — the proposal
     # service's gate blocks human proposals for both kinds).

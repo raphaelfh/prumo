@@ -24,8 +24,9 @@ from app.repositories.extraction_published_state_repository import (
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
-from app.services._extraction_run_lock import load_run_for_update
-from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.extraction_run_write import open_run_for_write
+from app.services.extraction_snapshot import pinned_field
+from app.services.value_contract import canonicalize_value
 from app.services.value_semantics import strip_verification
 
 
@@ -57,18 +58,19 @@ class ExtractionConsensusService:
         selected_decision_id: UUID | None = None,
         value: dict[str, Any] | None = None,
         rationale: str | None = None,
+        enforce_contract: bool = True,
     ) -> tuple[ExtractionConsensusDecision, ExtractionPublishedState]:
-        run = await load_run_for_update(self.db, run_id)
-        if run is None:
-            raise InvalidConsensusError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.CONSENSUS.value:
-            raise InvalidConsensusError(
-                f"Cannot record consensus: run stage is {run.stage}, not 'consensus'"
-            )
+        """Append one consensus decision and publish its value.
 
-        await assert_coords_coherent(
+        ``enforce_contract`` canonicalizes a ``manual_override`` value against
+        the field as the run's template version pins it and refuses an
+        off-contract one (``ValueContractError``, 422). Only a system publish
+        of values already agreed turns it off.
+        """
+        run = await open_run_for_write(
             self.db,
-            run_id=run_id,
+            run_id,
+            expect=ExtractionRunStage.CONSENSUS.only(),
             instance_id=instance_id,
             field_id=field_id,
         )
@@ -128,6 +130,16 @@ class ExtractionConsensusService:
                     "value; use mode='manual_override' to publish an explicit value."
                 )
         else:  # manual_override
+            if enforce_contract:
+                field = await pinned_field(
+                    self.db,
+                    version_id=run.version_id,
+                    template_id=run.template_id,
+                    field_id=field_id,
+                )
+                if field is None:
+                    raise InvalidConsensusError("field is not part of this run's template version")
+                value = canonicalize_value(value, field)
             published_value = value or {}
 
         consensus_record = ExtractionConsensusDecision(

@@ -58,7 +58,7 @@ def _every_sheet_layout() -> ExportLayout:
         field_id=_FIELD_ID,
         label="Risk of bias",
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Low", "High"),
+        allowed_values=(AllowedValue("Low", "Low"), AllowedValue("High", "High")),
     )
     section = SectionDescriptor(
         entity_type_id=_SECTION_ID,

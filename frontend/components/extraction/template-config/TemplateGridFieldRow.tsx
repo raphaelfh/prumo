@@ -336,7 +336,7 @@ export function FieldRow({
             tabIndex={rovingTabIndex(focus, rowId, ['options'])}
             className="flex min-h-6 w-full items-center rounded text-left text-[11px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="truncate">{(field.allowedValues ?? []).join(', ')}</span>
+            <span className="truncate">{(field.allowedValues ?? []).map((o) => o.label).join(', ')}</span>
           </button>
         </td>
       )}

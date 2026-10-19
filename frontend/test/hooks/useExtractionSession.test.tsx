@@ -71,6 +71,10 @@ const RUN_VIEW_FIXTURE: RunViewResponse = {
   entity_types: [],
   current_values: [],
   instances: [],
+  review_question: null,
+  review_question_revision: null,
+  project_protocol_revision: null,
+  review_question_drift: false,
 };
 
 beforeEach(() => {

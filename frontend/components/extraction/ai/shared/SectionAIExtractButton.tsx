@@ -23,6 +23,12 @@ export interface SectionAIExtractButtonProps {
   entityLabel: string;
   runId?: string | null;
   parentInstanceId?: string;
+  /**
+   * The page's project-role gate (a reviewer, consensus or manager whose role
+   * has loaded). Required, with no default: a caller that omits it must not
+   * get the button.
+   */
+  canRunAI: boolean;
   /** Disable + swap the tooltip (e.g. single-cardinality section, no instance). */
   disabled?: boolean;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
@@ -36,6 +42,7 @@ export function SectionAIExtractButton({
   entityLabel,
   runId,
   parentInstanceId,
+  canRunAI,
   disabled = false,
   onExtractionComplete,
 }: SectionAIExtractButtonProps) {
@@ -54,10 +61,11 @@ export function SectionAIExtractButton({
     },
   });
 
-  // Read-only run: no AI extraction affordance at all. The bail sits AFTER
-  // every hook call — an early return above them breaks the rules of hooks
-  // when readOnly flips on a mounted tree (stage starts null).
-  if (readOnly) return null;
+  // No role to run AI, or a read-only run: no AI extraction affordance at
+  // all. The bail sits AFTER every hook call — an early return above them
+  // breaks the rules of hooks when either flips on a mounted tree (the role
+  // and the stage both start unknown).
+  if (!canRunAI || readOnly) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // never toggle a wrapping accordion

@@ -1,15 +1,10 @@
 /**
- * Auto-save user edits on the active Run, with a proper state machine and
- * lifecycle handlers that survive route changes, tab closes, and visibility
- * switches. One write target (D8): every write is a per-reviewer ``edit``
- * decision on ``/runs/{id}/decisions`` (optionally carrying the D0 AI link),
- * for extraction AND quality-assessment runs alike, and only in the editable
- * ``extract`` stage. The old human ``/proposals`` write path is gone — that
- * endpoint remains for AI/system writers only.
- *
- * Used by both Data Extraction and Quality Assessment full-screen
- * pages — anywhere a flat ``Record<`${instanceId}_${fieldId}`, value>``
- * map needs to be persisted on a Run.
+ * The autosave queue under ``useRunValues`` (its only caller): persists a
+ * ``coordKey``-keyed value map on a Run with a state machine and lifecycle
+ * handlers that survive route changes, tab closes, and visibility switches.
+ * Each dirty coordinate goes to the injected ``writeValue`` — the run values'
+ * guarded per-reviewer ``edit`` decision — and only in the editable
+ * ``extract`` stage.
  *
  * State machine:
  *   - ``idle``    nothing dirty, no save in flight
@@ -35,20 +30,20 @@
  * while another is in flight waits for the first batch, recomputes the
  * dirty diff, and writes any trailing edits.
  *
- * Goes straight to ``apiClient`` rather than wrapping a TanStack Query
- * mutation: invalidating ``runs.detail(runId)`` on every debounced
- * tick would trigger a ``GET /runs/{id}`` round-trip per save, which
- * the form doesn't need — local state already shows the typed value
- * and the next natural refetch picks up the freshly written proposals.
+ * Not a TanStack Query mutation: invalidating ``runs.detail(runId)`` on
+ * every debounced tick would trigger a ``GET /runs/{id}`` round-trip per
+ * save, which the form doesn't need — local state already shows the typed
+ * value and the next natural refetch picks up the freshly written decisions.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { writeRunFieldValue, type WriteProposalParams } from '@/services/extractionRunService';
+import type { WriteProposalParams } from '@/services/extractionRunService';
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
 import { fingerprintCoord, selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
+import { coordKey, parseCoordKey } from '@/lib/runs/coord';
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -65,14 +60,14 @@ export interface UseAutoSaveProposalsProps {
    */
   stage?: string | null;
   /**
-   * Server-persisted values per ``${instanceId}_${fieldId}`` (the map the
+   * Server-persisted values per ``coordKey`` (the map the
    * form hydrated from). A coord whose current value still equals its
    * baseline is treated as already saved, so opening a run never re-POSTs
    * loaded values as fresh proposals/decisions on mount.
    */
   baselineValues?: Record<string, unknown>;
   /**
-   * D0 (consensus AI trace): coord key (`${instanceId}_${fieldId}`) →
+   * D0 (consensus AI trace): ``coordKey`` →
    * accepted/selected AI proposal id. When a dirty coord has an entry, its
    * `edit` decision carries `proposal_record_id` so the AI basis survives
    * into the append-only audit trail. Later manual edits keep the link — the
@@ -89,8 +84,8 @@ export interface UseAutoSaveProposalsProps {
    * selection event is recorded.
    */
   baselineLinkByKey?: Record<string, string>;
-  /** Extraction workspace writer; QA retains the default writer. */
-  writeValue?: (params: WriteProposalParams) => Promise<void>;
+  /** Writes one dirty coordinate; rejects when the write failed. */
+  writeValue: (params: WriteProposalParams) => Promise<void>;
   /** Optional authenticated workspace lifetime; never sent to the API. */
   scopeKey?: object;
 }
@@ -139,7 +134,7 @@ const NO_ACKS: Record<string, string> = {};
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600, stage, baselineValues, linkByKey, baselineLinkByKey } =
+  const { runId, values, enabled = true, debounceMs = 600, stage, baselineValues, linkByKey, baselineLinkByKey, writeValue: write } =
     props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -175,7 +170,7 @@ export function useAutoSaveProposals(
   const revisionsRef = useRef<Record<string, number>>({});
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Stringified last successful write per `${instanceId}_${fieldId}`, tagged
+  // Stringified last successful write per ``coordKey``, tagged
   // with the run it describes — the diff check against the current values
   // map. The ref is the live cache updated per write; the state mirror below
   // lets render-phase consumers (dirty badge, hasUnsavedChanges) recompute
@@ -259,7 +254,7 @@ export function useAutoSaveProposals(
         currentBaselineLink,
       );
       const scopedDirty = dirty.filter(([key]) =>
-        (!scope || key === `${scope.instanceId}_${scope.fieldId}`) &&
+        (!scope || key === coordKey(scope.instanceId, scope.fieldId)) &&
         (revisions[key] ?? 0) === (revisionsRef.current[key] ?? 0));
       if (scopedDirty.length === 0) return true;
 
@@ -273,7 +268,7 @@ export function useAutoSaveProposals(
       // error path and leave the diff map inconsistent.
       const batchPromise = Promise.allSettled(
         scopedDirty.map(([key, valueData]) => {
-          const [instanceId, fieldId] = key.split('_');
+          const {instanceId, fieldId} = parseCoordKey(key);
           const {
             value: actualValue,
             unit,
@@ -291,7 +286,7 @@ export function useAutoSaveProposals(
           // run kinds — the run view's reviewer-scoped read
           // (``current_values``) holds on extraction AND QA. The stage gate
           // lives in ``isWritableStage`` above.
-          return (props.writeValue ?? writeRunFieldValue)({
+          return write({
             runId: currentRunId,
             instanceId,
             fieldId,

@@ -13,6 +13,7 @@
 import type { APIRequestContext } from "@playwright/test";
 
 import { authHeaders } from "./api";
+import { contractValue, FIELD_SHAPE_COLUMNS, type FieldShape } from "./field-values";
 import { adminSelect } from "./supabase-admin";
 
 interface FinalizeOpts {
@@ -46,7 +47,7 @@ export async function fillRequiredFieldsAndFinalize(
   };
   const published = new Set<string>(
     (detailBody.data?.published_states ?? []).map(
-      (p) => `${p.instance_id}::${p.field_id}`,
+      (p) => `${p.instance_id}_${p.field_id}`,
     ),
   );
 
@@ -55,22 +56,21 @@ export async function fillRequiredFieldsAndFinalize(
     `select=id,entity_type_id&template_id=eq.${templateId}&article_id=eq.${articleId}&limit=500`,
   );
 
-  // Required field ids per entity type (cached — many instances share a type).
-  const requiredByEntity = new Map<string, string[]>();
+  // Required fields per entity type (cached — many instances share a type).
+  const requiredByEntity = new Map<string, FieldShape[]>();
 
   for (const inst of instances) {
-    let requiredFieldIds = requiredByEntity.get(inst.entity_type_id);
-    if (!requiredFieldIds) {
-      const fields = await adminSelect<{ id: string }>(
+    let requiredFields = requiredByEntity.get(inst.entity_type_id);
+    if (!requiredFields) {
+      requiredFields = await adminSelect<FieldShape>(
         "extraction_fields",
-        `select=id&entity_type_id=eq.${inst.entity_type_id}&is_required=eq.true`,
+        `select=${FIELD_SHAPE_COLUMNS}&entity_type_id=eq.${inst.entity_type_id}&is_required=eq.true`,
       );
-      requiredFieldIds = fields.map((f) => f.id);
-      requiredByEntity.set(inst.entity_type_id, requiredFieldIds);
+      requiredByEntity.set(inst.entity_type_id, requiredFields);
     }
 
-    for (const fieldId of requiredFieldIds) {
-      const coord = `${inst.id}::${fieldId}`;
+    for (const field of requiredFields) {
+      const coord = `${inst.id}_${field.id}`;
       if (published.has(coord)) continue;
       const res = await request.post(
         `${apiUrl}/api/v1/runs/${runId}/consensus`,
@@ -78,9 +78,9 @@ export async function fillRequiredFieldsAndFinalize(
           headers: authHeaders(token, traceId),
           data: {
             instance_id: inst.id,
-            field_id: fieldId,
+            field_id: field.id,
             mode: "manual_override",
-            value: { value: "e2e-required" },
+            value: { value: contractValue(field, "e2e-required") },
             rationale: "E2E: fill required field for the finalize completeness gate",
           },
           timeout: 15000,

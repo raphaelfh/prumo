@@ -14,6 +14,8 @@ import type {
   ExtractionInstance,
 } from '@/types/extraction';
 
+import {normalizeOptions} from '@/lib/extraction/options';
+
 import type {
   RunViewFieldResponse,
   RunViewResponse,
@@ -28,6 +30,7 @@ function fieldFromRunView(
   createdAt: string,
   f: RunViewFieldResponse,
 ): ExtractionField {
+  const options = normalizeOptions(f.allowed_values);
   return {
     id: f.id,
     entity_type_id: entityTypeId,
@@ -37,7 +40,7 @@ function fieldFromRunView(
     field_type: f.field_type as ExtractionFieldType,
     is_required: f.is_required,
     validation_schema: f.validation_schema,
-    allowed_values: f.allowed_values as string[] | null,
+    allowed_values: options.length > 0 ? options : null,
     unit: f.unit,
     allowed_units: f.allowed_units as string[] | null,
     llm_description: f.llm_description,

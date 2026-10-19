@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     AppraisalModel,
     AppraisalRow,
@@ -152,7 +153,7 @@ def _section(name: str, label: str, field_name: str) -> tuple[SectionDescriptor,
         field_id=field_id,
         label="Risk of bias",
         type=ExtractionFieldType.SELECT,
-        allowed_values=("Low", "High", "Unclear"),
+        allowed_values=tuple(AllowedValue(x, x) for x in ("Low", "High", "Unclear")),
         name=field_name,
     )
     return (
@@ -206,7 +207,7 @@ def test_build_appraisal_model_computes_derived_values_from_the_spec() -> None:
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
-        template_schema=spec,
+        rules_by_article={article.article_id: spec},
     )
     assert model is not None
     assert model.derived_labels == ("Overall RoB",)
@@ -262,7 +263,7 @@ def test_recommendation_entries_contribute_no_derived_column() -> None:
         reviewers=(),
         value_map={(run_id, i1, f1.field_id): "High"},
         mode=ExportMode.CONSENSUS,
-        template_schema=spec,
+        rules_by_article={article.article_id: spec},
     )
     assert model is not None
     assert model.derived_labels == ("Overall RoB",)
@@ -294,7 +295,7 @@ def test_export_warns_on_a_dangling_spec_coordinate() -> None:
             reviewers=(),
             value_map={(run_id, i1, f1.field_id): "High"},
             mode=ExportMode.CONSENSUS,
-            template_schema=spec,
+            rules_by_article={article.article_id: spec},
         )
     assert model is not None
     warned = mock_logger.warning.call_args
@@ -325,6 +326,51 @@ def test_export_stays_silent_when_the_spec_resolves() -> None:
             reviewers=(),
             value_map={(run_id, i1, f1.field_id): "High"},
             mode=ExportMode.CONSENSUS,
-            template_schema=spec,
+            rules_by_article={article.article_id: spec},
         )
     assert mock_logger.warning.call_args is None
+
+
+def test_articles_on_different_versions_each_compute_their_own_overalls() -> None:
+    """One export, three pinned rule sets: the columns are every version's
+    overalls in first-seen order, and an article prints blank under an
+    overall its own version does not define (a version without a spec too)."""
+    s1, f1 = _section("d1", "D1", "risk_of_bias")
+    s2, f2 = _section("d2", "D2", "risk_of_bias")
+    run_a, run_b, run_c, i1, i2 = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+    entries = {s1.entity_type_id: (i1,), s2.entity_type_id: (i2,)}
+    article_a, article_b = _article(run_a, entries), _article(run_b, entries)
+    article_c = _article(run_c, entries)
+    value_map: dict[tuple[Any, ...], Any] = {
+        (run, iid, fid): verdict
+        for run in (run_a, run_b, run_c)
+        for iid, fid, verdict in ((i1, f1.field_id, "Low"), (i2, f2.field_id, "High"))
+    }
+
+    def _overall(entry_id: str, label: str, section: str) -> dict[str, Any]:
+        return {
+            "id": entry_id,
+            "label": label,
+            "rule": "worst_domain",
+            "inputs": [{"section": section, "field": "risk_of_bias"}],
+        }
+
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(s1, s2),
+        articles=(article_a, article_b, article_c),
+        reviewers=(),
+        value_map=value_map,
+        mode=ExportMode.CONSENSUS,
+        rules_by_article={
+            article_a.article_id: {"derived_judgments": [_overall("o1", "Overall D1", "d1")]},
+            article_b.article_id: {"derived_judgments": [_overall("o2", "Overall D2", "d2")]},
+        },
+    )
+
+    assert model is not None
+    assert model.derived_labels == ("Overall D1", "Overall D2")
+    assert [r.derived_values for r in model.rows] == [
+        ("Low", None),
+        (None, "High"),
+        (None, None),
+    ]

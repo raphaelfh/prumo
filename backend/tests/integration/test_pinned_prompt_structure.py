@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.extractor import LlmUsage
+from app.llm.prompts import entry_identification
 from app.models.extraction import (
     ExtractionField,
     ExtractionFieldType,
@@ -24,7 +23,8 @@ from app.models.extraction import (
     TemplateKind,
 )
 from app.services.hitl_session_service import HITLSessionService
-from app.services.section_extraction_service import SectionExtractionService
+from tests.fakes.recorded_llm import Call, RecordedLlm
+from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
 from tests.integration.test_extraction_manual_only_flow import _coords
 
 
@@ -118,20 +118,26 @@ async def _fresh_extract_run(db: AsyncSession, fx: tuple) -> ExtractionRun:
     return run
 
 
-def _service(db: AsyncSession, profile_id: UUID) -> SectionExtractionService:
-    service = SectionExtractionService(
-        db=db,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-pinned-structure",
+async def _run(db: AsyncSession, fx: tuple, run: ExtractionRun, **kwargs: object) -> tuple:
+    """Run the request on ``run`` with the model faked; ``(fake, result)``."""
+    project_id, article_id, template_id, profile_id, _instance_id, _field_a_id = fx
+    await seed_article_text(db, project_id=project_id, article_id=article_id)
+    fake = RecordedLlm()
+    result = await extraction(db, fake, user_id=profile_id).run_from_request(
+        request(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            run_id=run.id,
+            **kwargs,
+        )
     )
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE TEXT"
-    )
-    service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
-        return_value=({}, LlmUsage())
-    )
-    return service
+    return fake, result
+
+
+def _descriptions(call: Call) -> dict[str, str | None]:
+    """Field name -> the description the model is shown for it."""
+    return {f.alias or n: f.description for n, f in call.output_model.model_fields.items()}
 
 
 @pytest.mark.asyncio
@@ -190,23 +196,15 @@ async def test_extract_section_prompts_from_pinned_entity_and_intersects_fields(
     )
     await db_session.refresh(run)
 
-    service = _service(db_session, profile_id)
-    await service.extract_section(
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        entity_type_id=entity_type_id,
-        run_id=run.id,
-    )
+    fake, _ = await _run(db_session, fx, run, entity_type_id=entity_type_id)
 
-    kwargs = service._extract_with_llm.call_args.kwargs
-    assert kwargs["entity_type"].name == "PINNED_SECTION_NAME"
-    sent_ids = {f.id for f in kwargs["fields_override"]}
-    assert sent_ids == {field_a_id}, (
+    (call,) = fake.field_calls()
+    assert "PINNED_SECTION_NAME" in call.user_prompt
+    live_name = (await db_session.get(ExtractionField, field_a_id)).name
+    assert call.field_names == [live_name], (
         "must send exactly snapshot ∩ live: ghost dropped, live-only invisible"
     )
-    sent_field = next(iter(kwargs["fields_override"]))
-    assert sent_field.llm_description == "PINNED FIELD INSTRUCTION"
+    assert "PINNED FIELD INSTRUCTION" in _descriptions(call)[live_name]
 
 
 @pytest.mark.asyncio
@@ -263,16 +261,9 @@ async def test_extract_for_run_iterates_the_pinned_top_level_set(
     )
     await db_session.refresh(run)
 
-    service = _service(db_session, profile_id)
-    service._extract_one_entity_type_for_run = AsyncMock(  # type: ignore[method-assign]
-        return_value={"suggestions_created": 0, "tokens_total": 0}
-    )
-    await service.extract_for_run(run_id=run.id, auto_advance_to_review=False)
+    _fake, result = await _run(db_session, fx, run, auto_advance_to_review=False)
 
-    called_ids = {
-        call.kwargs["entity_type"].id
-        for call in service._extract_one_entity_type_for_run.call_args_list
-    }
+    called_ids = {UUID(section["entity_type_id"]) for section in result.sections}
     assert called_ids == {entity_type_id}, (
         "live-only sections must be invisible until published into the pin"
     )
@@ -333,17 +324,14 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
     )
     await db_session.refresh(run)
 
-    service = _service(db_session, profile_id)
-    children = await service._get_child_entity_types(
-        run=run, parent_instance_id=instance_id, section_ids=None
-    )
+    _fake, result = await _run(db_session, fx, run, parent_instance_id=instance_id)
 
-    assert [c.name for c in children] == ["pinned_child"]
+    assert [section["entity_type_name"] for section in result.sections] == ["pinned_child"]
 
 
 @pytest.mark.asyncio
 async def test_entry_identification_uses_pinned_label_and_instruction(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """Entry identification: the group label, entry noun, key field and
     description come from the PINNED tree, and the template-level instruction
@@ -351,11 +339,10 @@ async def test_entry_identification_uses_pinned_label_and_instruction(
 
     Was ``test_model_identification_uses_pinned_label_and_instruction``,
     driving the retired ``ModelExtractionService._identify_models``. The
-    behaviour outlived the service — ``entry_group_extraction`` identifies
-    every repeating group the same way — so the guard moved rather than
-    retiring with the file that happened to hold it (trees B6). It now goes
-    through the PUBLIC seam (``extract_section``), which is what a caller
-    actually reaches.
+    behaviour outlived the service — every repeating group is identified the
+    same way — so the guard moved rather than retiring with the file that
+    happened to hold it (trees B6). It goes through the PUBLIC seam
+    (``run_from_request``), which is what a caller actually reaches.
     """
     fx = await _coords(db_session)
     if fx is None:
@@ -400,32 +387,9 @@ async def test_entry_identification_uses_pinned_label_and_instruction(
     )
     await db_session.refresh(run)
 
-    captured: dict[str, str] = {}
-
-    async def fake_extract_structured(**kwargs):  # noqa: ANN003
-        captured["user_prompt"] = kwargs["user_prompt"]
-        output = MagicMock()
-        output.entries = []
-        return output, LlmUsage()
-
-    monkeypatch.setattr(
-        "app.services.entry_group_extraction.extract_structured",
-        fake_extract_structured,
-    )
-
-    service = _service(db_session, profile_id)
-    # Identification wires its own model — `_extract_with_llm` is stubbed but
-    # `_wire_model` is not, and `build_model` raises without an API key. That
-    # is a CI-only failure: a developer's `.env` supplies the key and the test
-    # passes locally for a reason CI does not have.
-    service._wire_model = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
-    await service.extract_section(
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        entity_type_id=entity_type_id,
-        run_id=run.id,
-    )
+    fake, _ = await _run(db_session, fx, run, entity_type_id=entity_type_id)
+    prompts = fake.prompts(entry_identification.NAME)
+    captured = {"user_prompt": prompts[-1]} if prompts else {}
 
     assert "user_prompt" in captured, (
         "identification never ran — the pinned section must repeat AND declare "
@@ -443,8 +407,8 @@ async def test_entry_identification_uses_pinned_label_and_instruction(
 
 @pytest.mark.asyncio
 async def test_pinned_but_deleted_live_paths(db_session: AsyncSession) -> None:
-    """Both 'pinned but deleted live' branches: extract_section raises the
-    live-path error; the batch helper skips without an LLM call."""
+    """Both 'pinned but deleted live' branches: the single section raises the
+    live-path error; the full-run sweep skips it without a model call."""
     fx = await _coords(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -469,27 +433,14 @@ async def test_pinned_but_deleted_live_paths(db_session: AsyncSession) -> None:
     )
     await db_session.refresh(run)
 
-    service = _service(db_session, profile_id)
     with pytest.raises(ValueError, match="Entity type not found"):
-        await service.extract_section(
-            project_id=project_id,
-            article_id=article_id,
-            template_id=template_id,
-            entity_type_id=ghost_entity_id,
-            run_id=run.id,
-        )
+        await _run(db_session, fx, run, entity_type_id=ghost_entity_id)
 
-    pinned_tree = await service._pinned_entity_types(run)
-    result = await service._extract_one_entity_type_for_run(
-        run=run,
-        entity_type=pinned_tree[0],
-        pdf_text="irrelevant",
-        framework=None,
-        kind="extraction",
-        skip_fields_with_human_proposals=False,
-    )
-    assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
-    service._extract_with_llm.assert_not_called()
+    fake, result = await _run(db_session, fx, run)
+    assert [(s["entity_type_name"], s["skipped"]) for s in result.sections] == [
+        ("ghost_section", True)
+    ]
+    assert fake.calls == []
 
 
 @pytest.mark.asyncio
@@ -541,15 +492,8 @@ async def test_live_rename_carries_live_name_into_the_prompt_bridge(
     )
     await db_session.refresh(run)
 
-    service = _service(db_session, profile_id)
-    await service.extract_section(
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        entity_type_id=entity_type_id,
-        run_id=run.id,
-    )
+    fake, _ = await _run(db_session, fx, run, entity_type_id=entity_type_id)
 
-    sent = service._extract_with_llm.call_args.kwargs["fields_override"]
-    assert [f.name for f in sent] == ["renamed_live"]
-    assert sent[0].llm_description == "PINNED INSTRUCTION"
+    (call,) = fake.field_calls()
+    assert call.field_names == ["renamed_live"]
+    assert "PINNED INSTRUCTION" in _descriptions(call)["renamed_live"]

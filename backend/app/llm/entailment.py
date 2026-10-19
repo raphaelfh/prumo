@@ -12,11 +12,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.models import Model
 
-from app.llm.extractor import extract_structured
+from app.llm.extractor import (
+    LlmUsage,
+    StructuredCall,
+    UsageLedgerWriteError,
+    extract_structured,
+)
+from app.llm.prompts import content_version
 from app.llm.value_support import is_numeric_like, numeric_value_supported
 
 NAME = "entailment_judge"
-VERSION = "1"
 
 _SYSTEM = (
     "You verify attribution. Given a CLAIM and a SOURCE passage, decide whether "
@@ -25,6 +30,15 @@ _SYSTEM = (
     "'unsupported' (the source does not support the claim). Judge only the source "
     "shown; do not use outside knowledge."
 )
+
+_USER_TEMPLATE = (
+    'CLAIM: "{field_label} = {value}"\n\n'
+    'SOURCE:\n"""\n{premise}\n"""\n\n'
+    "Does the SOURCE support the CLAIM?"
+)
+
+#: A content hash: editing either template bumps it automatically.
+VERSION = content_version(_SYSTEM, _USER_TEMPLATE)
 
 AttributionLabel = Literal["entailed", "weak", "unsupported"]
 
@@ -36,14 +50,16 @@ class EntailmentVerdict(BaseModel):
 
 
 async def judge_entailment(
-    *, field_label: str, value: str, premise: str, model: Model
-) -> EntailmentVerdict:
-    user = (
-        f'CLAIM: "{field_label} = {value}"\n\n'
-        f'SOURCE:\n"""\n{premise}\n"""\n\n'
-        "Does the SOURCE support the CLAIM?"
-    )
-    verdict, _usage = await extract_structured(
+    *,
+    field_label: str,
+    value: str,
+    premise: str,
+    model: Model,
+    extract: StructuredCall = extract_structured,
+) -> tuple[EntailmentVerdict, LlmUsage]:
+    """The judge's verdict on one claim, and the call's usage."""
+    user = _USER_TEMPLATE.format(field_label=field_label, value=value, premise=premise)
+    return await extract(
         output_model=EntailmentVerdict,
         system_prompt=_SYSTEM,
         user_prompt=user,
@@ -52,20 +68,26 @@ async def judge_entailment(
         prompt_version=VERSION,
         output_retries=1,
     )
-    return verdict
 
 
 async def gate_evidence(
-    *, field_label: str, value: str, premise: str, model: Model
-) -> AttributionLabel:
+    *,
+    field_label: str,
+    value: str,
+    premise: str,
+    model: Model,
+    extract: StructuredCall = extract_structured,
+) -> tuple[AttributionLabel, LlmUsage]:
     """Numeric-like values must appear deterministically in the premise; then the
-    judge decides entailed vs weak. Non-numeric values are judged directly."""
+    judge decides entailed vs weak. Non-numeric values are judged directly.
+    Returns the label and the judge's usage (zero when the deterministic check
+    short-circuits without a call)."""
     if is_numeric_like(value) and not numeric_value_supported(value, premise):
-        return "unsupported"
-    verdict = await judge_entailment(
-        field_label=field_label, value=value, premise=premise, model=model
+        return "unsupported", LlmUsage()
+    verdict, usage = await judge_entailment(
+        field_label=field_label, value=value, premise=premise, model=model, extract=extract
     )
-    return verdict.label
+    return verdict.label, usage
 
 
 @dataclass
@@ -143,13 +165,16 @@ async def run_entailment_gate(
     logger: Any = None,
     *,
     concurrency: int = 8,
-) -> list[AttributionLabel | None]:
+    extract: StructuredCall = extract_structured,
+) -> tuple[list[AttributionLabel | None], LlmUsage]:
     """Run ``gate_evidence`` concurrently over *specs*; degrade on exception.
 
     Builds the premise for each spec from anchor block context (or falls back
     to the raw evidence quote), then fans out over ``gate_evidence`` with a
     bounded semaphore. Any judge exception leaves the corresponding entry as
-    ``None`` (degrade path — the run never aborts).
+    ``None`` (degrade path — the run never aborts) and contributes no usage;
+    a ``UsageLedgerWriteError`` (an answered call whose ledger row was lost)
+    is raised instead.
 
     Args:
         specs:       One :class:`GateSpec` per field to judge.
@@ -158,11 +183,12 @@ async def run_entailment_gate(
         concurrency: Max concurrent ``gate_evidence`` calls (default 8).
 
     Returns:
-        Per-spec ``AttributionLabel`` or ``None`` when the judge raised.
+        Per-spec ``AttributionLabel`` (``None`` when the judge raised), and
+        the usage summed over the judge calls that answered.
     """
     sem = asyncio.Semaphore(concurrency)
 
-    async def _one(spec: GateSpec) -> AttributionLabel | None:
+    async def _one(spec: GateSpec) -> tuple[AttributionLabel, LlmUsage]:
         premise = _build_premise(spec)
         async with sem:
             return await gate_evidence(
@@ -170,10 +196,15 @@ async def run_entailment_gate(
                 value=spec.value_str,
                 premise=premise,
                 model=model,
+                extract=extract,
             )
 
     raw = await asyncio.gather(*[_one(s) for s in specs], return_exceptions=True)
+    for outcome in raw:
+        if isinstance(outcome, UsageLedgerWriteError):
+            raise outcome  # a lost ledger row is not a judge failure
     results: list[AttributionLabel | None] = []
+    usage = LlmUsage()
     for spec, outcome in zip(specs, raw, strict=True):
         if isinstance(outcome, BaseException):
             if logger is not None:
@@ -184,5 +215,7 @@ async def run_entailment_gate(
                 )
             results.append(None)
         else:
-            results.append(outcome)
-    return results
+            label, call_usage = outcome
+            results.append(label)
+            usage = usage + call_usage
+    return results, usage

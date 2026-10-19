@@ -31,7 +31,7 @@ describe('RunReviewerComparison', () => {
   it('renders one column per reviewer with their (divergent) values', () => {
     const decisionsByCoord = new Map([
       [
-        'i1::f1',
+        'i1_f1',
         [
           decision({ reviewer_id: 'rA', value: { value: 'Retrospective cohort' } }),
           decision({ reviewer_id: 'rB', value: { value: 'Prospective cohort' } }),
@@ -59,7 +59,7 @@ describe('RunReviewerComparison', () => {
     // value) must read as distinct, legible dispositions in the comparison cells.
     const decisionsByCoord = new Map([
       [
-        'i1::f1',
+        'i1_f1',
         [
           decision({ reviewer_id: 'rA', value: { value: null, absent_reason: 'no_information' } }),
           decision({ reviewer_id: 'rB', value: { value: null, absent_reason: 'not_applicable' } }),
@@ -84,7 +84,7 @@ describe('RunReviewerComparison', () => {
 
   it('renders a reject decision as a muted "rejected" cell', () => {
     const decisionsByCoord = new Map([
-      ['i1::f1', [decision({ reviewer_id: 'rA', decision: 'reject', value: null })]],
+      ['i1_f1', [decision({ reviewer_id: 'rA', decision: 'reject', value: null })]],
     ]);
     render(
       <RunReviewerComparison

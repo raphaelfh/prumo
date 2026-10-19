@@ -5,8 +5,10 @@
  * evaluates it by set membership and knows nothing about section naming.
  *
  * Mirrors `scope_classifier_coordinate` / `out_of_scope_sections` in
- * `backend/app/services/derived_judgment_service.py`, which read the same
- * live `schema_` column, so the screen and the payload cannot disagree. The
+ * `backend/app/services/derived_judgment_service.py`. The run form passes the
+ * rules frozen in the run's pinned version (the run view's `scope_rules`), the
+ * ones the backend evaluates for that run, so the screen and the payload
+ * cannot disagree; the worklist dashboard passes the live template's. The
  * `dev_`/`eval_` prefix convention this replaced agreed with the rules only
  * by coincidence on the seeded template, and disagreed outright on a clone
  * whose `schema` predates them: the badge claimed "out of scope" while the
@@ -20,6 +22,7 @@
  * mid-assessment reclassification must be reversible with zero cleanup.
  */
 import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
+import { coordKey } from "@/lib/runs/coord";
 
 function scopeRules(templateSchema: unknown): Record<string, unknown> {
   if (typeof templateSchema !== "object" || templateSchema === null) return {};
@@ -54,8 +57,8 @@ export function outOfScopeSections(
 }
 
 /**
- * The classifier's answer as the RUN FORM holds it — `values` keyed by the
- * page's own `keyOf`, instances resolved per entity type.
+ * The classifier's answer as the RUN FORM holds it — `values` keyed by
+ * `coordKey`, instances resolved per entity type.
  */
 function resolveStudyType(
   templateSchema: unknown,
@@ -65,7 +68,6 @@ function resolveStudyType(
   }>,
   instancesByEntityType: Record<string, string> | undefined,
   values: Record<string, unknown>,
-  keyOf: (instanceId: string, fieldId: string) => string,
 ): unknown {
   const coord = scopeClassifierCoordinate(templateSchema);
   if (!coord) return null;
@@ -73,7 +75,7 @@ function resolveStudyType(
   const field = section?.fields.find((f) => f.name === coord.field);
   const instanceId = section && instancesByEntityType?.[section.entityType.id];
   if (!section || !field || !instanceId) return null;
-  return unwrapValueEnvelope(values[keyOf(instanceId, field.id)]);
+  return unwrapValueEnvelope(values[coordKey(instanceId, field.id)]);
 }
 
 /**
@@ -115,11 +117,10 @@ export function outOfScopeSectionsOnForm(
   }>,
   instancesByEntityType: Record<string, string> | undefined,
   values: Record<string, unknown>,
-  keyOf: (instanceId: string, fieldId: string) => string,
 ): Set<string> {
   return outOfScopeSections(
     templateSchema,
-    resolveStudyType(templateSchema, domains, instancesByEntityType, values, keyOf),
+    resolveStudyType(templateSchema, domains, instancesByEntityType, values),
   );
 }
 

@@ -18,6 +18,7 @@ vi.mock('@/hooks/useProjectMemberRole', () => ({
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
+import {toast} from 'sonner';
 import {AiEngineSection} from '@/components/project/settings/AiEngineSection';
 
 const ok = <T,>(data: T) => HttpResponse.json({ok: true, data});
@@ -34,17 +35,20 @@ const PROVIDERS = [
   {id: 'openai_compatible', label: 'Custom host', description: 'h', docs_url: null, needs_host: true, key_optional: true, scopes: ['user'], global_key_available: false},
 ];
 const SHARED = {id: 's1', scope: 'project', provider: 'llama_cloud', label: 'parsing key', base_url: null, has_api_key: true, allowed_models: [], capabilities: {output_mode: null, models_seen: []}, validation_status: 'unverified', last_validated_at: null, last_used_at: null, created_by_name: 'Alice', created_at: '2026-09-13T00:00:00Z'};
+const POLICY = {agent_runs: 'off', max_articles_per_run: 25, daily_agent_article_cap: 100, updated_at: null, updated_by: null};
 function renderSection() {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
   return render(<QueryClientProvider client={client}><TooltipProvider><AiEngineSection projectId="p1" /></TooltipProvider></QueryClientProvider>);
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   role.isManager = true;
   server.use(
     http.get('*/api/v1/projects/p1/llm-engine', () => ok(READ)),
     http.get('*/api/v1/me/providers', () => ok(PROVIDERS)),
     http.get('*/api/v1/projects/p1/connections', () => ok([SHARED])),
+    http.get('*/api/v1/projects/p1/ai-policy', () => ok(POLICY)),
   );
 });
 
@@ -207,5 +211,118 @@ describe('AiEngineSection', () => {
     const cancel = screen.getByRole('button', {name: t('llmConnections', 'cancelButton')});
     expect(cancel).toHaveClass('hover:bg-accent');
     expect(cancel).not.toHaveClass('bg-primary');
+  });
+
+  describe('AI agents policy group', () => {
+    const agentsGroup = () =>
+      screen.getByRole('heading', {name: t('llmConnections', 'agentsTitle')}).closest('.border-t') as HTMLElement;
+    const runsName = t('llmConnections', 'agentRunsLabel');
+    const perRunName = t('llmConnections', 'maxArticlesLabel');
+    const dailyName = t('llmConnections', 'dailyCapLabel');
+    const saveName = t('llmConnections', 'agentsSaveButton');
+
+    it('shows a skeleton inside its group while the policy loads', async () => {
+      server.use(http.get('*/api/v1/projects/p1/ai-policy', async () => { await delay(50); return ok(POLICY); }));
+      renderSection();
+      expect(agentsGroup().contains(screen.getByTestId('ai-agents-skeleton'))).toBe(true);
+      expect(await within(agentsGroup()).findByRole('combobox', {name: runsName})).toBeInTheDocument();
+      expect(screen.queryByTestId('ai-agents-skeleton')).not.toBeInTheDocument();
+    });
+
+    it('a load error shows inline with a Retry that refetches', async () => {
+      let hits = 0;
+      server.use(http.get('*/api/v1/projects/p1/ai-policy', () => {
+        hits += 1;
+        return hits === 1 ? HttpResponse.json({ok: false, error: {code: 'X', message: 'boom'}}, {status: 500}) : ok(POLICY);
+      }));
+      renderSection();
+      expect(await within(agentsGroup()).findByText(t('llmConnections', 'agentsLoadError'))).toBeInTheDocument();
+      await userEvent.click(within(agentsGroup()).getByRole('button', {name: t('llmConnections', 'retry')}));
+      expect(await within(agentsGroup()).findByRole('combobox', {name: runsName})).toBeInTheDocument();
+      expect(hits).toBe(2);
+    });
+
+    it('the defaults read Off, 25 per run and 100 per day', async () => {
+      renderSection();
+      const runs = await within(agentsGroup()).findByRole('combobox', {name: runsName});
+      expect(runs).toHaveTextContent(t('llmConnections', 'agentRunsOff'));
+      expect(within(agentsGroup()).getByRole('spinbutton', {name: perRunName})).toHaveValue(25);
+      expect(within(agentsGroup()).getByRole('spinbutton', {name: dailyName})).toHaveValue(100);
+    });
+
+    it('a non-manager sees the values read-only, with no inputs and no Save', async () => {
+      role.isManager = false;
+      server.use(http.get('*/api/v1/projects/p1/ai-policy', () => ok({...POLICY, agent_runs: 'reviewers', max_articles_per_run: 10})));
+      renderSection();
+      expect(await within(agentsGroup()).findByText(t('llmConnections', 'agentRunsReviewers'))).toBeInTheDocument();
+      expect(within(agentsGroup()).getByText('10')).toBeInTheDocument();
+      expect(within(agentsGroup()).getByText('100')).toBeInTheDocument();
+      expect(within(agentsGroup()).queryByRole('combobox')).not.toBeInTheDocument();
+      expect(within(agentsGroup()).queryByRole('spinbutton')).not.toBeInTheDocument();
+      expect(within(agentsGroup()).queryByRole('button', {name: saveName})).not.toBeInTheDocument();
+    });
+
+    it('a manager edits; Save PUTs all three fields and the group renders the saved policy', async () => {
+      const puts: unknown[] = [];
+      let stored: Record<string, unknown> = POLICY;
+      server.use(
+        http.get('*/api/v1/projects/p1/ai-policy', () => ok(stored)),
+        http.put('*/api/v1/projects/p1/ai-policy', async ({request}) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          puts.push(body);
+          // The server's stored row is the truth: its value, not the typed one, must render.
+          stored = {...POLICY, ...body, daily_agent_article_cap: 150, updated_at: '2026-10-19T00:00:00Z'};
+          return ok(stored);
+        }),
+      );
+      renderSection();
+      await userEvent.click(await within(agentsGroup()).findByRole('combobox', {name: runsName}));
+      await userEvent.click(screen.getByRole('option', {name: t('llmConnections', 'agentRunsManagers')}));
+      const perRun = within(agentsGroup()).getByRole('spinbutton', {name: perRunName});
+      await userEvent.clear(perRun);
+      await userEvent.type(perRun, '10');
+      const daily = within(agentsGroup()).getByRole('spinbutton', {name: dailyName});
+      await userEvent.clear(daily);
+      await userEvent.type(daily, '200');
+      await userEvent.click(within(agentsGroup()).getByRole('button', {name: saveName}));
+
+      await waitFor(() => expect(puts).toEqual([{agent_runs: 'managers', max_articles_per_run: 10, daily_agent_article_cap: 200}]));
+      await waitFor(() => expect(within(agentsGroup()).getByRole('spinbutton', {name: dailyName})).toHaveValue(150));
+      expect(within(agentsGroup()).getByRole('combobox', {name: runsName})).toHaveTextContent(t('llmConnections', 'agentRunsManagers'));
+      expect(within(agentsGroup()).getByRole('spinbutton', {name: perRunName})).toHaveValue(10);
+      expect(toast.success).toHaveBeenCalledWith(t('llmConnections', 'agentsSaveSuccess'));
+    });
+
+    it('an out-of-range value blocks the save with an inline message', async () => {
+      const puts: unknown[] = [];
+      server.use(http.put('*/api/v1/projects/p1/ai-policy', async ({request}) => { puts.push(await request.json()); return ok(POLICY); }));
+      renderSection();
+      const perRun = await within(agentsGroup()).findByRole('spinbutton', {name: perRunName});
+      await userEvent.clear(perRun);
+      await userEvent.type(perRun, '101');
+      await userEvent.click(within(agentsGroup()).getByRole('button', {name: saveName}));
+
+      expect(await within(agentsGroup()).findByText(t('llmConnections', 'maxArticlesRange'))).toBeInTheDocument();
+      expect(perRun).toHaveAttribute('aria-invalid', 'true');
+      expect(puts).toEqual([]);
+    });
+
+    it('Save is disabled while the PUT is pending', async () => {
+      server.use(http.put('*/api/v1/projects/p1/ai-policy', async () => { await delay('infinite'); return ok(POLICY); }));
+      renderSection();
+      await within(agentsGroup()).findByRole('combobox', {name: runsName});
+      const save = within(agentsGroup()).getByRole('button', {name: saveName});
+      expect(save).not.toBeDisabled();
+      await userEvent.click(save);
+      expect(await within(agentsGroup()).findByRole('button', {name: t('llmConnections', 'saving')})).toBeDisabled();
+    });
+
+    it('a failed PUT toasts the save error', async () => {
+      server.use(http.put('*/api/v1/projects/p1/ai-policy', () => HttpResponse.json({ok: false, error: {code: 'FORBIDDEN', message: 'no'}}, {status: 403})));
+      renderSection();
+      await within(agentsGroup()).findByRole('combobox', {name: runsName});
+      await userEvent.click(within(agentsGroup()).getByRole('button', {name: saveName}));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('llmConnections', 'agentsSaveError')));
+    });
   });
 });

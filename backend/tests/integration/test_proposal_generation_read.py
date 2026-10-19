@@ -50,7 +50,13 @@ async def _generation(db):
             "system_prompt": "Retained system prompt",
             "section_instruction": "Retained instructions",
             "fields_requested": ["sample_size"],
-            "article_ref": {"file_id": str(uuid4()), "file_name": "input.pdf", "truncated": False},
+            "article_ref": {
+                "file_id": str(uuid4()),
+                "file_name": "input.pdf",
+                "truncated": False,
+                "content_version": 3,
+                "text_sha256": "ab" * 32,
+            },
         },
     }
     await db.flush()
@@ -78,6 +84,8 @@ async def test_immutable_generation_across_history_hot_and_run_detail(db_session
         == proposal.generation_snapshot["prompt_composition"]["article_ref"]["file_id"]
     )
     assert ref["historical_input_available"] is False
+    # The article version and text hash prove which input the call saw.
+    assert (ref["content_version"], ref["text_sha256"]) == (3, "ab" * 32)
     await _seed_run_provenance(
         db_session, rid, {"model": "later-model", "prompt_version": "v99", "tokens": {"total": 999}}
     )

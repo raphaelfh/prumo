@@ -1,10 +1,11 @@
 import {Fragment} from "react";
-import {Navigate} from "react-router";
+import {Navigate, useLocation} from "react-router";
 import {useAuth} from "@/contexts/AuthContext";
 import {t} from "@/lib/copy";
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -18,7 +19,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return (
+      <Navigate
+        to="/auth"
+        replace
+        state={{from: `${location.pathname}${location.search}${location.hash}`}}
+      />
+    );
   }
 
   // The account is part of the subtree's identity, so a change of account

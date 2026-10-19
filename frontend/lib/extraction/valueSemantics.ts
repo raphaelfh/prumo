@@ -90,7 +90,7 @@ export function isValueFilled(raw: unknown): boolean {
  * `{value}` envelope around the form-shaped editor output, EXCEPT a resolved
  * disposition marker, which is already the flat envelope
  * `{ value: null, absent_reason }` and must not be double-wrapped (mirrors the
- * `writeRunFieldValue` write contract; an out-of-vocabulary reason is not a
+ * `useRunValues` write contract; an out-of-vocabulary reason is not a
  * marker and gets wrapped like any other object).
  */
 export function toConsensusValueEnvelope(editorOutput: unknown): Record<string, unknown> {

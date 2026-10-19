@@ -345,7 +345,7 @@ async def test_partial_unique_index_blocks_second_active_extraction_template(
     ``uq_one_active_extraction_template_per_project`` rejects any direct
     INSERT/UPDATE that would leave the project with two active extraction
     templates. Catches future callers that bypass
-    ``TemplateCloneService.clone`` (e.g. ad-hoc Supabase inserts).
+    ``template_versioning.clone_template`` (e.g. ad-hoc Supabase inserts).
     """
     article = await _pick_article(db_session)
     if article is None:

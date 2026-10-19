@@ -36,9 +36,9 @@ their rationales and the Step-4 summaries are assessor-owned: they carry no
 ``llm_description`` and their spec pointers exclude them from every LLM call.
 
 NA is restricted to the instrument's four conditional (asterisked) items —
-six field rows after triplication. Step 1 (the review's PICOTS) lives in the
-project template's ✨ instruction, which reaches every AI call as general
-instructions and is the reference for the applicability judgments.
+six field rows after triplication. Step 1 (the review's PICOTS) is the
+project's review question, which reaches every AI call as the "Review question
+and scope" block and is the reference for the applicability judgments.
 
 2.1.0 (spec 2026-08-26) makes the Step-2 classification load-bearing and puts
 the instrument's own scale back on one control:
@@ -67,9 +67,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ExtractionTemplateGlobal,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.seed import (
     _PROBAST_JUDGMENT,
@@ -230,7 +230,7 @@ def _rationale(
 
 def _applicability(eid: UUID, official_text: str, aspect: str, sort: int) -> ExtractionField:
     """Applicability: a direct Low/High/Unclear judgment against the Step-1
-    PICOTS (the project template's ✨ instruction) — AI-proposable."""
+    PICOTS (the "Review question and scope" block) — AI-proposable."""
     return _field(
         eid,
         _F_APPLICABILITY,
@@ -243,7 +243,7 @@ def _applicability(eid: UUID, official_text: str, aspect: str, sort: int) -> Ext
             "Applicability judgment (not aggregated from signaling questions): "
             f"judge whether {aspect} match the review question and the "
             "assessor's intended use of the prediction model, as stated in the "
-            "review's general instructions (the Step-1 PICOTS). Answer Low or "
+            "review question and scope (the Step-1 PICOTS). Answer Low or "
             "High, and Unclear when the article gives too little to judge."
         ),
     )
@@ -258,7 +258,7 @@ def _applicability_rationale(eid: UUID, aspect: str, sort: int) -> ExtractionFie
         llm=(
             "Rationale for the applicability judgment: summarise, citing the "
             f"article, how {aspect} match or diverge from the review question "
-            "in the general instructions."
+            "and scope."
         ),
     )
 
@@ -642,7 +642,7 @@ async def _catalogue_is_referenced(session: AsyncSession) -> bool:
     make the replace below raise on ``extraction_instances``' RESTRICT FK.
     Checking instances is sufficient: every proposal / decision / published
     state hangs off an instance whose coordinate coherence is enforced
-    (``assert_coords_coherent``), so none of them can reach a global field
+    (``open_run_for_write``), so none of them can reach a global field
     without an instance reaching a global entity type first.
     """
     referenced = (
@@ -715,9 +715,10 @@ async def seed_probast_ai(session: AsyncSession) -> None:
         )
 
     # ``llm_template_instruction`` is deliberately NOT written here: it is the
-    # manager-customized ✨ text, seeded fill-if-null by
+    # manager-customized ✨ text, seeded (and a retired default replaced) by
     # ``backfill_llm_template_instructions``. Converging must not clobber it.
     template.name = "PROBAST+AI"
+    template.instrument = "probast_ai"
     template.description = _DESCRIPTION
     template.framework = "CUSTOM"
     template.version = "2.2.0"

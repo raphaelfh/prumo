@@ -16,10 +16,8 @@
  *     value") + a typed override editor, and a resolved-value summary. Still
  *     presentational — every mutation is a caller callback.
  *
- * Coordinate-key contract: peer decisions are keyed `${instanceId}::${fieldId}`
- * (double colon, from `useReviewerSummary`); the caller's own values are keyed
- * `${instanceId}_${fieldId}` (single underscore, the form's map). This component
- * is the single place that bridges the two.
+ * Peer decisions, the caller's own values and the AI suggestions are all keyed
+ * by `coordKey` (lib/runs/coord).
  */
 
 import { useState } from 'react';
@@ -37,6 +35,7 @@ import type { DispositionRowField } from '@/components/extraction/DispositionRow
 import { ReviewerAITrace } from '@/components/runs/ReviewerAITrace';
 import { FieldAITrace } from '@/components/runs/FieldAITrace';
 import type { FieldValueEditorField } from '@/components/extraction/FieldValueEditor';
+import { coordKey } from '@/lib/runs/coord';
 import type { CoordStatus, ResolvedConsensusLike } from '@/lib/runs/reconciliation';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
 import { buildPeerAdoptionMap } from '@/lib/runs/adoption';
@@ -92,7 +91,7 @@ export interface ConsensusTraceContext {
   articleId: string;
   getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   /**
-   * Screen's suggestions map keyed `${instanceId}_${fieldId}` — the
+   * Screen's suggestions map keyed by `coordKey` — the
    * AI-existence signal. `null` while suggestions are loading/failed so a
    * transient error can't mislabel a coord as having no AI.
    */
@@ -135,11 +134,11 @@ export interface ComparisonResolution {
 }
 
 export interface RunReviewerComparisonProps {
-  /** `${instanceId}::${fieldId}` → latest decision per distinct reviewer. */
+  /** `coordKey` → latest decision per distinct reviewer. */
   decisionsByCoord: Map<string, ReviewerDecisionResponse[]>;
   entityTypes: ComparisonEntityType[];
   instances: ComparisonInstance[];
-  /** Caller's own values, keyed `${instanceId}_${fieldId}`. Read-only mode only. */
+  /** Caller's own values, keyed by `coordKey`. Read-only mode only. */
   ownValues: Record<string, unknown>;
   reviewerLabelById: Record<string, string>;
   reviewerAvatarById: Record<string, string | null | undefined>;
@@ -154,8 +153,6 @@ export interface RunReviewerComparisonProps {
   aiTrace?: ConsensusTraceContext;
 }
 
-const peerKey = (instanceId: string, fieldId: string) => `${instanceId}::${fieldId}`;
-const ownKey = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
 
 /**
  * Build the per-field trace slot (D1) for one coord. Renders the endorsement-
@@ -171,7 +168,7 @@ function fieldTraceSlot(
   reviewerLabelById: Record<string, string>,
 ): React.ReactNode {
   if (!aiTrace) return null;
-  const key = ownKey(instanceId, field.id);
+  const key = coordKey(instanceId, field.id);
   const hasAISuggestion = aiTrace.aiSuggestions ? !!aiTrace.aiSuggestions[key] : null;
   // Fail fast before building the peer-adoption map: most coords have no AI
   // proposal, and FieldAITrace renders nothing for them anyway.
@@ -356,13 +353,13 @@ export function RunReviewerComparison({
           {entityTypes.map((et) =>
             (instancesByEntityType.get(et.id) ?? []).map((inst) =>
               et.fields.map((field) => {
-                const peers = decisionsByCoord.get(peerKey(inst.id, field.id)) ?? [];
+                const peers = decisionsByCoord.get(coordKey(inst.id, field.id)) ?? [];
                 const fieldLabel = field.label ?? field.name ?? field.id;
                 const entityLabel =
                   (et.label ?? et.name ?? '') + (inst.label ? ` · ${inst.label}` : '');
                 return (
                   <tr
-                    key={`${inst.id}_${field.id}`}
+                    key={coordKey(inst.id, field.id)}
                     className="border-b border-border/30 align-top"
                   >
                     <FieldLabelCell
@@ -370,7 +367,7 @@ export function RunReviewerComparison({
                       fieldLabel={fieldLabel}
                       traceSlot={fieldTraceSlot(aiTrace, inst.id, field, peers, reviewerLabelById)}
                     />
-                    <td className="px-3 py-2">{displayValue(ownValues[ownKey(inst.id, field.id)])}</td>
+                    <td className="px-3 py-2">{displayValue(ownValues[coordKey(inst.id, field.id)])}</td>
                     {reviewerIds.map((rid) => {
                       const decision = peers.find((d) => d.reviewer_id === rid);
                       return (
@@ -436,7 +433,7 @@ function ResolveTable({
         const entityLabel =
           (et.label ?? et.name ?? '') + (inst.label ? ` · ${inst.label}` : '');
         rows.push({
-          coordKey: peerKey(inst.id, field.id),
+          coordKey: coordKey(inst.id, field.id),
           entityLabel,
           fieldLabel: field.label ?? field.name ?? field.id,
           instanceId: inst.id,
@@ -640,7 +637,7 @@ function ResolveRow({
                         })}
                         hasAISuggestion={
                           aiTrace.aiSuggestions
-                            ? !!aiTrace.aiSuggestions[ownKey(row.instanceId, row.field.id)]
+                            ? !!aiTrace.aiSuggestions[coordKey(row.instanceId, row.field.id)]
                             : null
                         }
                       />

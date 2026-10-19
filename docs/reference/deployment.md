@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-14
 owner: '@raphaelfh'
 ---
 
@@ -109,9 +109,15 @@ pass it inline (`DATABASE_URL=... uv run ...`), never by editing
 | Service | Key | Value |
 | --- | --- | --- |
 | `web` | `CORS_ORIGINS` | Comma-separated allow-list that **extends** the always-allowed defaults baked into [`backend/app/core/config.py`](../../backend/app/core/config.py) (already pins `prumoai.vercel.app` + localhost). The live value lives in the Railway `web` env — the running env is the source of truth, not this table. |
+| `web` | `PUBLIC_APP_URL` | Public origin of the web app, used for links in agent results (`editor_url`). Default `https://prumoai.vercel.app`; production leaves it unset, so the default applies. There is no staging environment today; one would set its own origin here. |
 | `web` | `MCP_ALLOWED_HOSTS` | Comma-separated `Host` allow-list for the `/mcp` mount (`web-production-48b398.up.railway.app` in production). Default `localhost:*,127.0.0.1:*,[::1]:*,test`; a host not listed gets 421, so leaving it unset in production fails closed. |
 | `web` | `MCP_ALLOWED_ORIGINS` | Comma-separated browser `Origin` allow-list for `/mcp`. Default empty: no browser origin may call it (CLI agents send no `Origin` and pass). |
+| `web` | `MCP_MAX_INFLIGHT_PER_TOKEN` | Concurrent `/mcp` requests per token per process (default 4, half the default web pool of 8, so one token cannot hold every connection); over it the request gets 429 with `Retry-After: 1`. Keep it at most half of `DB_POOL_SIZE` + `DB_MAX_OVERFLOW`. |
+| `web` | `DB_POOL_SIZE` | Web engine pool size (default 5; at least 1). Rule: web `DB_POOL_SIZE` + `DB_MAX_OVERFLOW` + the worker's connections stay at or below the pooler client cap. Production uses the Supabase pooler in session mode, capped at 15 clients: defaults give web 5 + 3 = 8, worker 2 children x up to 2 sessions = 4 (an assumption: no setting caps sessions per task), total 12, leaving 3 for migrations and admin sessions. Raising web or worker concurrency means re-doing this sum. |
+| `web` | `DB_MAX_OVERFLOW` | Connections the web pool may open beyond `DB_POOL_SIZE` under load (default 3; 0 gives a fixed-size pool); counts toward the pooler cap above. |
+| `web` | `DB_POOL_TIMEOUT` | Seconds a request waits for a pooled connection (default 10). Past it, or when the database refuses or drops the connection, `/mcp` answers 503 with `Retry-After: 2`, during the token lookup or the tool call alike. |
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
+| `web` | `RATE_LIMIT_STORAGE_URI` | `${{Redis.REDIS_URL}}` (reference variable). Unset falls back to `memory://`, which is per process: limits then reset on restart and are not shared across instances. |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
 
 ### Feedback / Linear

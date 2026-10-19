@@ -15,14 +15,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$ROOT/backend"
-uv run python - <<'PY' > "$ROOT/frontend/types/api/openapi.json"
+# The script writes the file itself: importing the app logs to stdout, so a
+# shell redirect would prepend log lines to the JSON.
+OPENAPI_OUT="$ROOT/frontend/types/api/openapi.json" uv run python - <<'PY'
 import json
+import os
+from pathlib import Path
 
 from app.main import app
 
 # sort_keys keeps the dump deterministic so the CI no-diff check is
 # byte-stable across runs.
-print(json.dumps(app.openapi(), indent=2, sort_keys=True))
+Path(os.environ["OPENAPI_OUT"]).write_text(
+    json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
 PY
 
 cd "$ROOT"

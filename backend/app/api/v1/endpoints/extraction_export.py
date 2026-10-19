@@ -24,6 +24,7 @@ from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import JSONResponse
 from redis import Redis
 
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.error_handler import AuthorizationError, NotFoundError
 from app.core.factories import create_storage_adapter
@@ -47,7 +48,7 @@ from app.services.extraction_export_service import (
     ExtractionExportService,
 )
 from app.utils.rate_limiter import limiter
-from app.worker.celery_app import REDIS_URL
+from app.worker import queue_health
 from app.worker.tasks.extraction_export_tasks import export_extraction_task
 
 router = APIRouter()
@@ -72,22 +73,10 @@ _EXPORT_OWNER_TTL_SECONDS = 3600
 # ----------------------------------------------------------------------
 
 
-def _is_queue_available() -> bool:
-    try:
-        Redis.from_url(
-            REDIS_URL,
-            socket_connect_timeout=0.25,
-            socket_timeout=0.25,
-        ).ping()
-        return True
-    except Exception:
-        return False
-
-
 def _remember_export_owner(job_id: str, user_id: str) -> None:
     with contextlib.suppress(Exception):
         Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).set(
@@ -101,7 +90,7 @@ def _lookup_export_owner(job_id: str) -> str | None:
     raw: object = None
     with contextlib.suppress(Exception):
         raw = Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).get(f"{_EXPORT_OWNER_KEY_PREFIX}{job_id}")
@@ -261,7 +250,7 @@ async def start_extraction_export(
         )
 
     # --- async path -------------------------------------------------------
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return _envelope_failure(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             code="SERVICE_UNAVAILABLE",

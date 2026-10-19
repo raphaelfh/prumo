@@ -177,10 +177,7 @@ async def verify_supabase_jwt(
     """
     token = credentials.credentials
 
-    logger.debug(
-        "jwt_validation_start",
-        token_prefix=token[:20] if len(token) > 20 else token,
-    )
+    logger.debug("jwt_validation_start")
 
     try:
         # Decodificar header sem verificar for pegar algoritmo
@@ -292,7 +289,6 @@ async def verify_supabase_jwt(
             "jwt_validation_error",
             error=str(e),
             error_type=type(e).__name__,
-            token_prefix=token[:20] if len(token) > 20 else token,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

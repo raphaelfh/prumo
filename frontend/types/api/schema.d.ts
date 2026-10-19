@@ -152,11 +152,10 @@ export interface paths {
         put?: never;
         /**
          * Post Form Runs
-         * @description Resolve the latest relevant run per article for the extraction form.
-         *
-         *     Per article: returns the latest non-terminal run; falls back to the
-         *     latest finalized run; returns run_id=null when no run exists.
-         *     Cancelled runs are excluded. BOLA-gated via project_id in the body.
+         * @description Each article's resolved run for the extraction form (live, else
+         *     finalized; run_id=null when none — ``app.services.current_run``).
+         *     BOLA-gated via project_id in the body, which also scopes the resolution:
+         *     a member of P passing Q's article ids reads back no Q run ids.
          */
         post: operations["post_form_runs_api_v1_articles_form_runs_post"];
         delete?: never;
@@ -415,7 +414,7 @@ export interface paths {
         head?: never;
         /**
          * Rename or re-key one extraction instance
-         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.
+         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history. A re-key onto an identity a sibling already holds answers a typed 409 ENTRY_KEY_DUPLICATE and changes nothing.
          */
         patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
         trace?: never;
@@ -574,6 +573,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/oauth-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Connections */
+        get: operations["list_my_connections_api_v1_me_oauth_connections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/oauth-connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke My Connection */
+        delete: operations["revoke_my_connection_api_v1_me_oauth_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/providers": {
         parameters: {
             query?: never;
@@ -626,6 +659,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/oauth/requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Consent Request */
+        get: operations["read_consent_request_api_v1_oauth_requests__request_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/requests/{request_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Consent Request */
+        post: operations["decide_consent_request_api_v1_oauth_requests__request_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -664,8 +731,34 @@ export interface paths {
          *
          *     Returning the re-read model (rather than echoing the request) is what makes
          *     the preview trustworthy: it is rendered from what was actually stored.
+         *     A stale ``expected_revision`` raises ``StaleProtocolRevisionError`` (409,
+         *     via the global handler) before anything is written.
          */
         put: operations["update_ai_context_api_v1_projects__project_id__ai_context_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/ai-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ai Policy
+         * @description The project's AI agents policy; an unset policy reads as the defaults.
+         */
+        get: operations["read_ai_policy_api_v1_projects__project_id__ai_policy_get"];
+        /**
+         * Update Ai Policy
+         * @description Replace the project's AI agents policy and return what was stored.
+         */
+        put: operations["update_ai_policy_api_v1_projects__project_id__ai_policy_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1428,7 +1521,8 @@ export interface paths {
          *     Whitespace-only normalizes to NULL (nothing injected). Nothing
          *     republishes here — the text reaches snapshots, prompts and
          *     editable-stage runs when the manager presses Publish
-         *     (``republish-version``).
+         *     (``republish-version``). Like every draft edit it claims the draft
+         *     lock first: another manager's lock refuses with 409 ``DRAFT_LOCK_HELD``.
          */
         put: operations["update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put"];
         post?: never;
@@ -2016,6 +2110,63 @@ export interface components {
             target_stage: string;
         };
         /**
+         * AiPolicyRead
+         * @description The project's AI agents policy, as any member sees it.
+         */
+        AiPolicyRead: {
+            /**
+             * Agent Runs
+             * @description Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.
+             * @default off
+             * @enum {string}
+             */
+            agent_runs: "off" | "managers" | "reviewers";
+            /**
+             * Daily Agent Article Cap
+             * @description Most articles agent-started runs may cover in this project per day.
+             * @default 100
+             */
+            daily_agent_article_cap: number;
+            /**
+             * Max Articles Per Run
+             * @description Most articles one agent-started run may cover.
+             * @default 25
+             */
+            max_articles_per_run: number;
+            /**
+             * Updated At
+             * @description When the policy last changed.
+             */
+            updated_at?: string | null;
+            /**
+             * Updated By
+             * @description Manager who last changed the policy.
+             */
+            updated_by?: string | null;
+        };
+        /**
+         * AiPolicyUpdateRequest
+         * @description A manager's full replacement of the project's AI agents policy.
+         */
+        AiPolicyUpdateRequest: {
+            /**
+             * Agent Runs
+             * @description Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.
+             * @enum {string}
+             */
+            agent_runs: "off" | "managers" | "reviewers";
+            /**
+             * Daily Agent Article Cap
+             * @description Most articles agent-started runs may cover in this project per day.
+             */
+            daily_agent_article_cap: number;
+            /**
+             * Max Articles Per Run
+             * @description Most articles one agent-started run may cover.
+             */
+            max_articles_per_run: number;
+        };
+        /**
          * ApiResponse
          * @description Response padronizado da API.
          *
@@ -2047,6 +2198,23 @@ export interface components {
         ApiResponse_AISuggestionsResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["AISuggestionsResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[AiPolicyRead] */
+        ApiResponse_AiPolicyRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["AiPolicyRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2404,6 +2572,77 @@ export interface components {
         ApiResponse_ManagerReviewVisibilityRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ManagerReviewVisibilityRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[NoneType] */
+        ApiResponse_NoneType_: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[OAuthConnectionRead] */
+        ApiResponse_OAuthConnectionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["OAuthConnectionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[OAuthConsentDecisionRead] */
+        ApiResponse_OAuthConsentDecisionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["OAuthConsentDecisionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[OAuthConsentRequestRead] */
+        ApiResponse_OAuthConsentRequestRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["OAuthConsentRequestRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3135,6 +3374,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[list[OAuthConnectionRead]] */
+        ApiResponse_list_OAuthConnectionRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["OAuthConnectionRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[PersonalAccessTokenRead]] */
         ApiResponse_list_PersonalAccessTokenRead__: {
             /**
@@ -3417,12 +3676,12 @@ export interface components {
          * ChangeVariant
          * @description The shape of one row — the client's discriminator (D1).
          *
-         *     One member per reachable ``(kind, node_kind[, option polarity])`` the
+         *     One member per reachable ``(kind, node_kind[, option add/remove/rename])`` the
          *     engine can emit, so a renderer never has to re-derive which of the
          *     engine's overloaded fields are meaningful.
          * @enum {string}
          */
-        ChangeVariant: "template_instruction_added" | "template_instruction_removed" | "template_instruction_modified" | "entity_type_added" | "entity_type_removed" | "entity_type_modified" | "entity_type_fields_reordered" | "field_added" | "field_removed" | "field_moved" | "field_modified" | "field_option_added" | "field_option_removed" | "field_options_reordered";
+        ChangeVariant: "template_instruction_added" | "template_instruction_removed" | "template_instruction_modified" | "entity_type_added" | "entity_type_removed" | "entity_type_modified" | "entity_type_fields_reordered" | "field_added" | "field_removed" | "field_moved" | "field_modified" | "field_option_added" | "field_option_removed" | "field_option_renamed" | "field_options_reordered";
         /** CloneTemplateRequest */
         CloneTemplateRequest: {
             /**
@@ -3730,6 +3989,18 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** EligibilityCriteria */
+        EligibilityCriteria: {
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
         /**
          * EntryBulkDeleteRequest
          * @description Delete several entries of a repeating section, all or none.
@@ -3864,6 +4135,12 @@ export interface components {
              * @description block_index values for deterministic reader highlight
              */
             blockIds?: number[];
+            /**
+             * Grounded
+             * @description the position resolves to a parsed-text anchor
+             * @default false
+             */
+            grounded: boolean;
             /** Page Number */
             page_number: number | null;
             /** Proposal Record Id */
@@ -3873,6 +4150,12 @@ export interface components {
              * @default 0
              */
             rank: number;
+            /**
+             * Stale
+             * @description grounded, and the article was re-parsed since this anchor was made: the location may have moved
+             * @default false
+             */
+            stale: boolean;
             /** Text Content */
             text_content: string | null;
         };
@@ -3981,6 +4264,8 @@ export interface components {
         };
         /** ExtractionBatchDetail */
         ExtractionBatchDetail: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4007,6 +4292,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4049,6 +4336,8 @@ export interface components {
         };
         /** ExtractionBatchSummary */
         ExtractionBatchSummary: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4073,6 +4362,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4117,10 +4408,18 @@ export interface components {
          *       coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
          *       rather than silently renaming the entry the way the retired model path
          *       did ("Cox Model (2)").
+         *     - ``RUN_BUSY``         — the coordinate's live run is in consensus, which
+         *       accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time
+         *       refusal is a 409 ``RunBusyError``), e.g. the run reached consensus
+         *       while the job was queued.
+         *     - ``RUN_FINALIZED``    — the coordinate's run is finalized; AI extraction
+         *       waits until it is reopened (``RunWriteError.run_finalized``;
+         *       enqueue-time refusal is a 409 ``RunFinalizedError``), e.g. the run was
+         *       finalized while the job was queued.
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "RUN_BUSY" | "RUN_FINALIZED" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
@@ -4401,6 +4700,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Instrument
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
             /**
              * Kind
              * @enum {string}
@@ -4768,6 +5072,156 @@ export interface components {
             ready: boolean;
         };
         /**
+         * OAuthConnectionRead
+         * @description An app the user connected through OAuth; never carries a token.
+         */
+        OAuthConnectionRead: {
+            /**
+             * Ai Run
+             * @description Whether the user let the app start AI extraction runs.
+             */
+            ai_run: boolean;
+            /**
+             * Client Name
+             * @description The name the app registered with.
+             */
+            client_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the user approved the app.
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description When the connection ends unless the user approves the app again.
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description Last time the app called `/mcp`.
+             */
+            last_used_at: string | null;
+            /**
+             * Scope
+             * @description What the user granted the app.
+             * @enum {string}
+             */
+            scope: "read" | "read_write";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "revoked";
+        };
+        /**
+         * OAuthConsentDecisionRead
+         * @description Where the browser goes next: back to the app, with a code or an error.
+         */
+        OAuthConsentDecisionRead: {
+            /**
+             * Redirect Url
+             * @description The app's redirect URI with the decision's query.
+             */
+            redirect_url: string;
+        };
+        /**
+         * OAuthConsentDecisionRequest
+         * @description Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.
+         */
+        OAuthConsentDecisionRequest: {
+            /**
+             * Ai Run
+             * @description Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it.
+             * @default false
+             */
+            ai_run: boolean;
+            /**
+             * Approve
+             * @description True to connect the app, false to deny it.
+             */
+            approve: boolean;
+            /**
+             * Write
+             * @description Grant `write` too. Ignored on a deny and on a request that did not ask for it.
+             */
+            write: boolean;
+        };
+        /**
+         * OAuthConsentRefusalCode
+         * @description Why a consent route refused.
+         *
+         *     409 ``REQUEST_ALREADY_DECIDED``: the request was already approved or
+         *     denied (in this tab, another tab, or by a concurrent approval for the same
+         *     app). Slice-local, like ``PersonalAccessTokenRefusalCode``.
+         * @enum {string}
+         */
+        OAuthConsentRefusalCode: "REQUEST_ALREADY_DECIDED";
+        /** OAuthConsentRefusalError */
+        OAuthConsentRefusalError: {
+            code: components["schemas"]["OAuthConsentRefusalCode"];
+            /** Message */
+            message: string;
+        };
+        /**
+         * OAuthConsentRefusalResponse
+         * @description The 409 (``REQUEST_ALREADY_DECIDED``) body, declared so the generated
+         *     client types the refusal.
+         */
+        OAuthConsentRefusalResponse: {
+            error: components["schemas"]["OAuthConsentRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * OAuthConsentRequestRead
+         * @description A pending authorization request, as the consent page shows it.
+         */
+        OAuthConsentRequestRead: {
+            /**
+             * Client Name
+             * @description The name the app registered with.
+             */
+            client_name: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description When the request stops accepting a decision.
+             */
+            expires_at: string;
+            /**
+             * Offers Ai Run
+             * @description True when the app asked for `ai_run`, so the page may offer it (a separate box, unchecked by default).
+             */
+            offers_ai_run: boolean;
+            /**
+             * Offers Write
+             * @description True when the app asked for `write`, so the page may offer it.
+             */
+            offers_write: boolean;
+            /**
+             * Redirect Host
+             * @description Host (and port, when present) the app's redirect URI points at.
+             */
+            redirect_host: string;
+            /**
+             * Requested Scopes
+             * @description The scopes the app asked for; always includes `read`.
+             */
+            requested_scopes: string[];
+        };
+        /**
          * OpaqueValueState
          * @description A summarized opaque value that has no listable content (D3).
          *
@@ -4822,6 +5276,18 @@ export interface components {
             run_id: string;
             run_view?: components["schemas"]["RunViewResponse"] | null;
         };
+        /**
+         * OptionItem
+         * @description One select/multiselect option: ``value`` is the stored code an answer
+         *     carries, ``label`` what a person reads. Renaming an option changes only
+         *     its label.
+         */
+        OptionItem: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
         /** ParserSettingsPayload */
         ParserSettingsPayload: {
             /**
@@ -4844,6 +5310,12 @@ export interface components {
          */
         PersonalAccessTokenCreateRequest: {
             /**
+             * Ai Run
+             * @description Allow this token to start AI extraction runs in projects whose manager allowed agent runs. At most 30 days.
+             * @default false
+             */
+            ai_run: boolean;
+            /**
              * Expires In Days
              * @description Token lifetime, in days, from creation.
              */
@@ -4853,6 +5325,11 @@ export interface components {
              * @description Caller-chosen label for the token.
              */
             name: string;
+            /**
+             * Project Ids
+             * @description Projects the token may reach (1-20 distinct ids, each one the caller belongs to). Omit or null for every project of the caller.
+             */
+            project_ids?: string[] | null;
             /**
              * Scope
              * @description Which MCP tool tier the token may call.
@@ -4881,6 +5358,11 @@ export interface components {
          */
         PersonalAccessTokenRead: {
             /**
+             * Ai Run
+             * @description Whether the token may start AI extraction runs.
+             */
+            ai_run: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -4899,6 +5381,11 @@ export interface components {
             last_used_at: string | null;
             /** Name */
             name: string;
+            /**
+             * Project Ids
+             * @description Projects the token is restricted to; null means every project of its user.
+             */
+            project_ids: string[] | null;
             /** Revoked At */
             revoked_at: string | null;
             /**
@@ -4919,14 +5406,18 @@ export interface components {
         };
         /**
          * PersonalAccessTokenRefusalCode
-         * @description Why ``POST /api/v1/me/tokens`` returned 409.
+         * @description Why ``POST /api/v1/me/tokens`` refused.
+         *
+         *     409 ``TOKEN_LIMIT_REACHED``: the caller already holds the maximum number of
+         *     active tokens. 422 ``PROJECT_NOT_ACCESSIBLE``: a listed project is missing
+         *     or the caller is not a member of it (one answer for both).
          *
          *     Slice-local, like ``TemplateDraftLockRefusalCode``
          *     (``app/schemas/hitl_session.py``): one endpoint's outcome, not part of
          *     the cross-cutting ``ApiErrorCode`` vocabulary.
          * @enum {string}
          */
-        PersonalAccessTokenRefusalCode: "TOKEN_LIMIT_REACHED";
+        PersonalAccessTokenRefusalCode: "TOKEN_LIMIT_REACHED" | "PROJECT_NOT_ACCESSIBLE";
         /** PersonalAccessTokenRefusalError */
         PersonalAccessTokenRefusalError: {
             code: components["schemas"]["PersonalAccessTokenRefusalCode"];
@@ -4935,7 +5426,8 @@ export interface components {
         };
         /**
          * PersonalAccessTokenRefusalResponse
-         * @description The 409 body, declared so the generated client types the refusal.
+         * @description The 409 (``TOKEN_LIMIT_REACHED``) and 422 (``PROJECT_NOT_ACCESSIBLE``)
+         *     body, declared so the generated client types the refusal.
          */
         PersonalAccessTokenRefusalResponse: {
             error: components["schemas"]["PersonalAccessTokenRefusalError"];
@@ -4963,6 +5455,21 @@ export interface components {
             inclusion?: string[];
         };
         /**
+         * PicotsSlotWrite
+         * @description One PICOTS slot as written. The read model (``PicotsSlot``) stays unbounded.
+         */
+        PicotsSlotWrite: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+        };
+        /**
          * PicotsSlots
          * @description The six slots, in the instrument's P-I-C-O-T-S order.
          */
@@ -4973,6 +5480,18 @@ export interface components {
             population?: components["schemas"]["PicotsSlot"];
             setting_and_intended_use?: components["schemas"]["PicotsSlot"];
             timing?: components["schemas"]["PicotsSlot"];
+        };
+        /**
+         * PicotsSlotsWrite
+         * @description The six slots as written; an omitted slot is written empty.
+         */
+        PicotsSlotsWrite: {
+            comparator_models?: components["schemas"]["PicotsSlotWrite"];
+            index_models?: components["schemas"]["PicotsSlotWrite"];
+            outcomes?: components["schemas"]["PicotsSlotWrite"];
+            population?: components["schemas"]["PicotsSlotWrite"];
+            setting_and_intended_use?: components["schemas"]["PicotsSlotWrite"];
+            timing?: components["schemas"]["PicotsSlotWrite"];
         };
         /**
          * PortableField
@@ -4988,7 +5507,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -5088,6 +5607,12 @@ export interface components {
              */
             framework: "CHARMS" | "PICOS" | "CUSTOM";
             /**
+             * Instrument
+             * @default custom
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
+            /**
              * Kind
              * @constant
              */
@@ -5128,6 +5653,8 @@ export interface components {
             preview?: string | null;
             /** Review Type */
             review_type?: string | null;
+            /** Revision */
+            revision: number;
         };
         /**
          * ProjectAiContextUpdate
@@ -5136,9 +5663,15 @@ export interface components {
          *     Each field is optional: omitting ``picots`` changes only the switch and vice
          *     versa, which is what lets the toggle and the editor share one endpoint
          *     without either clobbering the other's value.
+         *
+         *     ``expected_revision`` is the ``revision`` last read: when the protocol moved
+         *     since, the save is refused with 409 ``STALE_VALUE`` and nothing is written.
+         *     Omitting it saves unconditionally.
          */
         ProjectAiContextUpdate: {
-            picots?: components["schemas"]["PicotsSlots"] | null;
+            /** Expected Revision */
+            expected_revision?: number | null;
+            picots?: components["schemas"]["PicotsSlotsWrite"] | null;
             /** Picots Enabled */
             picots_enabled?: boolean | null;
         };
@@ -5191,10 +5724,13 @@ export interface components {
             id: string;
         };
         /**
-         * ProjectDetailsFields
-         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         * ProjectDetailsExpected
+         * @description The values the caller last read, echoed back as the write's precondition.
+         *
+         *     Loose on purpose: the two JSON columns may hold a shape written before the
+         *     typed write bounds existed, and the caller must be able to echo it.
          */
-        ProjectDetailsFields: {
+        ProjectDetailsExpected: {
             /** Condition Studied */
             condition_studied?: string | null;
             /** Description */
@@ -5221,6 +5757,32 @@ export interface components {
             study_design?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ProjectDetailsFields
+         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         */
+        ProjectDetailsFields: {
+            /** Condition Studied */
+            condition_studied?: string | null;
+            /** Description */
+            description?: string | null;
+            eligibility_criteria?: components["schemas"]["EligibilityCriteria"] | null;
+            /** Name */
+            name?: string | null;
+            /** Review Context */
+            review_context?: string | null;
+            /** Review Keywords */
+            review_keywords?: string[] | null;
+            /** Review Rationale */
+            review_rationale?: string | null;
+            /** Review Title */
+            review_title?: string | null;
+            /** Review Type */
+            review_type?: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy?: string | null;
+            study_design?: components["schemas"]["StudyDesign"] | null;
         };
         /**
          * ProjectDetailsRead
@@ -5307,7 +5869,7 @@ export interface components {
          *     each of those columns still holds its ``expected`` value, else 409.
          */
         ProjectDetailsUpdate: {
-            expected: components["schemas"]["ProjectDetailsFields"];
+            expected: components["schemas"]["ProjectDetailsExpected"];
             fields: components["schemas"]["ProjectDetailsFields"];
         };
         /**
@@ -5339,6 +5901,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Instrument
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
             /** Is Active */
             is_active: boolean;
             /**
@@ -5853,7 +6420,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: unknown | null;
             /** Allowed Values */
-            allowed_values?: unknown | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -5986,6 +6553,11 @@ export interface components {
              * @default false
              */
             peers_revealed: boolean;
+            /**
+             * Project Protocol Revision
+             * @description The project's protocol revision now.
+             */
+            project_protocol_revision?: number | null;
             /** Proposals */
             proposals: components["schemas"]["ProposalRecordResponse"][];
             /** Published States */
@@ -5995,8 +6567,19 @@ export interface components {
              * @default 0
              */
             ready_count: number;
-            /** Review Context */
-            review_context?: string | null;
+            /** Review Question */
+            review_question?: string | null;
+            /**
+             * Review Question Drift
+             * @description True when the project's protocol changed since this run pinned its review question; new runs use the current one.
+             * @default false
+             */
+            review_question_drift: boolean;
+            /**
+             * Review Question Revision
+             * @description Protocol revision the pinned review question was built from; null when nothing is pinned yet or the pin predates revisions.
+             */
+            review_question_revision?: number | null;
             /**
              * Reviewer Count
              * @default 0
@@ -6005,6 +6588,13 @@ export interface components {
             /** Reviewers Ready */
             reviewers_ready?: string[];
             run: components["schemas"]["RunSummaryResponse"];
+            /**
+             * Scope Rules
+             * @description Scope rules frozen in the run's pinned template version (QA runs only).
+             */
+            scope_rules?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * SaveCredentialsResponse
@@ -6094,8 +6684,6 @@ export interface components {
             options?: components["schemas"]["ExtractionOptions"] | null;
             /** Parentinstanceid */
             parentInstanceId?: string | null;
-            /** Pdftext */
-            pdfText?: string | null;
             /**
              * Projectid
              * Format: uuid
@@ -6231,6 +6819,16 @@ export interface components {
             /** Storage Key */
             storage_key: string;
         };
+        /** StudyDesign */
+        StudyDesign: {
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Types */
+            types?: string[];
+        };
         /** SyncCollectionResponse */
         SyncCollectionResponse: {
             /** Message */
@@ -6360,13 +6958,15 @@ export interface components {
         };
         /**
          * TemplateChangeRowRead
-         * @description One diff row on the wire, built by ``app.services.template_diff_read``.
+         * @description One diff row on the wire, built by ``app.services.template_versioning._diff_read``.
          *
          *     Nothing here is typed ``Any``: the baseline side of a diff is raw stored
          *     JSONB, and an opaque value is summarized server-side rather than
          *     shipped.
          */
         TemplateChangeRowRead: {
+            /** Affects Ai */
+            affects_ai: boolean;
             /**
              * Affects Recorded Data
              * @default false
@@ -6652,7 +7252,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -6758,7 +7358,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -6869,7 +7469,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /** Allows No Information */
             allows_no_information?: boolean | null;
             /** Allows Not Applicable */
@@ -7930,6 +8530,13 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
                 };
             };
+            /** @description ENTRY_KEY_DUPLICATE: a sibling entry already holds the requested key. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8221,6 +8828,78 @@ export interface operations {
             };
         };
     };
+    list_my_connections_api_v1_me_oauth_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_OAuthConnectionRead__"];
+                };
+            };
+            /** @description Missing or invalid Supabase session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_my_connection_api_v1_me_oauth_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_OAuthConnectionRead_"];
+                };
+            };
+            /** @description Missing or invalid Supabase session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_providers_api_v1_me_providers_get: {
         parameters: {
             query?: never;
@@ -8306,12 +8985,14 @@ export interface operations {
                     "application/json": components["schemas"]["PersonalAccessTokenRefusalResponse"];
                 };
             };
-            /** @description Invalid name, scope or expires_in_days */
+            /** @description Invalid body, or a listed project the caller cannot reach */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PersonalAccessTokenRefusalResponse"] | components["schemas"]["ApiResponse_NoneType_"];
+                };
             };
         };
     };
@@ -8357,6 +9038,128 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    read_consent_request_api_v1_oauth_requests__request_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_OAuthConsentRequestRead_"];
+                };
+            };
+            /** @description Missing or invalid Supabase session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown or expired request, or OAuth is off */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused: the request was already answered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthConsentRefusalResponse"];
+                };
+            };
+            /** @description Malformed request id */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    decide_consent_request_api_v1_oauth_requests__request_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthConsentDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_OAuthConsentDecisionRead_"];
+                };
+            };
+            /** @description Missing or invalid Supabase session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown or expired request, or OAuth is off */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused: the request was already answered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthConsentRefusalResponse"];
+                };
+            };
+            /** @description Malformed request id or body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -8460,6 +9263,13 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_ProjectAiContextRead_"];
                 };
             };
+            /** @description The review question changed since it was read (STALE_VALUE). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8468,6 +9278,98 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    read_ai_policy_api_v1_projects__project_id__ai_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AiPolicyRead_"];
+                };
+            };
+            /** @description Not a member of the project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The project row is missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ai_policy_api_v1_projects__project_id__ai_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiPolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AiPolicyRead_"];
+                };
+            };
+            /** @description Not a manager of the project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The project row is missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown field, or a value out of bounds */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -9990,6 +10892,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_UpdateTemplateInstructionResponse_"];
+                };
+            };
+            /** @description Refused: draft lock conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDraftLockRefusalResponse"];
                 };
             };
             /** @description Validation Error */

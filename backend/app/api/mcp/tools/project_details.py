@@ -9,33 +9,46 @@ read). One `agent_actions` row per applied write or audited domain refusal
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import ValidationError
+from pydantic import ValidationError, WithJsonSchema
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.errors import McpErrorCode, McpToolError, reject_nul
+from app.api.mcp.errors import (
+    McpErrorCode,
+    McpToolError,
+    reject_nul,
+    validation_failure,
+    with_names,
+)
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_project_details import UpdateProjectDetailsResult
-from app.schemas.project_details import ProjectDetailsFields
+from app.schemas.project_details import ProjectDetailsExpected, ProjectDetailsFields
 from app.services import project_details_service
+from app.services.project_read_service import project_name
+from app.utils.json_schema import inline_json_schema
+from app.utils.text_caps import cap_text
 
 _TOOL = "update_project_details"
 _REVIEW_TYPE_NOTE = (
     "review_type feeds the AI review question; it affects only runs started after this edit"
 )
 _EDITABLE = sorted(ProjectDetailsFields.model_fields)
+# Advertised only: `_parse` still validates, so an unknown key stays an audited
+# FIELD_NOT_EDITABLE (with the editable list), not an SDK-level refusal.
+_Details = Annotated[dict[str, Any], WithJsonSchema(inline_json_schema(ProjectDetailsFields))]
+# Loose: a stored shape that predates the typed write bounds must be echoable.
+_Expected = Annotated[dict[str, Any], WithJsonSchema(inline_json_schema(ProjectDetailsExpected))]
 _DESCRIPTION = (
     "Edit a project's descriptive fields (name, description, review type and the other "
     "whitelisted columns from get_project). `expected` must carry the value of each field "
     "in `fields` exactly as last read via get_project -- the write is refused if any of "
-    "them changed meanwhile. Clients that support it (e.g. Claude Code) ask the human "
-    "before each call, and every change is audited. Returns the before/after values of "
-    "the changed fields; call get_project next to confirm."
+    "them changed meanwhile. Every applied or refused change is audited. Returns the "
+    "before/after values of the changed fields; call get_project next to confirm."
 )
 
 
@@ -44,12 +57,11 @@ _DESCRIPTION = (
     project_arg="project_id",
     title="Update project details",
     description=_DESCRIPTION,
-    destructive=True,
+    destructive=False,
     idempotent=True,
-    meta={"anthropic/requiresUserInteraction": True},
 )
 async def update_project_details(
-    db: AsyncSession, project_id: UUID, fields: dict[str, Any], expected: dict[str, Any]
+    db: AsyncSession, project_id: UUID, fields: _Details, expected: _Expected
 ) -> UpdateProjectDetailsResult:
     scope = AuditScope(
         tool=_TOOL,
@@ -57,44 +69,52 @@ async def update_project_details(
         template_id=None,
         input={"project_id": str(project_id), "fields": fields, "expected": expected},
     )
+    # The choke point proved membership; read before any refusal rolls back.
+    name = await project_name(db, project_id)
     try:
-        parsed_fields, parsed_expected = _parse(fields, expected)
-        change = await project_details_service.update_details(
-            db, project_id=project_id, fields=parsed_fields, expected=parsed_expected
-        )
-        await record_applied_write(db, scope, before=change.before, after=change.after)
-        await db.commit()  # inside the try: a deadlock here is an audited RETRY too
+        change = await _apply(db, scope, fields, expected)
     except McpToolError as error:
-        await refuse(db, scope, error)
-    except project_details_service.StaleProjectValueError as exc:
-        await refuse(
-            db,
-            scope,
-            McpToolError(
-                McpErrorCode.STALE_VALUE,
-                "A field changed since it was read.",
-                current=(exc.details or {})["current"],
-            ),
-        )
-    except DBAPIError as exc:
-        if not is_deadlock(exc):
-            raise  # INTERNAL_ERROR via the dispatcher: logged, no row
-        await refuse(
-            db,
-            scope,
-            McpToolError(McpErrorCode.RETRY, "A concurrent write won; nothing was changed."),
-        )
+        await refuse(db, scope, with_names(error, project_name=name))
     return UpdateProjectDetailsResult(
         project_id=project_id,
+        project_name=cap_text(change.after.get("name", name))[0],
         before=change.before,
         after=change.after,
         note=_REVIEW_TYPE_NOTE if "review_type" in fields else None,
     )
 
 
+async def _apply(
+    db: AsyncSession, scope: AuditScope, fields: dict[str, Any], expected: dict[str, Any]
+) -> project_details_service.ProjectDetailsChange:
+    """The write and its applied row; every audited refusal surfaces as McpToolError."""
+    try:
+        parsed_fields, parsed_expected = _parse(fields, expected)
+        change = await project_details_service.update_details(
+            db, project_id=scope.project_id, fields=parsed_fields, expected=parsed_expected
+        )
+        await record_applied_write(db, scope, before=change.before, after=change.after)
+        await db.commit()  # inside the try: a deadlock here is an audited RETRY too
+    except project_details_service.StaleProjectValueError as exc:
+        raise McpToolError(
+            McpErrorCode.STALE_VALUE,
+            "A field changed since it was read.",
+            current=(exc.details or {})["current"],
+            untrusted_content=True,
+            untrusted_fields=["current{}"],
+        ) from exc
+    except DBAPIError as exc:
+        if not is_deadlock(exc):
+            raise  # INTERNAL_ERROR via the dispatcher: logged, no row
+        raise McpToolError(
+            McpErrorCode.RETRY, "A concurrent write won; nothing was changed."
+        ) from exc
+    return change
+
+
 def _parse(
     fields: dict[str, Any], expected: dict[str, Any]
-) -> tuple[ProjectDetailsFields, ProjectDetailsFields]:
+) -> tuple[ProjectDetailsFields, ProjectDetailsExpected]:
     # Order: NUL, whitelist (FIELD_NOT_EDITABLE), presence, types (INVALID_ARGUMENT).
     reject_nul({"fields": fields, "expected": expected})
     for key in sorted({*fields, *expected}):
@@ -118,17 +138,12 @@ def _parse(
                 "expected must carry the prior value of every key in fields.",
                 field=f"expected.{key}",
             )
-    return _validated(fields, prefix=""), _validated(
-        {k: expected[k] for k in fields}, prefix="expected."
-    )
-
-
-def _validated(raw: dict[str, Any], *, prefix: str) -> ProjectDetailsFields:
     try:
-        return ProjectDetailsFields.model_validate(raw)
+        parsed_fields = ProjectDetailsFields.model_validate(fields)
     except ValidationError as exc:
-        first = exc.errors()[0]
-        loc = ".".join(str(part) for part in first["loc"]) or "fields"
-        raise McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, first["msg"], field=f"{prefix}{loc}"
-        ) from exc
+        raise validation_failure(exc) from exc
+    try:
+        parsed_expected = ProjectDetailsExpected.model_validate({k: expected[k] for k in fields})
+    except ValidationError as exc:
+        raise validation_failure(exc, prefix="expected") from exc
+    return parsed_fields, parsed_expected

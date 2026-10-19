@@ -20,11 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.models.extraction import (
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
-    ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
@@ -47,7 +46,6 @@ from app.repositories.extraction_reviewer_decision_repository import (
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.schemas.extraction_run import (
-    ArticleRunRef,
     ConsensusDecisionResponse,
     ProposalRecordResponse,
     PublishedStateResponse,
@@ -69,12 +67,17 @@ from app.services.extraction_reviewer_ready_service import ExtractionReviewerRea
 from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
+    pinned_template_rules,
 )
 from app.services.proposal_generation_read import (
     proposal_reveal_context,
     serialize_proposal_generation,
 )
-from app.services.run_prompt_context import read_pinned_review_context
+from app.services.run_prompt_context import (
+    current_protocol_revision,
+    read_pinned_review_question,
+    review_question_drift,
+)
 
 logger = get_logger(__name__)
 
@@ -386,28 +389,6 @@ async def resolve_caller_current_values(
     return list(merged.values())
 
 
-# Stages whose form hydrates from the materialized reviewer_states + decisions
-# (current_values). In 'extract' the client uses proposals[]; pending/cancelled
-# show nothing.
-_CURRENT_VALUE_STAGES = frozenset(
-    {
-        ExtractionRunStage.EXTRACT.value,
-        ExtractionRunStage.CONSENSUS.value,
-        ExtractionRunStage.FINALIZED.value,
-    }
-)
-
-# The "N/M reviewers ready" hint only matters while reviewers are still
-# extracting or the manager is in consensus; for pending/finalized/cancelled
-# runs it is meaningless, so skip the per-request DB read there.
-_READY_HINT_STAGES = frozenset(
-    {
-        ExtractionRunStage.EXTRACT.value,
-        ExtractionRunStage.CONSENSUS.value,
-    }
-)
-
-
 async def build_run_view(
     db: AsyncSession,
     run_id: UUID,
@@ -440,18 +421,23 @@ async def build_run_view(
             caller_id=caller_id,
             include_system_seeds=detail.run.kind == TemplateKind.QUALITY_ASSESSMENT.value,
         )
-        if detail.run.stage in _CURRENT_VALUE_STAGES
+        if detail.run.stage in ExtractionRunStage.with_current_values()
         else []
     )
     instances = await _instances_for_run(db, detail.run)
 
     derived_judgments: list[RunViewDerivedJudgment] = []
+    scope_rules: dict[str, Any] | None = None
     if detail.run.kind == TemplateKind.QUALITY_ASSESSMENT.value:
-        template = await db.get(ProjectExtractionTemplate, detail.run.template_id)
+        # The rules frozen in the run's pinned version, never the live schema.
+        rules = (await pinned_template_rules(db, [detail.run.version_id])).get(
+            detail.run.version_id, {}
+        )
+        scope_rules = rules.get("scope_rules")
         # Both value sets are already loaded on `detail` and already returned to
         # every caller, so the choice adds no query and no new blind surface.
         derived_judgments = build_derived_judgments_payload(
-            template_schema=template.schema_ if template is not None else None,
+            template_schema=rules,
             entity_types=entity_types,
             instances=instances,
             values=values_for_derivation(
@@ -466,9 +452,10 @@ async def build_run_view(
     general_instructions = await general_instructions_for_version(db, detail.run.version_id)
     # A pure READ of the run's pin — never ``resolve_run_prompt_context``, which
     # installs one. A read path must not take the row lock or write provenance.
-    review_pin = read_pinned_review_context(detail.run.results)
+    review_pin = read_pinned_review_question(detail.run.results)
+    protocol_revision = await current_protocol_revision(db, detail.run.project_id)
 
-    if detail.run.stage in _READY_HINT_STAGES:
+    if detail.run.stage in ExtractionRunStage.reviewing():
         # include_peers reuses detail.peers_revealed (the single blind source),
         # so the reviewers_ready scrub cannot drift from the row filter.
         ready = await ExtractionReviewerReadyService(db).ready_summary_from(
@@ -493,8 +480,12 @@ async def build_run_view(
         reviewer_count=ready["reviewer_count"],
         reviewers_ready=ready["reviewers_ready"],
         derived_judgments=derived_judgments,
+        scope_rules=scope_rules,
         general_instructions=general_instructions,
-        review_context=review_pin.text if review_pin else None,
+        review_question=review_pin.text if review_pin else None,
+        review_question_revision=review_pin.revision if review_pin else None,
+        project_protocol_revision=protocol_revision,
+        review_question_drift=bool(review_question_drift(review_pin, protocol_revision)),
         peers_revealed=detail.peers_revealed,
     )
 
@@ -607,12 +598,6 @@ async def list_run_participants(db: AsyncSession, run_id: UUID) -> list[RunRevie
 # Article-scoped run-resolution queries
 # ---------------------------------------------------------------------------
 
-_ACTIVE_STAGES = (
-    ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.EXTRACT.value,
-    ExtractionRunStage.CONSENSUS.value,
-)
-
 
 async def find_finalized_run(
     db: AsyncSession,
@@ -643,65 +628,3 @@ async def find_finalized_run(
 
     run = (await db.execute(stmt)).scalars().first()
     return RunSummaryResponse.model_validate(run) if run is not None else None
-
-
-async def resolve_form_runs(
-    db: AsyncSession,
-    article_ids: list[UUID],
-    *,
-    project_id: UUID,
-    template_id: UUID,
-) -> list[ArticleRunRef]:
-    """Resolve the latest relevant run per article for the extraction form.
-
-    Form-run rule (the article-progress read applies it set-based in SQL):
-    - Per article: latest non-terminal run; else latest finalized run.
-    - Cancelled runs are excluded.
-    - Returns one ArticleRunRef per input article_id (run_id=None when no run).
-
-    Scoped by ``project_id`` (BOLA): the caller's membership is gated on
-    ``project_id``, so runs must be resolved within that project. Without this
-    filter a member of project P could pass ``article_ids`` belonging to a
-    different project Q and read back Q's run ids (confused-deputy IDOR).
-    """
-    if not article_ids:
-        return []
-
-    non_terminal_stages = list(_ACTIVE_STAGES)
-    # Fetch all candidate runs in one query, ordered so that non-terminal
-    # stages sort before finalized (within each article, newest first).
-    stmt = (
-        select(ExtractionRun)
-        .where(
-            ExtractionRun.project_id == project_id,
-            ExtractionRun.article_id.in_(article_ids),
-            ExtractionRun.template_id == template_id,
-            ExtractionRun.kind == "extraction",
-            ExtractionRun.stage.in_([*non_terminal_stages, ExtractionRunStage.FINALIZED.value]),
-        )
-        .order_by(
-            ExtractionRun.article_id,
-            ExtractionRun.created_at.desc(),
-        )
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-
-    # Build a per-article result: prefer non-terminal over finalized, newest first.
-    # The ORDER BY created_at DESC means within each article the newest appears first.
-    best: dict[UUID, ExtractionRun] = {}
-    for row in rows:
-        aid = row.article_id
-        if aid not in best:
-            best[aid] = row
-            continue
-        existing = best[aid]
-        # Prefer non-terminal over finalized
-        existing_active = existing.stage in non_terminal_stages
-        row_active = row.stage in non_terminal_stages
-        if row_active and not existing_active:
-            best[aid] = row
-
-    return [
-        ArticleRunRef(article_id=aid, run_id=best[aid].id if aid in best else None)
-        for aid in article_ids
-    ]

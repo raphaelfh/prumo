@@ -23,6 +23,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { FIELD_SHAPE_COLUMNS, pickOptionCode, type FieldShape } from "../_fixtures/field-values";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, loginViaUiAs } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
@@ -391,13 +392,13 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     await page.getByTestId("consensus-filter-all").click();
 
     const row1 = page.getByTestId(
-      `consensus-coord-${coord1.instanceId}::${coord1.fieldId}`,
+      `consensus-coord-${coord1.instanceId}_${coord1.fieldId}`,
     );
     const row2 = page.getByTestId(
-      `consensus-coord-${coord2.instanceId}::${coord2.fieldId}`,
+      `consensus-coord-${coord2.instanceId}_${coord2.fieldId}`,
     );
     const row3 = page.getByTestId(
-      `consensus-coord-${coord3.instanceId}::${coord3.fieldId}`,
+      `consensus-coord-${coord3.instanceId}_${coord3.fieldId}`,
     );
 
     // (i) coord1 renders both reviewer values; A's cell carries the trace.
@@ -575,17 +576,25 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     expect(ownerDecisions.length).toBeGreaterThanOrEqual(2);
     const conflictCoord = ownerDecisions[0];
     const answered = new Set(
-      ownerDecisions.map((d) => `${d.instance_id}::${d.field_id}`),
+      ownerDecisions.map((d) => `${d.instance_id}_${d.field_id}`),
     );
     const qaFields = await adminSelect<{ id: string }>(
       "extraction_fields",
       `select=id&entity_type_id=eq.${fixture.firstEntityTypeId}`,
     );
     const untouchedField = qaFields.find(
-      (f) => !answered.has(`${fixture.firstInstanceId}::${f.id}`),
+      (f) => !answered.has(`${fixture.firstInstanceId}_${f.id}`),
     );
     expect(untouchedField, "PROBAST section has an unanswered field").toBeTruthy();
 
+    // Diverge with another of the field's own option codes: a decision is held
+    // to the field's contract, so a free-text answer would be refused.
+    const [conflictField] = await adminSelect<FieldShape>(
+      "extraction_fields",
+      `select=${FIELD_SHAPE_COLUMNS}&id=eq.${conflictCoord.field_id}`,
+    );
+    const ownerAnswer = conflictCoord.value?.value;
+    const divergentAnswer = pickOptionCode(conflictField, [ownerAnswer]);
     const divergent = await request.post(
       `${env.apiUrl}/api/v1/runs/${runId}/decisions`,
       {
@@ -594,7 +603,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
           instance_id: conflictCoord.instance_id,
           field_id: conflictCoord.field_id,
           decision: "edit",
-          value: { value: "e2e-divergent-answer" },
+          value: { value: divergentAnswer },
         },
         timeout: 15_000,
       },
@@ -666,7 +675,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // The conflict row needs attention (default filter); adopt one side —
     // select_existing must succeed against a real decision row (no 4xx).
     const conflictRow = page.getByTestId(
-      `consensus-coord-${conflictCoord.instance_id}::${conflictCoord.field_id}`,
+      `consensus-coord-${conflictCoord.instance_id}_${conflictCoord.field_id}`,
     );
     await expect(conflictRow).toBeVisible();
     await conflictRow

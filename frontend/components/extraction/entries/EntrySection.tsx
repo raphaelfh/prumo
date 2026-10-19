@@ -80,6 +80,7 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
     articleId: form.articleId,
     templateId: form.templateId,
     runId: form.runId,
+    canRunAI: form.canRunAI,
     aiSuggestions: form.aiSuggestions,
     onAcceptAI: form.acceptSuggestion,
     onRejectAI: form.rejectSuggestion,
@@ -130,9 +131,10 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
         onRemoveEntry={form.onOpenRemoveDialog}
         onDeleteEntries={form.onDeleteEntries}
         onRenameEntry={form.onOpenRenameDialog}
-        onIdentifyEntries={ai.handleIdentifyEntries}
-        onExtractAllSections={activeEntryId ? ai.handleExtractAllSections : undefined}
-        onExtractAllSectionsForAllEntries={ai.handleExtractAllSectionsForAllModels}
+        // The selector offers an AI action only for a handler it is given.
+        onIdentifyEntries={form.canRunAI ? ai.handleIdentifyEntries : undefined}
+        onExtractAllSections={form.canRunAI && activeEntryId ? ai.handleExtractAllSections : undefined}
+        onExtractAllSectionsForAllEntries={form.canRunAI ? ai.handleExtractAllSectionsForAllModels : undefined}
         identifying={ai.identifying}
         extractingAllSections={ai.extractingAllSections}
         extractingAllSectionsForAllEntries={ai.extractingAllSectionsForAllModels}

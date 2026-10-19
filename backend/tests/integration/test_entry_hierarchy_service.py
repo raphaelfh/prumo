@@ -23,8 +23,8 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import ExtractionReviewerDecision
 from app.services.entity_key import key_of
@@ -34,7 +34,7 @@ from app.services.entry_hierarchy_service import (
     EntryTargetNotFoundError,
     InvalidEntryTargetError,
 )
-from app.services.template_clone_service import TemplateCloneService
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,
@@ -109,7 +109,8 @@ async def _key_field(db: AsyncSession, entity_type_id: UUID) -> ExtractionField 
 
 
 async def _qa_template_in(db: AsyncSession, project_id: UUID) -> UUID:
-    clone = await TemplateCloneService(db).clone(
+    clone = await clone_template(
+        db,
         project_id=project_id,
         global_template_id=PROBAST_GLOBAL_ID,
         user_id=SEED.primary_profile,

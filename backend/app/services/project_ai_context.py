@@ -1,41 +1,52 @@
 """The project's review question, rendered for the AI.
 
 ``projects.picots_config_ai_review`` is a JSONB column whose name promises it
-feeds the model. Until this module it fed nothing: the only text reaching the
-prompts was ``llm_template_instruction``, so PICOT arrived only as hand-typed
-prose in a template's ✨ instruction — five seeded templates ship a
-``[customize: ... state the review's Step-1 PICOTS ...]`` slot asking the
-manager to retype it.
+feeds the model; this module is what makes it do so. Because the review
+question reaches every prompt from here, the seeded template instructions
+carry no slot asking the manager to retype it.
 
 Two halves, split so the rendering is testable without a database:
 
-* ``render_picots_block`` — pure, and where every shape decision lives.
-* ``build_review_context`` — reads the project + the one toggle.
+* ``render_review_question`` — pure, and where every shape decision lives:
+  the PICOTS slots, then the project's eligibility and eligible study designs.
+* ``build_review_question`` — reads the project + the one toggle.
 
-The column is written by the settings UI over PostgREST (RLS ``project_update``,
-manager-only) and has no server default, so it can hold anything a manager's
-browser sent: absent, ``{}``, per-slot dicts, per-slot strings, a ``timing``
-nested one level deeper than its five siblings, or junk. Every branch below
+The column's writer is ``PUT /api/v1/projects/{project_id}/ai-context``
+(manager-only). It has no server default, and rows written before that endpoint
+existed can hold anything: absent, ``{}``, per-slot dicts, per-slot strings, a
+``timing`` nested one level deeper than its five siblings, or junk. Every branch below
 exists because one of those shapes is reachable, not defensively.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import select
+from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.project import Project
+from app.core.error_handler import AppError
 from app.repositories.project_repository import ProjectRepository
+from app.schemas.mcp_review_question import (
+    McpEligibility,
+    McpReviewQuestion,
+    McpReviewSlot,
+    McpStudyDesign,
+)
+from app.services.project_protocol import bump_protocol_revision
+from app.services.project_read_service import project_name
+from app.utils.text_caps import cap_text
+
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 #: Ceiling on the rendered block. Mirrors ``llm_template_instruction``'s
-#: ``max_length=4000`` (``schemas/hitl_session.py``) — the surface this
-#: replaces. The cap lives in the RENDERER, not on a write schema, because
-#: PostgREST is the column's writer: a cap on an API body would be decorative
-#: while the browser can still PATCH the row directly.
+#: ``max_length=4000`` (``schemas/hitl_session.py``). The cap lives in the
+#: RENDERER: the API is the column's writer, but stored rows predate it, so
+#: only a cap at render time bounds what reaches the prompt.
 MAX_REVIEW_CONTEXT_CHARS = 4000
 
 #: Storage keys in the instrument's P-I-C-O-T-S order. This tuple IS the
@@ -133,8 +144,8 @@ def _timing_texts(raw: Any) -> tuple[str, list[str], list[str]]:
     )
 
 
-def render_picots_block(picots: Any, review_type: str | None) -> str | None:
-    """The review question as prompt text, or ``None`` when there is none.
+def _picots_lines(picots: Any, review_type: str | None) -> list[str]:
+    """The PICOTS half of the review question, one slot per line group.
 
     Empty slots are OMITTED, not padded: a line reading
     ``- Comparator model(s): (not specified)`` would be read by the model as a
@@ -145,7 +156,7 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
     still gets them, which a description-only test would silently drop.
     """
     if not isinstance(picots, Mapping):
-        return None
+        return []
     labels = labels_for(review_type)
     lines: list[str] = []
     for key in _SLOT_KEYS:
@@ -158,6 +169,41 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
             lines.append(f"  Include: {'; '.join(inclusion)}")
         if exclusion:
             lines.append(f"  Exclude: {'; '.join(exclusion)}")
+    return lines
+
+
+def _protocol_lines(eligibility: Any, study_design: Any) -> list[str]:
+    """Project eligibility and eligible study designs; ``notes`` never render.
+
+    Both columns predate the bounded write shapes (``schemas/project_protocol``)
+    and were never migrated, so a legacy dict or junk items read as empty.
+    """
+    eligibility = eligibility if isinstance(eligibility, Mapping) else {}
+    inclusion = _string_list(eligibility.get("inclusion"))
+    exclusion = _string_list(eligibility.get("exclusion"))
+    designs = _string_list(study_design.get("types")) if isinstance(study_design, Mapping) else []
+    lines: list[str] = []
+    if inclusion or exclusion:
+        lines.append("Eligibility:")
+        if inclusion:
+            lines.append(f"  Include: {'; '.join(inclusion)}")
+        if exclusion:
+            lines.append(f"  Exclude: {'; '.join(exclusion)}")
+    if designs:
+        lines.append(f"Eligible study designs: {'; '.join(designs)}")
+    return lines
+
+
+def render_review_question(
+    picots: Any, review_type: str | None, eligibility: Any, study_design: Any
+) -> str | None:
+    """The review question as prompt text, or ``None`` when there is none.
+
+    PICOTS first, then the project's eligibility and eligible study designs,
+    under ONE cap: an empty eligibility/design leaves the PICOTS bytes exactly
+    as they were before those joined the prompt (ADR 0023).
+    """
+    lines = _picots_lines(picots, review_type) + _protocol_lines(eligibility, study_design)
     if not lines:
         return None
     block = "\n".join(lines)
@@ -166,29 +212,62 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
     return block
 
 
-def _picots_enabled(settings: Any) -> bool:
+def _render_for(project: Project) -> str | None:
+    """The one place a project row becomes the review question."""
+    return render_review_question(
+        project.picots_config_ai_review,
+        project.review_type,
+        project.eligibility_criteria,
+        project.study_design,
+    )
+
+
+def picots_switch_on(settings: Any) -> bool:
     """``settings.ai_context.picots`` — an absent key is the default, ON."""
     ai_context = (settings or {}).get("ai_context") if isinstance(settings, Mapping) else None
     return bool((ai_context or {}).get("picots", True)) if isinstance(ai_context, Mapping) else True
 
 
-async def build_review_context(db: AsyncSession, project_id: UUID) -> str | None:
-    """The project's review question, or ``None`` when it says nothing.
+@dataclass(frozen=True, slots=True)
+class ReviewQuestion:
+    """The rendered question for a project that exists; ``text`` is ``None`` when muted or empty.
 
-    ``settings.ai_context.picots`` is the off switch, defaulting to ON: an
-    absent key is the default state, and an empty PICOT renders nothing, so
-    every project that has not filled the editor keeps a byte-identical prompt.
+    ``revision`` is the project's ``protocol_revision`` the text was built from.
+    """
+
+    text: str | None
+    revision: int
+
+
+async def build_review_question(db: AsyncSession, project_id: UUID) -> ReviewQuestion | None:
+    """The project's review question, or ``None`` when the project is missing.
+
+    ``settings.ai_context.picots`` is the off switch for the WHOLE block,
+    defaulting to ON: an absent key is the default state, and an empty protocol
+    renders nothing, so every project that has not filled the editor keeps a
+    byte-identical prompt.
     """
     project = await ProjectRepository(db).get_by_id(project_id)
     if project is None:
         return None
-    if not _picots_enabled(project.settings):
-        return None
-    return render_picots_block(project.picots_config_ai_review, project.review_type)
+    text = _render_for(project) if picots_switch_on(project.settings) else None
+    return ReviewQuestion(text=text, revision=project.protocol_revision)
 
 
 class ProjectNotFoundError(Exception):
     """Raised when the project row is missing. HTTP translation in the router."""
+
+
+class StaleProtocolRevisionError(AppError):
+    """The protocol moved since the caller read it; nothing was written."""
+
+    def __init__(self, *, current_revision: int, current: dict[str, Any]) -> None:
+        super().__init__(
+            code="STALE_VALUE",
+            message="The review question changed since you read it.",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"current_revision": current_revision, "current": current},
+        )
 
 
 def _slots_payload(raw: Any) -> dict[str, dict[str, Any]]:
@@ -211,21 +290,80 @@ def _slots_payload(raw: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
-async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
-    """The editor's read model. Raises ``ProjectNotFoundError`` if the row is gone."""
-    project = await ProjectRepository(db).get_by_id(project_id)
-    if project is None:
-        raise ProjectNotFoundError(f"Project {project_id} not found")
-    enabled = _picots_enabled(project.settings)
+def _read_model(project: Project) -> dict[str, Any]:
+    enabled = picots_switch_on(project.settings)
     return {
         "picots": _slots_payload(project.picots_config_ai_review),
         "labels": labels_for(project.review_type),
         "review_type": project.review_type,
         "picots_enabled": enabled,
-        "preview": render_picots_block(project.picots_config_ai_review, project.review_type)
-        if enabled
-        else None,
+        "preview": _render_for(project) if enabled else None,
+        "revision": project.protocol_revision,
     }
+
+
+async def _load(db: AsyncSession, project_id: UUID) -> Project:
+    project = await ProjectRepository(db).get_by_id(project_id)
+    if project is None:
+        raise ProjectNotFoundError(f"Project {project_id} not found")
+    return project
+
+
+async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
+    """The editor's read model. Raises ``ProjectNotFoundError`` if the row is gone."""
+    return _read_model(await _load(db, project_id))
+
+
+async def lock_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
+    """The editor's read model under the row lock, held to the end of the transaction.
+
+    A writer that audits its "before" reads it here, so no concurrent write can
+    land between that read and its own ``set_ai_context``.
+    """
+    project = await ProjectRepository(db).lock_for_update(project_id)
+    if project is None:
+        raise ProjectNotFoundError(f"Project {project_id} not found")
+    return _read_model(project)
+
+
+def _notes(raw: Any) -> str:
+    notes = raw.get("notes") if isinstance(raw, Mapping) else None
+    return notes if isinstance(notes, str) else ""
+
+
+async def get_review_question_view(db: AsyncSession, project_id: UUID) -> McpReviewQuestion:
+    """The agent's read model: the editor's, plus eligibility and study design.
+
+    One project read. ``preview`` is the editor's, byte-identical to
+    ``build_review_question(...).text``; eligibility and design go through the
+    renderer's own tolerant list reader, so the agent sees what the AI gets.
+    ``note`` is left for the caller. A missing project raises ``NotFoundError``
+    (from ``project_name``, read first).
+    """
+    name = await project_name(db, project_id)
+    project = await _load(db, project_id)
+    model = _read_model(project)
+    eligibility = project.eligibility_criteria
+    eligibility = eligibility if isinstance(eligibility, Mapping) else {}
+    design = project.study_design if isinstance(project.study_design, Mapping) else {}
+    return McpReviewQuestion(
+        project_id=project_id,
+        project_name=cap_text(name)[0],
+        revision=model["revision"],
+        review_type=model["review_type"],
+        picots_enabled=model["picots_enabled"],
+        slots={
+            key: McpReviewSlot(label=model["labels"][key], **slot)
+            for key, slot in model["picots"].items()
+        },
+        eligibility=McpEligibility(
+            inclusion=_string_list(eligibility.get("inclusion")),
+            exclusion=_string_list(eligibility.get("exclusion")),
+            notes=_notes(eligibility),
+        ),
+        study_design=McpStudyDesign(types=_string_list(design.get("types")), notes=_notes(design)),
+        preview=model["preview"],
+    )
 
 
 async def set_ai_context(
@@ -234,35 +372,55 @@ async def set_ai_context(
     *,
     picots: dict[str, Any] | None,
     picots_enabled: bool | None,
+    expected_revision: int | None = None,
+    slot_updates: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Write either half (or both) under one row lock.
 
-    The lock mirrors ``LlmEngineService``: ``projects.settings`` is plain JSONB
-    read-modify-written by several services, so an unlocked write can drop a
-    concurrent sibling key — and ``managers_see_reviewers`` living in that same
-    column means the dropped key could be a blind-review control silently
-    flipping back on.
+    ``picots`` replaces the whole question; ``slot_updates`` replaces only the
+    named slots of the stored one. The two are mutually exclusive.
+
+    ``expected_revision``, when given, is compared under the lock before any
+    write: a mismatch raises ``StaleProtocolRevisionError`` carrying the current
+    read model, and nothing is written.
+
+    The switch goes through ``ProjectRepository.update_settings_key``:
+    ``projects.settings`` is one JSONB column shared by several writers, and a
+    write outside that helper could drop a concurrent sibling key, such as the
+    ``managers_see_reviewers`` blind-review control.
     """
-    project = (
-        await db.execute(
-            select(Project)
-            .where(Project.id == project_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
+    if picots is not None and slot_updates is not None:
+        raise ValueError("picots and slot_updates are mutually exclusive")
+    projects = ProjectRepository(db)
+    project = await projects.lock_for_update(project_id)
     if project is None:
         raise ProjectNotFoundError(f"Project {project_id} not found")
+    if expected_revision is not None and expected_revision != project.protocol_revision:
+        raise StaleProtocolRevisionError(
+            current_revision=project.protocol_revision,
+            current=await get_ai_context(db, project_id),
+        )
+    old_enabled = picots_switch_on(project.settings)
+    old_picots = project.picots_config_ai_review
+    if slot_updates is not None:
+        # A new dict: plain JSONB tracks reassignment only.
+        stored = old_picots if isinstance(old_picots, Mapping) else {}
+        picots = {**stored, **slot_updates}
 
+    # Switch first, question second. ``update_settings_key`` re-reads the
+    # locked row with ``populate_existing``, and with ``autoflush=False`` that
+    # re-read would discard a question assigned (unflushed) before it.
+    if picots_enabled is not None:
+        await projects.update_settings_key(
+            project_id, "ai_context", lambda old: {**dict(old or {}), "picots": picots_enabled}
+        )
     if picots is not None:
         project.picots_config_ai_review = picots
-    if picots_enabled is not None:
-        # Plain JSONB (NOT MutableDict): build a new dict and REASSIGN, or the
-        # change is not tracked and never persists. Only our sub-key is written.
-        settings = dict(project.settings or {})
-        ai_context = dict(settings.get("ai_context") or {})
-        ai_context["picots"] = picots_enabled
-        settings["ai_context"] = ai_context
-        project.settings = settings
+    # After ``update_settings_key`` for the same reason: its re-read would
+    # discard an earlier unflushed bump. One bump per call, real changes only.
+    if (picots_enabled is not None and picots_enabled != old_enabled) or (
+        picots is not None and picots != old_picots
+    ):
+        bump_protocol_revision(project)
     await db.flush()
     return await get_ai_context(db, project_id)

@@ -5,6 +5,7 @@
  * the consensus override) rely on.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
@@ -57,6 +58,29 @@ describe('FieldValueEditor', () => {
     );
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '5' } });
     expect(onChange).toHaveBeenCalledWith({ value: '5', unit: 'mg' });
+  });
+
+  it('number with only a field unit: no unit picker, the unit shown as a badge', () => {
+    // 'kg' had a dictionary of related units the server never accepts.
+    render(
+      <FieldValueEditor field={base({ field_type: 'number', unit: 'kg' })} value="" onChange={() => {}} />,
+    );
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText('kg')).toBeInTheDocument();
+  });
+
+  it('number with allowed_units: the picker offers exactly those units', async () => {
+    const user = userEvent.setup();
+    render(
+      <FieldValueEditor
+        field={base({ field_type: 'number', unit: 'mg', allowed_units: ['mg', 'g'] })}
+        value=""
+        onChange={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(['mgdefaultUnit', 'g']);
   });
 
   it('date: emits the ISO date string', () => {

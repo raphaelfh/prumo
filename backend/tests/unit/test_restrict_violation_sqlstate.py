@@ -30,8 +30,13 @@ from asyncpg.exceptions import ForeignKeyViolationError, RestrictViolationError
 from sqlalchemy.exc import IntegrityError
 
 from app.repositories.extraction_field_reference_repository import RESTRICT_FKS
-from app.services.template_discard_service import DiscardRacedError, _reraise_if_raced
 from app.services.template_field_service import FieldInUseError, _pgcode, delete_field
+from app.services.template_versioning import (
+    DiscardRacedError,
+)
+from app.services.template_versioning._discard import (
+    _reraise_if_raced,
+)
 
 #: The code the two gates used to accept, and only it. Named here so the
 #: guard test below can state what it is guarding against.
@@ -90,7 +95,7 @@ def test_the_pg18_fixture_is_invisible_to_the_old_23503_gate() -> None:
     assert pg17.orig.__cause__.constraint_name == _PROPOSAL_FK
 
 
-# ------------------------------------------------------- template_discard_service
+# ---------------------------------------------------- template_versioning._discard
 
 
 @pytest.mark.parametrize("driver_error", SERVERS)

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from redis import Redis
 
 from app.api.deps.security import is_project_member
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -26,7 +27,7 @@ from app.schemas.articles_export import (
 from app.schemas.common import ApiResponse
 from app.services.articles_export_service import ArticlesExportService
 from app.utils.rate_limiter import limiter
-from app.worker.celery_app import REDIS_URL
+from app.worker import queue_health
 from app.worker.tasks.export_tasks import export_articles_task
 
 router = APIRouter()
@@ -42,18 +43,6 @@ _EXPORT_OWNER_KEY_PREFIX = "export_job_owner:"
 _EXPORT_OWNER_TTL_SECONDS = 3600
 
 
-def _is_queue_available() -> bool:
-    try:
-        Redis.from_url(
-            REDIS_URL,
-            socket_connect_timeout=0.25,
-            socket_timeout=0.25,
-        ).ping()
-        return True
-    except Exception:
-        return False
-
-
 def _remember_export_owner(job_id: str, user_id: str) -> None:
     """Best-effort record of ``job_id -> user_id`` for later cancel checks.
 
@@ -63,7 +52,7 @@ def _remember_export_owner(job_id: str, user_id: str) -> None:
     """
     with contextlib.suppress(Exception):
         Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).set(
@@ -77,7 +66,7 @@ def _lookup_export_owner(job_id: str) -> str | None:
     raw: object = None
     with contextlib.suppress(Exception):
         raw = Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).get(f"{_EXPORT_OWNER_KEY_PREFIX}{job_id}")
@@ -183,7 +172,7 @@ async def start_export(
         )
 
     # Async: enfileirar task
-    if not _is_queue_available():
+    if not queue_health.is_queue_available():
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ApiResponse.failure(

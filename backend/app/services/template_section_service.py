@@ -36,10 +36,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.integrity import violates_constraint
-from app.models.extraction import (
-    ExtractionEntityType,
-    ExtractionInstance,
-)
+from app.models.extraction import ExtractionEntityType
+from app.models.extraction_instance import ExtractionInstance
 from app.repositories.extraction_field_reference_repository import (
     RESTRICT_FKS,
     ExtractionFieldReferenceRepository,

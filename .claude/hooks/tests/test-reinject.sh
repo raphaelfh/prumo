@@ -20,14 +20,13 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 HOOK="$HERE/../reinject-run-state.sh"
 
-SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/reinject-test.XXXXXX")
-SANDBOX=$(cd "$SANDBOX" && pwd -P)
-trap 'rm -rf "$SANDBOX"' EXIT
+# shellcheck source=scripts/tests/lib/scratch-repo.sh
+. "$HERE/../../../scripts/tests/lib/scratch-repo.sh"
+scratch_mkdir reinject-test
 
 MAIN="$SANDBOX/main"
-mkdir -p "$MAIN"
-git -C "$MAIN" init -q
-git -C "$MAIN" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+scratch_init "$MAIN"
+sgit "$MAIN" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
 cd "$MAIN" || exit 2
 
 SLUG="2026-01-01-thing-design"

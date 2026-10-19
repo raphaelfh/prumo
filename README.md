@@ -1,9 +1,3 @@
----
-status: stable
-last_reviewed: 2026-08-09
-owner: '@raphaelfh'
----
-
 <!-- markdownlint-disable MD033 -->
 <br /><br />
 

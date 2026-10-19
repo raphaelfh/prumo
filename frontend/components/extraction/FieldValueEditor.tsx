@@ -30,8 +30,8 @@ import {
 } from '@/components/ui/select';
 import { SelectWithOther } from '@/components/ui/SelectWithOther';
 import { MultiSelectWithOther } from '@/components/ui/MultiSelectWithOther';
+import { normalizeOptions } from '@/lib/extraction/options';
 import { Switch } from '@/components/ui/switch';
-import { getRelatedUnits } from '@/lib/unitConversions';
 import { extractUnit, extractValue } from '@/lib/ai-extraction/valueParser';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
@@ -175,15 +175,10 @@ export function FieldValueEditor({
           ? field.allowed_units[0]
           : field.unit);
 
-      // Prefer custom allowed_units over automatic dictionary
-      const relatedUnits =
-        field.allowed_units && field.allowed_units.length > 0
-          ? field.allowed_units // Use units configured by manager (first is default)
-          : field.unit
-            ? getRelatedUnits(field.unit) // Fallback to automatic dictionary
-            : [];
-
-      const hasMultipleUnits = relatedUnits.length > 0;
+      // Only units the server accepts: the configured ones (first is the
+      // default), else the field's own unit.
+      const unitOptions = field.allowed_units?.length ? field.allowed_units : field.unit ? [field.unit] : [];
+      const hasMultipleUnits = unitOptions.length > 1;
 
       return (
         <div className={cn("flex gap-2", compact && "min-w-0 gap-1")}>
@@ -216,7 +211,7 @@ export function FieldValueEditor({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {relatedUnits.map((unit, index) => (
+                {unitOptions.map((unit, index) => (
                   <SelectItem key={unit} value={unit}>
                     {unit}
                     {index === 0 &&
@@ -258,7 +253,7 @@ export function FieldValueEditor({
       );
 
     case 'select': {
-      const options = (field.allowed_values as any[]) || [];
+      const options = normalizeOptions(field.allowed_values);
       if (field.allow_other) {
         return (
           <SelectWithOther
@@ -297,23 +292,18 @@ export function FieldValueEditor({
             />
           </SelectTrigger>
           <SelectContent>
-            {options.map((option: any, index: number) => {
-              const optionValue = typeof option === 'string' ? option : option.value;
-              const optionLabel =
-                typeof option === 'string' ? option : option.label || option.value;
-              return (
-                <SelectItem key={index} value={optionValue}>
-                  {optionLabel}
-                </SelectItem>
-              );
-            })}
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       );
     }
 
     case 'multiselect': {
-      const mOptions = (field.allowed_values as any[]) || [];
+      const mOptions = normalizeOptions(field.allowed_values);
       if (field.allow_other || (compact && mOptions.length > 0)) {
         return (
           <MultiSelectWithOther

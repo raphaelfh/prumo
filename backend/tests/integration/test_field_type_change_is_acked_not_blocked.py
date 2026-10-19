@@ -22,7 +22,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.template_change import ChangeTier
-from app.services.template_version_read_service import get_template_config_diff
+from app.services.template_versioning import (
+    get_template_config_diff,
+)
 from tests.integration.conftest import SEED, make_proposal, open_session
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,

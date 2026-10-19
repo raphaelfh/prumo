@@ -5,13 +5,13 @@ import type {PDFSource} from '../core/source';
 import type {ViewerState} from '../core/state';
 import type {createViewerStore} from '../core/store';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
-import {usePageHandle} from '../hooks/usePageHandle';
 import {usePageScrollSync} from '../hooks/usePageScrollSync';
 import {useFitWidth} from '../viewport/useFitWidth';
 import {useGestureZoom} from '../viewport/useGestureZoom';
 import {layoutPageLocator, usePageLayout} from '../viewport/usePageLayout';
 import {useVirtualPages} from '../viewport/useVirtualPages';
 import {useViewerShortcuts} from '../viewport/useViewerShortcuts';
+import {PlannedPageProvider, usePageRenderPlan} from './pageRenderPlan';
 
 /** The scroll container `Viewer.Body` renders, for the `Viewer.Pages` inside it. */
 const ScrollerContext = createContext<HTMLElement | null>(null);
@@ -115,8 +115,14 @@ function Pages({children}: {children: (page: {number: number}) => ReactNode}) {
   );
 }
 
+/**
+ * One page slot. Computes the page's render plan — the gesture gate, the
+ * settle delay, the bitmap and text scales and the rotation, once — and
+ * provides it to the layers inside (`CanvasLayer`, `TextLayer`).
+ */
 function Page({pageNumber, children}: {pageNumber: number; children?: ReactNode}) {
-  const handle = usePageHandle(pageNumber);
+  const plan = usePageRenderPlan(pageNumber);
+  const handle = plan?.handle ?? null;
   const setPageSize = useViewerStore((s) => s.actions.setPageSize);
 
   // The layout sizes a page from page 1 until its handle resolves; a landscape
@@ -126,13 +132,15 @@ function Page({pageNumber, children}: {pageNumber: number; children?: ReactNode}
   }, [handle, pageNumber, setPageSize]);
 
   return (
-    // bg-white is intentional, not a missed token: a PDF page is a
-    // physical sheet of white paper. It must stay white in both light
-    // and dark themes so the page contents render with the contrast
-    // and colour the document author intended.
-    <div data-page-number={pageNumber} className="relative size-full shadow-md bg-white">
-      {children}
-    </div>
+    <PlannedPageProvider pageNumber={pageNumber} plan={plan}>
+      {/* bg-white is intentional, not a missed token: a PDF page is a
+          physical sheet of white paper. It must stay white in both light
+          and dark themes so the page contents render with the contrast
+          and colour the document author intended. */}
+      <div data-page-number={pageNumber} className="relative size-full shadow-md bg-white">
+        {children}
+      </div>
+    </PlannedPageProvider>
   );
 }
 

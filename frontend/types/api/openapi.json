@@ -268,6 +268,103 @@
         "title": "AdvanceStageRequest",
         "type": "object"
       },
+      "AiPolicyRead": {
+        "description": "The project's AI agents policy, as any member sees it.",
+        "properties": {
+          "agent_runs": {
+            "default": "off",
+            "description": "Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.",
+            "enum": [
+              "off",
+              "managers",
+              "reviewers"
+            ],
+            "title": "Agent Runs",
+            "type": "string"
+          },
+          "daily_agent_article_cap": {
+            "default": 100,
+            "description": "Most articles agent-started runs may cover in this project per day.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Daily Agent Article Cap",
+            "type": "integer"
+          },
+          "max_articles_per_run": {
+            "default": 25,
+            "description": "Most articles one agent-started run may cover.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Articles Per Run",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the policy last changed.",
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Manager who last changed the policy.",
+            "title": "Updated By"
+          }
+        },
+        "title": "AiPolicyRead",
+        "type": "object"
+      },
+      "AiPolicyUpdateRequest": {
+        "additionalProperties": false,
+        "description": "A manager's full replacement of the project's AI agents policy.",
+        "properties": {
+          "agent_runs": {
+            "description": "Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.",
+            "enum": [
+              "off",
+              "managers",
+              "reviewers"
+            ],
+            "title": "Agent Runs",
+            "type": "string"
+          },
+          "daily_agent_article_cap": {
+            "description": "Most articles agent-started runs may cover in this project per day.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Daily Agent Article Cap",
+            "type": "integer"
+          },
+          "max_articles_per_run": {
+            "description": "Most articles one agent-started run may cover.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Articles Per Run",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_runs",
+          "max_articles_per_run",
+          "daily_agent_article_cap"
+        ],
+        "title": "AiPolicyUpdateRequest",
+        "type": "object"
+      },
       "ApiResponse": {
         "description": "Response padronizado da API.\n\nMantem compatibilidade with formato usado nas Edge Functions:\n``{ ok: boolean, data?: T, error?: { code, message }, trace_id?: string }``\n\nSee module docstring for HTTP-status vs envelope semantics.",
         "properties": {
@@ -362,6 +459,54 @@
           "ok"
         ],
         "title": "ApiResponse[AISuggestionsResponse]",
+        "type": "object"
+      },
+      "ApiResponse_AiPolicyRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiPolicyRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[AiPolicyRead]",
         "type": "object"
       },
       "ApiResponse_ApproveFinalizeResponse_": {
@@ -1370,6 +1515,192 @@
           "ok"
         ],
         "title": "ApiResponse[ManagerReviewVisibilityRead]",
+        "type": "object"
+      },
+      "ApiResponse_NoneType_": {
+        "properties": {
+          "data": {
+            "description": "Dados da resposta",
+            "title": "Data",
+            "type": "null"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[NoneType]",
+        "type": "object"
+      },
+      "ApiResponse_OAuthConnectionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthConnectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OAuthConnectionRead]",
+        "type": "object"
+      },
+      "ApiResponse_OAuthConsentDecisionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthConsentDecisionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OAuthConsentDecisionRead]",
+        "type": "object"
+      },
+      "ApiResponse_OAuthConsentRequestRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthConsentRequestRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OAuthConsentRequestRead]",
         "type": "object"
       },
       "ApiResponse_OpenHITLSessionResponse_": {
@@ -3392,6 +3723,58 @@
         "title": "ApiResponse[list[LlmConnectionRead]]",
         "type": "object"
       },
+      "ApiResponse_list_OAuthConnectionRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OAuthConnectionRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[OAuthConnectionRead]]",
+        "type": "object"
+      },
       "ApiResponse_list_PersonalAccessTokenRead__": {
         "properties": {
           "data": {
@@ -4014,7 +4397,7 @@
         "type": "string"
       },
       "ChangeVariant": {
-        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option polarity])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
+        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option add/remove/rename])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
         "enum": [
           "template_instruction_added",
           "template_instruction_removed",
@@ -4029,6 +4412,7 @@
           "field_modified",
           "field_option_added",
           "field_option_removed",
+          "field_option_renamed",
           "field_options_reordered"
         ],
         "title": "ChangeVariant",
@@ -4642,6 +5026,39 @@
         "title": "DownloadAttachmentResponse",
         "type": "object"
       },
+      "EligibilityCriteria": {
+        "additionalProperties": false,
+        "properties": {
+          "exclusion": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Exclusion",
+            "type": "array"
+          },
+          "inclusion": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Inclusion",
+            "type": "array"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Notes",
+            "type": "string"
+          }
+        },
+        "title": "EligibilityCriteria",
+        "type": "object"
+      },
       "EntryBulkDeleteRequest": {
         "additionalProperties": false,
         "description": "Delete several entries of a repeating section, all or none.\n\n``extra=\"forbid\"`` for the reason every sibling gives: this body is\nvalidated once, in the request cycle.\n\nThe list is non-empty and DISTINCT. A duplicate id is refused rather than\nde-duplicated because ``deleted`` would then over-report \u2014 the caller\nnamed one row twice and the count would say two, which is exactly the\nnumber a confirmation dialog shows back to the reviewer.",
@@ -4835,6 +5252,12 @@
             "title": "Blockids",
             "type": "array"
           },
+          "grounded": {
+            "default": false,
+            "description": "the position resolves to a parsed-text anchor",
+            "title": "Grounded",
+            "type": "boolean"
+          },
           "page_number": {
             "anyOf": [
               {
@@ -4862,6 +5285,12 @@
             "default": 0,
             "title": "Rank",
             "type": "integer"
+          },
+          "stale": {
+            "default": false,
+            "description": "grounded, and the article was re-parsed since this anchor was made: the location may have moved",
+            "title": "Stale",
+            "type": "boolean"
           },
           "text_content": {
             "anyOf": [
@@ -5101,6 +5530,17 @@
       },
       "ExtractionBatchDetail": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "counts": {
             "$ref": "#/components/schemas/ExtractionBatchCounts"
           },
@@ -5148,6 +5588,10 @@
           },
           "stalled": {
             "title": "Stalled",
+            "type": "boolean"
+          },
+          "started_by_agent": {
+            "title": "Started By Agent",
             "type": "boolean"
           },
           "state": {
@@ -5206,6 +5650,8 @@
           "stop_code",
           "stop_message",
           "counts",
+          "started_by_agent",
+          "agent_token_name",
           "items"
         ],
         "title": "ExtractionBatchDetail",
@@ -5294,6 +5740,17 @@
       },
       "ExtractionBatchSummary": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "counts": {
             "$ref": "#/components/schemas/ExtractionBatchCounts"
           },
@@ -5334,6 +5791,10 @@
           },
           "stalled": {
             "title": "Stalled",
+            "type": "boolean"
+          },
+          "started_by_agent": {
+            "title": "Started By Agent",
             "type": "boolean"
           },
           "state": {
@@ -5391,13 +5852,15 @@
           "stalled",
           "stop_code",
           "stop_message",
-          "counts"
+          "counts",
+          "started_by_agent",
+          "agent_token_name"
         ],
         "title": "ExtractionBatchSummary",
         "type": "object"
       },
       "ExtractionErrorCode": {
-        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409),\n  or its provider retired the model upstream (``ModelHTTPError`` 410).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409),\n  or its provider retired the model upstream (``ModelHTTPError`` 410).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``RUN_BUSY``         \u2014 the coordinate's live run is in consensus, which\n  accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time\n  refusal is a 409 ``RunBusyError``), e.g. the run reached consensus\n  while the job was queued.\n- ``RUN_FINALIZED``    \u2014 the coordinate's run is finalized; AI extraction\n  waits until it is reopened (``RunWriteError.run_finalized``;\n  enqueue-time refusal is a 409 ``RunFinalizedError``), e.g. the run was\n  finalized while the job was queued.\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
@@ -5405,6 +5868,8 @@
           "LLM_ENDPOINT_UNAVAILABLE",
           "MISSING_ENTITY_KEY",
           "ENTRY_KEY_DUPLICATE",
+          "RUN_BUSY",
+          "RUN_FINALIZED",
           "EXTRACTION_FAILED"
         ],
         "title": "ExtractionErrorCode",
@@ -6058,6 +6523,18 @@
             "title": "Id",
             "type": "string"
           },
+          "instrument": {
+            "enum": [
+              "charms",
+              "charms_mm",
+              "probast",
+              "probast_ai",
+              "quadas2",
+              "custom"
+            ],
+            "title": "Instrument",
+            "type": "string"
+          },
           "kind": {
             "enum": [
               "extraction",
@@ -6080,6 +6557,7 @@
           "name",
           "description",
           "framework",
+          "instrument",
           "version",
           "kind",
           "entity_types_count"
@@ -6878,6 +7356,227 @@
         "title": "MarkReadyRequest",
         "type": "object"
       },
+      "OAuthConnectionRead": {
+        "description": "An app the user connected through OAuth; never carries a token.",
+        "properties": {
+          "ai_run": {
+            "description": "Whether the user let the app start AI extraction runs.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
+          "client_name": {
+            "description": "The name the app registered with.",
+            "title": "Client Name",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the user approved the app.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the connection ends unless the user approves the app again.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last time the app called `/mcp`.",
+            "title": "Last Used At"
+          },
+          "scope": {
+            "description": "What the user granted the app.",
+            "enum": [
+              "read",
+              "read_write"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_name",
+          "scope",
+          "ai_run",
+          "status",
+          "created_at",
+          "last_used_at",
+          "expires_at"
+        ],
+        "title": "OAuthConnectionRead",
+        "type": "object"
+      },
+      "OAuthConsentDecisionRead": {
+        "description": "Where the browser goes next: back to the app, with a code or an error.",
+        "properties": {
+          "redirect_url": {
+            "description": "The app's redirect URI with the decision's query.",
+            "title": "Redirect Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_url"
+        ],
+        "title": "OAuthConsentDecisionRead",
+        "type": "object"
+      },
+      "OAuthConsentDecisionRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.",
+        "properties": {
+          "ai_run": {
+            "default": false,
+            "description": "Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
+          "approve": {
+            "description": "True to connect the app, false to deny it.",
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "write": {
+            "description": "Grant `write` too. Ignored on a deny and on a request that did not ask for it.",
+            "title": "Write",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approve",
+          "write"
+        ],
+        "title": "OAuthConsentDecisionRequest",
+        "type": "object"
+      },
+      "OAuthConsentRefusalCode": {
+        "description": "Why a consent route refused.\n\n409 ``REQUEST_ALREADY_DECIDED``: the request was already approved or\ndenied (in this tab, another tab, or by a concurrent approval for the same\napp). Slice-local, like ``PersonalAccessTokenRefusalCode``.",
+        "enum": [
+          "REQUEST_ALREADY_DECIDED"
+        ],
+        "title": "OAuthConsentRefusalCode",
+        "type": "string"
+      },
+      "OAuthConsentRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/OAuthConsentRefusalCode"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OAuthConsentRefusalError",
+        "type": "object"
+      },
+      "OAuthConsentRefusalResponse": {
+        "description": "The 409 (``REQUEST_ALREADY_DECIDED``) body, declared so the generated\nclient types the refusal.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/OAuthConsentRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "OAuthConsentRefusalResponse",
+        "type": "object"
+      },
+      "OAuthConsentRequestRead": {
+        "description": "A pending authorization request, as the consent page shows it.",
+        "properties": {
+          "client_name": {
+            "description": "The name the app registered with.",
+            "title": "Client Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the request stops accepting a decision.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "offers_ai_run": {
+            "description": "True when the app asked for `ai_run`, so the page may offer it (a separate box, unchecked by default).",
+            "title": "Offers Ai Run",
+            "type": "boolean"
+          },
+          "offers_write": {
+            "description": "True when the app asked for `write`, so the page may offer it.",
+            "title": "Offers Write",
+            "type": "boolean"
+          },
+          "redirect_host": {
+            "description": "Host (and port, when present) the app's redirect URI points at.",
+            "title": "Redirect Host",
+            "type": "string"
+          },
+          "requested_scopes": {
+            "description": "The scopes the app asked for; always includes `read`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_name",
+          "redirect_host",
+          "requested_scopes",
+          "offers_write",
+          "offers_ai_run",
+          "expires_at"
+        ],
+        "title": "OAuthConsentRequestRead",
+        "type": "object"
+      },
       "OpaqueValueState": {
         "description": "A summarized opaque value that has no listable content (D3).\n\nThe wire row ships this instead of a server-rendered English word, so the\ncopy layer owns the sentence (``.claude/rules/frontend.md``) and a stored\nvalue that happens to read like the marker cannot be mistaken for it.",
         "enum": [
@@ -6987,6 +7686,30 @@
         "title": "OpenHITLSessionResponse",
         "type": "object"
       },
+      "OptionItem": {
+        "additionalProperties": false,
+        "description": "One select/multiselect option: ``value`` is the stored code an answer\ncarries, ``label`` what a person reads. Renaming an option changes only\nits label.",
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "OptionItem",
+        "type": "object"
+      },
       "ParserSettingsPayload": {
         "properties": {
           "type": {
@@ -7029,6 +7752,12 @@
         "additionalProperties": false,
         "description": "Body of ``POST /api/v1/me/tokens``.",
         "properties": {
+          "ai_run": {
+            "default": false,
+            "description": "Allow this token to start AI extraction runs in projects whose manager allowed agent runs. At most 30 days.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
           "expires_in_days": {
             "description": "Token lifetime, in days, from creation.",
             "maximum": 365.0,
@@ -7042,6 +7771,24 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Projects the token may reach (1-20 distinct ids, each one the caller belongs to). Omit or null for every project of the caller.",
+            "title": "Project Ids"
           },
           "scope": {
             "description": "Which MCP tool tier the token may call.",
@@ -7083,6 +7830,11 @@
       "PersonalAccessTokenRead": {
         "description": "A token row, never including the secret.",
         "properties": {
+          "ai_run": {
+            "description": "Whether the token may start AI extraction runs.",
+            "title": "Ai Run",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -7113,6 +7865,22 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Projects the token is restricted to; null means every project of its user.",
+            "title": "Project Ids"
           },
           "revoked_at": {
             "anyOf": [
@@ -7154,7 +7922,9 @@
           "name",
           "token_prefix",
           "scope",
+          "ai_run",
           "status",
+          "project_ids",
           "expires_at",
           "last_used_at",
           "revoked_at",
@@ -7164,9 +7934,10 @@
         "type": "object"
       },
       "PersonalAccessTokenRefusalCode": {
-        "description": "Why ``POST /api/v1/me/tokens`` returned 409.\n\nSlice-local, like ``TemplateDraftLockRefusalCode``\n(``app/schemas/hitl_session.py``): one endpoint's outcome, not part of\nthe cross-cutting ``ApiErrorCode`` vocabulary.",
+        "description": "Why ``POST /api/v1/me/tokens`` refused.\n\n409 ``TOKEN_LIMIT_REACHED``: the caller already holds the maximum number of\nactive tokens. 422 ``PROJECT_NOT_ACCESSIBLE``: a listed project is missing\nor the caller is not a member of it (one answer for both).\n\nSlice-local, like ``TemplateDraftLockRefusalCode``\n(``app/schemas/hitl_session.py``): one endpoint's outcome, not part of\nthe cross-cutting ``ApiErrorCode`` vocabulary.",
         "enum": [
-          "TOKEN_LIMIT_REACHED"
+          "TOKEN_LIMIT_REACHED",
+          "PROJECT_NOT_ACCESSIBLE"
         ],
         "title": "PersonalAccessTokenRefusalCode",
         "type": "string"
@@ -7189,7 +7960,7 @@
         "type": "object"
       },
       "PersonalAccessTokenRefusalResponse": {
-        "description": "The 409 body, declared so the generated client types the refusal.",
+        "description": "The 409 (``TOKEN_LIMIT_REACHED``) and 422 (``PROJECT_NOT_ACCESSIBLE``)\nbody, declared so the generated client types the refusal.",
         "properties": {
           "error": {
             "$ref": "#/components/schemas/PersonalAccessTokenRefusalError"
@@ -7243,6 +8014,38 @@
         "title": "PicotsSlot",
         "type": "object"
       },
+      "PicotsSlotWrite": {
+        "additionalProperties": false,
+        "description": "One PICOTS slot as written. The read model (``PicotsSlot``) stays unbounded.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "exclusion": {
+            "items": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Exclusion",
+            "type": "array"
+          },
+          "inclusion": {
+            "items": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Inclusion",
+            "type": "array"
+          }
+        },
+        "title": "PicotsSlotWrite",
+        "type": "object"
+      },
       "PicotsSlots": {
         "description": "The six slots, in the instrument's P-I-C-O-T-S order.",
         "properties": {
@@ -7266,6 +8069,32 @@
           }
         },
         "title": "PicotsSlots",
+        "type": "object"
+      },
+      "PicotsSlotsWrite": {
+        "additionalProperties": false,
+        "description": "The six slots as written; an omitted slot is written empty.",
+        "properties": {
+          "comparator_models": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "index_models": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "outcomes": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "population": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "setting_and_intended_use": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/PicotsSlotWrite"
+          }
+        },
+        "title": "PicotsSlotsWrite",
         "type": "object"
       },
       "PortableField": {
@@ -7298,7 +8127,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "maxItems": 100,
                 "minItems": 1,
@@ -7536,6 +8365,19 @@
             "title": "Framework",
             "type": "string"
           },
+          "instrument": {
+            "default": "custom",
+            "enum": [
+              "charms",
+              "charms_mm",
+              "probast",
+              "probast_ai",
+              "quadas2",
+              "custom"
+            ],
+            "title": "Instrument",
+            "type": "string"
+          },
           "kind": {
             "const": "extraction",
             "title": "Kind",
@@ -7628,22 +8470,40 @@
               }
             ],
             "title": "Review Type"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
           }
         },
         "required": [
           "picots",
-          "labels"
+          "labels",
+          "revision"
         ],
         "title": "ProjectAiContextRead",
         "type": "object"
       },
       "ProjectAiContextUpdate": {
-        "description": "Both halves ride one write so they cannot disagree.\n\nEach field is optional: omitting ``picots`` changes only the switch and vice\nversa, which is what lets the toggle and the editor share one endpoint\nwithout either clobbering the other's value.",
+        "additionalProperties": false,
+        "description": "Both halves ride one write so they cannot disagree.\n\nEach field is optional: omitting ``picots`` changes only the switch and vice\nversa, which is what lets the toggle and the editor share one endpoint\nwithout either clobbering the other's value.\n\n``expected_revision`` is the ``revision`` last read: when the protocol moved\nsince, the save is refused with 409 ``STALE_VALUE`` and nothing is written.\nOmitting it saves unconditionally.",
         "properties": {
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
           "picots": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PicotsSlots"
+                "$ref": "#/components/schemas/PicotsSlotsWrite"
               },
               {
                 "type": "null"
@@ -7771,9 +8631,9 @@
         "title": "ProjectDeleteRead",
         "type": "object"
       },
-      "ProjectDetailsFields": {
+      "ProjectDetailsExpected": {
         "additionalProperties": false,
-        "description": "A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.",
+        "description": "The values the caller last read, echoed back as the write's precondition.\n\nLoose on purpose: the two JSON columns may hold a shape written before the\ntyped write bounds existed, and the caller must be able to echo it.",
         "properties": {
           "condition_studied": {
             "anyOf": [
@@ -7812,7 +8672,6 @@
           "name": {
             "anyOf": [
               {
-                "minLength": 1,
                 "type": "string"
               },
               {
@@ -7909,6 +8768,145 @@
               }
             ],
             "title": "Study Design"
+          }
+        },
+        "title": "ProjectDetailsExpected",
+        "type": "object"
+      },
+      "ProjectDetailsFields": {
+        "additionalProperties": false,
+        "description": "A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.",
+        "properties": {
+          "condition_studied": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition Studied"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "eligibility_criteria": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EligibilityCriteria"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "review_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Context"
+          },
+          "review_keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Keywords"
+          },
+          "review_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Rationale"
+          },
+          "review_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Title"
+          },
+          "review_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "interventional",
+                  "predictive_model",
+                  "diagnostic",
+                  "prognostic",
+                  "qualitative",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Type"
+          },
+          "search_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Strategy"
+          },
+          "study_design": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyDesign"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ProjectDetailsFields",
@@ -8124,7 +9122,7 @@
         "description": "The changed columns and the values the caller last read for each of them.\n\n``expected`` must name every key of ``fields``: the write applies only if\neach of those columns still holds its ``expected`` value, else 409.",
         "properties": {
           "expected": {
-            "$ref": "#/components/schemas/ProjectDetailsFields"
+            "$ref": "#/components/schemas/ProjectDetailsExpected"
           },
           "fields": {
             "$ref": "#/components/schemas/ProjectDetailsFields"
@@ -8194,6 +9192,18 @@
             "title": "Id",
             "type": "string"
           },
+          "instrument": {
+            "enum": [
+              "charms",
+              "charms_mm",
+              "probast",
+              "probast_ai",
+              "quadas2",
+              "custom"
+            ],
+            "title": "Instrument",
+            "type": "string"
+          },
           "is_active": {
             "title": "Is Active",
             "type": "boolean"
@@ -8232,6 +9242,7 @@
           "name",
           "description",
           "framework",
+          "instrument",
           "version",
           "kind",
           "schema",
@@ -9178,7 +10189,12 @@
           },
           "allowed_values": {
             "anyOf": [
-              {},
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OptionItem"
+                },
+                "type": "array"
+              },
               {
                 "type": "null"
               }
@@ -9460,6 +10476,18 @@
             "title": "Peers Revealed",
             "type": "boolean"
           },
+          "project_protocol_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's protocol revision now.",
+            "title": "Project Protocol Revision"
+          },
           "proposals": {
             "items": {
               "$ref": "#/components/schemas/ProposalRecordResponse"
@@ -9479,7 +10507,7 @@
             "title": "Ready Count",
             "type": "integer"
           },
-          "review_context": {
+          "review_question": {
             "anyOf": [
               {
                 "type": "string"
@@ -9488,7 +10516,25 @@
                 "type": "null"
               }
             ],
-            "title": "Review Context"
+            "title": "Review Question"
+          },
+          "review_question_drift": {
+            "default": false,
+            "description": "True when the project's protocol changed since this run pinned its review question; new runs use the current one.",
+            "title": "Review Question Drift",
+            "type": "boolean"
+          },
+          "review_question_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Protocol revision the pinned review question was built from; null when nothing is pinned yet or the pin predates revisions.",
+            "title": "Review Question Revision"
           },
           "reviewer_count": {
             "default": 0,
@@ -9505,6 +10551,19 @@
           },
           "run": {
             "$ref": "#/components/schemas/RunSummaryResponse"
+          },
+          "scope_rules": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope rules frozen in the run's pinned template version (QA runs only).",
+            "title": "Scope Rules"
           }
         },
         "required": [
@@ -9682,17 +10741,6 @@
               }
             ],
             "title": "Parentinstanceid"
-          },
-          "pdfText": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pdftext"
           },
           "projectId": {
             "format": "uuid",
@@ -9987,6 +11035,28 @@
           "reason"
         ],
         "title": "SkippedFileEntry",
+        "type": "object"
+      },
+      "StudyDesign": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "types": {
+            "items": {
+              "maxLength": 100,
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "title": "StudyDesign",
         "type": "object"
       },
       "SyncCollectionResponse": {
@@ -10305,8 +11375,12 @@
         "type": "object"
       },
       "TemplateChangeRowRead": {
-        "description": "One diff row on the wire, built by ``app.services.template_diff_read``.\n\nNothing here is typed ``Any``: the baseline side of a diff is raw stored\nJSONB, and an opaque value is summarized server-side rather than\nshipped.",
+        "description": "One diff row on the wire, built by ``app.services.template_versioning._diff_read``.\n\nNothing here is typed ``Any``: the baseline side of a diff is raw stored\nJSONB, and an opaque value is summarized server-side rather than\nshipped.",
         "properties": {
+          "affects_ai": {
+            "title": "Affects Ai",
+            "type": "boolean"
+          },
           "affects_recorded_data": {
             "default": false,
             "title": "Affects Recorded Data",
@@ -10404,7 +11478,8 @@
           "id",
           "variant",
           "tier",
-          "label_path"
+          "label_path",
+          "affects_ai"
         ],
         "title": "TemplateChangeRowRead",
         "type": "object"
@@ -10899,7 +11974,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "maxItems": 100,
                 "minItems": 1,
@@ -11122,7 +12197,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "type": "array"
               },
@@ -11367,7 +12442,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "maxItems": 100,
                 "minItems": 1,
@@ -12522,7 +13597,7 @@
     },
     "/api/v1/articles/form-runs": {
       "post": {
-        "description": "Resolve the latest relevant run per article for the extraction form.\n\nPer article: returns the latest non-terminal run; falls back to the\nlatest finalized run; returns run_id=null when no run exists.\nCancelled runs are excluded. BOLA-gated via project_id in the body.",
+        "description": "Each article's resolved run for the extraction form (live, else\nfinalized; run_id=null when none \u2014 ``app.services.current_run``).\nBOLA-gated via project_id in the body, which also scopes the resolution:\na member of P passing Q's article ids reads back no Q run ids.",
         "operationId": "post_form_runs_api_v1_articles_form_runs_post",
         "requestBody": {
           "content": {
@@ -13345,7 +14420,7 @@
     },
     "/api/v1/extraction/instances/{instance_id}": {
       "patch": {
-        "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.",
+        "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history. A re-key onto an identity a sibling already holds answers a typed 409 ENTRY_KEY_DUPLICATE and changes nothing.",
         "operationId": "update_instance_api_v1_extraction_instances__instance_id__patch",
         "parameters": [
           {
@@ -13379,6 +14454,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "ENTRY_KEY_DUPLICATE: a sibling entry already holds the requested key."
           },
           "422": {
             "content": {
@@ -13811,6 +14889,89 @@
         ]
       }
     },
+    "/api/v1/me/oauth-connections": {
+      "get": {
+        "operationId": "list_my_connections_api_v1_me_oauth_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_OAuthConnectionRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List My Connections",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/oauth-connections/{connection_id}": {
+      "delete": {
+        "operationId": "revoke_my_connection_api_v1_me_oauth_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OAuthConnectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Connection not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Revoke My Connection",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/providers": {
       "get": {
         "operationId": "list_providers_api_v1_me_providers_get",
@@ -13902,7 +15063,22 @@
             "description": "Refused: 10 active tokens is the limit"
           },
           "422": {
-            "description": "Invalid name, scope or expires_in_days"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PersonalAccessTokenRefusalResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiResponse_NoneType_"
+                    }
+                  ],
+                  "title": "Response 422 Create My Token Api V1 Me Tokens Post"
+                }
+              }
+            },
+            "description": "Invalid body, or a listed project the caller cannot reach"
           }
         },
         "security": [
@@ -13967,6 +15143,136 @@
         "summary": "Revoke My Token",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/oauth/requests/{request_id}": {
+      "get": {
+        "operationId": "read_consent_request_api_v1_oauth_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OAuthConsentRequestRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Unknown or expired request, or OAuth is off"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsentRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: the request was already answered"
+          },
+          "422": {
+            "description": "Malformed request id"
+          },
+          "429": {
+            "description": "Too many requests"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Read Consent Request",
+        "tags": [
+          "oauth-consent"
+        ]
+      }
+    },
+    "/api/v1/oauth/requests/{request_id}/decision": {
+      "post": {
+        "operationId": "decide_consent_request_api_v1_oauth_requests__request_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthConsentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OAuthConsentDecisionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Unknown or expired request, or OAuth is off"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsentRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: the request was already answered"
+          },
+          "422": {
+            "description": "Malformed request id or body"
+          },
+          "429": {
+            "description": "Too many requests"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Decide Consent Request",
+        "tags": [
+          "oauth-consent"
         ]
       }
     },
@@ -14074,7 +15380,7 @@
         ]
       },
       "put": {
-        "description": "Persist the review question and/or its switch, and return the new preview.\n\nReturning the re-read model (rather than echoing the request) is what makes\nthe preview trustworthy: it is rendered from what was actually stored.",
+        "description": "Persist the review question and/or its switch, and return the new preview.\n\nReturning the re-read model (rather than echoing the request) is what makes\nthe preview trustworthy: it is rendered from what was actually stored.\nA stale ``expected_revision`` raises ``StaleProtocolRevisionError`` (409,\nvia the global handler) before anything is written.",
         "operationId": "update_ai_context_api_v1_projects__project_id__ai_context_put",
         "parameters": [
           {
@@ -14109,6 +15415,9 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "description": "The review question changed since it was read (STALE_VALUE)."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14126,6 +15435,117 @@
           }
         ],
         "summary": "Update Ai Context",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ai-policy": {
+      "get": {
+        "description": "The project's AI agents policy; an unset policy reads as the defaults.",
+        "operationId": "read_ai_policy_api_v1_projects__project_id__ai_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AiPolicyRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not a member of the project"
+          },
+          "404": {
+            "description": "The project row is missing"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Read Ai Policy",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Replace the project's AI agents policy and return what was stored.",
+        "operationId": "update_ai_policy_api_v1_projects__project_id__ai_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiPolicyUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AiPolicyRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not a manager of the project"
+          },
+          "404": {
+            "description": "The project row is missing"
+          },
+          "422": {
+            "description": "Unknown field, or a value out of bounds"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Ai Policy",
         "tags": [
           "projects"
         ]
@@ -16744,7 +18164,7 @@
         ]
       },
       "put": {
-        "description": "Stage the instruction as a draft edit (slice B-4).\n\nWhitespace-only normalizes to NULL (nothing injected). Nothing\nrepublishes here \u2014 the text reaches snapshots, prompts and\neditable-stage runs when the manager presses Publish\n(``republish-version``).",
+        "description": "Stage the instruction as a draft edit (slice B-4).\n\nWhitespace-only normalizes to NULL (nothing injected). Nothing\nrepublishes here \u2014 the text reaches snapshots, prompts and\neditable-stage runs when the manager presses Publish\n(``republish-version``). Like every draft edit it claims the draft\nlock first: another manager's lock refuses with 409 ``DRAFT_LOCK_HELD``.",
         "operationId": "update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put",
         "parameters": [
           {
@@ -16788,6 +18208,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDraftLockRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: draft lock conflict"
           },
           "422": {
             "content": {

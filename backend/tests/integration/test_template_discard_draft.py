@@ -37,16 +37,18 @@ from app.repositories.extraction_field_reference_repository import (
 )
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import diff_snapshots
-from app.services.template_discard_service import (
+from app.services.template_versioning import (
     DiscardBlockedByCardinalityError,
     DiscardRacedError,
     NarrowBaselineError,
+    NoActiveTemplateVersionError,
     OrphanAcknowledgementRequiredError,
+    TemplateVersionService,
     discard_draft,
 )
-from app.services.template_version_read_service import NoActiveTemplateVersionError
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning._diff import (
+    diff_snapshots,
+)
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,
@@ -1451,3 +1453,33 @@ async def test_discard_after_deleting_the_entry_key_field_restores_the_identity(
     assert (await entry_key_holders(db_session, template_id))[section] == key_field
     assert await get_config_draft_marker(db_session, template_id) is None
     await _assert_matches_baseline(db_session, template_id=template_id, baseline=baseline)
+
+
+@pytest.mark.asyncio
+async def test_discard_restores_canonical_options_over_a_legacy_baseline(
+    db_session: AsyncSession,
+) -> None:
+    """A baseline frozen with bare-string options is restored in the
+    canonical ``{value, label}`` shape: the live rows never go back to legacy."""
+    project_id, template_id, _ = await _fresh_charms(db_session)
+    target = await template_fixtures.plant_legacy_option_baseline(
+        db_session, project_id, template_id
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_fields SET allowed_values = CAST(:v AS jsonb) WHERE id = :id"
+        ),
+        {"v": _json.dumps(template_fixtures.CANONICAL_OPTIONS), "id": str(target)},
+    )
+    await _set_label(db_session, "extraction_fields", target, "Shrinkage applied")
+
+    await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    restored = (
+        await db_session.execute(
+            text("SELECT allowed_values, label FROM public.extraction_fields WHERE id = :id"),
+            {"id": str(target)},
+        )
+    ).one()
+    assert restored.allowed_values == template_fixtures.CANONICAL_OPTIONS
+    assert restored.label != "Shrinkage applied"

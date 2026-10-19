@@ -1,14 +1,16 @@
 """Service for the per-project parser-backend setting.
 
 Owns the ``parsing`` sub-dict inside ``projects.settings``:
-``{"type": "auto" | "llamaparse" | "docling"}``. Mirrors
-ManagerReviewVisibilityService (plain JSONB, reassign-to-track).
+``{"type": "auto" | "llamaparse" | "docling"}``, written through
+``ProjectRepository.update_settings_key`` (row-locked, this key only).
 
 Default is ``"auto"``: the worker uses the cloud LlamaParse parser when a
 ``llama_cloud`` connection at user or project scope (or the global setting)
 resolves a key (``llm_connection_service.resolve_provider_key``), falling
-back to the self-hosted Docling parser otherwise. The legacy value ``"standard"`` (the old self-hosted
-opt-out) is still accepted on write and normalises to ``"docling"`` on read.
+back to the self-hosted PyMuPDF parser otherwise. ``"docling"`` is an explicit
+opt-in a project manager sets. The legacy value ``"standard"`` (the old
+self-hosted opt-out) is still accepted on write and normalises to
+``"docling"`` on read.
 """
 
 from uuid import UUID
@@ -30,16 +32,9 @@ class ProjectNotFoundError(Exception):
 
 
 class ParserSettingsService:
-    """Owns the ``parsing`` map inside projects.settings.
-
-    NOTE: this write is an UNLOCKED read-modify-reassign of the shared
-    ``settings`` column — now that ``LlmEngineService`` is a second writer
-    (which takes ``FOR UPDATE``), an interleaved parser write can still drop
-    a concurrent sibling-key update (pre-existing; out of C1b scope).
-    """
+    """Owns the ``parsing`` map inside projects.settings."""
 
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
         self._projects = ProjectRepository(db)
 
     async def get_for_project(self, project_id: UUID) -> str:
@@ -56,13 +51,9 @@ class ParserSettingsService:
     async def set_for_project(self, *, project_id: UUID, parser_type: str) -> dict[str, str]:
         if parser_type not in _SETTABLE_TYPES:
             raise ValueError(f"parser_type must be one of {_SETTABLE_TYPES}, got {parser_type!r}")
-        project = await self._projects.get_by_id(project_id)
+        project = await self._projects.update_settings_key(
+            project_id, "parsing", lambda _old: {"type": parser_type}
+        )
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
-        # projects.settings is plain JSONB (NOT MutableDict): build a new dict
-        # and REASSIGN, or the change is not tracked and never persists.
-        settings = dict(project.settings or {})
-        settings["parsing"] = {"type": parser_type}
-        project.settings = settings  # reassignment -> dirty-tracked
-        await self.db.flush()
         return {"type": parser_type}

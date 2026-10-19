@@ -1,7 +1,7 @@
 /**
  * AI suggestions service — reads AI proposals via the typed API client.
- * Read-only: accept/select/reject persistence happens through the screens'
- * autosave (`writeRunFieldValue` with a D0 AI link), not from here — the old
+ * Read-only: accepting is the reviewer's decision (`useRunValues`, carrying
+ * the D0 AI link) and a reject's clear is autosaved there — the old
  * direct accept/reject writers were removed with the dead `acceptStrategy`
  * chain (2026-07-05 verify-then-prune).
  *
@@ -23,7 +23,7 @@ import type {
   RunProvenance,
   VerificationVerdict,
 } from '@/types/ai-extraction';
-import { getSuggestionKey } from '@/types/ai-extraction';
+import { coordKey } from '@/lib/runs/coord';
 import { unwrapProposedValue } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
@@ -44,6 +44,8 @@ function mapEvidenceList(
     blockIds: e.blockIds ?? [],
     attributionLabel: (e.attributionLabel as EvidenceCitation['attributionLabel']) ?? null,
     rank: e.rank ?? 0,
+    grounded: e.grounded ?? false,
+    stale: e.stale ?? false,
   }));
 }
 
@@ -137,6 +139,8 @@ function mapPromptComposition(raw: unknown): PromptComposition | undefined {
       fileName: ar['file_name'] as string | null | undefined,
       truncated: ar['truncated'] as boolean | undefined,
       estTokens: ar['est_tokens'] as number | null | undefined,
+      contentVersion: ar['content_version'] as number | null | undefined,
+      textSha256: ar['text_sha256'] as string | null | undefined,
     },
     fieldsRequested: pc['fields_requested'] as string[] | undefined,
     llmCalls: pc['llm_calls'] as number | undefined,
@@ -207,7 +211,7 @@ export class AISuggestionService {
     const items = response?.suggestions ?? [];
     const suggestionsMap: Record<string, AISuggestion> = {};
     for (const item of items) {
-      const key = getSuggestionKey(item.instance_id, item.field_id);
+      const key = coordKey(item.instance_id, item.field_id);
       // First-wins guard: server already dedups to latest-per-coord,
       // but keep this harmless if duplicates slip through.
       if (suggestionsMap[key]) continue;

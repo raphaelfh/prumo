@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-15
+last_reviewed: 2026-10-02
 owner: '@raphaelfh'
 ---
 
@@ -33,7 +33,7 @@ frontend/pdf-viewer/
 ├── engines/mock/  in-memory engine for tests
 ├── viewport/      usePageLayout, useVirtualPages, zoomMath, useGestureZoom, useZoomShortcuts, useFitWidth
 ├── hooks/         useDocumentLoader, usePageHandle, usePageScrollSync (PageLocator)
-├── primitives/    Viewer, CanvasLayer, TextLayer, Reader and its helpers
+├── primitives/    Viewer (Viewer.Page computes the page render plan), the CanvasLayer and TextLayer painters, Reader and its helpers
 ├── markdown/      the reader's markdown rendering
 ├── services/      searchService (canvas find-in-document, over core/pageText)
 ├── adapters/      articleFileSource
@@ -49,6 +49,18 @@ alone. Page 1 is read at load; the rest are estimated from it until they mount.
 (`@tanstack/react-virtual`). The page ⇄ scroll sync asks a `PageLocator`
 where pages are — the layout for canvas pages, the DOM for the reader — so
 navigating to a page that is not mounted still scrolls there.
+
+## Page rendering
+
+`Viewer.Page` computes one `PageRenderPlan` per page
+(`primitives/pageRenderPlan.tsx`) and provides it to the layers inside: the
+canvas bitmap scale (CSS zoom × device pixels, with the ratio capped at 2 and
+the backing store at 16 777 216 px), the text layer scale (CSS zoom only —
+pdf.js multiplies the dpr inside `measureText`), the effective rotation, the
+CSS box, and `settled` — false during a zoom gesture and for 100 ms after a
+zoom or rotation change of a page already painted, so a burst paints once.
+`CanvasLayer` and `TextLayer` paint what the plan says and own only their
+in-flight render; a further layer is one more painter.
 
 ## Rotation
 

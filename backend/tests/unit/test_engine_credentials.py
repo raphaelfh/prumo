@@ -13,12 +13,14 @@ import app.services.engine_credentials as ec
 from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import (
     EngineCredentials,
+    assert_engine_ready,
     rekey_for_adopted_engine,
     resolve_engine_credentials,
 )
 from app.services.llm_connection_service import (
     ConnectionUnavailableError,
     KeyScope,
+    MissingCredentialError,
     ResolvedKey,
 )
 
@@ -29,7 +31,9 @@ _CID_B = str(uuid4())
 _CID_C = str(uuid4())
 
 
-def _row(connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1") -> Any:
+def _row(
+    connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1", output_mode: Any = "tool"
+) -> Any:
     row = type("Row", (), {})()
     row.id, row.base_url, row.label, row.encrypted_api_key = (
         connection_id,
@@ -37,6 +41,7 @@ def _row(connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1") -> Any:
         "host",
         "cipher",
     )
+    row.capabilities = {"output_mode": output_mode, "models_seen": []}
     return row
 
 
@@ -95,8 +100,40 @@ async def test_pinned_connection_resolves_through_the_owner_guard(
         key_scope=KeyScope.USER_BYOK,
         base_url="https://8.8.8.8/v1",
         connection_id=str(cid),
+        output_mode="tool",
     )
     assert calls == [(cid, _USER)] and asked == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ("tool", "tool"),
+        ("native", "native"),
+        ("prompted", "prompted"),
+        (None, None),
+        ("bogus", None),
+    ],
+    ids=["tool", "native", "prompted", "never-probed", "unknown-degrades"],
+)
+async def test_pinned_connection_carries_its_probed_output_mode(
+    monkeypatch: pytest.MonkeyPatch, stored: Any, expected: Any
+) -> None:
+    """The endpoint probe's verdict is stored on the connection row; the run
+    path reads it HERE, with the key and the host, so the wire call runs on
+    what the probe measured rather than the row default for custom hosts.
+    An unknown stored mode degrades to None, never to a 500."""
+    cid = uuid4()
+    _stub_guard(monkeypatch, _row(cid, output_mode=stored))
+    _stub_decrypt(monkeypatch, "sk-host")
+    creds = await resolve_engine_credentials(
+        object(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="openai_compatible", model="m", connection_id=str(cid)),
+    )
+    assert creds.output_mode == expected
 
 
 @pytest.mark.asyncio
@@ -156,7 +193,11 @@ async def test_catalogue_engine_walks_the_one_ladder(monkeypatch: pytest.MonkeyP
         engine=LlmTarget(provider="anthropic", model="m"),
     )
     assert creds == EngineCredentials(
-        api_key="sk-shared", key_scope=KeyScope.PROJECT_SHARED, base_url=None, connection_id=None
+        api_key="sk-shared",
+        key_scope=KeyScope.PROJECT_SHARED,
+        base_url=None,
+        connection_id=None,
+        output_mode=None,
     )
     assert asked == ["anthropic"]
 
@@ -168,13 +209,17 @@ async def test_no_key_anywhere_is_none_credentials(monkeypatch: pytest.MonkeyPat
         object(), user_id=_USER, project_id=_PROJECT, engine=LlmTarget(provider="openai", model="m")
     )
     assert creds == EngineCredentials(
-        api_key=None, key_scope=None, base_url=None, connection_id=None
+        api_key=None, key_scope=None, base_url=None, connection_id=None, output_mode=None
     )
 
 
 def test_repr_never_prints_the_key() -> None:
     creds = EngineCredentials(
-        api_key="sk-secret", key_scope=KeyScope.USER_BYOK, base_url=None, connection_id=None
+        api_key="sk-secret",
+        key_scope=KeyScope.USER_BYOK,
+        base_url=None,
+        connection_id=None,
+        output_mode=None,
     )
     assert "sk-secret" not in repr(creds) and "<redacted>" in repr(creds)
 
@@ -208,7 +253,11 @@ async def test_rekey_identity_is_provider_plus_connection(
         project_id=_PROJECT,
         engine=LlmTarget(provider=provider, model="m", connection_id=engine_cid),
         current=EngineCredentials(
-            api_key="old", key_scope=KeyScope.USER_BYOK, base_url=None, connection_id=current_cid
+            api_key="old",
+            key_scope=KeyScope.USER_BYOK,
+            base_url=None,
+            connection_id=current_cid,
+            output_mode=None,
         ),
         keyed_for=keyed_for,
     )
@@ -221,3 +270,116 @@ def test_legacy_pinned_snapshot_with_endpoint_id_validates() -> None:
         {"provider": "openai_compatible", "model": "m", "endpoint_id": "x"}
     )
     assert target.connection_id is None and target.deviation is False
+
+
+def _stub_catalogue_engine(monkeypatch: pytest.MonkeyPatch, rung: str | None) -> LlmTarget:
+    engine = LlmTarget(provider="openai", model="m")
+
+    async def fake_engine(_db: Any, _project_id: UUID, _user_id: UUID) -> LlmTarget:
+        return engine
+
+    async def fake_availability(_db: Any, *, providers: list[str], **_kw: Any) -> dict:
+        return dict.fromkeys(providers, rung)
+
+    monkeypatch.setattr(ec, "resolve_engine", fake_engine)
+    monkeypatch.setattr(ec, "availability_map", fake_availability)
+    return engine
+
+
+@pytest.mark.asyncio
+async def test_assert_engine_ready_refuses_global_when_not_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _stub_catalogue_engine(monkeypatch, "global")
+
+    with pytest.raises(MissingCredentialError) as refused:
+        await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=False)
+    assert refused.value.code == "MISSING_API_KEY" and refused.value.status_code == 409
+    assert refused.value.details == {"reason": "DEPLOYMENT_KEY_NOT_ALLOWED"}
+    assert "own key" in refused.value.message
+
+    assert await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER) is engine
+    assert (
+        await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=True)
+        is engine
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow_global", [True, False], ids=["global-allowed", "global-refused"])
+async def test_missing_key_reason(monkeypatch: pytest.MonkeyPatch, allow_global: bool) -> None:
+    _stub_catalogue_engine(monkeypatch, None)
+
+    with pytest.raises(MissingCredentialError) as refused:
+        await assert_engine_ready(
+            object(), project_id=_PROJECT, user_id=_USER, allow_global=allow_global
+        )
+    assert refused.value.details == {"reason": "MISSING_API_KEY"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rung", ["user", "project"])
+async def test_own_key_passes_when_global_refused(
+    monkeypatch: pytest.MonkeyPatch, rung: str
+) -> None:
+    engine = _stub_catalogue_engine(monkeypatch, rung)
+
+    assert (
+        await assert_engine_ready(object(), project_id=_PROJECT, user_id=_USER, allow_global=False)
+        is engine
+    )
+
+
+def _only_the_deployment_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No user or project row holds a key; the deployment key is set."""
+    import app.services.llm_connection_service as lcs
+
+    async def no_row(*_a: Any, **_kw: Any) -> None:
+        return None
+
+    monkeypatch.setattr(lcs, "_scoped_key_row", no_row)
+    monkeypatch.setattr(lcs, "global_key_for", lambda _p: "sk-test")
+
+
+@pytest.mark.asyncio
+async def test_refused_deployment_key_leaves_the_engine_keyless(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Agent batches: the ladder's global rung answers nothing, so the
+    credentials carry no key and no scope — every other caller keeps it."""
+    _only_the_deployment_key(monkeypatch)
+    engine = LlmTarget(provider="openai", model="m")
+
+    refused = await resolve_engine_credentials(
+        object(), user_id=_USER, project_id=_PROJECT, engine=engine, allow_global_key=False
+    )
+    default = await resolve_engine_credentials(
+        object(), user_id=_USER, project_id=_PROJECT, engine=engine
+    )
+
+    assert (refused.api_key, refused.key_scope) == (None, None)
+    assert (default.api_key, default.key_scope) == ("sk-test", KeyScope.GLOBAL_SERVICE)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow", [False, True], ids=["refused", "default"])
+async def test_rekey_forwards_the_deployment_key_flag(
+    monkeypatch: pytest.MonkeyPatch, allow: bool
+) -> None:
+    seen: list[bool] = []
+
+    async def spy(_session: Any, *, allow_global: bool = True, **_kw: Any) -> None:
+        seen.append(allow_global)
+        return None
+
+    monkeypatch.setattr(ec, "resolve_provider_key", spy)
+    await rekey_for_adopted_engine(
+        object(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="anthropic", model="m"),
+        current=EngineCredentials(None, None, None, None, None),
+        keyed_for="openai",
+        allow_global_key=allow,
+    )
+    assert seen == [allow]

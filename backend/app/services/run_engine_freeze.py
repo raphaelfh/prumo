@@ -1,7 +1,6 @@
 """Run-scoped engine freeze + provenance snapshot helpers (C1b).
 
-Extracted from ``SectionExtractionService`` (file-size fitness) with
-explicit params — pure functions of their inputs, shared by the service
+Pure functions of explicit params, shared by ``app.services.ai_extraction``
 and the worker tasks.
 
 The pin lives at ``run.results["provenance"]["engine"]`` (server-only;

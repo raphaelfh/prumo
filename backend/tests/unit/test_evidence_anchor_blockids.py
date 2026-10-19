@@ -8,6 +8,7 @@ without re-running the matcher.
 
 from __future__ import annotations
 
+from app.domain.evidence_block_refs import BlockRefWindow
 from app.infrastructure.parsing.base import ParsedBlock, assign_char_offsets_to_blocks
 from app.services.evidence_anchor_service import build_anchor
 
@@ -101,3 +102,40 @@ class TestBuildAnchorBlockIds:
         """Absent quote → build_anchor returns None (regression guard)."""
         blocks = _with_offsets([_block(1, 0, "Some unrelated text here.")])
         assert build_anchor("quantum entanglement of photons", blocks) is None
+
+
+_SENTENCE = "Mortality at 30 days was 12 percent."
+_TWO_PAGES = [
+    _block(1, 0, "Abstract: " + _SENTENCE),
+    _block(3, 0, "Results opening."),
+    _block(3, 1, "In the cohort, " + _SENTENCE),
+    _block(3, 2, "Results closing."),
+]
+
+
+def _window(page: int, idxs: tuple[int, ...]) -> BlockRefWindow:
+    return BlockRefWindow(page=page, block_indexes=idxs, text="")
+
+
+class TestBuildAnchorHint:
+    def test_hint_window_beats_earlier_page(self) -> None:
+        blocks = _with_offsets(_TWO_PAGES)
+        hinted = build_anchor(_SENTENCE, blocks, hint=_window(3, (0, 1, 2)))
+        unhinted = build_anchor(_SENTENCE, blocks)
+        assert hinted is not None and unhinted is not None
+        assert hinted.anchor.range.page == 3  # type: ignore[union-attr]
+        assert hinted.anchor.block_ids == [1]  # type: ignore[union-attr]
+        # No hint: the earliest page still wins the tie-break.
+        assert unhinted.anchor.range.page == 1  # type: ignore[union-attr]
+
+    def test_hint_match_outside_its_window_falls_back_to_the_document(self) -> None:
+        blocks = _with_offsets(_TWO_PAGES)
+        pos = build_anchor(_SENTENCE, blocks, hint=_window(3, (2,)))
+        assert pos is not None
+        assert pos.anchor.range.page == 1  # type: ignore[union-attr]
+
+    def test_hint_page_without_the_quote_falls_back_to_the_document(self) -> None:
+        blocks = _with_offsets([*_TWO_PAGES, _block(5, 0, "Unrelated discussion.")])
+        pos = build_anchor(_SENTENCE, blocks, hint=_window(5, (0,)))
+        assert pos is not None
+        assert pos.anchor.range.page == 1  # type: ignore[union-attr]

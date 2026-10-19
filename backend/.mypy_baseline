@@ -55,9 +55,6 @@ app/services/model_extraction_service.py:assignment
 app/services/project_template_active_service.py:attr-defined
 app/services/run_lifecycle_service.py:arg-type
 app/services/run_lifecycle_service.py:attr-defined
-app/services/section_extraction_service.py:type-arg
-app/services/section_extraction_service.py:union-attr
-app/services/section_extraction_service.py:unused-ignore
 app/services/template_clone_service.py:attr-defined
 app/services/zotero_import_service.py:arg-type
 app/services/zotero_service.py:arg-type
@@ -65,9 +62,6 @@ app/worker/_runner.py:arg-type
 app/worker/celery_app.py:misc
 app/worker/celery_app.py:name-defined
 app/worker/tasks/export_tasks.py:arg-type
-app/worker/tasks/extraction_tasks.py:arg-type
-app/worker/tasks/extraction_tasks.py:attr-defined
-app/worker/tasks/extraction_tasks.py:operator
 app/worker/tasks/feedback_tasks.py:no-any-return
 app/worker/tasks/feedback_tasks.py:return
 app/worker/tasks/feedback_tasks.py:type-arg

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
 import type { AISuggestion } from '@/types/ai-extraction';
-import { reviewerCoordinateHistory, reversalPayload, acceptedProposal, withReviewDecisionStatus } from './proposalDecisionState';
+import { reviewerCoordinateHistory, reversalPayload, acceptedProposal, withReviewDecisionStatus, reviewerHistoriesByCoord, mergeConfirmedRows } from './proposalDecisionState';
 
 describe('review decision status', () => {
   const suggestion = (id: string, status: AISuggestion['status']) => ({id, status, value: id}) as AISuggestion;
@@ -29,6 +29,19 @@ describe('durable proposal decisions', () => {
     expect(reviewerCoordinateHistory(mixed, 'me', 'run', 'instance', 'field').map(d => d.id)).toEqual(['a', 'b']);
     expect(mixed[0].id).toBe('b');
     expect(reviewerCoordinateHistory(mixed, null, 'run', 'instance', 'field')).toEqual([]);
+  });
+  it('groups every coordinate in one pass, matching the per-coordinate history', () => {
+    const mixed = [row('b', {value: 'B'}), row('a', {value: 'A'}), row('f2', {}, {field_id: 'other'}),
+      row('peer', {}, {reviewer_id: 'other'}), row('run2', {}, {run_id: 'other'})];
+    const histories = reviewerHistoriesByCoord(mixed, 'me', 'run');
+    expect([...histories.keys()].sort()).toEqual(['instance_field', 'instance_other']);
+    expect(histories.get('instance_field')).toEqual(reviewerCoordinateHistory(mixed, 'me', 'run', 'instance', 'field'));
+    expect(reviewerHistoriesByCoord(mixed, null, 'run').size).toBe(0);
+  });
+  it('merges confirmed rows over server rows, a confirmed row replacing its id', () => {
+    const confirmed = row('a', {value: 'local'});
+    expect(mergeConfirmedRows([row('a', {value: 'server'}), row('b', {})], [confirmed]).map(d => [d.id, d.value]))
+      .toEqual([['b', {}], ['a', {value: 'local'}]]);
   });
   it.each([{value: {value: 4, unit: 'mg'}}, {value: ['A', 'B']},
     {value: null, absent_reason: 'no_information'}, {value: false}])('restores the full typed predecessor %j', value => {

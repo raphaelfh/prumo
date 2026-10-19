@@ -31,6 +31,7 @@ import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {t} from '@/lib/copy';
+import {coordKey} from '@/lib/runs/coord';
 
 // =================== INTERFACES ===================
 
@@ -58,7 +59,8 @@ interface FieldInputProps {
   ) => void | Promise<void>;
   disabled?: boolean;
   /** Threaded to the review popover's generation dialog so it can lazily fetch
-   *  the stored markdown the LLM received. */
+   *  the stored article markdown the prompt was built from (the prompt also
+   *  carries block refs, which that view omits). */
   articleId?: string;
 }
 
@@ -75,7 +77,7 @@ export function FieldInput(props: FieldInputProps) {
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
   // hunt the page for newly-populated cells.
-  const justUpdated = useJustUpdatedValue(`${instanceId}_${field.id}`);
+  const justUpdated = useJustUpdatedValue(coordKey(instanceId, field.id));
 
     // Fixed comfortable spacing
   const containerPadding = 'py-2.5';

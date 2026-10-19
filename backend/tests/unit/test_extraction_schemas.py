@@ -24,10 +24,7 @@ from app.schemas.extraction import (
     EntryCreateRequest,
     EntryCreateResponse,
     EvidencePassage,
-    ExtractionEntityTypeSchema,
-    ExtractionFieldSchema,
     ExtractionOptions,
-    ExtractionTemplateSchema,
     HybridCitationAnchor,
     InstanceResponse,
     PDFRect,
@@ -367,102 +364,6 @@ class TestParsePosition:
 
 
 # =================== Literal fields ===================
-
-
-def _field_schema_kw(**kw: object) -> dict[str, object]:
-    base: dict[str, object] = {
-        "id": uuid4(),
-        "name": "f",
-        "label": "F",
-        "fieldType": "text",
-    }
-    base.update(kw)
-    return base
-
-
-def _entity_type_kw(**kw: object) -> dict[str, object]:
-    base: dict[str, object] = {
-        "id": uuid4(),
-        "name": "et",
-        "label": "ET",
-        "cardinality": "one",
-    }
-    base.update(kw)
-    return base
-
-
-class TestExtractionFieldSchema:
-    def test_sort_order_default(self) -> None:
-        f = ExtractionFieldSchema(**_field_schema_kw())
-        assert f.sort_order == 0
-        assert f.is_required is False
-
-    def test_construct_from_snake(self) -> None:
-        f = ExtractionFieldSchema(
-            id=uuid4(),
-            name="f",
-            label="F",
-            field_type="number",
-            is_required=True,
-            sort_order=3,
-        )
-        assert f.field_type == "number"
-        assert f.sort_order == 3
-
-    def test_dump_by_alias_is_camel(self) -> None:
-        wire = ExtractionFieldSchema(**_field_schema_kw()).model_dump(by_alias=True)
-        assert "fieldType" in wire
-        assert "sortOrder" in wire
-        assert "isRequired" in wire
-
-
-class TestExtractionEntityTypeSchema:
-    def test_cardinality_one_and_many(self) -> None:
-        assert ExtractionEntityTypeSchema(**_entity_type_kw(cardinality="one")).cardinality == "one"
-        assert (
-            ExtractionEntityTypeSchema(**_entity_type_kw(cardinality="many")).cardinality == "many"
-        )
-
-    def test_cardinality_invalid_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            ExtractionEntityTypeSchema(**_entity_type_kw(cardinality="zero"))
-
-    def test_sort_order_default(self) -> None:
-        et = ExtractionEntityTypeSchema(**_entity_type_kw())
-        assert et.sort_order == 0
-        assert et.fields == []
-
-
-class TestExtractionTemplateSchema:
-    def test_framework_all_valid_literals(self) -> None:
-        for fw in ("CHARMS", "PICOS", "CUSTOM"):
-            tpl = ExtractionTemplateSchema(
-                id=uuid4(),
-                name="t",
-                framework=fw,
-                version="1.0",
-            )
-            assert tpl.framework == fw
-
-    def test_framework_invalid_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            ExtractionTemplateSchema(
-                id=uuid4(),
-                name="t",
-                framework="GRADE",
-                version="1.0",
-            )
-
-    def test_entity_types_default_and_alias(self) -> None:
-        tpl = ExtractionTemplateSchema(
-            id=uuid4(),
-            name="t",
-            framework="CHARMS",
-            version="1.0",
-        )
-        assert tpl.entity_types == []
-        wire = tpl.model_dump(by_alias=True)
-        assert "entityTypes" in wire
 
 
 class TestSaveValueRequest:

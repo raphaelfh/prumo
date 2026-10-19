@@ -1,27 +1,70 @@
-"""RLS + privilege probes for ``personal_access_tokens`` (migration 0078).
+"""RLS + privilege probes for the credential tables (migrations 0078, 0083).
 
-Backend-only table, same posture as ``llm_connections`` (0072): the row
-holds a SHA-256 hash of a bearer secret, so ``authenticated`` / ``anon``
-hold no privilege at all, and the ``deny_all`` policy is the floor even
-if a dashboard GRANT ever restores SELECT. Probe shape mirrors
+``personal_access_tokens`` and the three OAuth tables (``mcp_oauth_clients``,
+``mcp_oauth_requests``, ``mcp_oauth_tokens``) are backend-only, same posture
+as ``llm_connections`` (0072): their rows hold SHA-256 hashes of bearer
+secrets or the state that mints them, so ``authenticated`` / ``anon`` hold
+no privilege at all, and the ``deny_all`` policy is the floor even if a
+dashboard GRANT ever restores SELECT. Probe shape mirrors
 ``test_llm_connection_rls.py``.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import NamedTuple
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import SEED
-from tests.integration.helpers.pat_rows import insert_pat_row
+from tests.integration.helpers.pat_rows import (
+    insert_oauth_client,
+    insert_oauth_connection,
+    insert_oauth_request,
+    insert_pat_row,
+)
 
-_TABLE = "public.personal_access_tokens"
+
+async def _seed_pat(db: AsyncSession) -> None:
+    await insert_pat_row(db, name="rls")
+
+
+async def _seed_oauth_client(db: AsyncSession) -> None:
+    await insert_oauth_client(db)
+
+
+async def _seed_oauth_request(db: AsyncSession) -> None:
+    await insert_oauth_request(db, client_id=await insert_oauth_client(db))
+
+
+async def _seed_oauth_token(db: AsyncSession) -> None:
+    connection_id = await insert_oauth_connection(
+        db, user_id=SEED.primary_profile, client_id=await insert_oauth_client(db)
+    )
+    await db.execute(
+        text(
+            "INSERT INTO public.mcp_oauth_tokens "
+            "(id, connection_id, kind, token_hash, resource, expires_at) "
+            "VALUES (:id, :cid, 'access', :hash, 'https://api.example/mcp', "
+            "now() + interval '1 hour')"
+        ),
+        {"id": str(uuid4()), "cid": str(connection_id), "hash": uuid4().hex},
+    )
+
+
+_SEEDERS: dict[str, Callable[[AsyncSession], Awaitable[None]]] = {
+    "public.personal_access_tokens": _seed_pat,
+    "public.mcp_oauth_clients": _seed_oauth_client,
+    "public.mcp_oauth_requests": _seed_oauth_request,
+    "public.mcp_oauth_tokens": _seed_oauth_token,
+}
+_TABLES = pytest.mark.parametrize("table", list(_SEEDERS), ids=lambda t: t.split(".")[1])
 
 
 class Outcome(NamedTuple):
@@ -34,6 +77,7 @@ class Outcome(NamedTuple):
 async def _attempt(
     db: AsyncSession,
     *,
+    table: str,
     user_id: UUID,
     sql: str,
     params: dict[str, str] | None = None,
@@ -49,7 +93,7 @@ async def _attempt(
     await db.commit()
     try:
         if regrant_select:
-            await db.execute(text(f"GRANT SELECT ON {_TABLE} TO authenticated"))
+            await db.execute(text(f"GRANT SELECT ON {table} TO authenticated"))
         await db.execute(
             text("SELECT set_config('request.jwt.claims', :claims, true)"),
             {"claims": json.dumps({"sub": str(user_id), "role": "authenticated"})},
@@ -68,32 +112,37 @@ async def _attempt(
 
 
 @pytest.mark.asyncio
+@_TABLES
 @pytest.mark.parametrize("role", ["authenticated", "anon"])
 @pytest.mark.parametrize("privilege", ["SELECT", "INSERT", "UPDATE", "DELETE"])
-async def test_no_privilege_granted(db_session: AsyncSession, role: str, privilege: str) -> None:
+async def test_no_privilege_granted(
+    db_session: AsyncSession, table: str, role: str, privilege: str
+) -> None:
     granted = (
         await db_session.execute(
             text("SELECT has_table_privilege(:role, :table, :privilege)"),
-            {"role": role, "table": _TABLE, "privilege": privilege},
+            {"role": role, "table": table, "privilege": privilege},
         )
     ).scalar_one()
     assert granted is False, (
-        f"{role} holds {privilege} on {_TABLE} — the personal-access-token "
-        "table must be API-only (migration 0078 REVOKE did not take effect)"
+        f"{role} holds {privilege} on {table} — credential tables must be "
+        "API-only (the migration's REVOKE did not take effect)"
     )
 
 
 @pytest.mark.asyncio
-async def test_select_denied_by_missing_grant(db_session: AsyncSession) -> None:
-    """Even the token owner's JWT must not read token rows directly: the
+@_TABLES
+async def test_select_denied_by_missing_grant(db_session: AsyncSession, table: str) -> None:
+    """Even the token owner's JWT must not read credential rows directly: the
     refusal is a privilege error, never an empty result."""
     outcome = await _attempt(
         db_session,
+        table=table,
         user_id=SEED.primary_profile,
-        sql=f"SELECT count(*) FROM {_TABLE}",
+        sql=f"SELECT count(*) FROM {table}",
     )
     assert outcome.error is not None and "permission denied" in outcome.error, (
-        f"secrets leak: an authenticated JWT read {_TABLE} via PostgREST-shaped "
+        f"secrets leak: an authenticated JWT read {table} via PostgREST-shaped "
         f"SQL (outcome={outcome}); token_hash rows must never be client-visible"
     )
 
@@ -102,20 +151,50 @@ async def test_select_denied_by_missing_grant(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_policy_floor_denies_select_even_with_grant(db_session: AsyncSession) -> None:
+@_TABLES
+async def test_policy_floor_denies_select_even_with_grant(
+    db_session: AsyncSession, table: str
+) -> None:
     """If the grant ever comes back (one dashboard click), ``deny_all``
     must still return zero rows — proven against a row that exists."""
-    await insert_pat_row(db_session, name="rls")
-    owner_count = (await db_session.execute(text(f"SELECT count(*) FROM {_TABLE}"))).scalar_one()
+    await _SEEDERS[table](db_session)
+    owner_count = (await db_session.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()
     assert owner_count >= 1, "fixture row must be visible to the table owner"
 
     outcome = await _attempt(
         db_session,
+        table=table,
         user_id=SEED.primary_profile,
-        sql=f"SELECT count(*) FROM {_TABLE}",
+        sql=f"SELECT count(*) FROM {table}",
         regrant_select=True,
     )
     assert outcome == Outcome(rows=0, error=None), (
-        f"deny_all is not the floor: with SELECT re-granted, {_TABLE} "
+        f"deny_all is not the floor: with SELECT re-granted, {table} "
         f"returned rows to the owner's JWT (outcome={outcome})"
     )
+
+
+async def _insert_ai_run_pat(db: AsyncSession, lifetime: timedelta) -> None:
+    await db.execute(
+        text(
+            "INSERT INTO public.personal_access_tokens "
+            "(id, user_id, name, token_prefix, token_hash, scope, ai_run, expires_at) "
+            "VALUES (:id, :uid, 'ai-run', 'prumo_pat_abcdef', :hash, 'read_write', true, "
+            "now() + CAST(:lifetime AS interval))"
+        ),
+        {
+            "id": str(uuid4()),
+            "uid": str(SEED.primary_profile),
+            "hash": uuid4().hex,
+            "lifetime": lifetime,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_ai_run_lifetime_check_rejects_over_30_days(db_session: AsyncSession) -> None:
+    await _insert_ai_run_pat(db_session, timedelta(days=30))
+
+    with pytest.raises(IntegrityError, match="ck_personal_access_tokens_ai_run_lifetime_check"):
+        async with db_session.begin_nested():
+            await _insert_ai_run_pat(db_session, timedelta(days=31))

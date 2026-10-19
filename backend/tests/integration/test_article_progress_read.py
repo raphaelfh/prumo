@@ -30,7 +30,7 @@ from app.models.extraction_workflow import (
 from app.repositories.article_progress_repository import ArticleProgressRepository
 from app.schemas.article_progress import ArticleProgressKind, ArticleProgressRead
 from app.services.article_progress_service import get_article_progress
-from app.services.extraction_run_read_service import resolve_form_runs
+from app.services.current_run import CurrentRunResolver
 from tests.factories.template_factory import TemplateFactory
 from tests.integration.conftest import SEED, make_proposal, open_session
 
@@ -363,7 +363,9 @@ async def test_extraction_ignores_values_from_a_stale_run(db_session: AsyncSessi
     assert (await _values(db_session, w))[aid] == {(iid, w.fid): {"value": "fresh"}}
 
 
-async def test_article_without_form_run_is_listed_with_no_values(db_session: AsyncSession) -> None:
+async def test_article_without_resolved_run_is_listed_with_no_values(
+    db_session: AsyncSession,
+) -> None:
     w = await _world(db_session, articles=2)
     with_run, without = w.aids
     await _proposal(
@@ -398,11 +400,11 @@ async def test_bind_parameter_count_is_independent_of_article_count(
     assert small == large
 
 
-async def test_form_run_scoping_agrees_with_resolve_form_runs(db_session: AsyncSession) -> None:
+async def test_progress_reads_each_articles_resolved_run(db_session: AsyncSession) -> None:
     w = await _world(db_session, articles=5)
     mixed, extract_live, pending_only, finalized_only, no_run = w.aids
-    # Every live stage (pending/extract/consensus) is exercised: a stage dropped from either copy of the live
-    # tuple changes one side's choice. One live run per coordinate (uq_one_live_extraction_run_per_coord), so
+    # Every live stage (pending/extract/consensus) is exercised: the progress read joins the set-based CTE
+    # (resolved_run_ids), the resolver filters the same ranking in Python; a divergence changes one side's choice. One live run per coordinate (uq_one_live_extraction_run_per_coord), so
     # each live stage gets its own article.
     plan = {
         mixed: [("cancelled", 2), ("finalized", 0), ("consensus", 1)],
@@ -420,19 +422,18 @@ async def test_form_run_scoping_agrees_with_resolve_form_runs(db_session: AsyncS
             await _proposal(
                 db_session, run, w.inst[aid][0], w.fid, {"value": str(run)}, minute=10 - minute
             )
-    refs = await resolve_form_runs(db_session, w.aids, project_id=PID, template_id=w.tid)
+    resolved = await CurrentRunResolver(db_session).resolve_by_article(
+        project_id=PID, template_id=w.tid, article_ids=w.aids
+    )
     values = await _values(db_session, w)
-    assert [r.run_id is None for r in refs] == [False, False, False, False, True]
-    for ref in refs:
-        want = (
-            {}
-            if ref.run_id is None
-            else {(w.inst[ref.article_id][0], w.fid): {"value": str(ref.run_id)}}
-        )
-        assert values[ref.article_id] == want
+    assert [aid in resolved for aid in w.aids] == [True, True, True, True, False]
+    for aid in w.aids:
+        run = resolved.get(aid)
+        want = {} if run is None else {(w.inst[aid][0], w.fid): {"value": str(run.id)}}
+        assert values[aid] == want
 
 
-async def test_values_are_read_in_one_statement_with_one_form_run_choice(
+async def test_values_are_read_in_one_statement_with_one_run_choice(
     db_session: AsyncSession,
 ) -> None:
     w, _, iid, run = await _one_coord(db_session)
@@ -448,8 +449,8 @@ async def test_values_are_read_in_one_statement_with_one_form_run_choice(
         and "extraction_proposal_records" in value_reads[0]
     )
     assert (
-        len(re.findall(r"\bform_runs AS\s*\(", value_reads[0])) == 1
-    )  # SQLAlchemy renders "WITH form_runs AS \n("
+        len(re.findall(r"\bresolved_runs AS\s*\(", value_reads[0])) == 1
+    )  # SQLAlchemy renders "WITH resolved_runs AS \n("
 
 
 # =================== HTTP: endpoint + guards + rate limit (Task 2) ===================

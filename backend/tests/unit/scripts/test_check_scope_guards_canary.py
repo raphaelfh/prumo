@@ -100,7 +100,7 @@ def test_quiet_on_list_queries_that_merely_share_columns(tmp_path: Path) -> None
     This is the false-positive class that made an earlier baseline 54% noise.
     """
     body = """from sqlalchemy import select
-from app.models.extraction import ExtractionInstance
+from app.models.extraction_instance import ExtractionInstance
 
 
 async def {name}(db, article_id, template_id):

@@ -21,15 +21,15 @@ GUARD="$HERE/../bash-guard.sh"
 
 # A sandbox repo: the guard derives its root from `git rev-parse
 # --git-common-dir` in its own cwd, so running from here scopes it completely.
-SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/guard-test.XXXXXX")
-# Physical path: on macOS mktemp hands back /var/... while git resolves
-# /private/var/..., and the guard compares orchestrator= against a git-derived
-# root. Unnormalized, every ownership check silently fails to match.
-SANDBOX=$(cd "$SANDBOX" && pwd -P)
-trap 'rm -rf "$SANDBOX"' EXIT
-git -C "$SANDBOX" init -q
-git -C "$SANDBOX" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
-git -C "$SANDBOX" update-ref refs/remotes/origin/dev HEAD
+# scratch_mkdir yields a physical path: the guard compares orchestrator=
+# against a git-derived root, and macOS /var vs /private/var would make every
+# ownership check silently fail to match.
+# shellcheck source=scripts/tests/lib/scratch-repo.sh
+. "$HERE/../../../scripts/tests/lib/scratch-repo.sh"
+scratch_mkdir guard-test
+scratch_init "$SANDBOX"
+sgit "$SANDBOX" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+sgit "$SANDBOX" update-ref refs/remotes/origin/dev HEAD
 cd "$SANDBOX" || exit 2
 
 ROOT="$SANDBOX"
@@ -65,7 +65,7 @@ expect() { # $1 = label, $2 = expected, $3 = command
 set_state() { printf '%s\n' "$@" >"$STATE"; }
 clear_state() { rm -f "$STATE"; }
 
-DEV_SHA=$(git -C "$ROOT" rev-parse origin/dev)
+DEV_SHA=$(sgit "$ROOT" rev-parse origin/dev)
 PROMOTE='gh pr create --base main --head dev --title "Promote dev to main"'
 
 echo "# incident-history rules"

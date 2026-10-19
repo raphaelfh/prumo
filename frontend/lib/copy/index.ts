@@ -24,6 +24,8 @@ import {llmConnections} from './llmConnections';
 import {aiContext} from './aiContext';
 import {aiBatch} from './aiBatch';
 import {personalAccessTokens} from './personalAccessTokens';
+import {oauthConsent} from './oauthConsent';
+import {connectedApps} from './connectedApps';
 
 export {
     common,
@@ -59,6 +61,8 @@ const copy = {
     aiContext,
     aiBatch,
     personalAccessTokens,
+    oauthConsent,
+    connectedApps,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;

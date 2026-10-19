@@ -1,34 +1,48 @@
 """Fixtures for /mcp tests (spec §8).
 
-bind_mcp_session_factory is autouse: every tool / auth-wrapper session in this
-directory joins the test's db_session connection (SAVEPOINT), so seed rows are
-visible and nothing commits for real. @pytest.mark.mcp_real_sessions opts out:
-each session gets its own NullPool connection (race tests; they clean up).
+bind_mcp_session_factory is autouse: the one request session of every /mcp
+request in this directory (``mcp_session.request_session``, opened by the auth
+wrapper or by ``mcp_client``) joins the test's db_session connection
+(SAVEPOINT), so seed rows are visible and nothing commits for real.
+@pytest.mark.mcp_real_sessions opts out: each request session gets its own
+NullPool connection (race tests; they clean up).
 """
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Literal
 from uuid import UUID
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from mcp import Client
+from mcp.client.extension import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.mcp import server
 from app.api.mcp import session as mcp_session
 from app.api.mcp.asgi_auth import current_principal, principal_var
 from app.api.mcp.server import agent_tool
+from app.core.config import settings
 from app.main import create_app
 from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
-from app.services.pat_service import create_token, resolve_principal
+from app.services import mcp_oauth_service
+from app.services.pat_service import create_token, new_secret, resolve_principal
 from tests.integration.conftest import SEED
+from tests.integration.helpers.pat_rows import (
+    insert_oauth_access_token,
+    insert_oauth_client,
+    insert_oauth_connection,
+)
 
 
 class _FakeStorage:
@@ -65,8 +79,8 @@ def bind_mcp_session_factory(
     monkeypatch.setattr(mcp_session, "session_factory", factory)
 
 
-@pytest_asyncio.fixture
-async def mcp_http_client() -> AsyncGenerator[AsyncClient, None]:
+@asynccontextmanager
+async def _serve(app: FastAPI, base_url: str) -> AsyncIterator[AsyncClient]:
     """A fresh app per test: ASGITransport sends no lifespan events and a
     StreamableHTTPSessionManager.run() works once per instance, so the shared
     module-level app cannot host per-test runs.
@@ -80,7 +94,6 @@ async def mcp_http_client() -> AsyncGenerator[AsyncClient, None]:
     identity for its whole life — regardless of which outer Task drives it
     via ``ready``/``stop`` — so entry and exit both happen inside it.
     """
-    app = create_app()
     ready = asyncio.Event()
     stop = asyncio.Event()
     failure: dict[str, BaseException] = {}
@@ -101,11 +114,59 @@ async def mcp_http_client() -> AsyncGenerator[AsyncClient, None]:
         raise failure["error"]
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=base_url) as client:
             yield client
     finally:
         stop.set()
         await manager_task
+
+
+OAUTH_BASE_URL = "http://localhost:8000"
+PRM_URL = OAUTH_BASE_URL + "/.well-known/oauth-protected-resource/mcp"
+
+
+@asynccontextmanager
+async def _client_in_mode(mode: str, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[AsyncClient]:
+    """OAuth off pins ``PUBLIC_API_URL`` to ``None`` (a developer ``.env`` must not
+    flip it). OAuth on uses ``OAUTH_BASE_URL``: the SDK accepts only an https or a
+    localhost http issuer, so never ``http://test``."""
+    on = mode == "oauth_on"
+    monkeypatch.setattr(settings, "PUBLIC_API_URL", OAUTH_BASE_URL if on else None)
+    async with _serve(create_app(), OAUTH_BASE_URL if on else "http://test") as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def mcp_http_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient, None]:
+    async with _client_in_mode("oauth_off", monkeypatch) as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def oauth_http_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient, None]:
+    async with _client_in_mode("oauth_on", monkeypatch) as c:
+        yield c
+
+
+@pytest.fixture(params=["oauth_off", "oauth_on"])
+def auth_mode(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
+@pytest_asyncio.fixture
+async def mode_http_client(
+    auth_mode: str, monkeypatch: pytest.MonkeyPatch
+) -> AsyncGenerator[AsyncClient, None]:
+    """``mcp_http_client`` or ``oauth_http_client``, per ``auth_mode``."""
+    async with _client_in_mode(auth_mode, monkeypatch) as c:
+        yield c
+
+
+def expected_challenge(mode: str, *, presented: bool) -> str:
+    if mode == "oauth_off":
+        return "Bearer"
+    meta = f'resource_metadata="{PRM_URL}"'
+    return f'Bearer error="invalid_token", {meta}' if presented else f"Bearer {meta}"
 
 
 @dataclass(frozen=True)
@@ -119,13 +180,22 @@ class SeededPat:
 
 
 async def _seed_pat(
-    db: AsyncSession, user_id: UUID, scope: Literal["read", "read_write"]
+    db: AsyncSession,
+    user_id: UUID,
+    scope: Literal["read", "read_write"],
+    project_ids: list[UUID] | None = None,
+    *,
+    ai_run: bool = False,
 ) -> SeededPat:
     created = await create_token(
         db,
         user_id=user_id,
         payload=PersonalAccessTokenCreateRequest(
-            name=f"pytest-{scope}", scope=scope, expires_in_days=30
+            name=f"pytest-{scope}",
+            scope=scope,
+            expires_in_days=30,
+            project_ids=project_ids,
+            ai_run=ai_run,
         ),
     )
     principal = await resolve_principal(db, created.secret)
@@ -133,9 +203,49 @@ async def _seed_pat(
     return SeededPat(created.secret, principal)
 
 
+async def seed_oauth_principal(
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    user_id: UUID,
+    scope: Literal["read", "read_write"],
+    *,
+    ai_run: bool = False,
+) -> SeededPat:
+    """An OAuth connection of ``scope`` for ``user_id`` with one live access
+    token, resolved through the OAuth lookup. Turns OAuth on (the access token
+    is bound to ``settings.mcp_resource_url``). ``ai_run`` connections live
+    30 days (``ai_run_lifetime_check``)."""
+    monkeypatch.setattr(settings, "PUBLIC_API_URL", OAUTH_BASE_URL)
+    connection_id = await insert_oauth_connection(
+        db,
+        user_id=user_id,
+        client_id=await insert_oauth_client(db),
+        scope=scope,
+        ai_run=ai_run,
+        expires_in=timedelta(days=30 if ai_run else 90),
+    )
+    secret = new_secret(mcp_oauth_service.ACCESS_PREFIX)
+    await insert_oauth_access_token(
+        db, connection_id=connection_id, secret=secret, resource=settings.mcp_resource_url
+    )
+    principal = await mcp_oauth_service.resolve_principal(db, secret)
+    assert principal is not None
+    return SeededPat(secret, principal)
+
+
 @pytest_asyncio.fixture
 async def pat_primary_rw(db_session: AsyncSession) -> SeededPat:
     return await _seed_pat(db_session, SEED.primary_profile, "read_write")
+
+
+@pytest_asyncio.fixture
+async def pat_primary_rw_only_a(db_session: AsyncSession) -> SeededPat:
+    """``primary_profile`` manages both seed projects; this token is restricted
+    to ``SEED.primary_project`` (A), so ``SEED.secondary_project`` (B) is
+    refused by the token alone, never by membership."""
+    return await _seed_pat(
+        db_session, SEED.primary_profile, "read_write", project_ids=[SEED.primary_project]
+    )
 
 
 @pytest_asyncio.fixture
@@ -153,18 +263,54 @@ async def pat_outsider_rw(db_session: AsyncSession) -> SeededPat:
     return await _seed_pat(db_session, SEED.outsider_profile, "read_write")
 
 
+@pytest_asyncio.fixture
+async def pat_primary_rw_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.primary_profile, "read_write", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_primary_read_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.primary_profile, "read", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_viewer_ai_run(db_session: AsyncSession) -> SeededPat:
+    """``reviewer_profile`` demoted to ``viewer`` on ``SEED.primary_project``
+    (in the test transaction), holding a ``read`` + ``ai_run`` token."""
+    await db_session.execute(
+        text(
+            "UPDATE public.project_members SET role = 'viewer' "
+            "WHERE project_id = :p AND user_id = :u"
+        ),
+        {"p": str(SEED.primary_project), "u": str(SEED.reviewer_profile)},
+    )
+    return await _seed_pat(db_session, SEED.reviewer_profile, "read", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_outsider_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.outsider_profile, "read_write", ai_run=True)
+
+
 @pytest.fixture
 def mcp_client() -> Callable[[SeededPat], AbstractAsyncContextManager[Client]]:
     """A factory: ``async with mcp_client(pat) as client:`` — an in-memory SDK
-    client wired directly to ``server.mcp``, with ``principal_var`` set for the
-    duration (the contextvar survives because the in-memory transport runs the
-    tool handler in the same asyncio task)."""
+    client wired directly to ``server.mcp``, with ``principal_var`` set and the
+    request session bound (``mcp_session.request_session``, as the auth wrapper
+    binds it) for the duration. Both are set before the client is entered, so
+    the in-memory server task inherits both contextvars. Every call inside one
+    ``async with`` shares that one session, like one /mcp request."""
 
     @asynccontextmanager
-    async def connect(pat: SeededPat) -> AsyncIterator[Client]:
+    async def connect(pat: SeededPat, *, apps: bool = False) -> AsyncIterator[Client]:
+        # apps=True advertises MCP Apps support, as an Apps-rendering host does.
+        extensions = [advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})] if apps else None
         token = principal_var.set(pat.principal)
         try:
-            async with Client(server.mcp) as client:
+            async with (
+                mcp_session.request_session(),
+                Client(server.mcp, extensions=extensions) as client,
+            ):
                 yield client
         finally:
             principal_var.reset(token)
@@ -182,6 +328,14 @@ async def probe_read(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noqa
 
 
 async def probe_write(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noqa: ARG001
+    return ProbeResult(ok=True)
+
+
+async def probe_ai_read(db: AsyncSession, project_id: UUID, note: str = "") -> ProbeResult:  # noqa: ARG001
+    return ProbeResult(ok=True)
+
+
+async def probe_ai_write(db: AsyncSession, project_id: UUID, note: str = "") -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True)
 
 
@@ -207,7 +361,11 @@ def probe_tools() -> Iterator[None]:
     choke point real tools use, and un-registers them on teardown."""
     registered = [
         agent_tool(
-            requires="read", project_arg="project_id", title="Probe read", description="test"
+            requires="read",
+            project_arg="project_id",
+            title="Probe read",
+            description="test",
+            destructive=False,
         )(probe_read),
         agent_tool(
             requires="write",
@@ -218,21 +376,58 @@ def probe_tools() -> Iterator[None]:
             idempotent=False,
         )(probe_write),
         agent_tool(
-            requires="read", project_arg="article_id", title="Probe article", description="test"
+            requires="read",
+            project_arg="article_id",
+            title="Probe article",
+            description="test",
+            destructive=False,
         )(probe_article),
-        agent_tool(requires="read", project_arg=None, title="Probe whoami", description="test")(
-            probe_whoami
-        ),
+        agent_tool(
+            requires="read",
+            project_arg=None,
+            title="Probe whoami",
+            description="test",
+            destructive=False,
+        )(probe_whoami),
         agent_tool(
             requires="read",
             project_arg=None,
             title="Probe text",
             description="test",
+            destructive=False,
             structured_output=False,
         )(probe_text),
-        agent_tool(requires="read", project_arg=None, title="Probe boom", description="test")(
-            probe_boom
-        ),
+        agent_tool(
+            requires="read",
+            project_arg=None,
+            title="Probe boom",
+            description="test",
+            destructive=False,
+        )(probe_boom),
+        agent_tool(
+            requires="ai_run",
+            role="reviewer",
+            tier="ai_plan",
+            read_only=True,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg="project_id",
+            title="Probe ai read",
+            description="test",
+            destructive=False,
+        )(probe_ai_read),
+        agent_tool(
+            requires="ai_run",
+            role="member",
+            tier="ai_cancel",
+            read_only=False,
+            open_world=False,
+            requires_user_interaction=False,
+            project_arg="project_id",
+            title="Probe ai write",
+            description="test",
+            destructive=False,
+        )(probe_ai_write),
     ]
     try:
         yield

@@ -93,7 +93,7 @@ def test_every_entry_is_buildable(entry: CatalogEntry) -> None:
 def test_every_catalog_provider_is_a_registry_llm_provider() -> None:
     for entry in CATALOG:
         spec = get_provider(entry.provider)
-        assert spec is not None and spec.serves == "llm"
+        assert spec is not None and spec.llm is not None
 
 
 def test_catalogue_file_set_equals_the_registry_llm_providers() -> None:

@@ -1,8 +1,11 @@
 """Service for the per-kind manager-review-visibility project setting.
 
-Owns the ``managers_see_reviewers`` sub-dict inside ``projects.settings``.
+Owns the ``managers_see_reviewers`` sub-dict inside ``projects.settings``,
+written through ``ProjectRepository.update_settings_key`` (row-locked, this
+key only).
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,22 +26,24 @@ class ManagerReviewVisibilityService:
     """Owns the per-kind ``managers_see_reviewers`` map inside projects.settings."""
 
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
         self._projects = ProjectRepository(db)
 
     async def set_for_project(self, *, project_id: UUID, kind: str, value: bool) -> dict[str, bool]:
-        project = await self._projects.get_by_id(project_id)
-        if project is None:
-            raise ProjectNotFoundError(f"Project {project_id} not found")
+        merged: dict[str, bool] | None = None
 
-        # projects.settings is plain JSONB (NOT MutableDict): build a brand-new
-        # dict and REASSIGN, or the change is not tracked and never persists.
-        settings = dict(project.settings or {})
-        current = dict(settings.get("managers_see_reviewers") or {})
-        merged = {k: bool(current.get(k, False)) for k in _KEYS}
-        merged[kind] = value
-        settings["managers_see_reviewers"] = merged
-        settings.pop("blind_mode", None)  # retire the dead flag opportunistically
-        project.settings = settings  # reassignment → dirty-tracked
-        await self.db.flush()
+        def merge(old: Any) -> dict[str, bool]:
+            # Runs on the row-locked value: the other kind keeps what the
+            # last committed save left, not what this request first read.
+            nonlocal merged
+            current = dict(old or {})
+            merged = {k: bool(current.get(k, False)) for k in _KEYS}
+            merged[kind] = value
+            return merged
+
+        if (
+            await self._projects.update_settings_key(project_id, "managers_see_reviewers", merge)
+            is None
+        ):
+            raise ProjectNotFoundError(f"Project {project_id} not found")
+        assert merged is not None  # the project exists, so ``merge`` ran
         return merged

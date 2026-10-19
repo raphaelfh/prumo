@@ -17,23 +17,23 @@ from alembic.config import Config as AlembicConfig
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import create_engine, text
 from starlette.routing import Route
 
 from app.api.mcp.asgi_auth import with_pat_auth
+from app.api.mcp.oauth.routes import OAUTH_CORS_PATHS, build_oauth_routes
 from app.api.mcp.server import build_mcp_asgi
 from app.api.v1.router import api_router
 from app.core.config import API_VERSION, settings
 from app.core.deps import AsyncSessionLocal, get_supabase_client
 from app.core.error_handler import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import register_middlewares
+from app.core.middleware import PathScopedCORSMiddleware, register_middlewares
 from app.core.security import get_jwks
 from app.llm.observability import configure_observability
-from app.utils.rate_limiter import limiter
+from app.utils.rate_limiter import limiter, log_storage_backend
 
 logger = get_logger(__name__)
 
@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         project_name=settings.PROJECT_NAME,
         debug=settings.DEBUG,
     )
+    log_storage_backend(settings.RATE_LIMIT_STORAGE_URI)
 
     # Warm-up: avoid first request paying JWKS and DB pool latency
     app.state.jwks_ready = False
@@ -152,9 +153,11 @@ def create_app() -> FastAPI:
     # Register custom exception handlers
     register_exception_handlers(app)
 
-    # CORS Middleware (must come before other middlewares)
+    # CORS Middleware (must come before other middlewares). The credential-less
+    # OAuth paths bypass it: their route-level CORS answers (ADR 0022).
     app.add_middleware(
-        CORSMiddleware,
+        PathScopedCORSMiddleware,
+        bypass_paths=OAUTH_CORS_PATHS,
         allow_origins=settings.cors_origins_list,
         # DEBUG only: additionally accept any localhost port so worktree
         # dev servers work without editing an untracked .env. None in
@@ -178,6 +181,8 @@ def create_app() -> FastAPI:
     # non-function endpoint as a raw ASGI app (starlette/routing.py Route.__init__).
     mcp_app, mcp_session_manager = build_mcp_asgi()
     app.state.mcp_session_manager = mcp_session_manager
+    if settings.oauth_enabled:
+        app.router.routes.extend(build_oauth_routes())
     app.router.routes.append(
         Route(
             "/mcp",

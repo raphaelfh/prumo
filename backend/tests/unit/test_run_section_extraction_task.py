@@ -22,13 +22,13 @@ import pytest
 from app.llm.provider import MissingLLMKeyError
 from app.schemas.extraction import ExtractionErrorCode
 from app.schemas.llm_target import LlmTarget
-from app.services.extraction_errors import ExtractionTaskError
-from app.services.llm_engine_service import EngineRetiredError
-from app.services.section_extraction_service import (
+from app.services.ai_extraction import (
     BatchAllSectionsFailed,
     BatchExtractionResult,
     SectionExtractionResult,
 )
+from app.services.extraction_errors import ExtractionTaskError
+from app.services.llm_engine_service import EngineRetiredError
 from app.worker.celery_app import celery_app
 from app.worker.tasks import extraction_tasks
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
@@ -68,9 +68,29 @@ class _FakeSession:
         self.close = AsyncMock()
 
 
-def _session_factory(session: _FakeSession) -> Any:
+#: The per-task engine ``worker_engine`` yields; the task session and the
+#: ledger sink's session factory are both built on it.
+_TASK_ENGINE = MagicMock(name="task_engine")
+
+
+@pytest.fixture(autouse=True)
+def task_engine(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Patch ``worker_engine`` — no real engine is built. Returns the engines
+    each ``worker_session`` call received, in call order."""
+
     @asynccontextmanager
-    async def _factory() -> AsyncIterator[_FakeSession]:
+    async def _engine() -> AsyncIterator[Any]:
+        yield _TASK_ENGINE
+
+    monkeypatch.setattr("app.worker._session.worker_engine", _engine)
+    return []
+
+
+def _session_factory(session: _FakeSession, seen: list[Any] | None = None) -> Any:
+    @asynccontextmanager
+    async def _factory(engine: Any = None) -> AsyncIterator[_FakeSession]:
+        if seen is not None:
+            seen.append(engine)
         yield session
 
     return _factory
@@ -98,7 +118,7 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
                 "entity_type_name": "Outcome",
                 "success": True,
                 "suggestions_created": 4,
-                "tokens_used": 200,
+                "tokens": {"prompt": 150, "completion": 50, "total": 200},
                 "skipped": False,
                 "error": None,
             },
@@ -106,8 +126,6 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
                 "entity_type_id": "etype-bbb",
                 "entity_type_name": "Population",
                 "success": False,
-                "suggestions_created": 0,
-                "tokens_used": 0,
                 "skipped": False,
                 "error": "timeout",
             },
@@ -152,7 +170,7 @@ class TestRunSectionExtractionTaskSingle:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -175,6 +193,39 @@ class TestRunSectionExtractionTaskSingle:
         assert "successful_sections" not in result
         assert "sections" not in result
 
+    def test_legacy_payload_with_article_text_key_still_runs(self):
+        """A job queued before caller-supplied article text was removed still
+        carries ``"pdf_text": null``; the rebuild drops it instead of dying on
+        the forbidden key."""
+        run_id, entity_type_id = str(uuid4()), str(uuid4())
+        payload_dict = {
+            "project_id": str(uuid4()),
+            "article_id": str(uuid4()),
+            "template_id": str(uuid4()),
+            "entity_type_id": entity_type_id,
+            "pdf_text": None,
+        }
+        session = _FakeSession()
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(
+            return_value=_single_result(run_id, entity_type_id)
+        )
+
+        with (
+            patch("app.services.ai_extraction.AiExtraction", return_value=fake_service),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+        ):
+            result = _apply(payload_dict, str(uuid4()))
+
+        assert result["extraction_run_id"] == run_id
+        request = fake_service.run_from_request.await_args.args[0]
+        assert str(request.entity_type_id) == entity_type_id
+
     def test_commits_session_on_success(self):
         run_id = str(uuid4())
         entity_type_id = str(uuid4())
@@ -194,7 +245,7 @@ class TestRunSectionExtractionTaskSingle:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -232,7 +283,7 @@ class TestRunSectionExtractionTaskBatch:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -257,9 +308,55 @@ class TestRunSectionExtractionTaskBatch:
         assert result["sections"][0]["entity_type_id"] == "etype-aaa"
         assert result["sections"][0]["success"] is True
         assert result["sections"][0]["suggestions_created"] == 4
+        # The job result keeps the API's per-section ``tokens_used`` total.
+        assert result["sections"][0]["tokens_used"] == 200
+        assert "tokens" not in result["sections"][0]
+        assert "tokens_used" not in result["sections"][1]
         assert result["sections"][1]["entity_type_id"] == "etype-bbb"
         assert result["sections"][1]["success"] is False
         assert result["sections"][1]["error"] == "timeout"
+
+
+class TestRunSectionExtractionTaskMetering:
+    def test_worker_injects_a_ledger_sink(self, task_engine: list[Any]):
+        """The composition root builds the ledger sink on the task's own
+        engine — the one its session runs on — through
+        ``create_ledger_session_factory``."""
+        from app.services.ai_usage_metering import LedgerSink
+
+        run_id, entity_type_id = str(uuid4()), str(uuid4())
+        session = _FakeSession()
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(
+            return_value=_single_result(run_id, entity_type_id)
+        )
+        with (
+            patch("app.services.ai_extraction.AiExtraction", return_value=fake_service) as domain,
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch(
+                "app.worker._session.worker_session",
+                new=_session_factory(session, task_engine),
+            ),
+        ):
+            _apply(
+                {
+                    "projectId": str(uuid4()),
+                    "articleId": str(uuid4()),
+                    "templateId": str(uuid4()),
+                    "entityTypeId": entity_type_id,
+                },
+                str(uuid4()),
+            )
+
+        sink = domain.call_args.kwargs["usage_sink"]
+        assert isinstance(sink, LedgerSink)
+        assert task_engine == [_TASK_ENGINE]
+        assert sink.session_factory.kw["bind"] is _TASK_ENGINE
+        assert sink.session_factory.kw["expire_on_commit"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +383,7 @@ class TestRunSectionExtractionTaskRollback:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -327,7 +424,7 @@ class TestRunSectionExtractionTaskAllFailed:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -366,7 +463,7 @@ class TestRunSectionExtractionTaskErrorCode:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -509,7 +606,7 @@ class TestHumanKickoffVersusRetry:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 side_effect=_capture,
             ),
             patch(
@@ -581,7 +678,7 @@ def test_durable_delivery_uses_recorded_owner_payload_and_separate_session():
     sessions = []
 
     @asynccontextmanager
-    async def session_factory():
+    async def session_factory(_engine: Any = None):
         session = _FakeSession()
         session.get.return_value = SimpleNamespace(
             id=attempt_id,
@@ -605,12 +702,14 @@ def test_durable_delivery_uses_recorded_owner_payload_and_separate_session():
     with (
         patch("app.worker._session.worker_session", session_factory),
         patch("app.services.extraction_attempt_service.ExtractionAttemptService") as attempts,
-        patch(
-            "app.services.section_extraction_service.SectionExtractionService", return_value=service
-        ) as domain,
+        patch("app.services.ai_extraction.AiExtraction", return_value=service) as domain,
         patch("app.core.deps.get_supabase_client"),
         patch("app.core.factories.create_storage_adapter"),
         patch("app.services.engine_credentials.resolve_engine_credentials", new=AsyncMock()),
+        patch(
+            "app.services.extraction_batch_service.agent_batch_for_attempt",
+            new=AsyncMock(return_value=None),
+        ),
         patch(
             "app.services.llm_engine_service.resolve_engine",
             new=AsyncMock(return_value=_PROJECT_ENGINE),
@@ -648,3 +747,55 @@ def test_terminal_attempt_replay_preserves_classified_error():
             kwargs={"payload_json": {}, "user_id": str(uuid4()), "attempt_id": str(uuid4())}
         ).get(timeout=5)
     assert error.value.error_code == "PDF_NOT_FOUND"
+
+
+def _apply_batch_attempt(agent_batch: UUID | None) -> tuple[AsyncMock, MagicMock, AsyncMock]:
+    """Run one batch attempt; return (credential resolver, service ctor, origin probe)."""
+    from types import SimpleNamespace
+
+    attempt_id, owner = uuid4(), uuid4()
+    stored = {
+        "projectId": str(uuid4()),
+        "articleId": str(uuid4()),
+        "templateId": str(uuid4()),
+        "runId": str(uuid4()),
+    }
+    session = _FakeSession()
+    session.get.return_value = SimpleNamespace(
+        id=attempt_id, engine={"provider": "openai"}, status="pending", owner_id=owner
+    )
+
+    async def execute(_aid: UUID, operation: Any, **_kw: Any) -> dict:
+        return await operation(SimpleNamespace(owner_id=owner, request_payload=stored))
+
+    service = MagicMock()
+    service.run_from_request = AsyncMock(return_value=_single_result(stored["runId"], str(uuid4())))
+    credentials = AsyncMock()
+    probe = AsyncMock(return_value=agent_batch)
+    with (
+        patch("app.worker._session.worker_session", _session_factory(session)),
+        patch("app.services.extraction_attempt_service.ExtractionAttemptService") as attempts,
+        patch("app.services.ai_extraction.AiExtraction", return_value=service) as domain,
+        patch("app.core.deps.get_supabase_client"),
+        patch("app.core.factories.create_storage_adapter"),
+        patch("app.services.engine_credentials.resolve_engine_credentials", new=credentials),
+        patch("app.services.extraction_batch_service.agent_batch_for_attempt", new=probe),
+    ):
+        attempts.return_value.execute_attempt = AsyncMock(side_effect=execute)
+        run_section_extraction_task.apply(
+            kwargs={"payload_json": {}, "user_id": str(owner), "attempt_id": str(attempt_id)}
+        ).get(timeout=5)
+    assert probe.await_args.args[1] == attempt_id
+    return credentials, domain, probe
+
+
+def test_agent_batch_attempt_refuses_the_deployment_key() -> None:
+    credentials, domain, _ = _apply_batch_attempt(uuid4())
+    assert credentials.await_args.kwargs["allow_global_key"] is False
+    assert domain.call_args.kwargs["allow_global_key"] is False
+
+
+def test_ui_batch_attempt_keeps_the_ladder() -> None:
+    credentials, domain, _ = _apply_batch_attempt(None)
+    assert credentials.await_args.kwargs["allow_global_key"] is True
+    assert domain.call_args.kwargs["allow_global_key"] is True

@@ -122,6 +122,8 @@ test.describe("Extraction flow (UI + API)", () => {
     // at the endpoint — so a non-existent article id is accepted here and fails
     // later in the worker. A well-formed, authorised request therefore yields
     // 202 (queue up) or 503 (queue down) — mirrors the extraction-export e2e.
+    // The backend needs an LLM key (OPENAI_API_KEY), else the kickoff gate
+    // answers 409 MISSING_API_KEY first; CI's stack sets a stub one.
     const env = loadE2EEnv();
     const required = missingEnvKeys(["E2E_PROJECT_ID"]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);

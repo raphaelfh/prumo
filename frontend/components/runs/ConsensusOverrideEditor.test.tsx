@@ -18,14 +18,14 @@ describe('ConsensusOverrideEditor', () => {
     const onPublish = vi.fn();
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={field}
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
       />,
     );
-    const submit = screen.getByTestId('consensus-override-submit-i1::f1');
+    const submit = screen.getByTestId('consensus-override-submit-i1_f1');
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Low' } });
     expect(submit).toBeEnabled();
@@ -33,11 +33,38 @@ describe('ConsensusOverrideEditor', () => {
     expect(onPublish).toHaveBeenCalledWith('Low', '');
   });
 
+  it('a rejected publish does not escape the click handler', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    // A plain async function: a vi.fn promise carries vitest's own handler.
+    const published: unknown[][] = [];
+    const onPublish = async (...args: unknown[]) => {
+      published.push(args);
+      throw new Error('Refused by contract');
+    };
+    render(
+      <ConsensusOverrideEditor
+        coordKey="i1_f1"
+        field={field}
+        disabled={false}
+        onCancel={() => {}}
+        onPublish={onPublish}
+      />,
+    );
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Low' } });
+    fireEvent.click(screen.getByTestId('consensus-override-submit-i1_f1'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off('unhandledRejection', record);
+    expect(published).toEqual([['Low', '']]);
+    expect(unhandled).toEqual([]);
+  });
+
   it('rationale is optional and passed through when provided', () => {
     const onPublish = vi.fn();
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={field}
         disabled={false}
         onCancel={() => {}}
@@ -46,7 +73,7 @@ describe('ConsensusOverrideEditor', () => {
     );
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Low' } });
     fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: 'tie-break' } });
-    fireEvent.click(screen.getByTestId('consensus-override-submit-i1::f1'));
+    fireEvent.click(screen.getByTestId('consensus-override-submit-i1_f1'));
     expect(onPublish).toHaveBeenCalledWith('Low', 'tie-break');
   });
 
@@ -54,7 +81,7 @@ describe('ConsensusOverrideEditor', () => {
     const onPublish = vi.fn();
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={field}
         disabled={false}
         onCancel={() => {}}
@@ -62,7 +89,7 @@ describe('ConsensusOverrideEditor', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /dispositionNoInformation/i }));
-    const submit = screen.getByTestId('consensus-override-submit-i1::f1');
+    const submit = screen.getByTestId('consensus-override-submit-i1_f1');
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
     expect(onPublish).toHaveBeenCalledWith(
@@ -74,7 +101,7 @@ describe('ConsensusOverrideEditor', () => {
   it('seeds initialValue + initialRationale (Change on a resolved override)', () => {
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={field}
         disabled={false}
         initialValue="High"
@@ -90,7 +117,7 @@ describe('ConsensusOverrideEditor', () => {
   it('disabled=true disables the value input, marker toggle and submit', () => {
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={field}
         disabled
         initialValue="High"
@@ -100,7 +127,7 @@ describe('ConsensusOverrideEditor', () => {
     );
     expect(screen.getAllByRole('textbox')[0]).toBeDisabled();
     expect(screen.getByRole('button', { name: /dispositionNoInformation/i })).toBeDisabled();
-    expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeDisabled();
+    expect(screen.getByTestId('consensus-override-submit-i1_f1')).toBeDisabled();
   });
 
   it('omits the "No information" button when the field opts out (ADR-0016 / 0062)', () => {
@@ -109,7 +136,7 @@ describe('ConsensusOverrideEditor', () => {
     // controls now read the same flags off the same field object.
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={{ ...field, allows_no_information: false }}
         disabled={false}
         onCancel={() => {}}
@@ -121,7 +148,7 @@ describe('ConsensusOverrideEditor', () => {
     ).not.toBeInTheDocument();
     // The typed editor and submit are untouched — only the marker is gone.
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'NI' } });
-    expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeEnabled();
+    expect(screen.getByTestId('consensus-override-submit-i1_f1')).toBeEnabled();
   });
 
   it('offers the opt-in Not applicable / Not evaluated chips (was unreachable)', async () => {
@@ -132,7 +159,7 @@ describe('ConsensusOverrideEditor', () => {
     const onPublish = vi.fn();
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={{ ...field, allows_not_applicable: true, allows_not_evaluated: true }}
         disabled={false}
         onCancel={() => {}}
@@ -140,7 +167,7 @@ describe('ConsensusOverrideEditor', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: /dispositionNotApplicable/i }));
-    fireEvent.click(screen.getByTestId('consensus-override-submit-i1::f1'));
+    fireEvent.click(screen.getByTestId('consensus-override-submit-i1_f1'));
     expect(onPublish).toHaveBeenCalledWith(
       { value: null, absent_reason: 'not_applicable' },
       '',
@@ -151,7 +178,7 @@ describe('ConsensusOverrideEditor', () => {
     const onCancel = vi.fn();
     render(
       <ConsensusOverrideEditor
-        coordKey="i1::f1"
+        coordKey="i1_f1"
         field={field}
         disabled={false}
         onCancel={onCancel}

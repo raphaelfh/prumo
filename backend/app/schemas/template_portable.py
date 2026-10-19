@@ -24,11 +24,12 @@ Layering: imports nothing from ``app.models`` (check_layered_arch).
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.schemas.extraction import Framework
+from app.llm.claim_value import normalize_options
+from app.schemas.extraction import Framework, InstrumentCode
 from app.schemas.template_structure import (
     AllowedUnits,
     AllowedValues,
@@ -82,6 +83,16 @@ class PortableField(BaseModel):
     # path refuses rather than duplicating.
     is_entity_key: bool = False
 
+    @field_validator("allowed_values", mode="before")
+    @classmethod
+    def _canonical_options(cls, raw: Any) -> list[dict[str, str]] | None:
+        # Legacy files and legacy live rows hold bare strings or the
+        # ``{"options": [...]}`` wrapper; ``AllowedValues`` then checks the
+        # canonical items (1..100, unique by value).
+        if raw is None:
+            return None
+        return normalize_options(raw)
+
 
 class PortableSection(BaseModel):
     """One ``extraction_entity_types`` row plus its fields and (for a group)
@@ -132,9 +143,19 @@ class PortableTemplate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     framework: Framework = "CUSTOM"
+    # The appraisal instrument the template implements. ``custom`` is the
+    # default, so export omits it; a missing, null or unknown code (a file
+    # from another tool, or a code a later release added) imports as
+    # ``custom`` rather than refusing the whole file.
+    instrument: InstrumentCode = "custom"
     version: str = Field(default="1.0.0", max_length=50)
     llm_template_instruction: str | None = Field(default=None, max_length=4000)
     sections: list[PortableSection] = Field(min_length=1, max_length=MAX_SECTIONS_PER_LEVEL)
+
+    @field_validator("instrument", mode="before")
+    @classmethod
+    def _known_instrument(cls, raw: Any) -> str:
+        return raw if isinstance(raw, str) and raw in get_args(InstrumentCode) else "custom"
 
     @model_validator(mode="after")
     def _document_rules(self) -> PortableTemplate:

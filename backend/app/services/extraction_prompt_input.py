@@ -1,8 +1,9 @@
 """Build the budgeted block-markdown prompt input for a run.
 
-Reads the STORED content_markdown when it fits the token budget; otherwise falls
-back to the section-aware assembler over the persisted blocks (IMRaD whole-section
-dropping). When the article was never parsed, runs the simple PymupdfParser ONCE
+Always assembles the prompt from the persisted blocks through the section-aware
+assembler (IMRaD whole-section dropping under the token budget), so every kept
+block carries its citation ref; the stored content_markdown is the reader's
+projection and is never the prompt (ADR-0013 Amendment 2026-10). When the article was never parsed, runs the simple PymupdfParser ONCE
 via DocumentParsingService (persisting blocks + content_markdown so the parse is
 never re-run on a successful run). A failed run rolls back the transaction, which
 discards the parse; the next attempt re-parses — cheap and deterministic.
@@ -11,6 +12,7 @@ No unbounded pypdf path remains.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -19,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.infrastructure.parsing.pymupdf_parser import PymupdfParser
-from app.llm.assembler import assemble_for_model, estimate_tokens
+from app.llm.assembler import assemble_for_model
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
 from app.services.document_parsing_service import DocumentParsingService
 
@@ -35,6 +37,11 @@ class PromptInputInfo:
 
     anchor_blocks: list[Any]
     anchor_file_id: UUID | None
+    #: The anchor file's ``content_version`` the blocks were read at.
+    content_version: int | None
+    #: SHA-256 (hex) of the returned markdown — the exact text the prompt
+    #: substitutes for the article marker.
+    text_sha256: str
     file_name: str | None
     truncated: bool
     est_tokens: int
@@ -75,35 +82,24 @@ async def build_prompt_input(
         await db.refresh(main_file)
         blocks = await repo.list_ordered_for_file(main_file.id)
 
-    stored_md = main_file.content_markdown or ""
-    est = estimate_tokens(stored_md, model) if stored_md else 0
-    if stored_md and est <= settings.LLM_ASSEMBLY_BUDGET_TOKENS:
-        text, source = stored_md, "stored_markdown"
-        info_truncated, included = False, len(blocks)
-    else:
-        text, info = assemble_for_model(
-            blocks, model_name=model, budget_tokens=settings.LLM_ASSEMBLY_BUDGET_TOKENS
-        )
-        source, info_truncated, est, included = (
-            "budgeted_blocks",
-            info.truncated,
-            info.est_tokens,
-            info.included_blocks,
-        )
+    text, assembly = assemble_for_model(
+        blocks, model_name=model, budget_tokens=settings.LLM_ASSEMBLY_BUDGET_TOKENS
+    )
 
     logger.info(
         "extraction.assembly",
         article_id=str(article_id),
-        source=source,
         total_blocks=len(blocks),
-        included_blocks=included,
-        truncated=info_truncated,
-        est_tokens=est,
+        included_blocks=assembly.included_blocks,
+        truncated=assembly.truncated,
+        est_tokens=assembly.est_tokens,
     )
     return text, PromptInputInfo(
         anchor_blocks=blocks,
         anchor_file_id=main_file.id,
+        content_version=main_file.content_version,
+        text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         file_name=main_file.original_filename,
-        truncated=info_truncated,
-        est_tokens=est,
+        truncated=assembly.truncated,
+        est_tokens=assembly.est_tokens,
     )

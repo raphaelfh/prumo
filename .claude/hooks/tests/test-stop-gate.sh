@@ -19,19 +19,18 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 GATE="$HERE/../stop-ship-gate.sh"
 
-SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/stop-gate-test.XXXXXX")
-SANDBOX=$(cd "$SANDBOX" && pwd -P)   # macOS /var -> /private/var
-trap 'rm -rf "$SANDBOX"' EXIT
+# shellcheck source=scripts/tests/lib/scratch-repo.sh
+. "$HERE/../../../scripts/tests/lib/scratch-repo.sh"
+scratch_mkdir stop-gate-test
 
 MAIN="$SANDBOX/main"
 OTHER="$SANDBOX/other"
-mkdir -p "$MAIN"
-git -C "$MAIN" init -q
-git -C "$MAIN" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
-git -C "$MAIN" worktree add -q "$OTHER" -b other 2>/dev/null
+scratch_init "$MAIN"
+sgit "$MAIN" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+sgit "$MAIN" worktree add -q "$OTHER" -b other 2>/dev/null
 cd "$MAIN" || exit 2
 
-HEAD_SHA=$(git -C "$MAIN" rev-parse HEAD)
+HEAD_SHA=$(sgit "$MAIN" rev-parse HEAD)
 DIR="$MAIN/.superpowers/ship-spec/__stop_test__"
 STATE="$DIR/state"
 LOG="$DIR/gate.log"

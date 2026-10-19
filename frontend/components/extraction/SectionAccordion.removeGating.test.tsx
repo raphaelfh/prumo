@@ -45,6 +45,7 @@ const baseProps = {
   projectId: 'p',
   articleId: 'a',
   templateId: 't',
+  canRunAI: true,
 };
 
 describe('SectionAccordion instance-remove gating', () => {

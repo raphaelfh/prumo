@@ -63,13 +63,34 @@ describe('FieldInput disposition wiring', () => {
     async (fieldType) => {
       const user = userEvent.setup();
       const onChange = renderField(
-        makeField({ field_type: fieldType, allowed_values: fieldType === 'select' ? ['Yes', 'No'] : null }),
+        makeField({ field_type: fieldType, allowed_values: fieldType === 'select' ? [{ value: 'Yes', label: 'Yes' }] : null }),
         '',
       );
       await user.click(screen.getByRole('button', { name: 'dispositionNoInformation' }));
       expect(onChange).toHaveBeenCalledWith(NO_INFO);
     },
   );
+
+  it('renders the label of a canonical {value,label} option', () => {
+    renderField(
+      makeField({
+        field_type: 'select',
+        allowed_values: [
+          { value: 'Y', label: 'Yes' },
+          { value: 'N', label: 'No' },
+        ],
+      }),
+      'Y',
+    );
+    expect(screen.getByRole('combobox')).toHaveTextContent('Yes');
+  });
+
+  it('renders a legacy bare-string option as itself', () => {
+    // A PostgREST read of an unmigrated row may still carry string[].
+    const legacy = ['Yes', 'No'] as unknown as ExtractionField['allowed_values'];
+    renderField(makeField({ field_type: 'select', allowed_values: legacy }), 'Yes');
+    expect(screen.getByRole('combobox')).toHaveTextContent('Yes');
+  });
 
   it('threads the per-field flags through to the row', () => {
     // The gate must reach the row from FieldInput's own `field` prop — PR #729

@@ -18,6 +18,7 @@ Architectural notes:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -36,11 +37,11 @@ from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
     ExtractionFieldType,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.models.project import ProjectMemberRole
@@ -48,6 +49,7 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.services.current_run import CurrentRunResolver
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
@@ -76,7 +78,7 @@ from app.services.exports.extraction_snapshot_reader import (
     load_export_sections,
 )
 from app.services.exports.value_envelope import resolve_value
-from app.services.extraction_current_run import select_current_runs_by_article
+from app.services.extraction_snapshot import pinned_template_rules
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -110,7 +112,7 @@ class FieldDescriptor:
     field_id: UUID
     label: str
     type: ExtractionFieldType
-    allowed_values: tuple[str, ...]
+    allowed_values: tuple[AllowedValue, ...]  # (value, label) pairs, ordered
     description: str | None = None
     unit: str | None = None
     is_required: bool = False
@@ -469,7 +471,6 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
-                run_kind=template.kind,
             )
             value_map = await self._build_consensus_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -483,7 +484,6 @@ class ExtractionExportService(LoggerMixin):
                 project_id=project_id,
                 candidate_ids=article_ids,
                 reviewer_id=reviewer_id,
-                run_kind=template.kind,
             )
             value_map = await self._build_single_user_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -495,7 +495,6 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
-                run_kind=template.kind,
             )
             reviewers = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -509,10 +508,16 @@ class ExtractionExportService(LoggerMixin):
         else:  # pragma: no cover — exhaustive over ExportMode
             raise AssertionError(f"unhandled export mode: {mode!r}")
 
+        # QA rules are each article's own: those frozen in its run's pinned
+        # version, so articles reviewed under different versions export apart.
+        version_ids = {a.version_id for a in articles if a.version_id is not None}
+        rules_by_version = await pinned_template_rules(self.db, version_ids) if version_ids else {}
+        rules_by_article = {a.article_id: rules_by_version.get(a.version_id, {}) for a in articles}
+
         # §5 scope fidelity, applied BEFORE the tidy tables, the AI rows and
         # the appraisal read the map, so all three inherit it for free.
         mark_out_of_scope_values(
-            template_schema=template.schema_,
+            rules_by_article=rules_by_article,
             sections=sections,
             articles=tuple(articles),
             reviewers=reviewers,
@@ -569,7 +574,7 @@ class ExtractionExportService(LoggerMixin):
         appraisal: AppraisalModel | None = None
         if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
             appraisal = self._build_appraisal_model(
-                template_schema=template.schema_,
+                rules_by_article=rules_by_article,
                 sections=sections,
                 articles=tuple(articles),
                 reviewers=reviewers,
@@ -608,7 +613,7 @@ class ExtractionExportService(LoggerMixin):
         reviewers: tuple[ReviewerDescriptor, ...],
         value_map: dict[tuple[Any, ...], Any],
         mode: ExportMode,
-        template_schema: Any = None,
+        rules_by_article: Mapping[UUID, Mapping[str, Any]] | None = None,
     ) -> AppraisalModel | None:
         """Compute the appraisal roll-up for a quality-assessment template (§7).
 
@@ -644,13 +649,13 @@ class ExtractionExportService(LoggerMixin):
         )
 
         # Verdict field per domain: first SELECT field in sort_order whose
-        # allowed_values are the recognised risk-label set (excludes signalling
+        # option labels are the recognised risk-label set (excludes signalling
         # SELECT fields, whose answer sets differ — see _appraisal_overall's
         # severity table for the recognised labels).
         def _is_verdict(field: FieldDescriptor) -> bool:
             if field.type is not ExtractionFieldType.SELECT:
                 return False
-            labels = [v.strip().lower() for v in field.allowed_values if v.strip()]
+            labels = [av.label.strip().lower() for av in field.allowed_values if av.label.strip()]
             return bool(labels) and all(label in _RISK_LABELS for label in labels)
 
         domains: list[tuple[SectionDescriptor, FieldDescriptor]] = []
@@ -671,17 +676,28 @@ class ExtractionExportService(LoggerMixin):
         # entries (a derived default for a stored judgment, discriminated by
         # the rule module) are advice, not record — the stored judgments they
         # target already print as domain columns, so only the overalls become
-        # derived columns.
-        spec_entries = derived_spec(template_schema)
-        spec = [d for d in spec_entries if not is_recommendation(d)]
-        derived_labels = tuple(str(d.get("label", "")) for d in spec)
-
-        # §9: the run view already warns on spec coordinates the frozen tree
-        # no longer carries; the export used to blank the column in silence.
-        # Same event, same emitter, so the two surfaces cannot drift.
-        if spec_entries:
-            known = {(s.name, f.name) for s in sections for f in s.fields}
-            warn_dangling_spec_refs(spec_entries, known)
+        # derived columns. Each article's spec is its pinned version's; the
+        # columns are every version's overalls, first seen first.
+        rules_of = rules_by_article or {}
+        spec_by_article: dict[UUID, list[dict[str, Any]]] = {}
+        label_by_id: dict[str, str] = {}
+        known = {(s.name, f.name) for s in sections for f in s.fields}
+        warned: set[int] = set()
+        for article in articles:
+            rules = rules_of.get(article.article_id, {})
+            spec_entries = derived_spec(rules)
+            spec_by_article[article.article_id] = [
+                d for d in spec_entries if not is_recommendation(d)
+            ]
+            for d in spec_by_article[article.article_id]:
+                label_by_id.setdefault(str(d.get("id", "")), str(d.get("label", "")))
+            # §9: the run view already warns on spec coordinates the frozen
+            # tree no longer carries; the export used to blank the column in
+            # silence. Same event, same emitter, once per rule set.
+            if spec_entries and id(rules) not in warned:
+                warned.add(id(rules))
+                warn_dangling_spec_refs(spec_entries, known)
+        derived_labels = tuple(label_by_id.values())
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)
@@ -722,7 +738,9 @@ class ExtractionExportService(LoggerMixin):
                 if is_all_users
                 else {}
             )
-            derived_values: tuple[str | None, ...] = ()
+            # Blank under an overall this article's own version does not define.
+            derived_values: tuple[str | None, ...] = tuple(None for _ in label_by_id)
+            spec = spec_by_article[article.article_id]
             if spec:
                 # Resolve the spec's (section, field) coordinates against the
                 # SAME value_map the domain verdicts came from, so a derived
@@ -736,15 +754,18 @@ class ExtractionExportService(LoggerMixin):
                 # §2a parity: the same filter the run view applies, from the
                 # same helper, so the workbook cannot show a verdict the
                 # banner calls "Not applicable" (or vice versa).
-                out_of_scope = out_of_scope_sections(template_schema, values_by_coord)
-                derived_values = tuple(
-                    NOT_APPLICABLE
+                out_of_scope = out_of_scope_sections(
+                    rules_of.get(article.article_id, {}), values_by_coord
+                )
+                by_id = {
+                    d.id: NOT_APPLICABLE
                     if d.inputs and all(is_out_of_scope(i, out_of_scope) for i in d.inputs)
                     else d.value
                     for d in compute_derived_judgments(
                         spec, scope_filtered_values(values_by_coord, out_of_scope)
                     )
-                )
+                }
+                derived_values = tuple(by_id.get(entry_id) for entry_id in label_by_id)
 
             rows.append(
                 AppraisalRow(
@@ -860,7 +881,7 @@ class ExtractionExportService(LoggerMixin):
                         field_id=f.field_id,
                         label=f.label,
                         type=f.type,
-                        allowed_values=tuple(av.label for av in f.allowed_values),
+                        allowed_values=tuple(f.allowed_values),
                         description=f.description or f.llm_description,
                         unit=f.unit,
                         is_required=f.is_required,
@@ -918,36 +939,19 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
-        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick finalized articles + collect omitted-stage counts (FR-013).
 
-        ``run_kind`` is the exported template's kind (``extraction`` or
-        ``quality_assessment``): a run's kind is copied from its template
-        at creation, so filtering on the template's own kind keeps the QA
-        appraisal export (§7) on the same finalized-run path while still
-        rejecting a foreign-kind run that happens to share the article.
+        Each article's current run (``CurrentRunResolver``) on the exported
+        template; a run's kind is its template's (composite FK), so the QA
+        appraisal export (§7) takes the same finalized-run path.
         """
         if not candidate_ids:
             return [], {}
 
-        # Bulk-fetch runs for the candidate articles on this template.
-        run_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionRun).where(
-                        ExtractionRun.template_id == template_id,
-                        ExtractionRun.project_id == project_id,
-                        ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == run_kind,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        runs_by_article = await CurrentRunResolver(self.db).current_by_article(
+            project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-
-        runs_by_article = select_current_runs_by_article(run_rows)
         omitted: dict[str, int] = {}
         kept_run_ids: list[UUID] = []
         kept_articles: list[UUID] = []
@@ -1120,14 +1124,12 @@ class ExtractionExportService(LoggerMixin):
         project_id: UUID,
         candidate_ids: list[UUID],
         reviewer_id: UUID,
-        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick articles where the target reviewer has ≥ 1 non-reject decision (FR-014).
 
         Single-user mode tolerates any non-terminal Run stage (the reviewer
         may have started before consensus). ``cancelled`` runs and runs
-        with no decisions from this reviewer are omitted. ``run_kind`` is
-        the exported template's kind (see ``_resolve_articles_for_consensus``).
+        with no decisions from this reviewer are omitted.
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,
@@ -1137,21 +1139,9 @@ class ExtractionExportService(LoggerMixin):
         if not candidate_ids:
             return [], {}
 
-        run_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionRun).where(
-                        ExtractionRun.template_id == template_id,
-                        ExtractionRun.project_id == project_id,
-                        ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == run_kind,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        runs_by_article = await CurrentRunResolver(self.db).current_by_article(
+            project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-        runs_by_article = select_current_runs_by_article(run_rows)
 
         if not runs_by_article:
             return [], {"no_run": len(candidate_ids)}
@@ -1167,7 +1157,7 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .where(
                     ExtractionReviewerState.reviewer_id == reviewer_id,
-                    ExtractionReviewerState.run_id.in_([r.id for r in run_rows]),
+                    ExtractionReviewerState.run_id.in_([r.id for r in runs_by_article.values()]),
                     ExtractionReviewerDecision.decision != "reject",
                 )
                 .distinct()
@@ -1283,8 +1273,8 @@ class ExtractionExportService(LoggerMixin):
         # Key the run filter on the exported template's own kind so a
         # quality_assessment template surfaces its reviewers; scoped by
         # project_id (defense-in-depth, like the reviewer query) and
-        # falling back to ``extraction`` when absent (mirrors the
-        # ``run_kind`` default on ``_resolve_articles_for_consensus``).
+        # falling back to ``extraction`` when absent (the
+        # ``list_reviewers_with_decisions`` default).
         run_kind = (
             await self.db.execute(
                 select(ProjectExtractionTemplate.kind).where(
@@ -1320,8 +1310,7 @@ class ExtractionExportService(LoggerMixin):
         ``run_kind`` is the exported template's kind (``extraction`` or
         ``quality_assessment``): a run's kind is copied from its template
         at creation, so filtering on the template's own kind surfaces the
-        QA picker's reviewers (see ``_resolve_articles_for_consensus``)
-        instead of a hard-coded ``extraction`` that hides them.
+        QA picker's reviewers instead of a hard-coded ``extraction`` that hides them.
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,
@@ -1371,34 +1360,19 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
-        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick finalized + in-review articles for All-users mode.
 
         Both `consensus` and `finalized` runs contribute reviewer columns;
         plus consensus and earlier-stage runs may contribute reviewer
         sub-columns (the reviewer-axis column is empty for pre-review runs).
-        ``run_kind`` is the exported template's kind (see
-        ``_resolve_articles_for_consensus``).
         """
         if not candidate_ids:
             return [], {}
 
-        run_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionRun).where(
-                        ExtractionRun.template_id == template_id,
-                        ExtractionRun.project_id == project_id,
-                        ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == run_kind,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        runs_by_article = await CurrentRunResolver(self.db).current_by_article(
+            project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-        runs_by_article = select_current_runs_by_article(run_rows)
 
         omitted: dict[str, int] = {}
         kept_article_ids: list[UUID] = []
@@ -1630,7 +1604,7 @@ class ExtractionExportService(LoggerMixin):
         # any superseded ones for the same (run, instance, field). ``id`` is
         # the deterministic tiebreaker on equal ``created_at`` (same-transaction
         # inserts share the timestamp), matching the canonical
-        # ExtractionProposalRepository.get_latest_for_coord ordering so the
+        # ExtractionProposalRepository.latest_by_field ordering so the
         # FR-037 "superseded" outcome is stable across export builds.
         proposal_rows = (
             await self.db.execute(
@@ -1895,8 +1869,8 @@ def _build_data_dictionary(
     """Flatten the snapshot sections into one ``FieldDictEntry`` per field (§4 #k+2).
 
     Order follows section then field order as already resolved on the
-    descriptors (snapshot ``sort_order``). ``allowed_values`` are surfaced as
-    value+label pairs (value == label in prumo; both preserved — §11). The
+    descriptors (snapshot ``sort_order``). ``allowed_values`` are the snapshot's
+    (value, label) pairs, in option order. The
     ``description`` is already the ``field.description`` (falling back to
     ``field.llm_description``) collapsed on the descriptor at load time.
     """
@@ -1911,9 +1885,7 @@ def _build_data_dictionary(
                     type=field_.type,
                     unit=field_.unit,
                     description=field_.description,
-                    allowed_values=tuple(
-                        AllowedValue(value=v, label=v) for v in field_.allowed_values
-                    ),
+                    allowed_values=field_.allowed_values,
                     is_required=field_.is_required,
                     allow_other=field_.allow_other,
                 )

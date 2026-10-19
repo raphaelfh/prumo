@@ -7,6 +7,7 @@ import type {
   PublishedStateResponse,
   RunViewCurrentValue,
 } from '@/hooks/runs/types';
+import { coordKey } from '@/lib/runs/coord';
 
 /**
  * The generic envelope → form-value peel, applied to every NON-marker row by
@@ -35,7 +36,7 @@ function envelopeRowToFieldValue(raw: unknown): unknown {
 }
 
 /**
- * Resolve `runDetail.published_states` into the `${instanceId}_${fieldId}`
+ * Resolve `runDetail.published_states` into the `coordKey`-keyed
  * values map both session forms consume (spec 2026-07-02 D3). Published-only,
  * no reviewer-state fallback: a coord without a published row stays absent.
  */
@@ -44,14 +45,14 @@ export function publishedStatesToValuesMap(
 ): Record<string, unknown> {
   const map: Record<string, unknown> = {};
   for (const row of rows ?? []) {
-    map[`${row.instance_id}_${row.field_id}`] = envelopeRowToFieldValue(row.value);
+    map[coordKey(row.instance_id, row.field_id)] = envelopeRowToFieldValue(row.value);
   }
   return map;
 }
 
 /**
  * Resolve `runDetail.current_values` (the caller-scoped decision/proposal
- * resolution, D8) into the `${instanceId}_${fieldId}` values map — the QA
+ * resolution, D8) into the `coordKey`-keyed values map — the QA
  * screen hydrates AND baselines its autosave from this one map so a hydrated
  * coord is never re-POSTed on mount. Same envelope contract as
  * `publishedStatesToValuesMap`: marker envelopes preserved verbatim, `reject`
@@ -63,7 +64,7 @@ export function currentValuesToValuesMap(
   const map: Record<string, unknown> = {};
   for (const row of rows ?? []) {
     if (row.decision === 'reject') continue;
-    map[`${row.instance_id}_${row.field_id}`] = envelopeRowToFieldValue(row.value);
+    map[coordKey(row.instance_id, row.field_id)] = envelopeRowToFieldValue(row.value);
   }
   return map;
 }

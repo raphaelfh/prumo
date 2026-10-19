@@ -136,9 +136,21 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        # Shared rate-limit storage tests (test_rate_limit_shared_storage.py)
+        # fail, not skip, in CI without it. Same service as worker-smoke.yml.
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_test
+      REDIS_URL: redis://localhost:6379/0
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -617,7 +629,11 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
       SUPABASE_URL: http://127.0.0.1:54321
       ENCRYPTION_KEY: test_encryption_key_32_characters
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # The AI kickoff gate refuses with 409 MISSING_API_KEY when no key
+      # resolves, so the stack mirrors a configured deployment: the real key
+      # when the secret exists, else a stub (no LLM call runs without
+      # E2E_RUN_LLM_TESTS).
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-e2e-stub' }}
       CORS_ORIGINS: "http://127.0.0.1:8080"
       DEBUG: "true"
     steps:

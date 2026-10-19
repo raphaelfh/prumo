@@ -42,11 +42,11 @@ import {
 } from "@/components/runs/ReviewerAvatarStack";
 import type { QADomain } from "@/types/qa";
 import {
-  getSuggestionKey,
   type AISuggestion,
   type AISuggestionHistoryItem,
 } from "@/types/ai-extraction";
 import type { components } from "@/types/api/schema";
+import { coordKey } from "@/lib/runs/coord";
 
 type RunViewDerivedJudgment = components["schemas"]["RunViewDerivedJudgment"];
 
@@ -59,6 +59,8 @@ interface QASectionAccordionProps {
   articleId: string;
   templateId: string;
   runId?: string | null;
+  /** The page's project-role gate for the per-domain AI button. */
+  canRunAI: boolean;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
   defaultOpen?: boolean;
   /**
@@ -90,7 +92,7 @@ interface QASectionAccordionProps {
    */
   outOfScope?: boolean;
   /**
-   * AI suggestions keyed by ``${instanceId}_${fieldId}``. When a key
+   * AI suggestions keyed by `coordKey`. When a key
    * matches a rendered field, ``FieldInput`` shows the suggestion badge
    * + popover. The accordion does not own the suggestions state — the
    * page passes it down already shaped.
@@ -133,6 +135,7 @@ export function QASectionAccordion({
   articleId,
   templateId,
   runId,
+  canRunAI,
   onExtractionComplete,
   defaultOpen = false,
   reviewerActivity,
@@ -216,8 +219,7 @@ export function QASectionAccordion({
   // (renders nothing) when no activity data was provided.
   function fieldStack(fieldId: string): ReviewerAvatarEntry[] {
     if (!reviewerActivity) return [];
-    const coordKey = `${instanceId}::${fieldId}`;
-    const decisions = reviewerActivity.decisionsByCoord.get(coordKey) ?? [];
+    const decisions = reviewerActivity.decisionsByCoord.get(coordKey(instanceId, fieldId)) ?? [];
     const seen = new Set<string>();
     const stack: ReviewerAvatarEntry[] = [];
     for (const d of decisions) {
@@ -266,7 +268,7 @@ export function QASectionAccordion({
     const { withAi = true, onChange } = opts;
     const value = "value" in opts ? opts.value : values[field.id];
     const aiSuggestion = withAi
-      ? aiSuggestions?.[getSuggestionKey(instanceId, field.id)]
+      ? aiSuggestions?.[coordKey(instanceId, field.id)]
       : undefined;
     return (
       <FieldInput
@@ -373,6 +375,7 @@ export function QASectionAccordion({
               entityTypeId={entityType.id}
               entityLabel={sectionLabel}
               runId={runId}
+              canRunAI={canRunAI}
               onExtractionComplete={onExtractionComplete}
             />
           ) : null}

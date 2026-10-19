@@ -302,34 +302,6 @@ class ArticleFileRepository(BaseRepository[ArticleFile]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ArticleFile)
 
-    async def get_by_article(
-        self,
-        article_id: UUID | str,
-        file_type: str | None = None,
-    ) -> list[ArticleFile]:
-        """
-        List files for an article.
-
-        Args:
-            article_id: Article ID.
-            file_type: Optional type filter.
-
-        Returns:
-            File list.
-        """
-        if isinstance(article_id, str):
-            article_id = UUID(article_id)
-
-        query = select(ArticleFile).where(ArticleFile.article_id == article_id)
-
-        if file_type:
-            query = query.where(ArticleFile.file_type.ilike(f"%{file_type}%"))
-
-        query = query.order_by(ArticleFile.created_at.desc())
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
     async def list_for_article_ordered(self, article_id: UUID | str) -> list[ArticleFile]:
         """List an article's files MAIN-first, then by created_at asc.
 

@@ -76,4 +76,13 @@ describe('useFinalizedExtractionRun — stale response must not win (#285)', () 
     });
     expect(result.current.loading).toBe(false);
   });
+
+  it('a refresh while disabled never looks up (a stage command on an unfinalized run)', async () => {
+    h.findLatestFinalizedRun.mockResolvedValue({ id: 'run-1' });
+    const { result } = renderHook(() =>
+      useFinalizedExtractionRun({ articleId: 'article-A', projectTemplateId: 't1', enabled: false }),
+    );
+    await result.current.refresh();
+    expect(h.findLatestFinalizedRun).not.toHaveBeenCalled();
+  });
 });

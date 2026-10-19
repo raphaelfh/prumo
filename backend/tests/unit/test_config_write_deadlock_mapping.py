@@ -1,6 +1,6 @@
 """A deadlocked config write is a retry, not a server fault.
 
-`template_discard_service` already treats 40P01 as a retryable 409
+`template_versioning._discard` already treats 40P01 as a retryable 409
 (`DiscardRacedError`, "Nothing was changed — try again"), because its own
 docstring notes the publish/discard lock order can deadlock with a
 concurrent editor. The B-7 structure-write endpoints acquire the SAME

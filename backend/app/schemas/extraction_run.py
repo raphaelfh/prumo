@@ -6,6 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.llm.claim_value import normalize_options
+from app.schemas.template_structure import OptionItem
+
 # ----- Request schemas -----
 
 
@@ -212,7 +215,9 @@ class RunViewField(BaseModel):
     field_type: str
     is_required: bool
     validation_schema: Any | None = None
-    allowed_values: Any | None = None
+    # Canonical on read: a frozen snapshot keeps whatever option shape it was
+    # published with, so every stored shape is normalized here.
+    allowed_values: list[OptionItem] | None = None
     unit: str | None = None
     allowed_units: Any | None = None
     sort_order: int
@@ -233,6 +238,13 @@ class RunViewField(BaseModel):
     # with it). 0067 wrote the live flag into every earlier snapshot, so a
     # missing key here means false, not "unknown".
     is_entity_key: bool = False
+
+    @field_validator("allowed_values", mode="before")
+    @classmethod
+    def _canonical_options(cls, raw: Any) -> list[dict[str, str]] | None:
+        if raw is None:
+            return None
+        return normalize_options(raw) or None
 
 
 class RunViewEntityType(BaseModel):
@@ -383,6 +395,13 @@ class RunViewResponse(RunDetailResponse):
     # templates that declare no derivation spec — i.e. everything except
     # PROBAST+AI today.
     derived_judgments: list[RunViewDerivedJudgment] = Field(default_factory=list)
+    # A plain dict on purpose: the rules shape is declared seed data with no
+    # Pydantic model yet (backend readers go through derived_judgment_service,
+    # the frontend through lib/qa/studyTypeScope.ts); modelling it is its own change.
+    scope_rules: dict[str, Any] | None = Field(
+        default=None,
+        description="Scope rules frozen in the run's pinned template version (QA runs only).",
+    )
     # The template-level instruction this run is PINNED to — read through the
     # same helper the AI prompts call, so the screen can never show a text the
     # model did not get. Kind-neutral (extraction runs carry the pin too);
@@ -393,7 +412,24 @@ class RunViewResponse(RunDetailResponse):
     # both blocks reach every prompt, so shipping only one of them would make
     # this response lie by omission. None when no AI call has run yet, or when
     # the review says nothing.
-    review_context: str | None = None
+    review_question: str | None = None
+    review_question_revision: int | None = Field(
+        default=None,
+        description=(
+            "Protocol revision the pinned review question was built from; null when "
+            "nothing is pinned yet or the pin predates revisions."
+        ),
+    )
+    project_protocol_revision: int | None = Field(
+        default=None, description="The project's protocol revision now."
+    )
+    review_question_drift: bool = Field(
+        default=False,
+        description=(
+            "True when the project's protocol changed since this run pinned its review "
+            "question; new runs use the current one."
+        ),
+    )
 
 
 class RunReviewerProfile(BaseModel):

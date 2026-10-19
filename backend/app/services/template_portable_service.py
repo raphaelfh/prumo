@@ -53,7 +53,9 @@ from app.services.project_template_active_service import (
     flush_activation,
     owned_template,
 )
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
 
 MAX_REPORTED_ERRORS = 20
 
@@ -204,6 +206,7 @@ async def to_portable(db: AsyncSession, *, project_id: UUID, template_id: UUID) 
                 "name": tpl.name,
                 "description": tpl.description,
                 "framework": tpl.framework,
+                "instrument": tpl.instrument,
                 "version": tpl.version,
                 "llm_template_instruction": tpl.llm_template_instruction or None,
                 "sections": [_section_dict(et, children_of.get(et.id, [])) for et in roots],
@@ -272,6 +275,7 @@ async def import_portable(
         name=doc.name,
         description=doc.description,
         framework=doc.framework,
+        instrument=doc.instrument,
         version=doc.version,
         kind=TemplateKind.EXTRACTION.value,
         schema_={},

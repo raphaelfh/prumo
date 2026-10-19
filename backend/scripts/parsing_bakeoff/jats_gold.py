@@ -29,12 +29,38 @@ def _iter_local(root: ET.Element, name: str) -> list[ET.Element]:
     return [el for el in root.iter() if _local(el.tag) == name]
 
 
+#: Floating or side content whose paragraphs have no fixed reading position.
+_FLOAT_TAGS = frozenset({"fig", "table-wrap", "boxed-text", "fn-group", "fn", "caption"})
+
+
+def _flow_paragraphs(container: ET.Element) -> list[str]:
+    """``<p>`` texts in document order, skipping floats (figures, tables, boxes)."""
+    out: list[str] = []
+
+    def walk(el: ET.Element) -> None:
+        for child in el:
+            tag = _local(child.tag)
+            if tag in _FLOAT_TAGS:
+                continue
+            if tag == "p":
+                text = _text(child)
+                if text:
+                    out.append(text)
+                continue
+            walk(child)
+
+    walk(container)
+    return out
+
+
 @dataclass
 class JatsGold:
     title: str
     sections: list[str]
     tables: list[list[str]]
     references: list[str]
+    #: Abstract then body paragraphs, in logical reading order.
+    paragraphs: list[str]
 
 
 def parse_jats(xml: str) -> JatsGold:
@@ -66,7 +92,18 @@ def parse_jats(xml: str) -> JatsGold:
         if txt:
             references.append(txt)
 
-    return JatsGold(title=title, sections=sections, tables=tables, references=references)
+    paragraphs: list[str] = []
+    for name in ("abstract", "body"):
+        for container in _iter_local(root, name)[:1]:
+            paragraphs.extend(_flow_paragraphs(container))
+
+    return JatsGold(
+        title=title,
+        sections=sections,
+        tables=tables,
+        references=references,
+        paragraphs=paragraphs,
+    )
 
 
 def gold_from_jats(xml: str) -> GoldLabels:
@@ -76,4 +113,5 @@ def gold_from_jats(xml: str) -> GoldLabels:
         tables=parsed.tables,
         sections=parsed.sections,
         references=parsed.references,
+        paragraphs=parsed.paragraphs,
     )

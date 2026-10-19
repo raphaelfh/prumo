@@ -5,17 +5,25 @@ template, and per-run output_type is incompatible with agent-level
 validators in pydantic-ai v1. Agents are cheap objects; this also keeps
 BYOK fully state-free.
 
+How structured output travels (json_schema ``response_format``,
+tool-calling or a prompted schema) is the MODEL's fact, not this module's:
+``build_model`` pins the registry row's ``output_mode`` — or the custom
+host's probed one — into the model profile's
+``default_structured_output_mode``, and pydantic-ai resolves the bare
+``output_type`` against it per request. Nothing here names a provider.
+
 Callers should catch ``pydantic_ai.exceptions.AgentRunError`` — it covers
 both ``UnexpectedModelBehavior`` (reask budget exhausted) and
-``UsageLimitExceeded`` (request ceiling hit)."""
+``UsageLimitExceeded`` (request ceiling hit). Either carries the usage the
+call consumed before raising (:func:`failed_usage`)."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Any, TypeVar
+from dataclasses import dataclass, field
+from typing import Any, Protocol, TypeVar
 
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent, NativeOutput, ToolOutput, UsageLimits
+from pydantic_ai import Agent, ModelMessage, ModelResponse, UsageLimits, capture_run_messages
 from pydantic_ai.models import Model
 
 from app.core.config import settings
@@ -40,11 +48,15 @@ OUTPUT_RETRIES_DEFAULT = 2
 
 @dataclass
 class LlmUsage:
-    """Token accounting in the legacy OpenAIUsage vocabulary so
-    extraction_runs.results keeps its tokens_* keys unchanged."""
+    """Token accounting for one or more model calls, plus the provider's id
+    of every response received (every attempt, output-validator retries
+    included) so a snapshot pass or a ledger row resolves to the provider's
+    own records. Adding two usages sums the tokens and concatenates the ids
+    in order."""
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    request_ids: list[str] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -54,23 +66,68 @@ class LlmUsage:
         return LlmUsage(
             prompt_tokens=self.prompt_tokens + other.prompt_tokens,
             completion_tokens=self.completion_tokens + other.completion_tokens,
+            request_ids=self.request_ids + other.request_ids,
         )
 
 
-def _output_for(
-    model: Model, output_model: type[OutputT]
-) -> NativeOutput[OutputT] | ToolOutput[OutputT]:
-    """OpenAI supports JSON-schema response_format (NativeOutput); Anthropic
-    has no response_format, and Ollama Cloud accepts one without enforcing it
-    (``build_model`` only yields an "ollama" model for Cloud routes: the hosted
-    ``ollama`` provider and custom hosts on ollama.com), so both use
-    tool-calling (ToolOutput). ``model.system`` is the provider name carried by
-    every pydantic-ai model ("openai"/"anthropic"/"ollama"/"function"...) —
-    robust to subclasses/wrappers, and it leaves OpenAI and test models on
-    NativeOutput."""
-    if getattr(model, "system", "") in ("anthropic", "ollama"):
-        return ToolOutput(output_model)
-    return NativeOutput(output_model)
+#: The attribute a raised call's consumed usage rides on (``failed_usage``).
+_FAILED_USAGE_ATTR = "llm_usage"
+
+
+def attach_failed_usage(exc: BaseException, usage: LlmUsage) -> None:
+    """Record on ``exc`` what the call consumed before it raised, so the
+    metering wrapper can bill a failed call with its real tokens and ids."""
+    setattr(exc, _FAILED_USAGE_ATTR, usage)
+
+
+def failed_usage(exc: BaseException) -> LlmUsage:
+    """The usage a raised call consumed; zero when none was attached."""
+    usage = getattr(exc, _FAILED_USAGE_ATTR, None)
+    return usage if isinstance(usage, LlmUsage) else LlmUsage()
+
+
+class UsageLedgerWriteError(Exception):
+    """A model call answered but its usage-ledger row could not be written.
+
+    Raised by the metering wrapper with the sink's error as ``__cause__``. The
+    passes that degrade on a model failure (verify, the entailment judge)
+    re-raise it: a lost ledger row fails the section, it never degrades it.
+    """
+
+
+def _usage_of(messages: Sequence[ModelMessage]) -> LlmUsage:
+    """Tokens and response ids summed over every response in ``messages``."""
+    responses = [m for m in messages if isinstance(m, ModelResponse)]
+    return LlmUsage(
+        prompt_tokens=sum(r.usage.input_tokens or 0 for r in responses),
+        completion_tokens=sum(r.usage.output_tokens or 0 for r in responses),
+        request_ids=[r.provider_response_id for r in responses if r.provider_response_id],
+    )
+
+
+class StructuredCall(Protocol):
+    """The typed LLM call as a seam.
+
+    :func:`extract_structured` is the production adapter (pydantic-ai); tests
+    pass a recorded fake (``tests/fakes/recorded_llm.py``). Every model call
+    the AI-extraction pipeline makes — field extraction, entry identification,
+    the verify pass, the entailment judge — goes through one of these, so a
+    test swaps ONE seam to drive the whole pipeline.
+    """
+
+    async def __call__(
+        self,
+        *,
+        output_model: type[OutputT],
+        system_prompt: str,
+        user_prompt: str,
+        model: Model,
+        prompt_name: str,
+        prompt_version: str,
+        validators: Sequence[Callable[..., Any]] = (),
+        output_retries: int = ...,
+        usage_limits: UsageLimits | None = None,
+    ) -> tuple[OutputT, LlmUsage]: ...
 
 
 async def extract_structured(
@@ -87,7 +144,7 @@ async def extract_structured(
 ) -> tuple[OutputT, LlmUsage]:
     agent: Agent[None, OutputT] = Agent(
         model,
-        output_type=_output_for(model, output_model),
+        output_type=output_model,
         instructions=system_prompt,
         retries={"output": output_retries},
         model_settings={
@@ -97,12 +154,22 @@ async def extract_structured(
     )
     for validator in validators:
         agent.output_validator(validator)
-    with logfire.span(
-        "llm_extraction",
-        **{"prompt.name": prompt_name, "prompt.version": prompt_version},
+    with (
+        logfire.span(
+            "llm_extraction",
+            **{"prompt.name": prompt_name, "prompt.version": prompt_version},
+        ),
+        capture_run_messages() as messages,
     ):
-        result = await agent.run(user_prompt, usage_limits=usage_limits or DEFAULT_USAGE_LIMITS)
+        try:
+            result = await agent.run(user_prompt, usage_limits=usage_limits or DEFAULT_USAGE_LIMITS)
+        except Exception as exc:
+            # Every attempt the provider answered before the raise (reask
+            # budget, request ceiling) is billed: metering records it.
+            attach_failed_usage(exc, _usage_of(messages))
+            raise
     return result.output, LlmUsage(
         prompt_tokens=result.usage.input_tokens or 0,
         completion_tokens=result.usage.output_tokens or 0,
+        request_ids=_usage_of(result.all_messages()).request_ids,
     )

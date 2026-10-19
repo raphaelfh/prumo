@@ -9,11 +9,22 @@ from enum import Enum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 # Mirrors ``ExtractionFramework`` (app.models.extraction) — declared once in the
 # schema layer so request/response models never import the ORM enum.
 Framework = Literal["CHARMS", "PICOS", "CUSTOM"]
+
+# The appraisal instrument a template implements (column ``instrument``, 0087).
+InstrumentCode = Literal["charms", "charms_mm", "probast", "probast_ai", "quadas2", "custom"]
+# Fixed prompt label per code; ``custom`` has none: the template's own name.
+INSTRUMENT_LABELS: dict[str, str] = {
+    "charms": "CHARMS",
+    "charms_mm": "CHARMS + Multimodal (ML prediction)",
+    "probast": "PROBAST",
+    "probast_ai": "PROBAST+AI",
+    "quadas2": "QUADAS-2",
+}
 
 # =================== INTERNAL ASSEMBLY SCHEMAS ===================
 
@@ -100,9 +111,6 @@ class SectionExtractionRequest(BaseModel):
     # Filtrar sections especificas (para chunking)
     section_ids: list[UUID] | None = Field(default=None, alias="sectionIds")
 
-    # Texto do PDF ja processado (evita reprocessar)
-    pdf_text: str | None = Field(default=None, alias="pdfText")
-
     # Opcoes de extraction
     options: ExtractionOptions | None = None
 
@@ -116,7 +124,7 @@ class SectionExtractionRequest(BaseModel):
     # there is no separate ``review`` stage to auto-advance to, so the run
     # stays in ``extract`` after AI extraction and reviewers act there
     # directly. QA's publish flow walks the run from ``extract`` to
-    # ``finalized`` itself. See ADR-0013 / section_extraction_service.
+    # ``finalized`` itself. See ADR-0013 / ai_extraction.
     auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
 
     # When True, fields a human has already settled are excluded from the
@@ -323,61 +331,6 @@ class EntryCreateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-# =================== ENTITY TYPE SCHEMAS ===================
-
-
-class ExtractionFieldSchema(BaseModel):
-    """Schema de field de extraction."""
-
-    id: UUID
-    name: str
-    label: str
-    description: str | None = None
-    field_type: str = Field(..., alias="fieldType")
-    is_required: bool = Field(default=False, alias="isRequired")
-    allowed_values: list[str] | None = Field(default=None, alias="allowedValues")
-    unit: str | None = None
-    allowed_units: list[str] | None = Field(default=None, alias="allowedUnits")
-    llm_description: str | None = Field(default=None, alias="llmDescription")
-    sort_order: int = Field(default=0, alias="sortOrder")
-    # ADR-0016 disposition flags. ``allows_no_information`` (migration 0062) is
-    # deliberately absent: this schema is served by no endpoint (it is not in
-    # openapi.json), so carrying the flag here would be dead wire surface.
-    allows_not_applicable: bool = Field(default=False, alias="allowsNotApplicable")
-    allows_not_evaluated: bool = Field(default=False, alias="allowsNotEvaluated")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ExtractionEntityTypeSchema(BaseModel):
-    """Schema de tipo de entidade."""
-
-    id: UUID
-    name: str
-    label: str
-    description: str | None = None
-    cardinality: Literal["one", "many"]
-    is_required: bool = Field(default=False, alias="isRequired")
-    sort_order: int = Field(default=0, alias="sortOrder")
-    parent_entity_type_id: UUID | None = Field(default=None, alias="parentEntityTypeId")
-    fields: list[ExtractionFieldSchema] = []
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ExtractionTemplateSchema(BaseModel):
-    """Schema de template de extraction."""
-
-    id: UUID
-    name: str
-    description: str | None = None
-    framework: Framework
-    version: str
-    entity_types: list[ExtractionEntityTypeSchema] = Field(default=[], alias="entityTypes")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 # =================== INSTANCE SCHEMAS ===================
 
 
@@ -477,6 +430,14 @@ class ExtractionErrorCode(str, Enum):
       coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
       rather than silently renaming the entry the way the retired model path
       did ("Cox Model (2)").
+    - ``RUN_BUSY``         — the coordinate's live run is in consensus, which
+      accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time
+      refusal is a 409 ``RunBusyError``), e.g. the run reached consensus
+      while the job was queued.
+    - ``RUN_FINALIZED``    — the coordinate's run is finalized; AI extraction
+      waits until it is reopened (``RunWriteError.run_finalized``;
+      enqueue-time refusal is a 409 ``RunFinalizedError``), e.g. the run was
+      finalized while the job was queued.
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
@@ -486,6 +447,8 @@ class ExtractionErrorCode(str, Enum):
     LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
     MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
     ENTRY_KEY_DUPLICATE = "ENTRY_KEY_DUPLICATE"
+    RUN_BUSY = "RUN_BUSY"
+    RUN_FINALIZED = "RUN_FINALIZED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 
@@ -661,3 +624,15 @@ def parse_position(
     if raw is None:
         return None
     return PositionV1.model_validate(raw)
+
+
+def stored_anchor(raw: dict[str, Any] | None) -> PositionV1 | None:
+    """The anchor a stored position parses to, or ``None`` for a missing,
+    empty or invalid one. ``grounded`` on every evidence read is exactly
+    ``stored_anchor(position) is not None``."""
+    if not raw:
+        return None
+    try:
+        return parse_position(raw)
+    except (ValidationError, ValueError):
+        return None

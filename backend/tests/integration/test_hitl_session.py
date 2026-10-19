@@ -522,13 +522,19 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
     # Pick any instance from the QA template; we just need one (instance, field)
     # pair to write a consensus decision so the run can finalize.
     et_id, instance_id = next(iter(instances_by_et.items()))
-    field_id = (
+    field_row = (
         await db_session.execute(
-            text("SELECT id FROM public.extraction_fields WHERE entity_type_id = :et LIMIT 1"),
+            text(
+                "SELECT id, allowed_values FROM public.extraction_fields "
+                "WHERE entity_type_id = :et LIMIT 1"
+            ),
             {"et": et_id},
         )
-    ).scalar()
-    assert field_id is not None, "QA entity type has no fields"
+    ).first()
+    assert field_row is not None, "QA entity type has no fields"
+    field_id, allowed = field_row
+    # The override is held to the field's options: answer with its first one.
+    answer = allowed[0]["value"]
 
     # Collapsed lifecycle: session-open parks the run in extract; a single
     # extract -> consensus advance reaches the adjudication stage.
@@ -543,7 +549,7 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
             "instance_id": str(instance_id),
             "field_id": str(field_id),
             "mode": "manual_override",
-            "value": {"value": "Y"},
+            "value": {"value": answer},
             "rationale": "test fixture",
         },
     )
@@ -841,7 +847,7 @@ async def test_session_open_captures_hitl_config_snapshot(
     db_session: AsyncSession,
     home_project_fixture: tuple[UUID, UUID, UUID, UUID, UUID],
 ) -> None:
-    """Covers f_005: every Run created via ``_reuse_or_create_run`` must
+    """Covers f_005: every Run created via ``CurrentRunResolver.open_for_session`` must
     carry a ``hitl_config_snapshot`` populated from ``HitlConfigService``.
     Without this snapshot, replaying old runs would silently inherit the
     project's *current* HITL config — defeating the whole point of pinning
@@ -1342,7 +1348,7 @@ async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
     Reachability: ``POST /api/v1/hitl/sessions`` is gated by
     ``ensure_project_member`` — NOT ``require_project_manager`` — and
     ``HITLSessionService._resolve_project_template`` calls
-    ``TemplateCloneService.clone`` on every QA open. When the project
+    ``template_versioning.clone_template`` on every QA open. When the project
     template sits in zero state, the heal republishes, and
     ``build_template_version_snapshot`` reads the LIVE instruction column.
     So before the fix a reviewer's page load pushed the manager's staged
@@ -1354,7 +1360,6 @@ async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
     """
     from app.models.extraction import TemplateKind
     from app.services.hitl_session_service import HITLSessionService
-    from app.services.template_clone_service import TemplateCloneService
     from app.services.template_instruction_service import set_template_instruction
 
     manager = SEED.primary_profile
@@ -1384,7 +1389,10 @@ async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
 
     # Manager sets the template up, then leaves it mid-edit: every section
     # deleted (zero state) with instruction text staged but not published.
-    initial = await TemplateCloneService(db_session).clone(
+    from app.services.template_versioning import clone_template
+
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=qa_global,
         user_id=manager,

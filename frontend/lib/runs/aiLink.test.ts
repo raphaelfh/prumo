@@ -25,7 +25,6 @@ describe('deriveAiLinkByKey', () => {
         dec({id: 'new', proposal_record_id: 'p2', created_at: '2026-07-02T00:00:00Z'}),
       ],
       currentUserId: 'me',
-      sessionAdoption: {},
     });
     expect(out).toEqual({i1_f1: 'p2'});
   });
@@ -37,7 +36,6 @@ describe('deriveAiLinkByKey', () => {
         dec({id: 'new', proposal_record_id: null, created_at: '2026-07-02T00:00:00Z'}),
       ],
       currentUserId: 'me',
-      sessionAdoption: {},
     });
     expect(out).toEqual({});
   });
@@ -47,25 +45,13 @@ describe('deriveAiLinkByKey', () => {
       deriveAiLinkByKey({
         decisions: [dec({reviewer_id: 'peer', proposal_record_id: 'p1'})],
         currentUserId: 'me',
-        sessionAdoption: {},
-      }),
+        }),
     ).toEqual({});
     expect(
       deriveAiLinkByKey({
         decisions: [dec({proposal_record_id: 'p1'})],
         currentUserId: null,
-        sessionAdoption: {},
-      }),
-    ).toEqual({});
-  });
-
-  it('layer 2: session adopt sets, session reject tombstones layer 1', () => {
-    const decisions = [dec({proposal_record_id: 'p1'})];
-    expect(
-      deriveAiLinkByKey({decisions, currentUserId: 'me', sessionAdoption: {i1_f1: 'p9'}}),
-    ).toEqual({i1_f1: 'p9'});
-    expect(
-      deriveAiLinkByKey({decisions, currentUserId: 'me', sessionAdoption: {i1_f1: null}}),
+        }),
     ).toEqual({});
   });
 });

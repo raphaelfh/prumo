@@ -33,7 +33,9 @@ from app.services.project_template_active_service import (
     deactivate_sibling_extraction_templates,
     flush_activation,
 )
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
 
 
 async def create_blank_template(

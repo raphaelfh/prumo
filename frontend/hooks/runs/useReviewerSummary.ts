@@ -6,7 +6,7 @@
  *     non-superseded decision in this run.
  *   - currentDecisions: latest decision per (reviewer, instance, field)
  *     — mirrors `extraction_reviewer_states` semantics on the client.
- *   - divergentCoords: Set<"instance::field"> where ≥ 2 reviewers gave
+ *   - divergentCoords: Set of `coordKey`s where ≥ 2 reviewers gave
  *     materially different values (or one rejected and another edited).
  *
  * The "N of M reviewers" denominator deliberately does NOT live here:
@@ -19,6 +19,7 @@
  */
 
 
+import { coordKey } from "@/lib/runs/coord";
 import { stableStringify } from "@/lib/runs/valueEquality";
 
 import type { ReviewerDecisionResponse, RunDetailResponse } from "./types";
@@ -29,7 +30,7 @@ export interface ReviewerSummary {
   currentDecisions: Map<string, ReviewerDecisionResponse>;
   /**
    * Latest non-superseded ReviewerDecision per (instance, field), keyed
-   * by `${instance}::${field}`. Each entry is the array of one decision
+   * by `coordKey`. Each entry is the array of one decision
    * per distinct reviewer who touched the coord — exactly the shape the
    * consensus panel renders side-by-side.
    */
@@ -50,16 +51,12 @@ const EMPTY_SUMMARY: ReviewerSummary = {
   touchedCoords: new Set(),
 };
 
-function coordKey(instanceId: string, fieldId: string): string {
-  return `${instanceId}::${fieldId}`;
-}
-
 function reviewerKey(
   reviewerId: string,
   instanceId: string,
   fieldId: string,
 ): string {
-  return `${reviewerId}::${instanceId}::${fieldId}`;
+  return `${reviewerId}/${coordKey(instanceId, fieldId)}`;
 }
 
 /**

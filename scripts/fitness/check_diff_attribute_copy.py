@@ -12,7 +12,7 @@ backend attribute reaches users as `allows_no_information` rather than
 `"No information" option`, silently, with every test green. That shipped
 once; this gate is why it cannot ship twice.
 
-Source of truth: `ATTRIBUTE_TIERS` in `backend/app/services/template_diff.py`,
+Source of truth: `ATTRIBUTE_TIERS` in `backend/app/services/template_versioning/_diff.py`,
 which the backend's own exhaustiveness test
 (`test_tier_map_is_exhaustive_over_the_snapshot_key_set`) pins to the union of
 the entity + field attribute-default maps. Two more keys are emitted as bare
@@ -37,7 +37,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_REPO_ROOT = SCRIPT_DIR.parent.parent
 
-DIFF_SERVICE = "backend/app/services/template_diff.py"
+DIFF_SERVICE = "backend/app/services/template_versioning/_diff.py"
 DIFF_SHEET = "frontend/components/extraction/template-config/TemplateConfigDiffSheet.tsx"
 COPY_FILE = "frontend/lib/copy/templateConfig.ts"
 

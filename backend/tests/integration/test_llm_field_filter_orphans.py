@@ -1,8 +1,8 @@
 """An exclusion coordinate no live field answers to must be reported.
 
 The derived spec names the assessor-owned fields the model must never see. It
-is live JSON, and so are the field names it points at, so renaming a field in
-the template editor orphans the pointer — and an orphaned pointer silently
+is frozen in the run's pinned version, but the field names it points at are
+live, so renaming a field in the template editor orphans the pointer — and an orphaned pointer silently
 re-opens a judgment to the model. That is asked here, once per run against the
 whole live tree, because it has no answer anywhere else: the run view and the
 export both check the spec against the FROZEN snapshot, where the old name
@@ -11,7 +11,6 @@ still resolves.
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -24,6 +23,7 @@ from app.services.llm_field_filter import build_llm_field_filter
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.factories.template_factory import TemplateFactory
 from tests.integration.conftest import SEED
+from tests.integration.helpers.template_fixtures import publish_rules
 
 _SECTION = "dev_d1_participants"
 
@@ -83,12 +83,13 @@ async def _qa_run(db: AsyncSession, spec: dict) -> tuple[UUID, UUID] | None:
             ),
             {"id": str(uuid4()), "etid": str(et_id), "n": name, "so": order},
         )
-    await db.execute(
-        text(
-            "UPDATE public.project_extraction_templates SET schema = CAST(:s AS jsonb) "
-            "WHERE id = :tid"
-        ),
-        {"s": json.dumps(spec), "tid": str(template_id)},
+    # A run evaluates the rules frozen in its pinned version: publish them.
+    await publish_rules(
+        db,
+        project_id=UUID(str(project_id)),
+        template_id=template_id,
+        user_id=UUID(str(user_id)),
+        rules=spec,
     )
     await db.flush()
 

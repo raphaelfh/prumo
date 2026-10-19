@@ -18,12 +18,27 @@ from app.api.mcp.errors import AUDITED_CODES, McpErrorCode
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import agent_template_draft_service, template_field_service
 from app.services.pat_service import create_token, revoke_token
-from app.services.template_field_service import DuplicateFieldNameError
+from app.services.template_field_service import (
+    CrossTemplateMoveError,
+    DuplicateFieldNameError,
+    FieldInUseError,
+)
 from app.utils.rate_limiter import limiter
+from app.worker import queue_health
 from tests.integration.conftest import SEED, get_config_draft_marker, set_config_draft_marker
-from tests.integration.helpers.template_fixtures import fresh_charms
+from tests.integration.helpers.batch_fixtures import make_article, make_batch
+from tests.integration.helpers.engine_setup import run_in_extract
+from tests.integration.helpers.template_fixtures import field_id, fresh_charms
+from tests.integration.mcp.ai_run_helpers import (
+    ready_article,
+    ready_env,
+    ready_plan,
+    set_policy,
+    set_rung,
+    start_args,
+)
 from tests.integration.mcp.rpc import rpc
-from tests.integration.mcp.tool_calls import call_tool, error_payload
+from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
 
 _AUDITED = {
     "INVALID_ARGUMENT",
@@ -35,7 +50,14 @@ _AUDITED = {
     "FIELD_NOT_EDITABLE",
     "STALE_VALUE",
     "DUPLICATE_NAME",
+    "IN_USE",
+    "STRUCTURE_CONFLICT",
     "RETRY",
+    "AI_RUNS_NOT_ALLOWED",
+    "PLAN_STALE",
+    "AI_NOT_CONFIGURED",
+    "AI_RUN_ACTIVE",
+    "AI_RUN_LIMIT",
 }
 
 
@@ -151,6 +173,8 @@ async def _build_drivers(
     pat_primary_rw,
     pat_reviewer_rw,
     pat_primary_read,
+    pat_viewer_ai_run,
+    pat_primary_rw_ai_run,
 ) -> dict[McpErrorCode, Callable[[], Awaitable[CallToolResult]]]:
     """One driver per :class:`McpErrorCode`; a missing entry fails
     ``test_audit_row_matrix`` outright, so a new enum member needs a case here."""
@@ -179,6 +203,15 @@ async def _build_drivers(
                 "fields": {"description": "x"},
                 "expected": {"description": None},
             },
+        )
+
+    async def reviewer_required() -> CallToolResult:
+        # No shipped tool requires the reviewer role yet: the ai_run probe does.
+        return await call_tool(
+            mcp_client,
+            pat_viewer_ai_run,
+            "probe_ai_read",
+            {"project_id": str(SEED.primary_project)},
         )
 
     async def scope_insufficient() -> CallToolResult:
@@ -238,6 +271,7 @@ async def _build_drivers(
         )
 
     async def narrow_baseline() -> CallToolResult:
+        await run_in_extract(db_session)  # pins the seeded template's empty version
         return await call_tool(
             mcp_client,
             pat_primary_rw,
@@ -289,7 +323,7 @@ async def _build_drivers(
             {
                 "project_id": str(project_id),
                 "template_id": str(template_id),
-                "ops": [{"op": "delete_question"}],
+                "ops": [{"op": "publish"}],
             },
         )
 
@@ -352,6 +386,39 @@ async def _build_drivers(
             },
         )
 
+    async def fingerprinted(op: dict[str, Any]) -> CallToolResult:
+        project_id, template_id, schema = await fresh_charms(db_session)
+        section = next(et for et in schema["entity_types"] if et.get("fields"))
+        args = {"project_id": str(project_id), "template_id": str(template_id)}
+        view = structured(
+            await call_tool(mcp_client, pat_primary_rw, "get_template", {**args, "view": "changes"})
+        )
+        op = {**op, "field_id": section["fields"][0]["id"]}
+        if "section_id" in op:
+            op["section_id"] = section["id"]
+        return await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "edit_template_draft",
+            {**args, "ops": [op], "expected_fingerprint": view["fingerprint"]},
+        )
+
+    async def in_use() -> CallToolResult:
+        async def _raise(*_a: Any, **_k: Any) -> None:
+            raise FieldInUseError("in use")
+
+        monkeypatch.setattr(template_field_service, "delete_field", _raise)
+        return await fingerprinted({"op": "delete_question"})
+
+    async def structure_conflict() -> CallToolResult:
+        async def _raise(*_a: Any, **_k: Any) -> None:
+            raise CrossTemplateMoveError("cross")
+
+        monkeypatch.setattr(template_field_service, "move_field", _raise)
+        result = await fingerprinted({"op": "move_question", "section_id": "", "position": 0})
+        assert error_payload(result)["rule"] == "cross_template_move"
+        return result
+
     async def retry() -> CallToolResult:
         project_id, template_id, schema = await fresh_charms(db_session)
         section_id = _section_id(schema)
@@ -411,9 +478,63 @@ async def _build_drivers(
             },
         )
 
+    async def start_after(drift: Callable[[], Awaitable[None]], **override: Any) -> CallToolResult:
+        """Plan a ready run, apply ``drift``, then start it (start_ai_run's codes)."""
+        ready_env(monkeypatch)
+        await set_policy(db_session)
+        articles = [await ready_article(db_session, f"audit {i}") for i in range(2)]
+        plan = await ready_plan(mcp_client, pat_primary_rw_ai_run, *articles)
+        await drift()
+        return await call_tool(
+            mcp_client, pat_primary_rw_ai_run, "start_ai_run", start_args(plan, **override)
+        )
+
+    async def no_drift() -> None:
+        return None
+
+    async def ai_runs_not_allowed() -> CallToolResult:
+        return await start_after(lambda: set_policy(db_session, "off"))
+
+    async def plan_stale() -> CallToolResult:
+        return await start_after(no_drift, expected_article_count=1)
+
+    async def ai_not_configured() -> CallToolResult:
+        async def drift() -> None:
+            set_rung(monkeypatch, None)
+
+        return await start_after(drift)
+
+    async def ai_run_active() -> CallToolResult:
+        async def drift() -> None:
+            await make_batch(
+                db_session,
+                owner_id=SEED.primary_profile,
+                project_id=SEED.primary_project,
+                template_id=SEED.primary_template,
+                article_ids=[await make_article(db_session, SEED.primary_project, "queued")],
+            )
+
+        return await start_after(drift)
+
+    async def ai_run_limit() -> CallToolResult:
+        return await start_after(lambda: set_policy(db_session, daily=1))
+
+    async def service_unavailable() -> CallToolResult:
+        async def drift() -> None:
+            monkeypatch.setattr(queue_health, "is_queue_available", lambda: False)
+
+        return await start_after(drift)
+
     return {
+        McpErrorCode.AI_RUNS_NOT_ALLOWED: ai_runs_not_allowed,
+        McpErrorCode.PLAN_STALE: plan_stale,
+        McpErrorCode.AI_NOT_CONFIGURED: ai_not_configured,
+        McpErrorCode.AI_RUN_ACTIVE: ai_run_active,
+        McpErrorCode.AI_RUN_LIMIT: ai_run_limit,
+        McpErrorCode.SERVICE_UNAVAILABLE: service_unavailable,
         McpErrorCode.NOT_FOUND: not_found,
         McpErrorCode.MANAGER_REQUIRED: manager_required,
+        McpErrorCode.REVIEWER_REQUIRED: reviewer_required,
         McpErrorCode.SCOPE_INSUFFICIENT: scope_insufficient,
         McpErrorCode.INVALID_ARGUMENT: invalid_argument,
         McpErrorCode.DRAFT_LOCK_HELD: draft_lock_held,
@@ -424,6 +545,8 @@ async def _build_drivers(
         McpErrorCode.FIELD_NOT_EDITABLE: field_not_editable,
         McpErrorCode.STALE_VALUE: stale_value,
         McpErrorCode.DUPLICATE_NAME: duplicate_name,
+        McpErrorCode.IN_USE: in_use,
+        McpErrorCode.STRUCTURE_CONFLICT: structure_conflict,
         McpErrorCode.RETRY: retry,
         McpErrorCode.RATE_LIMITED: rate_limited,
         McpErrorCode.INTERNAL_ERROR: internal_error,
@@ -439,9 +562,19 @@ async def test_audit_row_matrix(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     code: McpErrorCode,
+    pat_viewer_ai_run,
+    pat_primary_rw_ai_run,
+    probe_tools: None,  # noqa: ARG001 - the reviewer_required driver calls a probe tool
 ) -> None:
     drivers = await _build_drivers(
-        mcp_client, db_session, monkeypatch, pat_primary_rw, pat_reviewer_rw, pat_primary_read
+        mcp_client,
+        db_session,
+        monkeypatch,
+        pat_primary_rw,
+        pat_reviewer_rw,
+        pat_primary_read,
+        pat_viewer_ai_run,
+        pat_primary_rw_ai_run,
     )
     result = await drivers[code]()
     assert error_payload(result)["code"] == code.value
@@ -482,3 +615,171 @@ async def test_applied_draft_row_matches_draft_marker(
     ).scalar_one()  # exactly one applied row
     marker = await get_config_draft_marker(db_session, template_id)
     assert applied_created_at == marker
+
+
+async def test_malformed_op_writes_one_audited_invalid_argument_row(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": _section_id(schema),
+                    "label": "Q",
+                    "type": "text",
+                    "options": [{"label": "a"}],
+                }
+            ],
+        },
+    )
+    payload = error_payload(result)
+    assert (payload["code"], payload["field"], payload["op_index"]) == (
+        "INVALID_ARGUMENT",
+        "options",
+        0,
+    )
+    assert payload["message"] == "options are only allowed for select and multiselect questions"
+    assert (
+        await _audit_count(
+            db_session, outcome="refused", error_code="INVALID_ARGUMENT", tool="edit_template_draft"
+        )
+        == 1
+    )
+
+
+async def _protocol_revision(db: AsyncSession) -> int:
+    return (
+        await db.execute(
+            text("SELECT protocol_revision FROM public.projects WHERE id = :id"),
+            {"id": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.parametrize(
+    ("revision_offset", "outcome", "error_code"),
+    [(0, "applied", None), (-1, "refused", "STALE_VALUE")],
+    ids=["applied", "stale_value"],
+)
+async def test_set_review_question_writes_one_row(
+    mcp_client,
+    pat_primary_rw,
+    db_session: AsyncSession,
+    revision_offset: int,
+    outcome: str,
+    error_code: str | None,
+) -> None:
+    revision = await _protocol_revision(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "set_review_question",
+        {
+            "project_id": str(SEED.primary_project),
+            "expected_revision": revision + revision_offset,
+            "slots": {"population": {"description": "Audited adults"}},
+        },
+    )
+    assert result.is_error is (outcome == "refused")
+    assert (
+        await _audit_count(
+            db_session, outcome=outcome, error_code=error_code, tool="set_review_question"
+        )
+        == 1
+    )
+    assert (
+        await _audit_count(db_session, outcome="applied", tool="set_review_question")
+        + await _audit_count(db_session, outcome="refused", tool="set_review_question")
+        == 1
+    )
+
+
+async def test_option_value_conflict_writes_one_refused_row(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await field_id(db_session, template_id, "model_development", "shrinkage")
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "set_options",
+                    "field_id": str(target),
+                    "options": [{"value": "a", "label": "A"}, {"label": "a"}],
+                }
+            ],
+        },
+    )
+    payload = error_payload(result)
+    assert (payload["code"], payload["rule"]) == ("STRUCTURE_CONFLICT", "option_value_conflict")
+    assert (
+        await _audit_count(
+            db_session,
+            outcome="refused",
+            error_code="STRUCTURE_CONFLICT",
+            tool="edit_template_draft",
+        )
+        == 1
+    )
+    assert await _audit_count(db_session, outcome="applied", tool="edit_template_draft") == 0
+
+
+async def test_cancel_ai_run_applied_row_shape_and_not_found_writes_none(
+    mcp_client, pat_primary_rw_ai_run, db_session: AsyncSession
+) -> None:
+    article = await make_article(db_session, SEED.primary_project, "audited cancel")
+    batch_id = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[article],
+    )
+    project = str(SEED.primary_project)
+
+    missing = await call_tool(
+        mcp_client,
+        pat_primary_rw_ai_run,
+        "cancel_ai_run",
+        {"project_id": project, "batch_id": str(uuid4())},
+    )
+    assert error_payload(missing)["code"] == "NOT_FOUND"
+    assert await _audit_count(db_session, outcome="refused", tool="cancel_ai_run") == 0
+    structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw_ai_run,
+            "cancel_ai_run",
+            {"project_id": project, "batch_id": str(batch_id)},
+        )
+    )
+
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT token_id, user_id, project_id, template_id, input, before, after, "
+                "error_code FROM public.agent_actions "
+                "WHERE tool = 'cancel_ai_run' AND outcome = 'applied'"
+            )
+        )
+    ).one()
+    assert row.token_id == pat_primary_rw_ai_run.principal.token_id
+    assert (row.user_id, row.project_id) == (SEED.primary_profile, SEED.primary_project)
+    assert row.template_id == SEED.primary_template
+    assert row.input == {"project_id": project, "batch_id": str(batch_id)}
+    assert row.before == {"state": "active"}
+    assert row.after == {"batch_id": str(batch_id), "cancelled_queued": 1}
+    assert row.error_code is None

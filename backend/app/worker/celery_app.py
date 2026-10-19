@@ -4,19 +4,17 @@ Celery Application Configuration.
 Configures Celery with Redis as broker and result backend.
 """
 
-import os
 from typing import Any
 
 from celery import Celery
 
-# Redis broker configuration
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from app.core.config import settings
 
 # Create the Celery app
 celery_app = Celery(
     "review_hub",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=settings.REDIS_URL,
+    backend=settings.REDIS_URL,
     include=[
         "app.worker.tasks.extraction_tasks",
         "app.worker.tasks.extraction_batch_tasks",

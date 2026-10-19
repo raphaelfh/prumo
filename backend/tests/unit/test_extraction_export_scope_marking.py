@@ -22,6 +22,7 @@ from app.models.extraction import (
     ExtractionFieldType,
 )
 from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -62,7 +63,7 @@ def _field(
         field_id=field_id,
         label=name.replace("_", " ").title(),
         type=ExtractionFieldType.SELECT,
-        allowed_values=allowed,
+        allowed_values=tuple(AllowedValue(x, x) for x in allowed),
         name=name,
     )
 
@@ -129,7 +130,7 @@ def _mark(
     sections: tuple[SectionDescriptor, ...] | None = None,
 ) -> None:
     mark_out_of_scope_values(
-        template_schema=_SCHEMA if schema is None else schema,
+        rules_by_article={a.article_id: _SCHEMA if schema is None else schema for a in articles},
         sections=_sections() if sections is None else sections,
         articles=articles,
         reviewers=reviewers,
@@ -244,6 +245,30 @@ def test_a_template_without_scope_rules_is_untouched() -> None:
     _mark(value_map, articles=(article,), schema={})
 
     assert value_map == before
+
+
+def test_each_article_is_marked_by_its_own_rules() -> None:
+    """Articles pinned to different versions: only the one whose rules exclude
+    the section is marked; an article absent from the map has no rules."""
+    run_a, run_b, scope_a, scope_b, dev_i, eval_a, eval_b = (uuid4() for _ in range(7))
+    article_a = _article(run_a, scope_inst=scope_a, dev_inst=dev_i, eval_insts=(eval_a,))
+    article_b = _article(run_b, scope_inst=scope_b, dev_inst=dev_i, eval_insts=(eval_b,))
+    value_map: dict[tuple[Any, ...], Any] = {
+        (run_a, scope_a, _STUDY_TYPE): "development_only",
+        (run_b, scope_b, _STUDY_TYPE): "development_only",
+    }
+
+    mark_out_of_scope_values(
+        rules_by_article={article_a.article_id: _SCHEMA},
+        sections=_sections(),
+        articles=(article_a, article_b),
+        reviewers=(),
+        value_map=value_map,
+        is_all_users=False,
+    )
+
+    assert value_map[(run_a, eval_a, _EVAL_VERDICT)] == _NOT_APPLICABLE
+    assert (run_b, eval_b, _EVAL_VERDICT) not in value_map
 
 
 def test_an_unclassified_article_is_untouched() -> None:
@@ -372,7 +397,7 @@ def _derived_values(
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
-        template_schema=_DERIVED_SCHEMA,
+        rules_by_article={article.article_id: _DERIVED_SCHEMA},
     )
     assert model is not None
     return model.rows[0].derived_values

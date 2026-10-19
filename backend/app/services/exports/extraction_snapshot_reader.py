@@ -24,6 +24,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
@@ -122,20 +123,6 @@ def _field_from_view(view: RunViewField) -> SnapshotField:
 
 
 def _normalize_allowed_values(raw: Any) -> tuple[AllowedValue, ...]:
-    """Normalise the ``allowed_values`` jsonb into ordered value+label pairs.
-
-    Stored either as ``[{"value": ..., "label": ...}, ...]`` or ``["x", ...]``;
-    value == label in prumo (spec §11), but both are preserved when present.
-    """
-    if not isinstance(raw, list):
-        return ()
-    out: list[AllowedValue] = []
-    for item in raw:
-        if isinstance(item, dict):
-            value = item.get("value")
-            label = item.get("label") or value
-            if isinstance(value, str):
-                out.append(AllowedValue(value=value, label=str(label)))
-        elif isinstance(item, str):
-            out.append(AllowedValue(value=item, label=item))
-    return tuple(out)
+    """Normalise the ``allowed_values`` jsonb into ordered value+label pairs,
+    read through ``normalize_options``."""
+    return tuple(AllowedValue(value=o["value"], label=o["label"]) for o in normalize_options(raw))

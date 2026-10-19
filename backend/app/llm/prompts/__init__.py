@@ -19,22 +19,22 @@ def content_version(*parts: str) -> str:
 class Ancestor:
     """One enclosing entry of the instance a prompt is about: the noun of its
     group and the entry's label, e.g. ``model "XGBoost"``. Chains read
-    outermost first (see ``app.services.entry_ancestry``)."""
+    outermost first (see ``app.services.ai_extraction._ancestry``)."""
 
     noun: str
     label: str
 
 
-def render_review_context_section(review_context: str | None) -> str:
-    """Project-level review question (from the run-pinned review context).
+def render_review_question_section(review_question: str | None) -> str:
+    """Project-level review question (from the run-pinned review question).
 
     Emitted BEFORE the template instruction in every prompt: the review
     question frames the task, and the template instruction is the more
     specific guidance, so it belongs closest to it.
     """
-    if not review_context:
+    if not review_question:
         return ""
-    return f"Review question and scope:\n{review_context}\n\n"
+    return f"Review question and scope:\n{review_question}\n\n"
 
 
 def render_general_instructions_section(general_instructions: str | None) -> str:

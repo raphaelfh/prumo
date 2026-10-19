@@ -3,17 +3,18 @@ to every reviewer/AI-facing read until a manager republishes."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.extractor import LlmUsage
 from app.services.extraction_run_read_service import build_run_view
-from app.services.section_extraction_service import SectionExtractionService
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
+from tests.fakes.recorded_llm import RecordedLlm
 from tests.integration.conftest import SEED, open_session
+from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
 from tests.integration.helpers.template_fixtures import ARTICLE_ID, fresh_charms
 from tests.integration.mcp.tool_calls import call_tool, structured
 
@@ -135,27 +136,30 @@ async def test_draft_ops_stay_invisible_until_publish(
     assert rendered_field.label == old_label
 
     # 4. the extraction prompt path draws from the same frozen view.
-    service = SectionExtractionService(
-        db=db_session,
-        user_id=str(SEED.primary_profile),
-        storage=MagicMock(),
-        trace_id="mcp-isolation",
+    await seed_article_text(db_session, project_id=project_id, article_id=ARTICLE_ID)
+    fake = RecordedLlm()
+    await extraction(db_session, fake).run_from_request(
+        request(
+            project_id=project_id,
+            article_id=ARTICLE_ID,
+            template_id=template_id,
+            entity_type_id=UUID(section_id),
+            run_id=session.run_id,
+        )
     )
-    service._assemble_prompt_text = AsyncMock(return_value="ARTICLE TEXT")  # type: ignore[method-assign]
-    service._extract_with_llm = AsyncMock(return_value=({}, LlmUsage()))  # type: ignore[method-assign]
-    await service.extract_section(
-        project_id=project_id,
-        article_id=ARTICLE_ID,
-        template_id=template_id,
-        entity_type_id=UUID(section_id),
-        run_id=session.run_id,
-    )
-    kwargs = service._extract_with_llm.call_args.kwargs
-    sent_ids = {f.id for f in kwargs["fields_override"]}
-    assert new_field_id not in sent_ids
-    sent_field = next(f for f in kwargs["fields_override"] if str(f.id) == field_id)
-    assert sent_field.label == old_label
-    assert sent_field.llm_description == old_description
+    (call,) = fake.field_calls()
+    new_field_name = (
+        await db_session.execute(
+            text("SELECT name FROM public.extraction_fields WHERE id = :id"),
+            {"id": new_field_id},
+        )
+    ).scalar_one()
+    assert new_field_name not in call.field_names
+    assert field["name"] in call.field_names
+    shown = {f.alias: f.description for f in call.output_model.model_fields.values()}
+    assert "REWORDED" not in (shown[field["name"]] or "")
+    if old_description:
+        assert old_description in shown[field["name"]]
 
     # 5. the field's `name` never changes on a reword.
     row_name = (

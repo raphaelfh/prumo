@@ -9,5 +9,5 @@ duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/servi
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/project_template_active_service.py::owned_template  # THE canonical guard — the one the other lines should collapse onto
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_draft_lock_service.py::claim_draft_lock  # UPDATE: scope must be inline in the mutating WHERE, cannot delegate
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_draft_lock_service.py::take_over_draft_lock  # UPDATE: scope must be inline in the mutating WHERE, cannot delegate
-duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_restore_service.py::restore_snapshot
-duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_version_service.py::republish
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_versioning/_restore.py::restore_snapshot
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_versioning/_publish.py::republish

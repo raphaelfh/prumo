@@ -16,13 +16,13 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _reviewer_state(
@@ -108,7 +108,8 @@ async def _setup_review_run(
         target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
-    proposal = await ExtractionProposalService(db).record_proposal(
+    proposal = await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -217,17 +218,15 @@ async def test_record_decision_rejects_incoherent_coordinates(
     if other_field_id is None:
         pytest.skip("Need >=2 entity_types with fields.")
 
-    from app.services.coordinate_coherence import CoordinateMismatchError
-
     service = ExtractionReviewService(db_session)
-    with pytest.raises(CoordinateMismatchError):
+    with pytest.raises(RunWriteError, match="Coordinate mismatch"):
         await service.record_decision(
             run_id=run_id,
             instance_id=instance_id,
             field_id=other_field_id,
             reviewer_id=profile_id,
             decision=ExtractionReviewerDecisionType.EDIT,
-            value={"v": "x"},
+            value={"value": 5},
         )
     await db_session.rollback()
 
@@ -363,7 +362,7 @@ async def test_second_decision_replaces_reviewer_state(
         field_id=field_id,
         reviewer_id=profile_id,
         decision=ExtractionReviewerDecisionType.EDIT,
-        value={"text": "edited"},
+        value={"value": 5},
         rationale="changed my mind",
     )
     state = await _reviewer_state(
@@ -433,7 +432,7 @@ async def test_reversal_appends_without_rewriting_earlier_decisions(_engine) -> 
         after_accept = await stored()
         edited = await decide(
             decision=ExtractionReviewerDecisionType.EDIT,
-            value={"text": "edited"},
+            value={"value": 5},
             rationale="changed my mind",
             expected_current_decision_id=accepted.id,
         )
@@ -569,10 +568,10 @@ async def test_decision_current_head_condition(db_session: AsyncSession, conditi
     }
     first = None
     if condition != "missing":
-        first = await service.record_decision(**params, value={"value": "first"})
+        first = await service.record_decision(**params, value={"value": 1})
     if condition == "foreign_reviewer":
         await service.record_decision(
-            **{**params, "reviewer_id": SEED.reviewer_profile}, value={"value": "foreign"}
+            **{**params, "reviewer_id": SEED.reviewer_profile}, value={"value": 3}
         )
     expected = first.id if condition in ("matching", "foreign_reviewer") else uuid4()
     kwargs = (
@@ -580,7 +579,7 @@ async def test_decision_current_head_condition(db_session: AsyncSession, conditi
         if condition == "omitted"
         else {"expected_current_decision_id": None if condition == "null" else expected}
     )
-    value = {"value": "first" if condition == "identical_stale" else "second"}
+    value = {"value": 1 if condition == "identical_stale" else 2}
     if condition in ("missing", "stale", "identical_stale"):
         with pytest.raises(AppError) as exc:
             await service.record_decision(**params, value=value, **kwargs)
@@ -626,9 +625,7 @@ async def test_conditional_undo_checks_committed_head_after_run_lock(
                 "reviewer_id": reviewer_id,
                 "decision": "edit",
             }
-            d1 = await ExtractionReviewService(setup).record_decision(
-                **params, value={"value": "d1"}
-            )
+            d1 = await ExtractionReviewService(setup).record_decision(**params, value={"value": 1})
             await setup.commit()
         async with sessions() as client_a, sessions() as client_b, sessions() as monitor:
             observed = await ExtractionReviewService(client_a)._decisions.get_latest_for_coord(
@@ -637,7 +634,7 @@ async def test_conditional_undo_checks_committed_head_after_run_lock(
             assert observed.id == d1.id
             await client_a.commit()
             d2 = await ExtractionReviewService(client_b).record_decision(
-                **params, value={"value": "d2"}
+                **params, value={"value": 2}
             )
             if not overlap:
                 await client_b.commit()
@@ -645,7 +642,7 @@ async def test_conditional_undo_checks_committed_head_after_run_lock(
             attempt = asyncio.create_task(
                 ExtractionReviewService(client_a).record_decision(
                     **params,
-                    value={"value": "d2"},
+                    value={"value": 2},
                     expected_current_decision_id=d1.id,
                 )
             )
@@ -688,7 +685,7 @@ async def test_conditional_undo_checks_committed_head_after_run_lock(
                 )
             ).all()
             assert len(rows) == 2
-            assert dict(rows)[d2.id] == {"value": "d2"}
+            assert dict(rows)[d2.id] == {"value": 2}
             state = await _reviewer_state(
                 verify,
                 run_id=run_id,

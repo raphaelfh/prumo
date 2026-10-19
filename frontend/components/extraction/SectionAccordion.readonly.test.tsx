@@ -55,7 +55,7 @@ describe('SectionAccordion under a read-only run', () => {
         values={{}}
         onValueChange={vi.fn()}
         onAddInstance={vi.fn()}
-        projectId="p" articleId="a" templateId="t"
+        projectId="p" articleId="a" templateId="t" canRunAI
       />,
     );
     expect(screen.queryByTestId('section-ai-extract-et1')).not.toBeInTheDocument();
@@ -73,7 +73,7 @@ describe('SectionAccordion under a read-only run', () => {
         onValueChange={vi.fn()}
         onAddInstance={vi.fn()}
         onRemoveInstance={vi.fn()}
-        projectId="p" articleId="a" templateId="t"
+        projectId="p" articleId="a" templateId="t" canRunAI
       />,
     );
     expect(screen.queryByRole('button', { name: /addInstanceLabel/ })).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('SectionAccordion under a read-only run', () => {
         values={{}}
         onValueChange={vi.fn()}
         onAddInstance={vi.fn()}
-        projectId="p" articleId="a" templateId="t"
+        projectId="p" articleId="a" templateId="t" canRunAI
       />,
       { wrapper: Wrapper },
     );

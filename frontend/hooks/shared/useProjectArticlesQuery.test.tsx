@@ -1,14 +1,14 @@
 import {renderHook, waitFor} from '@testing-library/react';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import type {ReactNode} from 'react';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {beforeEach, describe, expect, expectTypeOf, it, vi} from 'vitest';
 
 const fetchProjectArticles = vi.fn();
 vi.mock('@/services/articlesService', () => ({
   fetchProjectArticles: (...args: unknown[]) => fetchProjectArticles(...args),
 }));
 
-import {useProjectArticlesQuery} from '@/hooks/shared/useProjectArticlesQuery';
+import {useProjectArticlesQuery, useProjectWorklist} from '@/hooks/shared/useProjectArticlesQuery';
 
 // The app's default freshness window (frontend/App.tsx): a cached list inside it
 // is fresh, so only refetchOnMount can make a remount fetch again.
@@ -61,5 +61,86 @@ describe('useProjectArticlesQuery', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(result.current.isPending).toBe(true);
     expect(fetchProjectArticles).not.toHaveBeenCalled();
+  });
+});
+
+// The one worklist reader shared by both run screens and the QA tab.
+describe('useProjectWorklist', () => {
+  beforeEach(() => {
+    fetchProjectArticles.mockReset();
+  });
+
+  // The title survives at RUNTIME whatever the declared type says, so the
+  // behavioural cases below cannot see a type defect on their own —
+  // `RunHeader.Worklist` needs `{ id, title }[]`, and `npm run typecheck` (not
+  // vitest, which never typechecks) is the gate that runs this assertion.
+  it('exposes a worklist item type that carries the title', () => {
+    expectTypeOf<ReturnType<typeof useProjectWorklist>['worklist'][number]>().toEqualTypeOf<{
+      id: string;
+      title: string;
+    }>();
+  });
+
+  it('carries the article title through, not just the id', async () => {
+    fetchProjectArticles.mockResolvedValue({
+      ok: true,
+      data: [{id: 'a1', title: 'First'}, {id: 'a2', title: 'Second'}],
+    });
+    const {wrapper} = setup();
+    const {result} = renderHook(() => useProjectWorklist('p1'), {wrapper});
+    await waitFor(() => expect(result.current.worklist).toHaveLength(2));
+    expect(result.current.worklist[0]).toEqual({id: 'a1', title: 'First'});
+  });
+
+  // `articles.title` is nullable in the schema, so the pager and the palette
+  // would otherwise have a blank row to click on.
+  it('names an untitled article instead of carrying a null title', async () => {
+    fetchProjectArticles.mockResolvedValue({
+      ok: true,
+      data: [{id: 'a1', title: null}, {id: 'a2', title: 'Second'}],
+    });
+    const {wrapper} = setup();
+    const {result} = renderHook(() => useProjectWorklist('p1'), {wrapper});
+    await waitFor(() => expect(result.current.worklist).toHaveLength(2));
+    expect(result.current.worklist[0]).toEqual({id: 'a1', title: 'Untitled article'});
+  });
+
+  it('resolves to an empty list on a failed read and exposes the error', async () => {
+    const error = {message: 'boom'};
+    fetchProjectArticles.mockResolvedValue({ok: false, error});
+    const {wrapper} = setup();
+    const {result} = renderHook(() => useProjectWorklist('p1'), {wrapper});
+    await waitFor(() => expect(result.current.error).toBe(error));
+    expect(result.current.worklist).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('is idle, not loading, without a project id', async () => {
+    const {wrapper} = setup();
+    const {result} = renderHook(() => useProjectWorklist(undefined), {wrapper});
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.worklist).toEqual([]);
+    expect(fetchProjectArticles).not.toHaveBeenCalled();
+  });
+
+  // A screen whose bootstrap reads the list treats `error` as "no list": a
+  // failed background refetch keeps the rows it already has and is no error.
+  it('keeps the list and reports no error when a refetch fails', async () => {
+    fetchProjectArticles.mockResolvedValue({ok: true, data: [{id: 'a1', title: 'First'}]});
+    const {wrapper} = setup();
+    const {result} = renderHook(
+      () => ({worklist: useProjectWorklist('p1'), query: useProjectArticlesQuery('p1')}),
+      {wrapper},
+    );
+    await waitFor(() => expect(result.current.worklist.worklist).toHaveLength(1));
+
+    fetchProjectArticles.mockResolvedValue({ok: false, error: {message: 'boom'}});
+    await result.current.query.refetch();
+    // Precondition: the refetch really failed.
+    await waitFor(() => expect(result.current.query.isError).toBe(true));
+
+    expect(result.current.worklist.error).toBeNull();
+    expect(result.current.worklist.worklist).toEqual([{id: 'a1', title: 'First'}]);
   });
 });

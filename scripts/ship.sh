@@ -21,7 +21,10 @@ _clock() { date -u +%FT%TZ; }
 _get() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -1 | tr -d '[:space:]'; }
 _set() {
   local f=$1 k=$2 v=$3 t
-  t=$(mktemp)
+  # Temp file beside the state: same filesystem, so the mv is atomic, and no
+  # reliance on a writable $TMPDIR (a bare mktemp failed under the Claude Code
+  # sandbox and every write then went to "" and was lost).
+  t=$(mktemp "$f.XXXXXX") || { echo "ship: cannot write $f" >&2; return 1; }
   grep -v "^$k=" "$f" >"$t" 2>/dev/null
   printf '%s=%s\n' "$k" "$v" >>"$t"
   mv "$t" "$f"

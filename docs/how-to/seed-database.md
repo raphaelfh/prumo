@@ -57,7 +57,7 @@ This guide explains how to load seed data after the schema migrations run.
 > convergence when their own instrument migrations touch them.
 >
 > **The project clone is a second copy with the same problem.** `schema` is
-> written once, in the create branch of `TemplateCloneService.clone()`; the
+> written once, in the create branch of `template_versioning.clone_template()`; the
 > idempotent re-import branch heals entity types and versions but never
 > re-copies it, and nothing else assigns that column. So a corrected
 > `derived_judgments` spec has to reach *both* `extraction_templates_global`

@@ -19,6 +19,7 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -254,3 +255,65 @@ async def test_take_over_refuses_a_template_outside_the_project(
         )
 
     assert await _holder(db_session, template_id) == other
+
+
+async def _stored_instruction(db: AsyncSession, template_id: UUID) -> str | None:
+    return (
+        await db.execute(
+            text(
+                "SELECT llm_template_instruction FROM public.project_extraction_templates "
+                "WHERE id = :t"
+            ),
+            {"t": str(template_id)},
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_instruction_put_refused_while_another_manager_holds_the_lock(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    """The instruction is a draft edit like any structural one: same lock."""
+    project_id, template_id, _ = await fresh_charms(db_session)
+    other, other_name = await _seed_other_profile(db_session)
+    assert other != auth_as_profile
+    await claim_draft_lock(
+        db_session, project_id=project_id, template_id=template_id, user_id=other
+    )
+    before = await _stored_instruction(db_session, template_id)
+
+    res = await db_client.put(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction",
+        json={"llm_template_instruction": "x"},
+    )
+
+    assert res.status_code == 409, res.text
+    error = res.json()["error"]
+    assert error["code"] == "DRAFT_LOCK_HELD"
+    assert error["details"]["holder_id"] == str(other)
+    assert error["details"]["holder_name"] == other_name
+    assert before != "x"
+    assert await _stored_instruction(db_session, template_id) == before
+
+
+@pytest.mark.asyncio
+async def test_instruction_put_by_lock_holder_succeeds(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    project_id, template_id, _ = await fresh_charms(db_session)
+    await claim_draft_lock(
+        db_session, project_id=project_id, template_id=template_id, user_id=auth_as_profile
+    )
+
+    res = await db_client.put(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction",
+        json={"llm_template_instruction": "x"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert await _stored_instruction(db_session, template_id) == "x"
+    assert await _holder(db_session, template_id) == auth_as_profile

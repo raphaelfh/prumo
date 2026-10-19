@@ -22,7 +22,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
+from app.llm.prompts import entry_identification
 from app.main import app
+from app.services import instance_identity_service
+from app.services.entry_hierarchy_service import EntryKeyDuplicateError
 from app.services.instance_identity_service import (
     InstanceNotFoundError,
     update_instance_identity,
@@ -31,11 +34,11 @@ from tests.integration.conftest import SEED
 from tests.integration.test_entry_group_extraction import (
     _coord,
     _entries,
-    _fake_identification,
+    _extract,
+    _fake,
     _group,
     _instance,
     _run_in_extract,
-    _service,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -116,16 +119,13 @@ async def test_a_foreign_coordinate_is_not_found_not_forbidden(db_session: Async
     assert (await _metadata(db_session, instance_id))["entity_key"] == "apparent"
 
 
-async def test_a_rerun_matches_the_rekeyed_instance(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_rerun_matches_the_rekeyed_instance(db_session: AsyncSession) -> None:
     """The point of re-keying: the next AI pass lands on the row the reviewer
     pointed it at, instead of adding a second entry for the same thing."""
     entity_type_id, _key_id, value_id = await _group(db_session)
     run = await _run_in_extract(db_session)
-    service, _fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["apparent"])
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    fake = _fake(["apparent"])
+    await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
     ((instance_id, _key),) = await _entries(db_session, entity_type_id)
 
     await update_instance_identity(
@@ -137,13 +137,70 @@ async def test_a_rerun_matches_the_rekeyed_instance(
         entity_key="internal",
     )
 
-    identification["names"][:] = ["internal"]
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    fake.entries[:] = ["internal"]
+    await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
 
     entries = await _entries(db_session, entity_type_id)
     assert entries == [(instance_id, "internal")], "matched the re-keyed row, no fork"
-    assert "internal" in identification["prompts"][1], "grounding lists the re-keyed identity"
+    assert "internal" in fake.prompts(entry_identification.NAME)[1], (
+        "grounding lists the re-keyed identity"
+    )
     del value_id
+
+
+async def _rekey(db: AsyncSession, instance_id: UUID, entity_key: str) -> object:
+    return await update_instance_identity(
+        db,
+        instance_id=instance_id,
+        **_coord(),
+        actor_id=SEED.primary_profile,
+        label=None,
+        entity_key=entity_key,
+    )
+
+
+async def test_rekey_to_sibling_key_is_409_and_unchanged(db_session: AsyncSession) -> None:
+    """A sibling already holds the identity: the typed 409 lands before any
+    mutation, so the entry keeps its key and its history stays as it was."""
+    entity_type_id, _key_id, _value_id = await _group(db_session)
+    await _instance(db_session, entity_type_id, "x")
+    b_id = await _instance(db_session, entity_type_id, "y")
+    before = await _metadata(db_session, b_id)
+    assert before["entity_key"] == "y" and "entity_key_history" not in before
+
+    with pytest.raises(EntryKeyDuplicateError) as caught:
+        await _rekey(db_session, b_id, " X ")
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "ENTRY_KEY_DUPLICATE"
+    assert await _metadata(db_session, b_id) == before
+
+    await _rekey(db_session, b_id, "Y")  # its own key: a no-op, no history row
+    assert await _metadata(db_session, b_id) == before
+    await _rekey(db_session, b_id, "z")  # a free key: succeeds
+    after = await _metadata(db_session, b_id)
+    assert after["entity_key"] == "z"
+    assert [h["to"] for h in after["entity_key_history"]] == ["z"]
+
+
+async def test_rekey_race_past_the_precheck_maps_the_index_violation(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent re-key the pre-check cannot see: the unique index is the
+    backstop, and its violation surfaces as the same typed 409."""
+    entity_type_id, _key_id, _value_id = await _group(db_session)
+    await _instance(db_session, entity_type_id, "x")
+    b_id = await _instance(db_session, entity_type_id, "y")
+
+    async def _miss(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(instance_identity_service, "match_or_none", _miss)
+
+    with pytest.raises(EntryKeyDuplicateError):
+        await _rekey(db_session, b_id, "x")
+
+    assert (await _metadata(db_session, b_id))["entity_key"] == "y"
 
 
 # --------------------------------------------------------------------------
@@ -243,3 +300,19 @@ async def test_patch_rejects_a_body_that_changes_nothing_or_blanks_a_column(
     for body in (_body(), _body(label="   "), _body(entityKey="")):
         res = await db_client.patch(f"/api/v1/extraction/instances/{instance_id}", json=body)
         assert res.status_code == 422, body
+
+
+async def test_patch_rekey_onto_sibling_answers_409(
+    db_session: AsyncSession, db_client: AsyncClient, as_reviewer: UUID
+) -> None:
+    del as_reviewer
+    entity_type_id, _key_id, _value_id = await _group(db_session)
+    await _instance(db_session, entity_type_id, "x")
+    b_id = await _instance(db_session, entity_type_id, "y")
+
+    res = await db_client.patch(f"/api/v1/extraction/instances/{b_id}", json=_body(entityKey="X"))
+
+    assert res.status_code == 409, res.text
+    body = res.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "ENTRY_KEY_DUPLICATE"

@@ -55,16 +55,31 @@ from collections.abc import Sequence
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
+from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
     ExtractionTemplateGlobal,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
+from app.seed_instruction_defaults import (
+    CHARMS_INSTRUCTION,
+    CHARMS_MM_INSTRUCTION,
+    PROBAST_AI_INSTRUCTION,
+    PROBAST_INSTRUCTION,
+    QUADAS2_INSTRUCTION,
+    RETIRED_CHARMS_INSTRUCTION,
+    RETIRED_CHARMS_MM_INSTRUCTION,
+    RETIRED_PROBAST_AI_INSTRUCTION,
+    RETIRED_PROBAST_INSTRUCTION,
+    RETIRED_QUADAS2_INSTRUCTION,
+)
+from app.services.advisory_locks import take_advisory_xact_lock
 
 
 class _EntitySpec(NamedTuple):
@@ -182,6 +197,36 @@ _ET_MODEL_VALID = UUID("000c000b-0000-0000-0000-000000000000")
 _ET_MODEL_RESULTS = UUID("000c000c-0000-0000-0000-000000000000")
 _ET_MODEL_INTERP = UUID("000c000d-0000-0000-0000-000000000000")
 _ET_MODEL_OBS = UUID("000c000e-0000-0000-0000-000000000000")
+
+# Endocarditis-review placeholders an older CHARMS shipped; converge deletes them.
+_CHARMS_RETIRED_FIELDS = frozenset(
+    {"native_valve_endocarditis", "valve_affected", "characteristic_4", "characteristic_5"}
+)
+# Values, CIs and p-values that apply only when their "reported?" answer is yes.
+_CHARMS_CONDITIONAL_FIELDS = frozenset(
+    {
+        *("calibration_slope_value", "calibration_slope_ci", "calibration_in_large_value"),
+        *("calibration_in_large_ci", "hosmer_lemeshow_p_value", "c_statistic_value"),
+        *("c_statistic_ci", "d_statistic_value", "d_statistic_ci", "log_rank_test_p_value"),
+    }
+)
+
+
+def _charms_participant_characteristics() -> ExtractionField:
+    return ExtractionField(
+        entity_type_id=_ET_PARTICIPANTS,
+        name="participant_characteristics",
+        label="Participant Characteristics",
+        description="Other participant characteristics the study reports (CHARMS 2.8)",
+        field_type="text",
+        sort_order=9,
+        is_required=False,
+        allows_not_applicable=False,
+        allows_not_evaluated=False,
+        llm_description="Extract the other participant characteristics the study reports, "
+        "such as sex, comorbidities or disease severity, with their values as reported.",
+    )
+
 
 # CHARMS + Multimodal (ML prediction) — extraction template.
 # The 000e prefix is reserved for this template; never reuse it.
@@ -462,8 +507,8 @@ async def seed_charms(session: AsyncSession) -> None:
             description=desc,
             field_type=ftype,
             sort_order=sort,
-            is_required=required,
-            allowed_values=allowed,
+            is_required=required and name not in _CHARMS_CONDITIONAL_FIELDS,
+            allowed_values=normalize_options(allowed) or None,
             unit=unit,
             llm_description=llm,
             allows_not_applicable=allows_not_applicable,
@@ -597,42 +642,7 @@ async def seed_charms(session: AsyncSession) -> None:
             8,
             llm="Extract the age of participants. Include mean (SD), median (IQR), or range as reported.",
         ),
-        _f(
-            _ET_PARTICIPANTS,
-            "native_valve_endocarditis",
-            "Native Valve Endocarditis",
-            "Participants with native valve endocarditis (CHARMS 2.8.2)",
-            "text",
-            9,
-            llm="Extract the number and percentage of participants with native valve endocarditis n (%).",
-        ),
-        _f(
-            _ET_PARTICIPANTS,
-            "valve_affected",
-            "Valve Affected",
-            "Affected valves (CHARMS 2.8.3)",
-            "text",
-            10,
-            llm="Extract information about which valves were affected.",
-        ),
-        _f(
-            _ET_PARTICIPANTS,
-            "characteristic_4",
-            "Characteristic 4",
-            "Additional participant characteristic 4 (CHARMS 2.8.4)",
-            "text",
-            11,
-            llm="Extract additional participant characteristic 4 as reported in the study.",
-        ),
-        _f(
-            _ET_PARTICIPANTS,
-            "characteristic_5",
-            "Characteristic 5",
-            "Additional participant characteristic 5 (CHARMS 2.8.5)",
-            "text",
-            12,
-            llm="Extract additional participant characteristic 5 as reported in the study.",
-        ),
+        _charms_participant_characteristics(),
         # --- outcome_to_be_predicted (7) ---
         _f(
             _ET_OUTCOME,
@@ -1353,6 +1363,42 @@ async def seed_charms(session: AsyncSession) -> None:
     print(f"  Created CHARMS with 14 entity types and {len(fields)} fields.")
 
 
+async def converge_charms_global(session: AsyncSession) -> None:
+    """Bring an existing CHARMS global to the current catalogue; clones untouched.
+
+    ``seed_charms`` early-returns on an existing row, so this applies the
+    placeholder cleanup and the optional conditional fields there. Same
+    referenced-catalogue skip as ``seed_probast_ai._catalogue_is_referenced``.
+    """
+    await take_advisory_xact_lock(session, _CHARMS_TEMPLATE_ID, _CHARMS_TEMPLATE_ID)
+    if await session.get(ExtractionTemplateGlobal, _CHARMS_TEMPLATE_ID) is None:
+        return
+    global_ets = select(ExtractionEntityType.id).where(
+        ExtractionEntityType.template_id == _CHARMS_TEMPLATE_ID
+    )
+    referenced = await session.scalar(
+        select(ExtractionInstance.id).where(ExtractionInstance.entity_type_id.in_(global_ets))
+    )
+    if referenced is not None:
+        print("  CHARMS catalogue is referenced by an instance — skipping convergence.")
+        return
+    fld = ExtractionField
+    on_participants = fld.entity_type_id == _ET_PARTICIPANTS
+    await session.execute(delete(fld).where(on_participants, fld.name.in_(_CHARMS_RETIRED_FIELDS)))
+    added = select(fld.id).where(on_participants, fld.name == "participant_characteristics")
+    if await session.scalar(added) is None:
+        session.add(_charms_participant_characteristics())
+    await session.execute(
+        update(fld)
+        .where(
+            fld.entity_type_id.in_(global_ets),
+            fld.name.in_(_CHARMS_CONDITIONAL_FIELDS),
+            fld.is_required.is_(True),
+        )
+        .values(is_required=False)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Quality Assessment templates — shared helpers
 # ---------------------------------------------------------------------------
@@ -1397,7 +1443,7 @@ def _field(
         field_type=ftype,
         sort_order=sort,
         is_required=is_required,
-        allowed_values=allowed,
+        allowed_values=normalize_options(allowed) or None,
         unit=unit,
         llm_description=llm,
         allows_not_applicable=allows_not_applicable,
@@ -3124,85 +3170,44 @@ async def seed_charms_mm(session: AsyncSession) -> None:
 # Template-level general AI instructions (spec Phase A §4)
 # ---------------------------------------------------------------------------
 
-# Delivered by ``backfill_llm_template_instructions`` — fill-if-null, so
-# re-running the seed never clobbers text a manager customized.
-# ``[customize: ...]`` slots are deliberate: the UI surfaces them until the
-# manager resolves them (they are sent verbatim to the AI until then).
+# Delivered by ``backfill_llm_template_instructions``. No ``[customize: ...]``
+# slot: the review question reaches the prompt from the project's settings. A
+# retired default is replaced; any other (customized) text is kept.
 _LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
-    _CHARMS_TEMPLATE_ID: (
-        "This review extracts data from studies that develop or validate "
-        "clinical prediction models, following the CHARMS checklist. "
-        "Report values exactly as the article states them — do not convert "
-        "units, pool cohorts, or infer unreported values. When a study "
-        "reports several models or cohorts, extract each one separately "
-        "rather than averaging. Prefer precise numbers from tables over "
-        "rounded prose values, and quote the passage that supports each "
-        "value. [customize: name the target condition, population, and "
-        "outcome this review focuses on]"
-    ),
-    _MM_TEMPLATE_ID: (
-        "This review extracts data from studies of multimodal "
-        "machine-learning prediction models, following an extended CHARMS "
-        "checklist. Keep each data modality (imaging, text, structured "
-        "data, signals) distinct as the authors describe them, and record "
-        "the fusion approach without collapsing modalities. Report "
-        "performance exactly as stated, per model and per validation "
-        "split, and quote the passage that supports each value. "
-        "[customize: name the target condition, population, and outcome "
-        "this review focuses on]"
-    ),
-    _PROBAST_TEMPLATE_ID: (
-        "This appraisal judges the risk of bias of prediction-model "
-        "studies using PROBAST. Judge strictly from what the article "
-        "reports: absence of information is a reason for concern, never "
-        "reassurance. Answer each signaling question conservatively and "
-        "quote the passage that grounds the judgment. [customize: "
-        "describe the review's intended setting and population so "
-        "applicability judgments have a reference point]"
-    ),
-    _QUADAS2_TEMPLATE_ID: (
-        "This appraisal judges the risk of bias and applicability of "
-        "diagnostic accuracy studies using QUADAS-2. Judge each domain "
-        "strictly from the reported conduct of the study — do not assume "
-        "unreported safeguards were in place. Quote the passage that "
-        "grounds each judgment. [customize: state the review question — "
-        "index test, target condition, and intended-use setting — that "
-        "applicability is judged against]"
-    ),
+    _CHARMS_TEMPLATE_ID: CHARMS_INSTRUCTION,
+    _MM_TEMPLATE_ID: CHARMS_MM_INSTRUCTION,
+    _PROBAST_TEMPLATE_ID: PROBAST_INSTRUCTION,
+    _QUADAS2_TEMPLATE_ID: QUADAS2_INSTRUCTION,
+}
+_RETIRED_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
+    _CHARMS_TEMPLATE_ID: RETIRED_CHARMS_INSTRUCTION,
+    _MM_TEMPLATE_ID: RETIRED_CHARMS_MM_INSTRUCTION,
+    _PROBAST_TEMPLATE_ID: RETIRED_PROBAST_INSTRUCTION,
+    _QUADAS2_TEMPLATE_ID: RETIRED_QUADAS2_INSTRUCTION,
 }
 
 
 async def backfill_llm_template_instructions(session: AsyncSession) -> None:
-    """Fill-if-null: seed the framework default on globals that have none.
+    """Seed the framework default where a global has none or a retired default.
 
-    Separate from the per-template seeders, which never write this column —
-    whether they early-return or converge — so existing databases receive new
-    defaults while a manager's customized text is never overwritten.
+    Separate from the per-template seeders, which never write this column, so
+    existing databases get new defaults and a manager's text is never overwritten.
     """
     # Function-local for the same circularity reason as ``main``'s import.
     from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 
-    instructions = {
-        **_LLM_TEMPLATE_INSTRUCTIONS,
-        _PROBAST_AI_TEMPLATE_ID: (
-            "This appraisal judges the risk of bias of AI and "
-            "machine-learning prediction-model studies using PROBAST+AI. "
-            "Judge strictly from what the article reports, with particular "
-            "attention to data leakage, train/test split hygiene, and "
-            "evaluation practices specific to machine learning. Absence of "
-            "information is a reason for concern, never reassurance. Quote "
-            "the passage that grounds each judgment. [customize: state the "
-            "review's Step-1 PICOTS — Population, Index model(s), "
-            "Comparator model(s), Outcome(s), Timing, Setting/intended use "
-            "— which every applicability judgment is made against]"
-        ),
+    instructions = {**_LLM_TEMPLATE_INSTRUCTIONS, _PROBAST_AI_TEMPLATE_ID: PROBAST_AI_INSTRUCTION}
+    retired = {
+        **_RETIRED_LLM_TEMPLATE_INSTRUCTIONS,
+        _PROBAST_AI_TEMPLATE_ID: RETIRED_PROBAST_AI_INSTRUCTION,
     }
+    column = ExtractionTemplateGlobal.llm_template_instruction
     for template_id, instruction_text in instructions.items():
         await session.execute(
             update(ExtractionTemplateGlobal)
             .where(
                 ExtractionTemplateGlobal.id == template_id,
-                ExtractionTemplateGlobal.llm_template_instruction.is_(None),
+                or_(column.is_(None), column == retired[template_id]),
             )
             .values(llm_template_instruction=instruction_text)
         )
@@ -3214,19 +3219,20 @@ async def backfill_llm_template_instructions(session: AsyncSession) -> None:
 
 
 async def main() -> None:
-    # Function-local: seed_probast_ai imports this module's shared helpers, so a
-    # top-level import here would be circular.
+    # Function-local: both import this module's helpers (circular otherwise).
+    from app.seed_instrument import converge_seeded_globals
     from app.seed_probast_ai import seed_probast_ai
 
     print("Starting database seeding process...")
     async with AsyncSessionLocal() as session:
         try:
             await seed_charms(session)
+            await converge_charms_global(session)
             await seed_charms_mm(session)
             await seed_probast(session)
             await seed_quadas2(session)
             await seed_probast_ai(session)
-            await backfill_llm_template_instructions(session)
+            await converge_seeded_globals(session)
             await session.commit()
             print("Seeding completed successfully.")
         except Exception as e:

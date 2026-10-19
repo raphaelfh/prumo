@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
-from app.models.extraction import ExtractionField, ExtractionRun, ExtractionRunStage
+from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -23,14 +23,10 @@ from app.repositories.extraction_reviewer_decision_repository import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
-from app.services._extraction_run_lock import load_run_for_update
-from app.services.coordinate_coherence import assert_coords_coherent
-from app.services.value_semantics import (
-    AbsentReason,
-    disposition_to_marker,
-    is_disposition_candidate,
-    value_absent_reason,
-)
+from app.services.extraction_run_write import open_run_for_write
+from app.services.extraction_snapshot import pinned_field
+from app.services.value_contract import canonicalize_value
+from app.services.value_semantics import disposition_to_marker
 
 
 class InvalidDecisionError(Exception):
@@ -67,27 +63,21 @@ class ExtractionReviewService:
         proposal_record_id: UUID | None = None,
         value: dict[str, Any] | None = None,
         rationale: str | None = None,
-        enforce_marker_optin: bool = True,
+        enforce_contract: bool = True,
         expected_current_decision_id: UUID | None = None,
     ) -> ExtractionReviewerDecision:
         """Append one reviewer decision (and re-point the ReviewerState).
 
-        ``enforce_marker_optin`` holds *value* to the field's live
-        ``allows_no_information`` flag; only a server carry-over of an
-        ALREADY-STORED marker turns it off, so a template that flipped the flag
-        after the fact cannot strand its own history.
+        ``enforce_contract`` canonicalizes *value* against the field as the
+        run's template version pins it and refuses an off-contract one
+        (``ValueContractError``, 422). Only a system carry-over of an
+        ALREADY-STORED value turns it off, so a template that changed after
+        the fact cannot strand its own history.
         """
-        run = await load_run_for_update(self.db, run_id)
-        if run is None:
-            raise InvalidDecisionError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.EXTRACT.value:
-            raise InvalidDecisionError(
-                f"Cannot record decision: run stage is {run.stage}, not 'extract'"
-            )
-
-        await assert_coords_coherent(
+        run = await open_run_for_write(
             self.db,
-            run_id=run_id,
+            run_id,
+            expect=ExtractionRunStage.EXTRACT.only(),
             instance_id=instance_id,
             field_id=field_id,
         )
@@ -133,47 +123,27 @@ class ExtractionReviewService:
         if decision_value == "edit" and value is None:
             raise InvalidDecisionError("decision='edit' requires value")
 
-        # ADR-0016: the field's disposition domain gates two different writes,
-        # so it is read once for both.
-        #
-        # 1. An IN-BAND legacy disposition string is normalized into the coded
-        #    marker before it is persisted (the consensus agreement key hashes
-        #    this value verbatim, so two different codes must stay distinct).
-        #    An ``accept_proposal`` carries value=None and is left as-is — its
-        #    proposal was already normalized at record_proposal time. Scoped by
-        #    the field's live domain so a coincidental value is untouched.
-        # 2. An ALREADY-CODED ``no_information`` marker is REFUSED on a field
-        #    that opts out (``allows_no_information``, migration 0062).
-        #    ``is_disposition_candidate`` is False for that payload — the
-        #    peeled value is null, not a string — so (1) never sees it, which
-        #    left ``/decisions`` the one client-controlled door where the
-        #    opt-in was enforced by the UI alone. Stored, the marker renders
-        #    neither as a value nor as a clearable reason in ``FieldInput``,
-        #    while ``is_value_filled`` still counts the coordinate as filled.
-        #    Refused rather than silently stripped: unlike the in-band string —
-        #    a RETIRED encoding whose rewrite is a translation — this payload
-        #    names the marker it asks for, so it is told no.
-        wants_no_information = value_absent_reason(value) == AbsentReason.NO_INFORMATION.value
-        if is_disposition_candidate(value) or wants_no_information:
-            domain = (
-                await self.db.execute(
-                    select(
-                        ExtractionField.allowed_values,
-                        ExtractionField.allows_no_information,
-                    ).where(ExtractionField.id == field_id)
-                )
-            ).one_or_none()
-            if domain is not None:
-                if (
-                    enforce_marker_optin
-                    and wants_no_information
-                    and not domain.allows_no_information
-                ):
-                    raise InvalidDecisionError(
-                        f"Field {field_id} does not allow the 'no_information' marker"
-                    )
+        if value is not None:
+            # The field as the run's template version pins it: a value is held
+            # to the contract the reviewer's form was rendered from, never to a
+            # live draft.
+            field = await pinned_field(
+                self.db, version_id=run.version_id, template_id=run.template_id, field_id=field_id
+            )
+            if enforce_contract:
+                if field is None:
+                    raise InvalidDecisionError("field is not part of this run's template version")
+                value = canonicalize_value(value, field)
+            elif field is not None:
+                # A system carry-over keeps the stored value (even for a field
+                # the pinned tree lacks); only the retired in-band disposition
+                # string is translated (ADR-0016).
                 value = disposition_to_marker(
-                    value, domain.allowed_values, allows_no_information=domain.allows_no_information
+                    value,
+                    field.allowed_values,
+                    allows_no_information=field.allows_no_information,
+                    allows_not_applicable=field.allows_not_applicable,
+                    allows_not_evaluated=field.allows_not_evaluated,
                 )
 
         # Idempotent re-record: an unchanged decision replay (form remount,
@@ -293,12 +263,11 @@ class ExtractionReviewService:
                 value=proposal.proposed_value,
                 proposal_record_id=None,
                 rationale=f"Materialized from human proposal {proposal.id} at consensus entry",
-                # Carry-over, not a client write: the value was stored under the
-                # template as it stood then. Re-judging it against today's
-                # ``allows_no_information`` would strand a pre-D8 run in
-                # ``extract`` — ``advance_stage`` calls this inside its FOR
-                # UPDATE transaction, so a refusal here blocks the whole flip.
-                enforce_marker_optin=False,
+                # A system carry-over of human proposals, not a client write:
+                # the value was stored under the template as it stood then.
+                # The read-only value-envelope audit covers it; a refusal here
+                # would block ``advance_stage``'s whole FOR UPDATE flip.
+                enforce_contract=False,
             )
             inserted += 1
         return inserted

@@ -1,5 +1,6 @@
 import type { ExtractionField } from '@/types/extraction';
 import { isValueEmpty } from '@/lib/extraction/valueSemantics';
+import { coordKey, parseCoordKey } from '@/lib/runs/coord';
 
 /**
  * Minimal projection of an entity type needed for progress computation.
@@ -61,7 +62,7 @@ export interface RequiredFieldProgress {
  * fallback keeps the historical phantom-1 so a not-yet-typed singleton is still
  * represented when no explicit set is available.
  *
- * `values` is keyed `${instanceId}_${fieldId}` → value (the shape the form and
+ * `values` is keyed by `coordKey` → value (the shape the form and
  * both tables build).
  */
 export function computeRequiredFieldProgress(
@@ -96,10 +97,7 @@ export function computeRequiredFieldProgress(
   } else {
     observedInstances = new Map<string, Set<string>>();
     for (const key of Object.keys(values)) {
-      const sep = key.indexOf('_');
-      if (sep < 0) continue;
-      const instanceId = key.slice(0, sep);
-      const fieldId = key.slice(sep + 1);
+      const { instanceId, fieldId } = parseCoordKey(key);
       const etId = fieldToEntityType.get(fieldId);
       if (!etId) continue;
       let set = observedInstances.get(etId);
@@ -137,9 +135,7 @@ export function computeRequiredFieldProgress(
     // resolved absent_reason marker) — so a marker coordinate counts as filled
     // and the metric can no longer drift from the finalize gate.
     if (isValueEmpty(value)) continue;
-    const sep = key.indexOf('_');
-    if (sep < 0) continue;
-    const fieldId = key.slice(sep + 1);
+    const { instanceId, fieldId } = parseCoordKey(key);
     const etId = fieldToEntityType.get(fieldId);
     if (!etId) continue;
     if (!requiredFieldIdsByEntityType.get(etId)?.has(fieldId)) continue;
@@ -149,7 +145,7 @@ export function computeRequiredFieldProgress(
     // value-key fallback counts every key, because there the instance set IS
     // derived from these same keys — every one of them is in scope by
     // construction.
-    if (authoritative && !observedInstances.get(etId)?.has(key.slice(0, sep))) continue;
+    if (authoritative && !observedInstances.get(etId)?.has(instanceId)) continue;
     completedRequired += 1;
   }
 
@@ -188,7 +184,7 @@ export interface ProgressValueRow {
  * Completion is field-completeness only — there is no per-instance status
  * (the legacy `extraction_instances.status` column was removed in HITL Phase 3).
  *
- * It builds the `${instanceId}_${fieldId}` value map (unwrapping `{value}`
+ * It builds the `coordKey`-keyed value map (unwrapping `{value}`
  * envelopes, treating empty as unfilled) and the true instance set per entity
  * type, so empty `cardinality='many'` instances still count in the denominator.
  */
@@ -212,7 +208,7 @@ export function computeRowProgress(
     // Store the RAW envelope; computeRequiredFieldProgress peels + tests emptiness
     // in one place (the shared oracle), so an absent_reason marker is not stripped
     // before the predicate sees it.
-    valueMap[`${v.instance_id}_${v.field_id}`] = v.value;
+    valueMap[coordKey(v.instance_id, v.field_id)] = v.value;
   }
   const instanceIdsByEntityType = new Map<string, Set<string>>();
   for (const inst of instances) {

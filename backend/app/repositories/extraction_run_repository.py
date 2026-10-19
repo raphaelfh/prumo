@@ -106,7 +106,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
 
         MERGE (not REPLACE) so run-level data already recorded — notably the
         ``provenance`` snapshot the proposal choke-point
-        (``_create_suggestions`` → ``merge_provenance_section``) writes —
+        (``ProposalLanding.land`` → ``merge_provenance_section``) writes —
         survives completion. A REPLACE would clobber it. Callers whose run still has empty ``results`` (model extraction, the
         batch primary run) are unaffected: merging into ``{}`` equals a replace.
 
@@ -134,6 +134,38 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         )
         return run
 
+    async def add_tokens(self, run_id: UUID, *, prompt: int, completion: int) -> None:
+        """Add one flow's model usage to ``results["tokens"]``.
+
+        Row-locked read-modify-write that re-reads the row
+        (``populate_existing``): chunked batch calls and the full pass's
+        per-entry passes each add to the same run, and a worker session
+        commits between them, so the identity-mapped copy can be stale. The
+        lock serializes concurrent adders; the re-read keeps the later one
+        from summing onto an old value. Sibling keys are preserved. FOR NO
+        KEY UPDATE (``key_share=True``) still serializes adders but leaves
+        the FK checks of rows referencing the run (ledger, proposals) unblocked.
+        """
+        run = (
+            await self.db.execute(
+                select(ExtractionRun)
+                .where(ExtractionRun.id == run_id)
+                .with_for_update(key_share=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        results = {**(run.results or {})}
+        tokens = results.get("tokens") or {}
+        prompt += int(tokens.get("prompt", 0))
+        completion += int(tokens.get("completion", 0))
+        results["tokens"] = {
+            "prompt": prompt,
+            "completion": completion,
+            "total": prompt + completion,
+        }
+        run.results = results
+        await self.db.flush()
+
     async def merge_provenance_section(
         self,
         run_id: UUID,
@@ -160,7 +192,9 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         """
         run = (
             await self.db.execute(
-                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
+                select(ExtractionRun)
+                .where(ExtractionRun.id == run_id)
+                .with_for_update(key_share=True)
             )
         ).scalar_one_or_none()
         if run is None:
@@ -338,33 +372,3 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
                 trace_id=trace_id,
                 run_id=str(run_id),
             )
-
-    async def get_by_article(
-        self,
-        article_id: UUID,
-        stage: ExtractionRunStage | None = None,
-        status: ExtractionRunStatus | None = None,
-    ) -> list[ExtractionRun]:
-        """
-        List runs of an article.
-
-        Args:
-            article_id: article.
-            stage: filter by stage (optional).
-            status: filter by status (optional).
-
-        Returns:
-            List of runs.
-        """
-        query = select(ExtractionRun).where(ExtractionRun.article_id == article_id)
-
-        if stage:
-            query = query.where(ExtractionRun.stage == stage.value)
-
-        if status:
-            query = query.where(ExtractionRun.status == status.value)
-
-        query = query.order_by(ExtractionRun.created_at.desc())
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())

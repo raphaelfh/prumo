@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-19
 owner: '@raphaelfh'
 ---
 
@@ -36,6 +36,7 @@ tutorial lives here.*
 | [Constitution](./reference/constitution.md) | Non-negotiable architectural principles (layering, typed everything, split migration ownership) |
 | [Extraction + HITL architecture](./reference/extraction-hitl-architecture.md) | Canonical schema, run lifecycle, RLS posture |
 | [Test strategy](./reference/test-strategy.md) | Load-bearing tests, pyramid layout |
+| [MCP chat eval](./reference/mcp-chat-eval.md) | Chat eval suite for the MCP server: tasks, thresholds, baseline |
 | [Extraction observability](./reference/observability-extraction.md) | Metrics + structured events; debugging extraction latency/errors (browser → API → DB) |
 | [CHARMS template (v1.1)](./reference/templates/charms-v1.1-complete.md) | Field-by-field spec of the global CHARMS template |
 | [CHARMS visual hierarchy](./reference/templates/charms-v1.1-hierarchy.md) | Tree view of CHARMS entities |
@@ -71,8 +72,9 @@ tutorial lives here.*
 ## Doc conventions
 
 - Every file under `docs/` carries YAML frontmatter (`status`, `last_reviewed`, `owner`) — the **single source of truth** (the staleness gate reads frontmatter). A visible status line in the body is optional and must not restate `last_reviewed` (the duplicated date drifts).
+- The root `README.md` is exempt: it is the GitHub landing page, where frontmatter renders as a table.
 - Status values are scoped by layer (enforced by `scripts/docs/check-frontmatter.sh`):
-  - **Reference / how-to** (`docs/reference`, `docs/how-to`, `docs/README.md`, `docs/ROADMAP.md`, root `*.md`): `stable` · `draft` · `deprecated`.
+  - **Reference / how-to** (`docs/reference`, `docs/how-to`, `docs/README.md`, `docs/ROADMAP.md`, root `AGENTS.md`): `stable` · `draft` · `deprecated`.
   - **ADRs** (`docs/adr`, MADR lifecycle — see [ADR-0001](./adr/0001-use-madr.md)): `proposed` · `accepted` · `rejected` · `deprecated` · `superseded` · `template`.
   - **Specs / plans** (`docs/superpowers/{specs,plans}`): `draft` · `approved` · `in_progress` · `shipped` · `superseded` · `frozen`. Shipped work is archived under `*/archive/**` (exempt from the gate).
 - CI (`.github/workflows/docs-ci.yml`) enforces markdownlint, cspell, link check, and frontmatter presence on every PR that touches `**/*.md`.

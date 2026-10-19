@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import NotFoundError
+from app.schemas.project_details import ProjectDetailsExpected as E
 from app.schemas.project_details import ProjectDetailsFields as F
 from app.services.project_details_service import StaleProjectValueError, update_details
 from tests.integration.conftest import SEED
@@ -59,7 +60,7 @@ async def test_applies_only_the_named_keys_and_reports_before_after(
         db_session,
         project_id=SEED.primary_project,
         fields=F(description="new"),
-        expected=F(description="old"),
+        expected=E(description="old"),
     )
 
     assert change.before == {"description": "old"}
@@ -84,7 +85,7 @@ async def test_stale_value_raises_with_current_and_writes_nothing(
             db_session,
             project_id=SEED.primary_project,
             fields=F(name="Mine", description="d2"),
-            expected=F(name="Old name", description="d"),
+            expected=E(name="Old name", description="d"),
         )
 
     assert info.value.status_code == 409
@@ -128,7 +129,7 @@ async def test_precondition_is_canonical_json_equality(
         db_session,
         project_id=SEED.primary_project,
         fields=F.model_validate({column: new_value}),
-        expected=F.model_validate({column: expected_value}),
+        expected=E.model_validate({column: expected_value}),
     )
     if stale:
         with pytest.raises(StaleProjectValueError):
@@ -147,7 +148,7 @@ async def test_jsonb_columns_round_trip(db_session: AsyncSession) -> None:
         db_session,
         project_id=SEED.primary_project,
         fields=F(study_design={"types": ["RCT"], "notes": "n"}, review_keywords=["k1"]),
-        expected=F.model_validate(before),
+        expected=E.model_validate(before),
     )
 
     assert await _row(db_session, "study_design", "review_keywords") == {
@@ -160,6 +161,6 @@ async def test_jsonb_columns_round_trip(db_session: AsyncSession) -> None:
 async def test_missing_project_is_not_found(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError) as info:
         await update_details(
-            db_session, project_id=uuid4(), fields=F(name="n"), expected=F(name="o")
+            db_session, project_id=uuid4(), fields=F(name="n"), expected=E(name="o")
         )
     assert info.value.status_code == 404

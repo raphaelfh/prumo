@@ -29,9 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.template_change import ChangeVariant, DiffStatus
 from app.schemas.hitl_session import TemplateConfigDiffRead
-from app.services import template_version_read_service
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
+    _read,
     get_template_config_diff,
     get_template_config_status,
 )
@@ -327,10 +327,8 @@ async def test_a_narrow_baseline_never_reaches_the_diff_engine(
     def _forbidden(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("an unrestorable baseline must never be diffed")
 
-    monkeypatch.setattr(template_version_read_service, "diff_snapshots", _forbidden)
-    monkeypatch.setattr(
-        template_version_read_service, "build_template_version_snapshot", _forbidden
-    )
+    monkeypatch.setattr(_read, "diff_snapshots", _forbidden)
+    monkeypatch.setattr(_read, "build_template_version_snapshot", _forbidden)
 
     diff = await _diff(db_session, project_id, template_id)
 
@@ -389,13 +387,13 @@ async def test_config_status_still_passes_an_empty_value_set(
     await _set_field_type(db_session, recorded, "text")
 
     seen: list[frozenset[UUID]] = []
-    real = template_version_read_service.diff_snapshots
+    real = _read.diff_snapshots
 
     def _spy(baseline: Any, current: Any, *, fields_with_values: frozenset[UUID]) -> Any:
         seen.append(fields_with_values)
         return real(baseline, current, fields_with_values=fields_with_values)
 
-    monkeypatch.setattr(template_version_read_service, "diff_snapshots", _spy)
+    monkeypatch.setattr(_read, "diff_snapshots", _spy)
 
     await get_template_config_status(db_session, project_id=project_id, template_id=template_id)
 

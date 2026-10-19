@@ -18,8 +18,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_version_read_service import get_template_version_history
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+    get_template_version_history,
+)
 from tests.integration.conftest import SEED
 from tests.integration.helpers.template_fixtures import (
     delete_field,

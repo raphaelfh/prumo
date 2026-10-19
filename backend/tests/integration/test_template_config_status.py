@@ -23,11 +23,17 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.schemas.hitl_session import TemplateConfigStatusRead
-from app.services import template_version_read_service
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_instruction_service import set_template_instruction
-from app.services.template_version_read_service import get_template_config_status
+from app.services.template_versioning import (
+    _read,
+    get_template_config_status,
+)
 from tests.integration.conftest import SEED, set_config_draft_marker
+from tests.integration.helpers.pat_rows import (
+    insert_oauth_client,
+    insert_oauth_connection,
+)
 from tests.integration.helpers.pat_rows import insert_pat_row as _pat
 from tests.integration.helpers.template_fixtures import force_narrow_baseline
 
@@ -35,7 +41,7 @@ from tests.integration.helpers.template_fixtures import force_narrow_baseline
 async def _publish_primary(db: AsyncSession) -> None:
     """Publish the live tree, so the baseline is the wide builder's own
     output (the seeded v1 snapshot is ``{"entity_types": []}`` — narrow)."""
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await TemplateVersionService(db).republish(
         project_id=SEED.primary_project,
@@ -61,7 +67,7 @@ async def _edit_primary_field_label(db: AsyncSession, suffix: str) -> None:
 
 @pytest.mark.asyncio
 async def test_status_flips_with_edit_and_publish(db_session: AsyncSession) -> None:
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await set_config_draft_marker(db_session, SEED.primary_template, None)
     clean = await get_template_config_status(
@@ -155,9 +161,7 @@ async def test_clean_template_builds_no_snapshot(
     def _forbidden(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("a clean template must not build the live snapshot")
 
-    monkeypatch.setattr(
-        template_version_read_service, "build_template_version_snapshot", _forbidden
-    )
+    monkeypatch.setattr(_read, "build_template_version_snapshot", _forbidden)
 
     status = await _status(db_session)
     assert status.has_pending_changes is False
@@ -287,7 +291,12 @@ async def test_instruction_only_draft_counts_one(db_session: AsyncSession) -> No
 
 
 async def _agent_action(
-    db: AsyncSession, token_id: UUID | None, *, outcome: str = "applied", offset_seconds: int = 0
+    db: AsyncSession,
+    token_id: UUID | None,
+    *,
+    outcome: str = "applied",
+    offset_seconds: int = 0,
+    tool: str = "edit_template_draft",
 ) -> None:
     await db.execute(
         text(
@@ -295,7 +304,7 @@ async def _agent_action(
             "(id, created_at, token_id, user_id, project_id, template_id, tool, input, "
             "before, after, outcome, error_code) "
             "VALUES (:id, now() + make_interval(secs => :s), :tok, :uid, :pid, :tid, "
-            "'edit_template_draft', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :outcome, :code)"
+            ":tool, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :outcome, :code)"
         ),
         {
             "id": str(uuid4()),
@@ -304,6 +313,7 @@ async def _agent_action(
             "uid": str(SEED.primary_profile),
             "pid": str(SEED.primary_project),
             "tid": str(SEED.primary_template),
+            "tool": tool,
             "outcome": outcome,
             "code": None if outcome == "applied" else "STALE_VALUE",
         },
@@ -323,12 +333,41 @@ async def test_agent_edit_inside_the_draft_lights_the_chip(db_session: AsyncSess
 
 
 @pytest.mark.asyncio
+async def test_agent_edit_by_oauth_connection_shows_client_name(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    connection_id = await insert_oauth_connection(
+        db_session,
+        user_id=SEED.primary_profile,
+        client_id=await insert_oauth_client(db_session, client_name="Claude"),
+        name="Claude",
+    )
+    await _agent_action(db_session, connection_id)
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is True
+    assert status.agent_edit_token_name == "Claude"
+
+
+@pytest.mark.asyncio
 async def test_refused_agent_row_does_not_light_the_chip(db_session: AsyncSession) -> None:
     await set_config_draft_marker(db_session, SEED.primary_template, None)
     await _edit_primary_field_label(db_session, " (agent)")
     await _agent_action(db_session, await _pat(db_session), outcome="refused")
 
     status = await _status(db_session)
+    assert status.has_agent_edits is False
+    assert status.agent_edit_token_name is None
+
+
+@pytest.mark.asyncio
+async def test_applied_start_never_raises_the_draft_chip(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (draft)")
+    await _agent_action(db_session, await _pat(db_session), tool="start_ai_run")
+
+    status = await _status(db_session)
+    assert status.has_pending_changes is True
     assert status.has_agent_edits is False
     assert status.agent_edit_token_name is None
 

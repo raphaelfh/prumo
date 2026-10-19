@@ -12,6 +12,7 @@ vi.mock('@/services/templateInstructionService', () => ({
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 import {TooltipProvider} from '@/components/ui/tooltip';
+import {extraction} from '@/lib/copy/extraction';
 import {TemplateInstructionControl} from '@/components/extraction/TemplateInstructionControl';
 
 function renderControl({
@@ -70,6 +71,19 @@ describe('TemplateInstructionControl', () => {
     getTemplateInstruction.mockResolvedValue({
       project_template_id: 't1',
       llm_template_instruction: 'All resolved.',
+      default_instruction: null,
+    });
+    renderControl();
+    await screen.findByRole('button', {name: /instructionTitle/});
+    expect(screen.queryByTestId('instruction-customize-chip')).toBeNull();
+  });
+
+  it('counts no slot to customize in the suggested default', async () => {
+    // The review question reaches the prompt from the project's settings, so
+    // the suggested default asks the manager to retype nothing.
+    getTemplateInstruction.mockResolvedValue({
+      project_template_id: 't1',
+      llm_template_instruction: extraction.instructionSuggestedDefault,
       default_instruction: null,
     });
     renderControl();

@@ -4,7 +4,8 @@
 # value outside its layer's enum (see docs/README.md), or an owner that is not
 # an @handle.
 #
-# Exclusions: node_modules, archives, test artefacts.
+# Exclusions: node_modules, archives, test artefacts, and the root README.md
+# (GitHub renders its frontmatter as a table above the project page).
 
 set -euo pipefail
 
@@ -17,8 +18,9 @@ while IFS= read -r -d '' file; do
   esac
 
   # Only enforce on files that should carry frontmatter: docs/**, root AGENTS.md
+  # (the root README.md is the GitHub landing page and carries none)
   case "$file" in
-    docs/*.md|docs/**/*.md|README.md|AGENTS.md|llms.txt) : ;;
+    docs/*.md|docs/**/*.md|AGENTS.md|llms.txt) : ;;
     *) continue ;;
   esac
 

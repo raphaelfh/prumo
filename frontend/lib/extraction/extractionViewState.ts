@@ -25,7 +25,7 @@ export type ExtractionViewState =
   | {kind: 'ready'};
 
 export interface ExtractionViewStateInput {
-  /** Page bootstrap (article/project/template) is still loading. */
+  /** Page bootstrap (templates/worklist) is still loading. */
   bootstrapLoading: boolean;
   /** Bootstrap finished and produced both an article and a template. */
   hasArticleAndTemplate: boolean;
@@ -37,8 +37,6 @@ export interface ExtractionViewStateInput {
   runError: boolean;
   /** Optional RunView error message for display. */
   runErrorMessage?: string | null;
-  /** The extracted-values read is still loading. */
-  valuesLoading: boolean;
   /** Number of entity types derived from the loaded RunView. */
   entityTypesCount: number;
 }
@@ -63,10 +61,7 @@ export function resolveExtractionViewState(
     return {kind: 'loading'};
   }
 
-  // RunView is loaded from here on.
-  if (input.valuesLoading) {
-    return {kind: 'loading'};
-  }
+  // RunView is loaded from here on; the form hydrates from it in the same render.
   if (input.entityTypesCount === 0) {
     return {kind: 'no-fields'};
   }

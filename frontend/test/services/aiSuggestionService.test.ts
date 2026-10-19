@@ -156,7 +156,7 @@ describe('AISuggestionService.loadSuggestions', () => {
     });
     const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
     expect(result.suggestions['inst-1_f-1'].evidence).toEqual([
-      {text: 'verbatim quote', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0},
+      {text: 'verbatim quote', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0, grounded: false, stale: false},
     ]);
   });
 
@@ -172,6 +172,8 @@ describe('AISuggestionService.loadSuggestions', () => {
               rank: 1,
               attributionLabel: 'weak',
               blockIds: [10],
+              grounded: true,
+              stale: true,
             },
             {
               text_content: 'primary quote',
@@ -180,6 +182,8 @@ describe('AISuggestionService.loadSuggestions', () => {
               rank: 0,
               attributionLabel: 'entailed',
               blockIds: [1, 2],
+              grounded: true,
+              stale: false,
             },
           ],
         }),
@@ -196,6 +200,8 @@ describe('AISuggestionService.loadSuggestions', () => {
       blockIds: [1, 2],
       attributionLabel: 'entailed',
       rank: 0,
+      grounded: true,
+      stale: false,
     });
     expect(evidence![1]).toEqual({
       text: 'secondary quote',
@@ -203,7 +209,22 @@ describe('AISuggestionService.loadSuggestions', () => {
       blockIds: [10],
       attributionLabel: 'weak',
       rank: 1,
+      grounded: true,
+      stale: true,
     });
+  });
+
+  it('defaults grounded and stale to false when the server omits them', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({evidence: [{text_content: 'q', page_number: 1, proposal_record_id: 'p-1', rank: 0}]}),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    const [citation] = result.suggestions['inst-1_f-1'].evidence!;
+    expect(citation.grounded).toBe(false);
+    expect(citation.stale).toBe(false);
   });
 
   it('returns undefined evidence when evidence list is empty', async () => {
@@ -305,7 +326,7 @@ describe('AISuggestionService.getHistory', () => {
     const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
     expect(result).toHaveLength(1);
     expect(result[0].evidence).toEqual([
-      {text: 'quote', pageNumber: 2, blockIds: [], attributionLabel: null, rank: 0},
+      {text: 'quote', pageNumber: 2, blockIds: [], attributionLabel: null, rank: 0, grounded: false, stale: false},
     ]);
     expect(result[0].value).toBe('V');
     expect(result[0].runId).toBe('run-A');
@@ -570,6 +591,33 @@ describe('provenance mapping', () => {
       fieldsRequested: ['data_source'],
       llmCalls: 2,
     });
+  });
+
+  it('maps the article version and text hash, undefined on a legacy article ref', async () => {
+    const sha = 'ab'.repeat(32);
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({
+          provenance: {
+            prompt_composition: { article_ref: { content_version: 3, text_sha256: sha } },
+          },
+        }),
+        makeItem({
+          id: 'legacy',
+          instance_id: 'inst-2',
+          provenance: { prompt_composition: { article_ref: { file_name: 'a.pdf' } } },
+        }),
+      ],
+      count: 2,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1', 'inst-2']);
+    const current = result.suggestions['inst-1_f-1'].provenance?.promptComposition?.articleRef;
+    expect(current?.contentVersion).toBe(3);
+    expect(current?.textSha256).toBe(sha);
+    const legacy = result.suggestions['inst-2_f-1'].provenance?.promptComposition?.articleRef;
+    expect(legacy?.fileName).toBe('a.pdf');
+    expect(legacy?.contentVersion).toBeUndefined();
+    expect(legacy?.textSha256).toBeUndefined();
   });
 
   it('leaves promptComposition undefined for legacy runs without it', async () => {

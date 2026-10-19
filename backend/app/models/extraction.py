@@ -32,7 +32,7 @@ from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
 from app.models.extraction_versioning import TemplateKind
 
 if TYPE_CHECKING:
-    pass
+    from app.models.extraction_instance import ExtractionInstance
 
 
 class ExtractionFramework(str, PyEnum):
@@ -71,14 +71,63 @@ class ExtractionCardinality(str, PyEnum):
 DEFAULT_ENTRY_LABEL = "entry"
 
 
+#: A set of ``ExtractionRunStage`` values, as the ``stage`` column stores them.
+StageSet = frozenset[str]
+
+
 class ExtractionRunStage(str, PyEnum):
-    """Stage of the extraction execution (HITL lifecycle)."""
+    """Stage of the extraction execution (HITL lifecycle).
+
+    The named sets below are the READ side of stage semantics — the one place
+    "which stages count as X" is spelled out. The forward edges live in
+    ``run_lifecycle_service._ALLOWED_TRANSITIONS``; the write gate that
+    consumes these sets is ``extraction_run_write.open_run_for_write``.
+    """
 
     PENDING = "pending"
     EXTRACT = "extract"
     CONSENSUS = "consensus"
     FINALIZED = "finalized"
     CANCELLED = "cancelled"
+
+    def only(self) -> StageSet:
+        """The set holding just this stage: the ``expect=`` of a one-stage gate."""
+        return frozenset({self.value})
+
+    @classmethod
+    def live(cls) -> StageSet:
+        """Stages a run is live in. The one-live-run invariant (partial unique
+        index ``uq_one_live_extraction_run_per_coord``, migration 0045) allows
+        at most ONE run in these per (project, article, template, kind)
+        coordinate; finalized / cancelled are terminal and unconstrained."""
+        return frozenset({cls.PENDING.value, cls.EXTRACT.value, cls.CONSENSUS.value})
+
+    @classmethod
+    def resolvable(cls) -> StageSet:
+        """Stages a coordinate's resolved run may be in (live, else finalized;
+        never cancelled): what the HITL session opens and the extraction form
+        shows. Ranked once in ``app.services.current_run``."""
+        return cls.live() | {cls.FINALIZED.value}
+
+    @classmethod
+    def editable(cls) -> StageSet:
+        """Stages whose template pin a republish may still move: the run has
+        not entered consensus."""
+        return frozenset({cls.PENDING.value, cls.EXTRACT.value})
+
+    @classmethod
+    def reviewing(cls) -> StageSet:
+        """Reviewers extracting or the manager in consensus — the stages where
+        the "N/M reviewers ready" hint means something; for pending /
+        finalized / cancelled runs it is noise and the read is skipped."""
+        return frozenset({cls.EXTRACT.value, cls.CONSENSUS.value})
+
+    @classmethod
+    def with_current_values(cls) -> StageSet:
+        """Stages whose form hydrates from the materialized reviewer states
+        and decisions (``current_values``). In ``extract`` the client also
+        reads ``proposals[]``; pending / cancelled show nothing."""
+        return frozenset({cls.EXTRACT.value, cls.CONSENSUS.value, cls.FINALIZED.value})
 
 
 class ExtractionRunStatus(str, PyEnum):
@@ -90,12 +139,14 @@ class ExtractionRunStatus(str, PyEnum):
     FAILED = "failed"
 
 
-class ExtractionTemplateGlobal(BaseModel):
-    """
-    Template global de extraction (CHARMS, PICOS, etc.).
+# The closed set of ``instrument`` codes (0087), shared by both template tables.
+_INSTRUMENT_CHECK = (
+    "instrument IN ('charms', 'charms_mm', 'probast', 'probast_ai', 'quadas2', 'custom')"
+)
 
-    Templates globais sao compartilhados entre projects.
-    """
+
+class ExtractionTemplateGlobal(BaseModel):
+    """A catalogue template (CHARMS, PROBAST, ...) shared by every project."""
 
     __tablename__ = "extraction_templates_global"
 
@@ -119,6 +170,8 @@ class ExtractionTemplateGlobal(BaseModel):
     schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stable appraisal-instrument code (0087); ``custom`` = no fixed instrument.
+    instrument: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'custom'"))
 
     # Relationships
     entity_types: Mapped[list["ExtractionEntityType"]] = relationship(
@@ -127,7 +180,6 @@ class ExtractionTemplateGlobal(BaseModel):
         foreign_keys="ExtractionEntityType.template_id",
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         Index("idx_extraction_templates_global_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_extraction_templates_global_id_kind"),
@@ -138,6 +190,7 @@ class ExtractionTemplateGlobal(BaseModel):
             "char_length(llm_template_instruction) <= 4000",
             name="llm_instruction_len",
         ),
+        CheckConstraint(_INSTRUMENT_CHECK, name="instrument"),
         {"schema": "public"},
     )
 
@@ -146,13 +199,7 @@ class ExtractionTemplateGlobal(BaseModel):
 
 
 class ProjectExtractionTemplate(BaseModel):
-    """
-    Template de extraction clonado and customizado por project.
-
-    Indices:
-    - project_id: FK indexada
-    - schema: GIN for busca em JSONB
-    """
+    """A project's own template: a clone of a global one, or created blank."""
 
     __tablename__ = "project_extraction_templates"
 
@@ -189,6 +236,8 @@ class ProjectExtractionTemplate(BaseModel):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stable appraisal-instrument code (0087); ``custom`` = no fixed instrument.
+    instrument: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'custom'"))
 
     # Slice B-4: stamped by DB triggers on any live config write
     # (extraction_entity_types / extraction_fields — the editor writes
@@ -234,7 +283,6 @@ class ProjectExtractionTemplate(BaseModel):
         back_populates="template",
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         Index("idx_project_extraction_templates_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_project_extraction_templates_id_kind"),
@@ -243,6 +291,7 @@ class ProjectExtractionTemplate(BaseModel):
             "char_length(llm_template_instruction) <= 4000",
             name="llm_instruction_len",
         ),
+        CheckConstraint(_INSTRUMENT_CHECK, name="instrument"),
         {"schema": "public"},
     )
 
@@ -432,93 +481,12 @@ class ExtractionField(BaseModel):
         return f"<ExtractionField {self.name}>"
 
 
-class ExtractionInstance(BaseModel):
-    """
-    Instancia especifica de entidade for cada article.
-
-    Indices:
-    - project_id, article_id, template_id: FKs indexadas
-    - (article_id, entity_type_id, sort_order): busca ordenada
-    - metadata: GIN for busca em JSONB
-    """
-
-    __tablename__ = "extraction_instances"
-
-    project_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.projects.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    article_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.articles.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
-    template_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.project_extraction_templates.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-
-    entity_type_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_entity_types.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
-    parent_instance_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-
-    label: Mapped[str] = mapped_column(String, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default={}, nullable=False)
-
-    created_by: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
-    is_template: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
-
-    # Relationships
-    template: Mapped["ProjectExtractionTemplate"] = relationship(
-        "ProjectExtractionTemplate",
-        back_populates="instances",
-    )
-
-    # Indices definidos via __table_args__
-    __table_args__ = (
-        # Indice composto for busca ordenada por article
-        Index(
-            "idx_extraction_instances_article_entity_sort",
-            "article_id",
-            "entity_type_id",
-            "sort_order",
-        ),
-        # Indice GIN for metadata
-        Index("idx_extraction_instances_metadata_gin", "metadata", postgresql_using="gin"),
-        {"schema": "public"},
-    )
-
-    def __repr__(self) -> str:
-        return f"<ExtractionInstance {self.label}>"
-
-
 class ExtractionEvidence(BaseModel):
     """
     Evidencias que suportam valores extraidos or instances.
 
     Indices:
-    - project_id, article_id: FKs indexadas
+    - project_id, article_id and each workflow link: btree
     - position: GIN for busca em JSONB
     """
 
@@ -574,6 +542,8 @@ class ExtractionEvidence(BaseModel):
     attribution_label: Mapped[str | None] = mapped_column(Text, nullable=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # order of an evidence span within its proposal (0 = primary/first; LLM order)
+    # article_files.content_version the position was anchored against; NULL = unknown
+    content_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -581,10 +551,20 @@ class ExtractionEvidence(BaseModel):
         nullable=False,
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         # Indice GIN for position JSONB
         Index("idx_extraction_evidence_position_gin", "position", postgresql_using="gin"),
+        # One btree per workflow link: the CASCADE from each target and the
+        # per-target reads would otherwise scan the table (migration 0086).
+        Index("idx_extraction_evidence_run_id", "run_id"),
+        Index("idx_extraction_evidence_proposal_record_id", "proposal_record_id"),
+        Index("idx_extraction_evidence_reviewer_decision_id", "reviewer_decision_id"),
+        Index("idx_extraction_evidence_consensus_decision_id", "consensus_decision_id"),
+        Index(  # the per-file reparse read (0089)
+            "idx_extraction_evidence_article_file_id",
+            "article_file_id",
+            postgresql_where=text("article_file_id IS NOT NULL"),
+        ),
         CheckConstraint(
             """
             run_id IS NOT NULL
@@ -700,7 +680,6 @@ class ExtractionRun(Base, UUIDMixin):
         nullable=False,
     )
 
-    # Indices definidos via __table_args__
     __table_args__ = (
         # Indice composto for busca por status and estagio
         Index("idx_extraction_runs_status_stage", "status", "stage"),
@@ -711,7 +690,7 @@ class ExtractionRun(Base, UUIDMixin):
         # (pending/extract/consensus) run per (project, article, template,
         # kind). A second live run silently shadows the first one's reviewer
         # decisions on session open — the run-orphaning data-loss bug. Writers
-        # go through RunLifecycleService.resolve_or_create_extract_run (or the
+        # go through CurrentRunResolver.resolve_or_create_extract (or the
         # session opener), which reuses the live run under the (article,
         # template) advisory lock; this index is the DB-level backstop.
         # ``kind`` is implied by template_id (composite FK below) — included
