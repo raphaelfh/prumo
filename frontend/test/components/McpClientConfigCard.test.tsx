@@ -20,4 +20,9 @@ describe('McpClientConfigCard', () => {
     expect(screen.getByText((content) => content.includes(TOKEN_PLACEHOLDER))).toBeInTheDocument();
     expect(screen.queryByText(/prumo_pat_/)).not.toBeInTheDocument();
   });
+
+  it('offers the claude.ai connector chip', () => {
+    render(<McpClientConfigCard />);
+    expect(screen.getByRole('radio', {name: t('personalAccessTokens', 'chipClaudeAi')})).toBeInTheDocument();
+  });
 });

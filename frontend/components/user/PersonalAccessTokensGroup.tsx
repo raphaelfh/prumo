@@ -36,6 +36,7 @@ import {Skeleton} from '@/components/ui/skeleton';
 import {SettingsGroup, SettingsRow} from '@/components/settings';
 import {CopyBlock} from '@/components/user/CopyBlock';
 import {McpClientSnippetSelector} from '@/components/user/McpClientSnippetSelector';
+import {TOKEN_CLIENT_IDS} from '@/lib/mcp/clientSnippets';
 import {
   useCreateMyToken,
   useMyTokens,
@@ -513,7 +514,7 @@ export function PersonalAccessTokensGroup() {
           </DialogHeader>
           <DialogBody className="space-y-3">
             {secret && <CopyBlock label={t('personalAccessTokens', 'tokenLabel')} code={secret} copyAriaLabel={t('personalAccessTokens', 'copyTokenAria')} />}
-            {secret && <McpClientSnippetSelector token={secret} />}
+            {secret && <McpClientSnippetSelector token={secret} clients={TOKEN_CLIENT_IDS} />}
           </DialogBody>
           <DialogFooter>
             <Button size="sm" onClick={closeReveal}>{t('personalAccessTokens', 'revealDone')}</Button>
