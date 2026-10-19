@@ -11,7 +11,7 @@ metrics intentionally mirror what ADR-0011's Validation section asks for:
   at evaluation time with external tools/models; this proxy needs no deps
   and gives a fast, reproducible signal in CI.
 * ``recall_set`` — section-heading and reference recovery.
-* ``column_inversions`` / ``chrome_leakage`` / ``zw_char_count`` — reading
+* ``column_inversions`` / ``order_breaks`` / ``chrome_leakage`` / ``zw_char_count`` — reading
   order against the gold paragraph sequence, running heads left as body text,
   and invisible characters in the stored block text.
 * ``p95`` / ``maxrss_to_mb`` — per-parser latency tail and peak memory.
@@ -168,16 +168,14 @@ def _paragraph_key(text: str) -> str:
     return alnum[:_PARAGRAPH_KEY_CHARS]
 
 
-def column_inversions(blocks: list[Block], gold_paragraphs: list[str]) -> tuple[int, int]:
-    """Inversions of gold paragraph indexes in the parser's reading order.
+def _matched_order(blocks: list[Block], gold_paragraphs: list[str]) -> list[int]:
+    """Gold paragraph indexes in the parser's reading order.
 
     Each body block is matched to the gold paragraph whose normalized,
     alphanumeric-only prefix it starts with (so a line-break hyphen or a
     trailing sentence does not break the match); a block that starts mid
     paragraph matches nothing. Gold paragraphs with a short or ambiguous
     prefix are skipped, and each gold paragraph counts once (its first block).
-    Returns ``(inversions, paragraphs_matched)``: the number of pairs read in
-    the opposite order to the gold sequence, and how many paragraphs matched.
     """
     key_counts = Counter(_paragraph_key(p) for p in gold_paragraphs)
     index_by_key = {
@@ -194,8 +192,30 @@ def column_inversions(blocks: list[Block], gold_paragraphs: list[str]) -> tuple[
         if index is not None and index not in seen:
             seen.add(index)
             order.append(index)
+    return order
+
+
+def column_inversions(blocks: list[Block], gold_paragraphs: list[str]) -> tuple[int, int]:
+    """Inversions of gold paragraph indexes in the parser's reading order.
+
+    Returns ``(inversions, paragraphs_matched)``: the number of pairs read in
+    the opposite order to the gold sequence, and how many paragraphs matched.
+    One displaced paragraph inflates this by its displacement distance; see
+    ``order_breaks`` for the count of reading-order jumps.
+    """
+    order = _matched_order(blocks, gold_paragraphs)
     inversions = sum(1 for i, left in enumerate(order) for right in order[i + 1 :] if left > right)
     return inversions, len(order)
+
+
+def order_breaks(blocks: list[Block], gold_paragraphs: list[str]) -> int:
+    """Adjacent descents in the parser's reading order of gold paragraphs.
+
+    Each break is one place a reader jumps backwards (e.g. a column read out
+    of turn), however far the jump; a single displaced paragraph is one break.
+    """
+    order = _matched_order(blocks, gold_paragraphs)
+    return sum(1 for left, right in zip(order, order[1:], strict=False) if left > right)
 
 
 #: The 4.1a chrome rule: top/bottom band height ratio and minimum repeat pages.
@@ -285,6 +305,7 @@ class DocScore:
     reference_recall: float = 0.0
     column_inversions: int = 0
     paragraphs_matched: int = 0
+    order_breaks: int = 0
     chrome_leakage: int = 0
     zw_chars: int = 0
     parse_seconds: float = 0.0
@@ -306,6 +327,7 @@ class ParserReport:
     mean_latency_s: float
     total_cost_usd: float
     total_column_inversions: int = 0
+    total_order_breaks: int = 0
     total_chrome_leakage: int = 0
     total_zw_chars: int = 0
     p95_parse_seconds: float = 0.0
@@ -336,6 +358,7 @@ def aggregate(
         mean_latency_s=_mean([d.parse_seconds for d in doc_scores]),
         total_cost_usd=sum(d.est_cost_usd for d in doc_scores),
         total_column_inversions=sum(d.column_inversions for d in ok),
+        total_order_breaks=sum(d.order_breaks for d in ok),
         total_chrome_leakage=sum(d.chrome_leakage for d in ok),
         total_zw_chars=sum(d.zw_chars for d in ok),
         p95_parse_seconds=p95([d.parse_seconds for d in doc_scores]),
