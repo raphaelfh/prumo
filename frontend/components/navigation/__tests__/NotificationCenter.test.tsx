@@ -328,7 +328,7 @@ describe("NotificationCenter — AI batch origin and stop reason", () => {
 
     it("never shows an unknown stop code's raw text", async () => {
         await openBellWith(aiBatchJob({stopCode: "SOMETHING_NEW"}));
-        expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+        expect(await screen.findByText("Stopped for an unexpected reason")).toBeInTheDocument();
         expect(screen.queryByText(/SOMETHING_NEW/)).not.toBeInTheDocument();
     });
 

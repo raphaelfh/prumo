@@ -194,6 +194,16 @@ describe('BatchDetailsSheet', () => {
     expect(screen.getByText('Stopped: agent-started runs were turned off for this project')).toBeInTheDocument();
   });
 
+  it('explains an unknown stop code without showing it', () => {
+    useBatchDetailMock.mockReturnValue({
+      data: detail({state: 'stopped', stalled: false, stop_code: 'SOMETHING_NEW'}),
+    });
+    render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByText('Stopped for an unexpected reason')).toBeInTheDocument();
+    expect(screen.queryByText(/SOMETHING_NEW/)).not.toBeInTheDocument();
+  });
+
   it('gives a queued item withheld by an agent guard its own reason', () => {
     useBatchDetailMock.mockReturnValue({
       data: detail({
@@ -233,7 +243,7 @@ describe('BatchDetailsSheet', () => {
     });
     render(<MemoryRouter><BatchDetailsSheet batchId="b1" onOpenChange={vi.fn()} /></MemoryRouter>);
 
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Not completed for an unexpected reason')).toBeInTheDocument();
     expect(screen.queryByText(/SOMETHING_NEW/)).not.toBeInTheDocument();
   });
 });

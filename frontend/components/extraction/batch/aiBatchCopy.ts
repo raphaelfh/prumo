@@ -9,7 +9,7 @@ type AiBatchKey = keyof typeof aiBatch;
 
 // Batch stop codes (extraction_batch.ENGINE_STOP_CODES and
 // extraction_batch_agent_guard) mapped to their `aiBatch` copy key. A code not
-// mapped here reads `reasonUnknown` — never the raw code.
+// mapped here reads `bellStoppedUnknown` — never the raw code.
 const STOP_CODE_COPY_KEY: Record<string, AiBatchKey> = {
   MISSING_API_KEY: 'bellStoppedMissingKey',
   ENGINE_RETIRED: 'bellStoppedEngineRetired',
@@ -23,7 +23,7 @@ const ENGINE_STOP_CODES = new Set(['MISSING_API_KEY', 'ENGINE_RETIRED', 'LLM_END
 
 export function stopCodeMessage(code: string | null): string {
   const key = code == null ? undefined : STOP_CODE_COPY_KEY[code];
-  return t('aiBatch', key ?? 'reasonUnknown');
+  return t('aiBatch', key ?? 'bellStoppedUnknown');
 }
 
 /** A stop the user fixes in the engine settings (vs. an agent guard). */

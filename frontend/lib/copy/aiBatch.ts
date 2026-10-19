@@ -42,6 +42,7 @@ export const aiBatch = {
   bellStoppedTokenInactive: "Stopped: the agent's access token was revoked or expired",
   bellStoppedAgentRunsDisabled: 'Stopped: agent-started runs were turned off for this project',
   bellStoppedEngineChanged: "Stopped: the project's AI engine changed after approval",
+  bellStoppedUnknown: 'Stopped for an unexpected reason',
   bellCancelled: 'Cancelled: {{done}} done, {{notRun}} not run',
   bellStalled: 'No progress for 15 minutes',
 
@@ -74,7 +75,7 @@ export const aiBatch = {
   reasonPdfNotFound: 'No PDF',
   reasonExtractionFailed: 'Extraction failed',
   reasonSectionsFailed: '{{failed}} of {{total}} sections failed',
-  reasonUnknown: 'Unavailable',
+  reasonUnknown: 'Not completed for an unexpected reason',
 
   // Row status
   rowQueued: 'Queued for AI',
