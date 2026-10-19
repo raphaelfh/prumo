@@ -19,7 +19,7 @@ from app.api.mcp.errors import McpErrorCode, McpToolError
 from app.api.mcp.server import agent_tool
 from app.schemas.mcp_article_text import McpTextPage, chunk_locator_prefix
 from app.services import article_read_service
-from app.services.article_text_block_read_service import page_text_blocks
+from app.services.article_text_block_read_service import last_page_number, page_text_blocks
 from app.utils.opaque_cursor import INT4_MAX, InvalidCursorError
 from app.utils.untrusted import (
     envelope_close,
@@ -118,5 +118,12 @@ async def get_article_text(
         raise McpToolError(
             McpErrorCode.INVALID_ARGUMENT, "cursor is not valid; restart without it", field="cursor"
         ) from exc
+
+    if page_from is not None and not page.chunks:
+        # Only an empty page pays for the extra read: the normal path stays one query.
+        last = await last_page_number(db, file.id)
+        if last is not None and page_from > last:
+            note = f"page_from {page_from} is beyond the last page ({last})."
+            return _render(article_id, file.id, None, note)
 
     return _render(article_id, file.id, page, None)

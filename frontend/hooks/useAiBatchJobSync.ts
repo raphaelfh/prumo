@@ -60,6 +60,8 @@ function toJob(summary: ExtractionBatchSummary, existing: BackgroundJob | undefi
       stalled: summary.stalled,
       stopCode: summary.stop_code,
       counts: summary.counts,
+      startedByAgent: summary.started_by_agent,
+      agentTokenName: summary.agent_token_name,
     },
   };
 }

@@ -62,6 +62,8 @@ export const templateConfig = {
   deleteGroupCascadeWarning:
     'Deleting this repeating group also deletes {{children}} per-{{noun}} section(s) inside it and their {{fields}} field(s)',
   deleteRepeatingGroup: 'Delete repeating group…',
+  // Badge on a diff row whose change alters the AI prompt or output schema.
+  diffAffectsAiBadge: 'AI input',
   // Attribute names, so a row says "Required" instead of "is_required".
   // Descriptive only: NO row claims a downstream effect, which is what
   // `validation_schema` requires (it has no functional reader anywhere in

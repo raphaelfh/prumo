@@ -58,6 +58,7 @@ function readModel(overrides: Record<string, unknown> = {}) {
     review_type: 'predictive_model',
     picots_enabled: true,
     preview: '- Population: Adults\n  Include: NYHA II-IV',
+    revision: 3,
     ...overrides,
   };
 }
@@ -116,6 +117,7 @@ describe('ReviewQuestionSection — review question (no template)', () => {
     const body = mutate.mock.calls[0][0];
     expect(body.picots.population.description).toBe('Adults!');
     expect(body.picots_enabled).toBe(true);
+    expect(body.expected_revision).toBe(3);
   });
 
   it('APPENDS a criterion instead of replacing the list', async () => {
@@ -263,7 +265,8 @@ describe('ReviewQuestionSection footer', () => {
 });
 
 describe('ReviewQuestionSection — flat layout (spec 2026-09-13 §4.3, §10)', () => {
-  const INTRO = 'What this review is asking. Sent to the AI with every extraction and quality assessment.';
+  const INTRO =
+    'What this review is asking. Sent to the AI with every extraction and quality assessment, together with the eligibility criteria and study designs from the project details.';
   const groupOf = (el: Element | null) => el?.closest('.border-t') as HTMLElement | null;
 
   it('renders the intro line in place of the section heading', () => {

@@ -82,6 +82,8 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
         {
             "articles[].hits[].block_type",
             "articles[].hits[].locator",
+            "articles[].locators[].block_type",
+            "articles[].locators[].locator",
             "next_cursor",
             "note",
         }
@@ -95,6 +97,9 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
             "articles[].run.stage",
             "articles[].rows[].evidence[].locator",
             "articles[].rows[].run_stage",
+            "articles[].rows[].provenance.schema_sha256",
+            "articles[].rows[].provenance.text_sha256",
+            "articles[].rows[].provenance.prompt_version",
             "next_cursor",
         }
     ),
@@ -103,10 +108,19 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
             "kind",
             "sections[].cardinality",
             "sections[].questions[].type",
+            "sections[].questions[].flags[]",
             "draft_diff.status",
             "draft_diff.changes[].tier",
             "draft_diff.changes[].variant",
             "draft_diff.changes[].attribute",
+            "draft_diff.fingerprint",
+            "fingerprint",
+            "status",
+            "changes[].tier",
+            "changes[].variant",
+            "changes[].attribute",
+            "note",
+            "editor_url",
             "next_cursor",
         }
     ),
@@ -116,12 +130,37 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
             "diff.changes[].tier",
             "diff.changes[].variant",
             "diff.changes[].attribute",
+            "diff.fingerprint",
             "draft_fingerprint",
             "editor_url",
             "next_step",
         }
     ),
     "update_project_details": frozenset({"note"}),
+    "get_review_question": frozenset({"review_type", "slots{}.label", "note"}),
+    "set_review_question": frozenset({"review_type", "slots{}.label", "note"}),
+    "list_template_catalogue": frozenset({"next_step", "note"}),
+    "get_setup_readiness": frozenset({"items[].next_step"}),
+    "plan_ai_run": frozenset(
+        {
+            "template.kind",
+            "engine.provider",
+            "blockers[].message",
+            "blockers[].fix",
+            "warnings[].message",
+            "plan_token",
+        }
+    ),
+    "start_ai_run": frozenset({"engine.provider", "engine.mode"}),
+    "get_ai_runs": frozenset(
+        {
+            "runs[].stop_code",
+            "run.stop_code",
+            "run.attention_items[].reason_code",
+            "run.next_cursor",
+        }
+    ),
+    "cancel_ai_run": frozenset(),
 }
 _FLAG_FIELDS = frozenset({"untrusted_content", "untrusted_fields"})
 _PINNED_FORMATS = frozenset({"uuid", "date-time"})
@@ -159,8 +198,8 @@ def _text_paths(schema: dict, defs: dict, path: str) -> set[str]:
     return set()
 
 
-async def test_untrusted_fields_declare_every_untrusted_string(mcp_client, pat_primary_rw):
-    async with mcp_client(pat_primary_rw) as client:
+async def test_untrusted_fields_declare_every_untrusted_string(mcp_client, pat_primary_rw_ai_run):
+    async with mcp_client(pat_primary_rw_ai_run) as client:
         tools = [t for t in (await client.list_tools()).tools if t.output_schema is not None]
 
     assert {t.name for t in tools} == set(_TRUSTED_PATHS)
@@ -205,6 +244,9 @@ async def test_read_results_carry_raw_text_and_the_untrusted_flag(
         "get_article_pdf": {"article_id": str(article)},
         "get_extractions": template,
         "get_template": template,
+        "get_review_question": project,
+        "list_template_catalogue": {**project, "kind": "extraction"},
+        "get_setup_readiness": project,
     }
     bodies = {}
     for name, args in calls.items():

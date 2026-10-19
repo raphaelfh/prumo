@@ -26,7 +26,7 @@ from app.llm.prompts import (
     content_version,
     render_ancestry,
     render_general_instructions_section,
-    render_review_context_section,
+    render_review_question_section,
 )
 
 NAME = "entry_identification"
@@ -142,7 +142,7 @@ VERSION = content_version(
     _INSTRUCTION_TEMPLATE,
     _ANCESTRY_TEMPLATE,
     _ALLOWED_VALUES_TEMPLATE,
-    render_review_context_section("x"),
+    render_review_question_section("x"),
     render_general_instructions_section("x"),
     render_ancestry((Ancestor("x", "x"),)),
 )
@@ -157,7 +157,7 @@ def render(
     instruction: str | None = None,
     allowed_values: Any = None,
     general_instructions: str | None = None,
-    review_context: str | None = None,
+    review_question: str | None = None,
     existing_keys: list[str] | None = None,
     ancestors: tuple[Ancestor, ...] = (),
 ) -> str:
@@ -176,6 +176,6 @@ def render(
         instruction_section=_render_instruction_section(instruction),
         allowed_values_section=_render_allowed_values_section(key_label, allowed_values),
         general_instructions_section=render_general_instructions_section(general_instructions),
-        review_context_section=render_review_context_section(review_context),
+        review_context_section=render_review_question_section(review_question),
         existing_section=_render_existing_section(entry_label, key_label, existing_keys),
     )

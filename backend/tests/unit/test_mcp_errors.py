@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.exc import DBAPIError
 
 from app.api.mcp.errors import (
+    AUDITED_CODES,
     NOT_FOUND_MESSAGE,
     McpErrorCode,
     McpToolError,
@@ -39,18 +40,59 @@ class _PgLike(Exception):
 
 
 def test_every_code_renders_with_its_retryability() -> None:
-    assert len(McpErrorCode) == 15
+    assert len(McpErrorCode) == 24
+    assert {c.value for c in McpErrorCode} == {
+        "NOT_FOUND",
+        "MANAGER_REQUIRED",
+        "REVIEWER_REQUIRED",
+        "SCOPE_INSUFFICIENT",
+        "INVALID_ARGUMENT",
+        "DRAFT_LOCK_HELD",
+        "NARROW_BASELINE",
+        "NO_PUBLISHED_VERSION",
+        "OP_NOT_ALLOWED_VIA_AGENT",
+        "TOO_MANY_OPS",
+        "FIELD_NOT_EDITABLE",
+        "STALE_VALUE",
+        "DUPLICATE_NAME",
+        "IN_USE",
+        "STRUCTURE_CONFLICT",
+        "RETRY",
+        "RATE_LIMITED",
+        "INTERNAL_ERROR",
+        "AI_RUNS_NOT_ALLOWED",
+        "PLAN_STALE",
+        "AI_NOT_CONFIGURED",
+        "AI_RUN_ACTIVE",
+        "AI_RUN_LIMIT",
+        "SERVICE_UNAVAILABLE",
+    }
     for code in McpErrorCode:
         r = error_result(McpToolError(code, "m"))
         assert r.is_error is True
         assert r.structured_content is not None
         assert r.structured_content["code"] == code.value
         assert r.structured_content["retryable"] is (
-            code in {McpErrorCode.DUPLICATE_NAME, McpErrorCode.RETRY, McpErrorCode.RATE_LIMITED}
+            code
+            in {
+                McpErrorCode.DUPLICATE_NAME,
+                McpErrorCode.RETRY,
+                McpErrorCode.RATE_LIMITED,
+                McpErrorCode.SERVICE_UNAVAILABLE,
+            }
         )
         assert isinstance(r.structured_content["next_step"], str)
         assert r.structured_content["next_step"] != ""
         assert json.loads(r.content[0].text) == r.structured_content
+
+
+@pytest.mark.parametrize("code", ["IN_USE", "STRUCTURE_CONFLICT"])
+def test_structure_codes_are_audited_and_not_retryable(code: str) -> None:
+    member = McpErrorCode(code)
+    assert member in AUDITED_CODES
+    r = error_result(McpToolError(member, "m"))
+    assert r.structured_content is not None
+    assert r.structured_content["retryable"] is False
 
 
 def test_extras_ride_the_payload() -> None:

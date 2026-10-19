@@ -22,4 +22,6 @@ export const projectKeys = {
     [...projectKeys.all, 'connections', projectId] as const,
   aiContext: (projectId: string) =>
     [...projectKeys.all, 'ai-context', projectId] as const,
+  aiPolicy: (projectId: string) =>
+    [...projectKeys.all, 'ai-policy', projectId] as const,
 } as const;

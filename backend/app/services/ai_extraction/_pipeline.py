@@ -18,12 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.domain.evidence_block_refs import BlockRefIndex
 from app.infrastructure.parsing.base import ParsedBlock
 from app.infrastructure.storage import StorageAdapter
-from app.llm.extractor import StructuredCall
+from app.llm.extractor import LlmUsage, StructuredCall
 from app.llm.prompts import Ancestor
 from app.llm.provider import build_model
 from app.models.extraction import ExtractionRun
+from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -38,7 +40,9 @@ from app.repositories import (
     ExtractionRunRepository,
 )
 from app.schemas.llm_target import LlmTarget
+from app.schemas.prompt_composition import TemplateVersionRef
 from app.services.ai_extraction.landing import ProposalLanding
+from app.services.ai_usage_metering import UsageContext, UsageSink, metered
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_snapshot import entity_types_for_version
@@ -68,18 +72,26 @@ class Pipeline:
         attempt_id: UUID | None,
         owns_transactions: bool,
         llm: StructuredCall,
+        usage_sink: UsageSink,
+        allow_global_key: bool,
     ) -> None:
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
         self.attempt_id = attempt_id
-        self.llm = llm
+        #: The run the model calls are billed to — set by the flow that opens
+        #: it; ``None`` before (the ledger then skips the call).
+        self.current_run: ExtractionRun | None = None
+        #: Every model call is metered into the usage ledger.
+        self.llm = metered(llm, usage_sink, self._usage_context)
         self.logger = get_logger("AiExtraction")
         self.credentials = credentials or EngineCredentials(None, None, None, None, None)
         self._key_provider = key_provider
         self._repin = repin
         self._owns_transactions = owns_transactions
+        #: False for an agent-started batch: no rung reaches the deployment key.
+        self._allow_global_key = allow_global_key
         self.article_files = ArticleFileRepository(db)
         self.entity_types = ExtractionEntityTypeRepository(db)
         self.instances = ExtractionInstanceRepository(db)
@@ -93,12 +105,43 @@ class Pipeline:
         #: Assembly of the run's article text (anchor blocks, truncation,
         #: source file) — set once per run by :meth:`assemble_prompt_text`.
         self.prompt_input: PromptInputInfo | None = None
+        #: The prompt's blocks by citation ref — what an evidence ``block_ref``
+        #: resolves against; empty until :meth:`assemble_prompt_text`.
+        self.block_ref_index = BlockRefIndex([])
         #: Enclosing-entry chains per ``(run, instance)`` — ``_ancestry``.
         self.ancestry: dict[tuple[UUID, UUID], tuple[Ancestor, ...]] = {}
         self._field_filter = LlmFieldFilter()
         self._filter_run_id: UUID | None = None
         #: The pinned tree per ``(run, version)`` — ``pinned_entity_types``.
         self._pinned: dict[tuple[UUID, UUID], list[Any]] = {}
+        #: The pinned template version's number per ``version_id``.
+        self._template_versions: dict[UUID, TemplateVersionRef] = {}
+
+    def _usage_context(self) -> UsageContext:
+        """Read per model call: the run, the adopted engine and the
+        re-keyed credentials all settle after the pipeline is built."""
+        run = self.current_run
+        scope = self.credentials.key_scope
+        return UsageContext(
+            project_id=run.project_id if run is not None else None,
+            owner_id=UUID(self.user_id),
+            run_id=run.id if run is not None else None,
+            attempt_id=self.attempt_id,
+            provider=self.engine.provider,
+            model=self.engine.model,
+            key_scope=scope.value if scope is not None else None,
+        )
+
+    async def add_run_usage(self, run_id: UUID, usage: LlmUsage) -> None:
+        """Add a flow's ``ok`` usage to the run's ``results.tokens`` — every
+        flow, on a run it owns or one it reuses, so the run total is the sum
+        of the run's ``ok`` ledger rows. Usage behind a section or verify
+        that failed after answered calls is in the ledger only, and a flow
+        that fails rolls its addition back: the ledger is authoritative for
+        failed paths."""
+        await self.runs.add_tokens(
+            run_id, prompt=usage.prompt_tokens, completion=usage.completion_tokens
+        )
 
     @property
     def anchor_blocks(self) -> list[ParsedBlock]:
@@ -107,6 +150,10 @@ class Pipeline:
     @property
     def anchor_file_id(self) -> UUID | None:
         return self.prompt_input.anchor_file_id if self.prompt_input else None
+
+    @property
+    def anchor_content_version(self) -> int | None:
+        return self.prompt_input.content_version if self.prompt_input else None
 
     async def adopt_frozen_engine(
         self, run_id: UUID, candidate: LlmTarget, project_id: UUID
@@ -133,6 +180,7 @@ class Pipeline:
             engine=self.engine,
             current=self.credentials,
             keyed_for=self._key_provider,
+            allow_global_key=self._allow_global_key,
         )
         if rekeyed is not None:
             self.credentials = rekeyed
@@ -144,6 +192,12 @@ class Pipeline:
                 connection_id=self.engine.connection_id,
                 key_scope=rekeyed.key_scope.value if rekeyed.key_scope is not None else None,
             )
+        if not self._allow_global_key:
+            # Agent batch: build the model now, so a refused deployment key
+            # fails the whole request (MISSING_API_KEY stops the batch) before
+            # any external work — the section loops would record it per
+            # section and report a generic failure.
+            self.wire_model()
         return self.engine.model
 
     async def before_external_work(self) -> None:
@@ -164,6 +218,7 @@ class Pipeline:
             api_key=self.credentials.api_key,
             base_url=self.credentials.base_url,
             output_mode=self.credentials.output_mode,
+            allow_global_key=self._allow_global_key,
         )
 
     async def assemble_prompt_text(self, article_id: UUID, model: str) -> str:
@@ -183,6 +238,7 @@ class Pipeline:
             trace_id=self.trace_id,
         )
         self.prompt_input = info
+        self.block_ref_index = BlockRefIndex(info.anchor_blocks)
         return text
 
     async def pinned_entity_types(self, run: ExtractionRun) -> list[Any]:
@@ -194,6 +250,23 @@ class Pipeline:
                 self.db, version_id=run.version_id, template_id=run.template_id
             )
         return self._pinned[key]
+
+    async def template_version_ref(self, run: ExtractionRun) -> TemplateVersionRef:
+        """``{id, version}`` of the template version *run* is pinned to now —
+        one read per pin. Read before a section's model calls, so a republish
+        that re-pins the run while the model runs does not relabel them."""
+        ref = self._template_versions.get(run.version_id)
+        if ref is None:
+            version = (
+                await self.db.execute(
+                    select(ExtractionTemplateVersion.version).where(
+                        ExtractionTemplateVersion.id == run.version_id
+                    )
+                )
+            ).scalar_one()
+            ref = TemplateVersionRef(id=str(run.version_id), version=version)
+            self._template_versions[run.version_id] = ref
+        return ref
 
     async def entity_type_on_run(
         self, run: ExtractionRun, entity_type_id: UUID

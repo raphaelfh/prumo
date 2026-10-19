@@ -14,6 +14,11 @@ from collections.abc import Sequence
 from typing import Final
 from uuid import UUID
 
+#: Room a capped result reserves for its `next_cursor`: a page is measured with
+#: the cursor `None`, and a non-final page replaces that with a base64 string
+#: whose length grows with the encoded values.
+CURSOR_RESERVE: Final = 64
+
 
 class InvalidCursorError(ValueError):
     """A cursor string that does not decode to a well-formed value list."""

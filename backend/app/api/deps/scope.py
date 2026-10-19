@@ -14,8 +14,10 @@ non-member). Used by the ten run-scoped endpoints and by the kickoff gate.
 an AI kickoff posts, bound before any work is queued; each branch ends in
 ``assert_ai_kickoff``.
 
-``assert_ai_kickoff`` — THE AI kickoff gate (role, then credentials), shared
-by every endpoint that queues AI work.
+``assert_ai_kickoff`` — THE per-article AI kickoff gate (role, then
+credentials). The batch kickoff checks the role at its endpoint and runs the
+same credential precheck inside ``ExtractionBatchService.start``, its one
+start path.
 """
 
 from uuid import UUID

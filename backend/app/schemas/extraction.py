@@ -9,11 +9,22 @@ from enum import Enum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 # Mirrors ``ExtractionFramework`` (app.models.extraction) — declared once in the
 # schema layer so request/response models never import the ORM enum.
 Framework = Literal["CHARMS", "PICOS", "CUSTOM"]
+
+# The appraisal instrument a template implements (column ``instrument``, 0087).
+InstrumentCode = Literal["charms", "charms_mm", "probast", "probast_ai", "quadas2", "custom"]
+# Fixed prompt label per code; ``custom`` has none: the template's own name.
+INSTRUMENT_LABELS: dict[str, str] = {
+    "charms": "CHARMS",
+    "charms_mm": "CHARMS + Multimodal (ML prediction)",
+    "probast": "PROBAST",
+    "probast_ai": "PROBAST+AI",
+    "quadas2": "QUADAS-2",
+}
 
 # =================== INTERNAL ASSEMBLY SCHEMAS ===================
 
@@ -613,3 +624,15 @@ def parse_position(
     if raw is None:
         return None
     return PositionV1.model_validate(raw)
+
+
+def stored_anchor(raw: dict[str, Any] | None) -> PositionV1 | None:
+    """The anchor a stored position parses to, or ``None`` for a missing,
+    empty or invalid one. ``grounded`` on every evidence read is exactly
+    ``stored_anchor(position) is not None``."""
+    if not raw:
+        return None
+    try:
+        return parse_position(raw)
+    except (ValidationError, ValueError):
+        return None

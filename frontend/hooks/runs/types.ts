@@ -247,6 +247,16 @@ export interface RunViewResponse extends RunDetailResponse {
    * same helper the AI prompts call — so the screen can never show a text the
    * model did not get. Null when the pinned version declares none. */
   general_instructions?: string | null;
+  /** The project's review question this run is PINNED to (null before the
+   * first AI call, or when the review says nothing). */
+  review_question: string | null;
+  /** Protocol revision the pinned question was built from; null when nothing
+   * is pinned yet or the pin predates revisions. */
+  review_question_revision: number | null;
+  /** The project's protocol revision now. */
+  project_protocol_revision: number | null;
+  /** The protocol moved since this run pinned its review question. */
+  review_question_drift: boolean;
 }
 
 /**

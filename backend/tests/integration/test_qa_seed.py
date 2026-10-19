@@ -196,3 +196,31 @@ async def test_seed_is_idempotent(db_session: AsyncSession) -> None:
     ).scalar()
     assert template_count_after == template_count_before
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_every_seeded_global_carries_its_instrument_code(db_session: AsyncSession) -> None:
+    from app.seed import (
+        _CHARMS_TEMPLATE_ID,
+        _MM_TEMPLATE_ID,
+        _PROBAST_TEMPLATE_ID,
+        _QUADAS2_TEMPLATE_ID,
+    )
+    from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
+
+    expected = {
+        _CHARMS_TEMPLATE_ID: "charms",
+        _MM_TEMPLATE_ID: "charms_mm",
+        _PROBAST_TEMPLATE_ID: "probast",
+        _QUADAS2_TEMPLATE_ID: "quadas2",
+        _PROBAST_AI_TEMPLATE_ID: "probast_ai",
+    }
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT id, instrument FROM public.extraction_templates_global WHERE id = ANY(:ids)"
+            ),
+            {"ids": list(expected)},
+        )
+    ).all()
+    assert dict(rows) == expected

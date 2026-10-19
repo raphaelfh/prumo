@@ -19,13 +19,21 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from app.llm import entailment
 from app.llm.extractor import LlmUsage
 from app.llm.prompts import Ancestor, Scope, entry_identification
-from app.models.extraction import ExtractionInstance, ExtractionRun
+from app.models.extraction import ExtractionRun
+from app.models.extraction_instance import ExtractionInstance
+from app.schemas.prompt_composition import TemplateVersionRef
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._ancestry import ancestry_of, noun_of
 from app.services.ai_extraction._candidates import build_candidates
-from app.services.ai_extraction._model_calls import FieldCall, extract_fields, verify_and_snapshot
+from app.services.ai_extraction._model_calls import (
+    FieldCall,
+    extract_fields,
+    pass_detail,
+    verify_and_snapshot,
+)
 from app.services.ai_extraction._pipeline import Pipeline
 from app.services.ai_extraction.landing import Generation, SingletonSlot
 from app.services.entity_key import existing_keys, key_field_of
@@ -77,6 +85,8 @@ async def extract_into_instances(
         memory_context=memory_context,
         prompt_context=prompt_context,
         skip_settled=skip_fields_with_human_proposals,
+        # Read before any model call: the pin the prompts are built from.
+        template_version=await p.template_version_ref(run),
     )
     key_field = key_field_of(entity_type)
     if key_field is None:
@@ -96,6 +106,7 @@ class _SectionArgs:
     memory_context: list[dict[str, str]] | None
     prompt_context: RunPromptContext | None
     skip_settled: bool
+    template_version: TemplateVersionRef
 
 
 async def _extract_singleton(
@@ -129,6 +140,10 @@ async def _extract_entry_group(
     ancestors = await ancestry_of(p, a.run, a.parent_instance_id)
     entry_label = noun_of(a.entity_type)
     names, usage = await _identify_entries(p, a, key_field, entry_label, ancestors)
+    # The group's ONE identify pass, recorded in every entry's snapshot.
+    identify = pass_detail(
+        entry_identification.NAME, entry_identification.VERSION, usage
+    ).model_dump()
 
     count = 0
     extracted: dict[str, Any] = {}
@@ -164,7 +179,7 @@ async def _extract_entry_group(
             ancestors=ancestors,
         )
         call = await _ask(p, a, entry_fields, scope)
-        written, call_usage = await _verify_and_land(p, a, slot.instance, call)
+        written, call_usage = await _verify_and_land(p, a, slot.instance, call, identify=identify)
         count += written
         usage = usage + call_usage
         extracted = call.extracted
@@ -193,8 +208,16 @@ async def _verify_and_land(
     a: _SectionArgs,
     instance: ExtractionInstance | SingletonSlot,
     call: FieldCall,
+    *,
+    identify: dict[str, Any] | None = None,
 ) -> tuple[int, LlmUsage]:
-    """Verify the call, build its candidates, land them; ``(written, usage)``."""
+    """Verify the call, build its candidates, land them; ``(written, usage)``
+    with ``usage`` summed over extract, verify and the entailment judge.
+
+    ``identify`` (an entry group's identify pass) leads the snapshot's
+    ``passes_detail``; the entailment pass, known only once the candidates
+    are built, is appended before the landing.
+    """
     verdicts, usage, snapshot = await verify_and_snapshot(
         p,
         run_id=a.run.id,
@@ -202,12 +225,26 @@ async def _verify_and_land(
         kind=a.run.kind,
         pdf_text=a.pdf_text,
         call=call,
+        template_version=a.template_version,
+        identify=identify,
     )
-    section, candidates = await build_candidates(
-        p, run=a.run, entity_type_id=a.entity_type.id, extracted=call.extracted, verdicts=verdicts
+    section, candidates, entailment_usage = await build_candidates(
+        p,
+        run=a.run,
+        entity_type_id=a.entity_type.id,
+        extracted=call.extracted,
+        verdicts=verdicts,
+        grounding_retries=call.grounding_retries,
     )
+    # Section usage covers every call behind it, the entailment judge included.
+    usage = usage + entailment_usage
     if not candidates:
         return 0, usage
+    # A judge call that answered always reports tokens or a response id.
+    if snapshot is not None and (entailment_usage.total_tokens or entailment_usage.request_ids):
+        snapshot["passes_detail"].append(
+            pass_detail(entailment.NAME, entailment.VERSION, entailment_usage).model_dump()
+        )
     written = await p.landing.land(
         a.run, section, instance, candidates, Generation(p.engine, snapshot, p.attempt_id)
     )
@@ -252,7 +289,7 @@ async def _identify_entries(
             instruction=getattr(a.entity_type, "description", None),
             allowed_values=getattr(key_field, "allowed_values", None),
             general_instructions=context.general_instructions,
-            review_context=context.review_context,
+            review_question=context.review_question,
             existing_keys=already,
             ancestors=ancestors,
         ),

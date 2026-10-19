@@ -29,12 +29,12 @@ function Wrapper({children}: {children: ReactNode}) {
 }
 
 const singleCitation: EvidenceCitation[] = [
-  {text: 'some evidence text', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0},
+  {text: 'some evidence text', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0, grounded: true, stale: false},
 ];
 
 const twoCitations: EvidenceCitation[] = [
-  {text: 'primary evidence', pageNumber: 2, blockIds: [1], attributionLabel: 'entailed', rank: 0},
-  {text: 'secondary evidence', pageNumber: 5, blockIds: [10], attributionLabel: 'weak', rank: 1},
+  {text: 'primary evidence', pageNumber: 2, blockIds: [1], attributionLabel: 'entailed', rank: 0, grounded: true, stale: false},
+  {text: 'secondary evidence', pageNumber: 5, blockIds: [10], attributionLabel: 'weak', rank: 1, grounded: true, stale: false},
 ];
 
 describe('AISuggestionEvidence', () => {
@@ -81,7 +81,7 @@ describe('AISuggestionEvidence', () => {
     it('renders without crashing when no locate (no viewer state needed)', () => {
       const {unmount} = render(
         <AISuggestionEvidence
-          evidence={[{text: 'safe', pageNumber: null, blockIds: [], attributionLabel: null, rank: 0}]}
+          evidence={[{text: 'safe', pageNumber: null, blockIds: [], attributionLabel: null, rank: 0, grounded: true, stale: false}]}
         />,
         {wrapper: Wrapper},
       );
@@ -163,6 +163,8 @@ describe('AISuggestionEvidence', () => {
           blockIds: [],
           attributionLabel: 'unsupported',
           rank: 0,
+          grounded: true,
+          stale: false,
         },
       ];
       render(<AISuggestionEvidence evidence={unsupportedCitation} />, {wrapper: Wrapper});
@@ -180,7 +182,7 @@ describe('AISuggestionEvidence', () => {
   describe('(e2) attribution badge carries the clarifying explanation', () => {
     it('annotates "Not supported" so it reads as grading the quote, not the value', () => {
       const unsupportedCitation: EvidenceCitation[] = [
-        {text: 'x', pageNumber: 1, blockIds: [], attributionLabel: 'unsupported', rank: 0},
+        {text: 'x', pageNumber: 1, blockIds: [], attributionLabel: 'unsupported', rank: 0, grounded: true, stale: false},
       ];
       render(<AISuggestionEvidence evidence={unsupportedCitation} />, {wrapper: Wrapper});
       // The badge exposes the explanation (tooltip body) as its accessible name so
@@ -202,8 +204,8 @@ describe('AISuggestionEvidence', () => {
 
   describe('(e3) review presentation keeps attribution badge text at body contrast', () => {
     const graded: EvidenceCitation[] = [
-      {text: 'verified', pageNumber: 1, blockIds: [1], attributionLabel: 'entailed', rank: 0},
-      {text: 'unverifiable', pageNumber: null, blockIds: [], attributionLabel: 'ungroundable', rank: 1},
+      {text: 'verified', pageNumber: 1, blockIds: [1], attributionLabel: 'entailed', rank: 0, grounded: true, stale: false},
+      {text: 'unverifiable', pageNumber: null, blockIds: [], attributionLabel: 'ungroundable', rank: 1, grounded: false, stale: false},
     ];
 
     it('renders tinted badges with foreground text instead of the low-contrast tone text', () => {
@@ -255,6 +257,50 @@ describe('AISuggestionEvidence', () => {
         {wrapper: Wrapper},
       );
       expect(container.querySelector('[data-active-citation="true"]')).toBeNull();
+    });
+  });
+  describe('(i) evidence states — current, stale, ungrounded', () => {
+    const cite = (over: Partial<EvidenceCitation>): EvidenceCitation[] => [
+      {text: 'cited passage', pageNumber: 4, blockIds: [7], attributionLabel: 'entailed', rank: 0, grounded: true, stale: false, ...over},
+    ];
+
+    it.each(['default', 'review'] as const)('current (%s): page chip, attribution badge and a Locate control', (presentation) => {
+      render(<AISuggestionEvidence evidence={cite({})} onLocate={vi.fn()} presentation={presentation} />, {wrapper: Wrapper});
+      expect(screen.getByText('pageLabel')).toBeInTheDocument();
+      expect(screen.getByText('pageLabel')).not.toHaveClass('text-muted-foreground');
+      expect(screen.getByText('attributionEntailed')).toBeInTheDocument();
+      expect(screen.queryByText('evidenceStale')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', {name: 'evidenceLocate'})).toBeInTheDocument();
+    });
+
+    it.each(['default', 'review'] as const)('stale (%s): muted page chip, "may have moved" note and still a Locate control', (presentation) => {
+      render(<AISuggestionEvidence evidence={cite({stale: true})} onLocate={vi.fn()} presentation={presentation} />, {wrapper: Wrapper});
+      expect(screen.getByText('pageLabel')).toHaveClass('text-muted-foreground');
+      expect(screen.getByText('evidenceStale')).toBeInTheDocument();
+      expect(screen.getByRole('button', {name: 'evidenceLocate'})).toBeInTheDocument();
+    });
+
+    it('stale: the note explains the re-parse in its tooltip', async () => {
+      const user = userEvent.setup();
+      render(<TooltipProvider delayDuration={0}><AISuggestionEvidence evidence={cite({stale: true})} /></TooltipProvider>);
+      await user.hover(screen.getByText('evidenceStale'));
+      expect((await screen.findAllByText('evidenceStaleTooltip')).length).toBeGreaterThan(0);
+    });
+
+    it.each(['default', 'review'] as const)('ungrounded (%s): no page chip, "Verify manually" and no Locate control', (presentation) => {
+      const onLocate = vi.fn();
+      render(<AISuggestionEvidence evidence={cite({grounded: false, attributionLabel: 'ungroundable', pageNumber: null})} onLocate={onLocate} presentation={presentation} />, {wrapper: Wrapper});
+      expect(screen.queryByText('pageLabel')).not.toBeInTheDocument();
+      expect(screen.getByText('attributionUngroundable')).toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /evidenceLocate/i})).not.toBeInTheDocument();
+      expect(screen.getByText(/cited passage/)).toBeInTheDocument();
+    });
+
+    it('ungrounded hides a stray page number and shows the verify badge whatever the stored label', () => {
+      render(<AISuggestionEvidence evidence={cite({grounded: false, attributionLabel: null})} onLocate={vi.fn()} />, {wrapper: Wrapper});
+      expect(screen.queryByText('pageLabel')).not.toBeInTheDocument();
+      expect(screen.getByText('attributionUngroundable')).toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /evidenceLocate/i})).not.toBeInTheDocument();
     });
   });
 });

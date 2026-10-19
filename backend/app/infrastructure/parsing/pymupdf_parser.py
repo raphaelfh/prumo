@@ -2,7 +2,10 @@
 
 The free default parser (ADR-0011/0013). Extracts per-block text + real bbox via
 `page.get_text("dict")`, classifying each block as `heading` (relative font size)
-or `paragraph`. Table cells are emitted as `table_cell` blocks via
+or `paragraph`; running heads, footers and page numbers in the top/bottom page
+bands are then typed `header` / `footer` (stored, skipped by the renderer).
+Blocks are emitted in column-aware reading order (`_reading_order`): a two-column
+band reads left column then right column. Table cells are emitted as `table_cell` blocks via
 `page.find_tables()` carrying the native grid (row/col, is_header, per-cell bbox);
 text blocks inside a detected table's bbox are dropped so cells own that text.
 Markdown is NOT produced here — the canonical projection is
@@ -13,7 +16,9 @@ No DB / IO / HTTP — pure given the bytes.
 
 from __future__ import annotations
 
-from typing import Any
+import re
+from collections import defaultdict
+from typing import Any, NamedTuple
 
 import fitz  # PyMuPDF
 
@@ -28,6 +33,35 @@ from app.infrastructure.parsing.base import (
 _HEADING_SIZE_RATIO = 1.25
 #: Headings are short; longer lines that happen to be large are still body text.
 _HEADING_MAX_CHARS = 120
+
+#: Top/bottom chrome band: at most this fraction of the page height.
+_CHROME_BAND_RATIO = 0.08
+#: A digit-masked band text repeated on at least this many pages is chrome.
+_CHROME_MIN_REPEATS = 3
+#: Below this page count, at least half the pages (minimum 2) instead.
+_CHROME_SHORT_DOC_PAGES = 6
+_PAGE_LABEL = re.compile(r"^(?:\d{1,4}|page\s+\d{1,4}(?:\s+of\s+\d{1,4})?)$", re.IGNORECASE)
+#: A bare 4-digit year is chrome only through the repeat rule, never as a label.
+_BARE_YEAR = re.compile(r"^(?:19|20)\d{2}$")
+#: Numbered captions are content even when their digit-masked text repeats.
+_CAPTION = re.compile(r"^(?:table|figure|fig\.?)\s*\d+", re.IGNORECASE)
+_NON_CHROME_TYPES = frozenset({"table_cell", "figure"})
+
+#: An entry at least this fraction of the page width wide spans the columns.
+_FULL_WIDTH_RATIO = 0.60
+#: A horizontal gap at least this fraction of the page width separates columns.
+_COLUMN_GAP_RATIO = 0.02
+
+
+class _Entry(NamedTuple):
+    """One page item (text block, table or figure) awaiting reading order."""
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    kind: str
+    payload: Any
 
 
 def _block_text(block: dict[str, Any]) -> str:
@@ -131,6 +165,119 @@ def _table_to_rows(table: Any) -> tuple[list[list[tuple[str, dict[str, float]]]]
     return rows, header_rows
 
 
+def _is_page_label(text: str) -> bool:
+    """A bare page number (at most 4 digits, not a year) or ``Page n`` / ``Page n of m``."""
+    return bool(_PAGE_LABEL.match(text)) and not _BARE_YEAR.match(text)
+
+
+def _chrome_key(text: str) -> str:
+    """Digit-masked, casefolded, whitespace-collapsed key for repeat counting."""
+    return " ".join(re.sub(r"\d+", "#", text.casefold()).split())
+
+
+def _classify_chrome(
+    per_page: dict[int, list[ParsedBlock]], page_heights: dict[int, float]
+) -> None:
+    """Type running heads, footers and page numbers as ``header`` / ``footer``.
+
+    Pure; mutates ``block_type`` in place. A non-table, non-figure block lying
+    wholly in the top (bottom) band of its page becomes ``header``
+    (``footer``) when its text is a page label, or when its digit-masked key
+    recurs in the same band on enough distinct pages (``_CHROME_MIN_REPEATS``,
+    or half the pages, minimum 2, for a short document). Body text that
+    appears once is never touched, and numbered captions (``Table n``,
+    ``Figure n``, ``Fig. n``) are never chrome.
+    """
+    page_count = len(page_heights)
+    if page_count < _CHROME_SHORT_DOC_PAGES:
+        min_repeats = max(2, -(-page_count // 2))
+    else:
+        min_repeats = _CHROME_MIN_REPEATS
+
+    candidates: list[tuple[ParsedBlock, str, str]] = []
+    pages_by_key: dict[tuple[str, str], set[int]] = defaultdict(set)
+    for page_number, blocks in per_page.items():
+        height = page_heights.get(page_number)
+        if not height:
+            continue
+        band = height * _CHROME_BAND_RATIO
+        for block in blocks:
+            if block.block_type in _NON_CHROME_TYPES:
+                continue
+            text = block.text.strip()
+            if not text or _CAPTION.match(text):
+                continue
+            y, h = block.bbox["y"], block.bbox["height"]
+            if y + h <= band:
+                kind = "header"
+            elif y >= height - band:
+                kind = "footer"
+            else:
+                continue
+            key = _chrome_key(text)
+            candidates.append((block, kind, key))
+            pages_by_key[(kind, key)].add(page_number)
+
+    for block, kind, key in candidates:
+        if _is_page_label(block.text.strip()) or len(pages_by_key[(kind, key)]) >= min_repeats:
+            block.block_type = kind
+
+
+def _entry(rect: Any, kind: str, payload: Any) -> _Entry:
+    x0, y0, x1, y1 = rect
+    return _Entry(float(x0), float(y0), float(x1), float(y1), kind, payload)
+
+
+def _column_boundaries(band: list[_Entry], min_gap: float) -> list[float]:
+    """Midpoints of the x-gaps (>= ``min_gap``) between merged entry intervals."""
+    intervals = sorted((e.x0, e.x1) for e in band)
+    boundaries: list[float] = []
+    _, cur_end = intervals[0]
+    for x0, x1 in intervals[1:]:
+        if x0 - cur_end >= min_gap:
+            boundaries.append((cur_end + x0) / 2)
+        cur_end = max(cur_end, x1)
+    return boundaries
+
+
+def _order_band(band: list[_Entry], page_width: float) -> list[_Entry]:
+    boundaries = _column_boundaries(band, _COLUMN_GAP_RATIO * page_width)
+    if not boundaries:
+        return sorted(band, key=lambda e: (e.y0, e.x0))
+
+    def column(e: _Entry) -> int:
+        center = (e.x0 + e.x1) / 2
+        return sum(1 for b in boundaries if center > b)
+
+    return sorted(band, key=lambda e: (column(e), e.y0, e.x0))
+
+
+def _reading_order(entries: list[_Entry], page_width: float) -> list[_Entry]:
+    """Column-aware reading order for one page. Pure.
+
+    Full-width entries (``>= _FULL_WIDTH_RATIO`` of the page width), in y
+    order, cut the page into horizontal bands and are each emitted as their
+    own band. Within a band, x-gaps of at least ``_COLUMN_GAP_RATIO`` of the
+    page width are column boundaries; entries are ordered column by column
+    (left to right, by x-center), then by ``(y0, x0)``. A band with no gap
+    sorts by ``(y0, x0)``, so a single-column page keeps its plain order.
+    """
+    full_width = _FULL_WIDTH_RATIO * page_width
+    ordered: list[_Entry] = []
+    band: list[_Entry] = []
+    for entry in sorted(entries, key=lambda e: (e.y0, e.x0)):
+        if entry.x1 - entry.x0 >= full_width:
+            if band:
+                ordered.extend(_order_band(band, page_width))
+                band = []
+            ordered.append(entry)
+        else:
+            band.append(entry)
+    if band:
+        ordered.extend(_order_band(band, page_width))
+    return ordered
+
+
 class PymupdfParser(DocumentParser):
     """DocumentParser implementation backed by PyMuPDF (fitz)."""
 
@@ -141,11 +288,15 @@ class PymupdfParser(DocumentParser):
             # (dropping text that overlaps a SUCCESSFULLY converted table so the
             # cells own that text). Gather span sizes for the heading heuristic.
             per_page: dict[int, dict[str, Any]] = {}
+            page_heights: dict[int, float] = {}
+            page_widths: dict[int, float] = {}
             all_sizes: list[float] = []
 
             for page_index in range(doc.page_count):
                 page = doc.load_page(page_index)
                 page_number = page_index + 1
+                page_heights[page_number] = float(page.rect.height)
+                page_widths[page_number] = float(page.rect.width)
 
                 try:
                     found = list(page.find_tables().tables)
@@ -195,27 +346,24 @@ class PymupdfParser(DocumentParser):
 
             median = sorted(all_sizes)[len(all_sizes) // 2] if all_sizes else 0.0
 
-            # Pass 2: interleave text + tables per page in reading order (top-y,
-            # then x) and assign a single monotonic block_index per page.
+            # Pass 2: interleave text + tables per page in column-aware reading
+            # order and assign a single monotonic block_index per page.
             blocks: list[ParsedBlock] = []
             for page_index in range(doc.page_count):
                 page_number = page_index + 1
                 data = per_page.get(page_number, {"text": [], "tables": [], "images": []})
 
-                entries: list[tuple[float, float, str, Any]] = []
-                for block in data["text"]:
-                    x0, y0, x1, y1 = block["bbox"]
-                    entries.append((float(y0), float(x0), "text", block))
-                for rect, rows, header_rows in data["tables"]:
-                    tx0, ty0, _, _ = rect
-                    entries.append((float(ty0), float(tx0), "table", (rows, header_rows)))
-                for img in data.get("images", []):
-                    ix0, iy0, _, _ = img["bbox"]
-                    entries.append((float(iy0), float(ix0), "figure", img))
-                entries.sort(key=lambda e: (e[0], e[1]))
+                entries = [_entry(block["bbox"], "text", block) for block in data["text"]]
+                entries += [
+                    _entry(rect, "table", (rows, header_rows))
+                    for rect, rows, header_rows in data["tables"]
+                ]
+                entries += [_entry(img["bbox"], "figure", img) for img in data.get("images", [])]
 
                 idx = 0
-                for _y, _x, kind, payload in entries:
+                for _x0, _y0, _x1, _y1, kind, payload in _reading_order(
+                    entries, page_widths[page_number]
+                ):
                     if kind == "text":
                         text = _block_text(payload)
                         x0, y0, x1, y1 = payload["bbox"]
@@ -273,6 +421,11 @@ class PymupdfParser(DocumentParser):
                             )
                         )
                         idx += 1
+
+            blocks_by_page: dict[int, list[ParsedBlock]] = defaultdict(list)
+            for block in blocks:
+                blocks_by_page[block.page_number].append(block)
+            _classify_chrome(blocks_by_page, page_heights)
 
             if not blocks:
                 # ``blocks`` here can hold figures / table cells with no text,

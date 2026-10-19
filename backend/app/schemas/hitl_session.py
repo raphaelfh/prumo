@@ -624,6 +624,11 @@ class TemplateChangeRowRead(BaseModel):
     Field-derived: a section answers from the fields it owns, and a REMOVED
     node is always false (every workflow ``field_id`` FK is RESTRICT, so the
     delete would have been refused)."""
+    affects_ai: bool
+    """True when the change alters the prompt or the AI output schema. Every
+    add, remove, move and reorder of a node is true; an attribute change is
+    true only for an attribute the AI receives (``allows_*``, ``unit``,
+    ``allowed_units`` and ``other_label`` are not)."""
 
 
 class TemplateConfigDiffBuckets(BaseModel):

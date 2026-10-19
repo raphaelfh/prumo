@@ -152,6 +152,79 @@ describe('PersonalAccessTokensGroup', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  describe('AI runs grant', () => {
+    const aiBoxName = t('personalAccessTokens', 'aiRunLabel');
+    const expiryName = t('personalAccessTokens', 'expiryLabel');
+    const days = (n: number) => t('personalAccessTokens', 'expiryDays').replace('{{n}}', String(n));
+
+    it('the AI runs box is unchecked by default, explains itself, and the POST carries ai_run: false', async () => {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
+      vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
+      renderGroup();
+      await screen.findByText(t('personalAccessTokens', 'listEmpty'));
+
+      const dialog = await openCreateDialog();
+      const box = within(dialog).getByRole('checkbox', {name: aiBoxName});
+      expect(box).not.toBeChecked();
+      expect(box).toHaveAccessibleDescription(t('personalAccessTokens', 'aiRunHint'));
+      await userEvent.type(within(dialog).getByLabelText(t('personalAccessTokens', 'nameLabel')), 'cli');
+      await userEvent.click(within(dialog).getByRole('button', {name: t('personalAccessTokens', 'createSubmit')}));
+
+      await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
+      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toMatchObject({ai_run: false, expires_in_days: 90});
+    });
+
+    it('checking it resets a longer expiry to 30 days, offers only 30, and the POST carries ai_run: true', async () => {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
+      vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 's', token: ACTIVE}});
+      renderGroup();
+      await screen.findByText(t('personalAccessTokens', 'listEmpty'));
+
+      const dialog = await openCreateDialog();
+      await userEvent.type(within(dialog).getByLabelText(t('personalAccessTokens', 'nameLabel')), 'agent');
+      await userEvent.click(within(dialog).getByRole('combobox', {name: expiryName}));
+      await userEvent.click(screen.getByRole('option', {name: days(365)}));
+      expect(within(dialog).getByRole('combobox', {name: expiryName})).toHaveTextContent(days(365));
+
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: aiBoxName}));
+      expect(within(dialog).getByRole('combobox', {name: expiryName})).toHaveTextContent(days(30));
+      await userEvent.click(within(dialog).getByRole('combobox', {name: expiryName}));
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([days(30)]);
+      await userEvent.keyboard('{Escape}');
+
+      await userEvent.click(within(dialog).getByRole('button', {name: t('personalAccessTokens', 'createSubmit')}));
+      await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
+      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({name: 'agent', scope: 'read', expires_in_days: 30, ai_run: true});
+    });
+
+    it('a row carrying ai_run shows the AI runs badge; one without it does not', async () => {
+      const AI_ROW = {...(ACTIVE as object), id: 'ai-1', name: 'Agent token', ai_run: true} as never;
+      const PLAIN_ROW = {...(ACTIVE as object), id: 'plain-1', name: 'Plain token', ai_run: false} as never;
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [AI_ROW, PLAIN_ROW]});
+      renderGroup();
+      await screen.findByText('Agent token');
+
+      const [aiRow, plainRow] = screen.getAllByRole('listitem');
+      expect(within(aiRow).getByText(t('personalAccessTokens', 'aiRunsBadge'))).toBeInTheDocument();
+      expect(within(plainRow).queryByText(t('personalAccessTokens', 'aiRunsBadge'))).not.toBeInTheDocument();
+    });
+
+    it('a refused create with the box checked still shows the error inline and keeps the dialog open', async () => {
+      vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
+      vi.mocked(svc.createMyToken).mockResolvedValue({ok: false, error: new ApiError('VALIDATION_ERROR', 'expiry too long', 422)});
+      renderGroup();
+      await screen.findByText(t('personalAccessTokens', 'listEmpty'));
+
+      const dialog = await openCreateDialog();
+      await userEvent.type(within(dialog).getByLabelText(t('personalAccessTokens', 'nameLabel')), 'agent');
+      await userEvent.click(within(dialog).getByRole('checkbox', {name: aiBoxName}));
+      await userEvent.click(within(dialog).getByRole('button', {name: t('personalAccessTokens', 'createSubmit')}));
+
+      expect(await within(dialog).findByText('expiry too long')).toBeInTheDocument();
+      expect(within(dialog).getByRole('checkbox', {name: aiBoxName})).toBeChecked();
+    });
+  });
+
   it('reveal: shows the secret once, survives Escape, and clears from state and the mutation cache on done', async () => {
     vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: []});
     vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 'prumo_pat_SECRET', token: ACTIVE}});
@@ -280,7 +353,7 @@ describe('PersonalAccessTokensGroup', () => {
       await userEvent.click(submitButton(dialog));
 
       await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
-      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({name: 'cli', scope: 'read', expires_in_days: 90});
+      expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false});
     });
 
     it('"Only these projects": lists the user\'s projects and posts the selected ids', async () => {
@@ -294,7 +367,7 @@ describe('PersonalAccessTokensGroup', () => {
 
       await waitFor(() => expect(svc.createMyToken).toHaveBeenCalled());
       expect(vi.mocked(svc.createMyToken).mock.calls[0][0]).toEqual({
-        name: 'cli', scope: 'read', expires_in_days: 90, project_ids: [P2],
+        name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false, project_ids: [P2],
       });
     });
 
@@ -374,7 +447,7 @@ describe('PersonalAccessTokensGroup', () => {
       await userEvent.click(submitButton(dialog));
       await waitFor(() => expect(svc.createMyToken).toHaveBeenCalledTimes(2));
       expect(vi.mocked(svc.createMyToken).mock.calls[1][0]).toEqual({
-        name: 'cli', scope: 'read', expires_in_days: 90, project_ids: [P2],
+        name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false, project_ids: [P2],
       });
     });
 

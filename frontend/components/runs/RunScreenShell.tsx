@@ -11,6 +11,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
+import { History } from 'lucide-react';
 
 import { ConsensusResolutionPanel } from '@/components/runs/ConsensusResolutionPanel';
 import { HITLPublishedBanner } from '@/components/runs/HITLStatusBadges';
@@ -28,6 +29,7 @@ import { RunHeader } from '@/components/runs/header';
 // shared compound must stay free of that.
 import { Utility } from '@/components/runs/header/Utility';
 import { ReopenExtractionDialog } from '@/components/extraction/dialogs/ReopenExtractionDialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSidebar } from '@/contexts/SidebarContext';
 import type { SaveState } from '@/hooks/runs';
 import type { RunLifecycleScreen, RunWorklist } from '@/hooks/runs/useRunLifecycleScreen';
@@ -149,6 +151,12 @@ export function RunScreenShell(props: RunScreenShellProps) {
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb onBack={worklist.exit} title={props.title} />
           {props.titleAdornment}
+          {runDetail?.review_question_drift && (
+            <ReviewQuestionDriftChip
+              pinned={runDetail.review_question_revision}
+              current={runDetail.project_protocol_revision}
+            />
+          )}
           <RunHeader.Save
             state={props.save.state ?? 'idle'}
             lastSavedAt={props.save.lastSavedAt ?? null}
@@ -288,5 +296,31 @@ export function RunScreenShell(props: RunScreenShellProps) {
         />
       }
     />
+  );
+}
+
+/** Quiet, non-blocking note: the protocol moved since this run pinned its
+ * review question. The run keeps its pin; new runs use the current one. */
+function ReviewQuestionDriftChip({ pinned, current }: { pinned: number | null; current: number | null }) {
+  const tooltip = t('runs', 'reviewQuestionChangedTooltip')
+    .replace('{{pinned}}', String(pinned ?? ''))
+    .replace('{{current}}', String(current ?? ''));
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* Folds to its glyph on a narrow header bar, like the save slot. */}
+        <span
+          tabIndex={0}
+          data-testid="review-question-drift-chip"
+          className="flex shrink-0 items-center gap-1 rounded-sm border border-border/60 px-1.5 py-0.5 text-[11px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <History className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+          <span className="whitespace-nowrap sr-only @[48rem]/headerbar:not-sr-only">
+            {t('runs', 'reviewQuestionChanged')}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }

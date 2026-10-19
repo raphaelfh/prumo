@@ -23,8 +23,8 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import ExtractionReviewerDecision
 from app.services.entity_key import key_of

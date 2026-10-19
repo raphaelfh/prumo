@@ -266,3 +266,49 @@ async def test_article_text_envelope_is_nonce_bound_and_markers_are_server_only(
         assert "\\[prumo] next_cursor=none" in lines
         nonces.append(nonce)
     assert nonces[0] != nonces[1]
+
+
+async def test_page_from_beyond_the_last_page_says_so(mcp_client, pat_primary_rw, db_session):
+    article_id = await insert_article(db_session, SEED.primary_project, title="ZQ-Page-Range")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await insert_blocks(
+        db_session,
+        file_id,
+        [(1, 0, "first page words", "paragraph"), (3, 0, "third page words", "paragraph")],
+    )
+
+    beyond = _text(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "get_article_text",
+            {"article_id": str(article_id), "page_from": 9},
+        )
+    )
+    lines = beyond.split("\n")
+    assert HEADER.match(lines[0]).group(4) == "none"
+    assert lines[1] == "page_from 9 is beyond the last page (3)."
+    assert TRAILER.match(lines[-1]).group(1) == "none"
+
+    in_range = _text(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "get_article_text",
+            {"article_id": str(article_id), "page_from": 3},
+        )
+    )
+    assert "third page words" in in_range
+    assert "is beyond the last page (" not in in_range
+
+    # A gap page inside the range is not "beyond": the empty page renders as usual.
+    gap = _text(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "get_article_text",
+            {"article_id": str(article_id), "page_from": 2, "page_to": 2},
+        )
+    )
+    assert "is beyond the last page (" not in gap
+    assert HEADER.match(gap.split("\n")[0]).group(4) == "none"

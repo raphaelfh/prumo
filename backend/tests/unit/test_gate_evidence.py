@@ -15,6 +15,7 @@ from pydantic_ai import ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.llm.entailment import gate_evidence
+from app.llm.extractor import LlmUsage
 
 
 def _canned_label(label: str) -> FunctionModel:
@@ -31,16 +32,17 @@ async def test_numeric_absent_is_unsupported_without_calling_judge():
     # Judge would say entailed, but the number isn't in the premise -> unsupported.
     # Judge is never called; model arg is unused but must be a valid model object.
     model = _canned_label("entailed")
-    label = await gate_evidence(
+    label, usage = await gate_evidence(
         field_label="dose", value="99 mg", premise="Patients got 50 mg.", model=model
     )
     assert label == "unsupported"
+    assert usage == LlmUsage(), "no call, no usage"
 
 
 @pytest.mark.asyncio
 async def test_text_value_uses_judge():
     model = _canned_label("weak")
-    label = await gate_evidence(
+    label, _usage = await gate_evidence(
         field_label="drug",
         value="metformin",
         premise="They used a biguanide.",
@@ -53,7 +55,7 @@ async def test_text_value_uses_judge():
 async def test_numeric_present_passes_to_judge():
     # Number IS in the premise, so numeric check passes; judge is called.
     model = _canned_label("entailed")
-    label = await gate_evidence(
+    label, _usage = await gate_evidence(
         field_label="dose",
         value="50 mg",
         premise="Patients got 50 mg twice daily.",

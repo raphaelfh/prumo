@@ -2,13 +2,15 @@
  * Project → Configuration → AI engine (spec 2026-09-13 §4.3): the project
  * DEFAULT (a catalogue pair), its mode and the lock as rows, then Shared keys —
  * the project's hosted-provider keys, every provider with "project" in its
- * scopes, llama_cloud included, each tagged by what it serves. Each group's
- * read loads and fails independently of the other's, inside its own group.
+ * scopes, llama_cloud included, each tagged by what it serves — then the AI
+ * agents policy (`AiAgentsPolicyGroup`). Each group's read loads and fails
+ * independently of the others', inside its own group.
  */
 import {Plus, Trash2} from 'lucide-react';
 import {useState} from 'react';
 import {toast} from 'sonner';
 
+import {AiAgentsPolicyGroup} from '@/components/project/settings/AiAgentsPolicyGroup';
 import {SettingsActions, SettingsGroup, SettingsPage, SettingsRow} from '@/components/settings';
 import {
   AlertDialog,
@@ -336,6 +338,7 @@ export function AiEngineSection({projectId}: {projectId: string}) {
           <SharedKeys projectId={projectId} providers={providerRows} />
         </SettingsGroup>
       )}
+      <AiAgentsPolicyGroup projectId={projectId} isManager={isManager} />
     </SettingsPage>
   );
 }

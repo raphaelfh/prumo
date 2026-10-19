@@ -169,6 +169,26 @@ ATTRIBUTE_TIERS: dict[str, ChangeTier] = {
     "parent_entity_type_id": ChangeTier.SEMANTIC,
 }
 
+#: Attributes whose change alters what the AI receives: the extraction and
+#: entry-identification prompts or the AI output schema. Prompt and output-schema
+#: inputs only; flags read only when AI values land (``allows_*``) are excluded,
+#: as are display-only keys (``unit``, ``allowed_units``, ``other_label``).
+AI_INPUT_ATTRIBUTES: frozenset[str] = frozenset(
+    {
+        "label",
+        "description",
+        "llm_description",
+        TEMPLATE_INSTRUCTION_KEY,
+        OPTION_KEY,
+        "is_required",
+        "field_type",
+        "name",
+        ENTITY_KEY_KEY,
+        ENTRY_LABEL_KEY,
+        "cardinality",
+    }
+)
+
 #: Tier for a cross-parent move of a field with no recorded values (D2). A move
 #: is never cosmetic: it re-keys which instances the completion gate demands the
 #: field on, even when nothing is stranded yet.

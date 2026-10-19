@@ -1,8 +1,8 @@
 """The review question actually reaches a real prompt, and is recorded.
 
 Everything upstream of this is proven in isolation: the renderer
-(``test_project_ai_context``), the prompt block (``test_review_context_prompt``)
-and the pin (``test_run_review_context_pin``). This is the seam that proves
+(``test_project_ai_context``), the prompt block (``test_review_question_prompt``)
+and the pin (``test_run_review_question_pin``). This is the seam that proves
 they are wired together — a manager fills PICOT, a run extracts, and the block
 is in the prompt the model got AND in the provenance a reviewer can read back.
 
@@ -36,7 +36,7 @@ _PICOT = {
 }
 
 #: A LITERAL, not a re-render. Comparing the recorded provenance against a live
-#: ``build_review_context`` call would compare the renderer to itself and could
+#: ``build_review_question`` call would compare the renderer to itself and could
 #: never fail — the same self-fulfilling trap the prompt goldens avoid.
 _EXPECTED_BLOCK = (
     "- Population: Adults hospitalised with acute heart failure\n"
@@ -59,6 +59,18 @@ async def _set_picots(db: AsyncSession, project_id: UUID, picots: dict[str, Any]
         {"p": json.dumps(picots), "pid": str(project_id)},
     )
     await db.flush()
+
+
+async def _revision(db: AsyncSession, project_id: UUID) -> int:
+    """The project's ``protocol_revision`` as stored (raw SQL writes never bump it)."""
+    return int(
+        (
+            await db.execute(
+                text("SELECT protocol_revision FROM public.projects WHERE id = :pid"),
+                {"pid": str(project_id)},
+            )
+        ).scalar_one()
+    )
 
 
 async def _extract_once(db: AsyncSession, run: ExtractionRun) -> str:
@@ -87,7 +99,10 @@ async def test_the_review_question_reaches_the_prompt_and_the_provenance(
     provenance = (run.results or {}).get("provenance") or {}
 
     # 2. The run records exactly what it sent — pinned, not re-derived.
-    assert provenance["review_context"] == {"text": _EXPECTED_BLOCK}
+    assert provenance["review_context"] == {
+        "text": _EXPECTED_BLOCK,
+        "revision": await _revision(db_session, run.project_id),
+    }
 
     # 3. The per-section composition carries it too, which is what
     #    GenerationDetailsDialog renders — so "tracking is free" is real and
@@ -119,5 +134,69 @@ async def test_a_project_with_no_picot_sends_no_block_at_all(
 
     assert "Review question and scope:" not in user_prompt
     await db_session.refresh(run)
-    assert ((run.results or {}).get("provenance") or {})["review_context"] == {"text": None}
+    assert ((run.results or {}).get("provenance") or {})["review_context"] == {
+        "text": None,
+        "revision": await _revision(db_session, run.project_id),
+    }
+    await db_session.rollback()
+
+
+_ELIGIBILITY_LINES = "Eligibility:\n  Include: English language\nEligible study designs: cohort"
+
+
+async def _set_eligibility(db: AsyncSession, project_id: UUID) -> None:
+    await db.execute(
+        text(
+            "UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb), "
+            "study_design = CAST(:d AS jsonb) WHERE id = :pid"
+        ),
+        {
+            "e": json.dumps({"inclusion": ["English language"], "notes": "internal note"}),
+            "d": json.dumps({"types": ["cohort"]}),
+            "pid": str(project_id),
+        },
+    )
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_eligibility_and_designs_reach_a_new_runs_prompt(
+    db_session: AsyncSession,
+) -> None:
+    run = await engine_setup.run_in_extract(db_session)
+    await _set_picots(db_session, run.project_id, _PICOT)
+    await _set_eligibility(db_session, run.project_id)
+
+    user_prompt = await _extract_once(db_session, run)
+
+    expected = f"{_EXPECTED_BLOCK}\n{_ELIGIBILITY_LINES}"
+    assert user_prompt.startswith(f"Review question and scope:\n{expected}\n\n")
+    assert "internal note" not in user_prompt
+    await db_session.refresh(run)
+    assert (run.results or {})["provenance"]["review_context"] == {
+        "text": expected,
+        "revision": await _revision(db_session, run.project_id),
+    }
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_run_pinned_before_the_eligibility_edit_keeps_its_question(
+    db_session: AsyncSession,
+) -> None:
+    run = await engine_setup.run_in_extract(db_session)
+    await _set_picots(db_session, run.project_id, _PICOT)
+    pinned_at = await _revision(db_session, run.project_id)
+    await _extract_once(db_session, run)
+
+    await _set_eligibility(db_session, run.project_id)
+    user_prompt = await _extract_once(db_session, run)
+
+    assert user_prompt.startswith(f"Review question and scope:\n{_EXPECTED_BLOCK}\n\n")
+    assert "Eligibility:" not in user_prompt
+    await db_session.refresh(run)
+    assert (run.results or {})["provenance"]["review_context"] == {
+        "text": _EXPECTED_BLOCK,
+        "revision": pinned_at,
+    }
     await db_session.rollback()

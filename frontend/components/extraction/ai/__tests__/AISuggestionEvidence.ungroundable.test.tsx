@@ -11,7 +11,7 @@ function Wrapper({children}: {children: ReactNode}) {
 }
 
 const ev: EvidenceCitation[] = [
-  {text: 'value only in a figure', pageNumber: 3, blockIds: [], attributionLabel: 'ungroundable', rank: 0},
+  {text: 'value only in a figure', pageNumber: 3, blockIds: [], attributionLabel: 'ungroundable', rank: 0, grounded: false, stale: false},
 ];
 
 describe('AISuggestionEvidence ungroundable', () => {

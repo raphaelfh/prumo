@@ -25,6 +25,7 @@ def _valid() -> dict:
                     "tables": [["arm", "n", "events"], ["12", "98", "7"]],
                     "sections": ["Methods", "Results"],
                     "references": ["Smith 2021"],
+                    "paragraphs": ["We enrolled 72 adults.", "HbA1c fell."],
                     "regions": [{"x": 10, "y": 20, "width": 100, "height": 50}],
                 },
             }
@@ -89,3 +90,8 @@ class TestLoadManifest:
         p.write_text("{not json", encoding="utf-8")
         with pytest.raises(ManifestError, match="invalid JSON"):
             load_manifest(p)
+
+
+def test_gold_paragraphs_round_trip() -> None:
+    es = parse_manifest(_valid())
+    assert es.docs[0].gold.paragraphs == ["We enrolled 72 adults.", "HbA1c fell."]

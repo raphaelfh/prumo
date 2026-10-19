@@ -1,12 +1,13 @@
 import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import {ProposalCard} from '@/components/extraction/review/ProposalCard';
 import type {AISuggestion, EvidenceCitation} from '@/types/ai-extraction';
 
-vi.mock('@/hooks/extraction/useReaderLocate', () => ({useReaderLocate: () => ({locate: vi.fn(), isAvailable: false})}));
+const reader = vi.hoisted(() => ({locate: vi.fn(), isAvailable: false}));
+vi.mock('@/hooks/extraction/useReaderLocate', () => ({useReaderLocate: () => reader}));
 
-const citation = (rank: number): EvidenceCitation => ({text: `Source passage ${rank}`, rank, blockIds: [rank], pageNumber: 1});
+const citation = (rank: number): EvidenceCitation => ({text: `Source passage ${rank}`, rank, blockIds: [rank], pageNumber: 1, grounded: true, stale: false});
 const proposal = (sources: number): AISuggestion => ({id: 'p', runId: 'run', value: 'Value', confidence: 0.8, status: 'pending', reasoning: '', timestamp: new Date('2026-09-01'), evidence: Array.from({length: sources}, (_, rank) => citation(rank))});
 
 describe('ProposalCard source count', () => {
@@ -40,5 +41,32 @@ describe('ProposalCard pending check', () => {
     expect(settled).not.toHaveAttribute('aria-busy');
     await user.click(settled);
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+});
+
+describe('ProposalCard locate by evidence state', () => {
+  afterEach(() => { reader.isAvailable = false; reader.locate.mockReset(); });
+  const withEvidence = (over: Partial<EvidenceCitation>): AISuggestion => ({...proposal(0), evidence: [{text: 'Cited passage', rank: 0, blockIds: [9], pageNumber: 4, grounded: true, stale: false, ...over}]});
+
+  it('locates a current citation with its page and block hints', async () => {
+    reader.isAvailable = true; const user = userEvent.setup();
+    render(<ProposalCard proposal={withEvidence({})} ordinal={1} latest accepted={false} saving={false} onToggle={vi.fn()}/>);
+    await user.click(screen.getByRole('button', {name: 'Locate in document'}));
+    expect(reader.locate).toHaveBeenCalledWith('Cited passage', 4, [9]);
+  });
+
+  it('locates a stale citation by its text only', async () => {
+    reader.isAvailable = true; const user = userEvent.setup();
+    render(<ProposalCard proposal={withEvidence({stale: true})} ordinal={1} latest accepted={false} saving={false} onToggle={vi.fn()}/>);
+    expect(screen.getByText('Location may have moved')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Locate in document'}));
+    expect(reader.locate).toHaveBeenCalledWith('Cited passage', null, []);
+  });
+
+  it('offers no Locate for an ungrounded citation', () => {
+    reader.isAvailable = true;
+    render(<ProposalCard proposal={withEvidence({grounded: false, attributionLabel: 'ungroundable', pageNumber: null})} ordinal={1} latest accepted={false} saving={false} onToggle={vi.fn()}/>);
+    expect(screen.getByText('Verify manually')).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /locate/i})).not.toBeInTheDocument();
   });
 });

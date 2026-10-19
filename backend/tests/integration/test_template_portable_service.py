@@ -483,3 +483,53 @@ async def test_legacy_option_file_is_stored_canonical(db_session: AsyncSession) 
         ],
         "wrapped": [{"value": "X", "label": "X"}],
     }
+
+
+@pytest.mark.asyncio
+async def test_export_and_import_carry_the_instrument_code(db_session: AsyncSession) -> None:
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+
+    exported = await to_portable(
+        db_session, project_id=project_id, template_id=clone.project_template_id
+    )
+    assert _dump(exported)["instrument"] == "charms"
+
+    imported = await import_portable(
+        db_session, project_id=project_id, doc=exported, user_id=SEED.primary_profile
+    )
+    assert await _instrument(db_session, imported.project_template_id) == "charms"
+
+
+@pytest.mark.asyncio
+async def test_import_without_a_code_creates_custom(db_session: AsyncSession) -> None:
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    doc = parse_portable_document(
+        {
+            "prumo_template": 1,
+            "kind": "extraction",
+            "name": "No code",
+            "sections": [
+                {
+                    "name": "sec1",
+                    "label": "S1",
+                    "fields": [{"name": "f1", "label": "F1", "type": "text"}],
+                }
+            ],
+        }
+    )
+    imported = await import_portable(
+        db_session, project_id=project_id, doc=doc, user_id=SEED.primary_profile
+    )
+    assert await _instrument(db_session, imported.project_template_id) == "custom"
+
+
+async def _instrument(db: AsyncSession, template_id: UUID) -> str:
+    return (
+        await db.execute(
+            text("SELECT instrument FROM public.project_extraction_templates WHERE id = :tid"),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()

@@ -23,11 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun
 from app.repositories import ExtractionRunRepository
+from app.schemas.run_prompt_context import ReviewQuestionPin
 from app.services.extraction_run_read_service import build_run_view
-from app.services.project_ai_context import build_review_context
+from app.services.project_ai_context import build_review_question, set_ai_context
 from app.services.run_prompt_context import (
-    read_pinned_review_context,
+    current_protocol_revision,
+    read_pinned_review_question,
     resolve_run_prompt_context,
+    review_question_drift,
 )
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
@@ -55,6 +58,18 @@ async def _set_picots(db: AsyncSession, project_id: UUID, picots: dict[str, Any]
     await db.flush()
 
 
+async def _revision(db: AsyncSession, project_id: UUID) -> int:
+    """The project's ``protocol_revision`` as stored, read back through SQL."""
+    return int(
+        (
+            await db.execute(
+                text("SELECT protocol_revision FROM public.projects WHERE id = :pid"),
+                {"pid": str(project_id)},
+            )
+        ).scalar_one()
+    )
+
+
 def _pinned_raw(run: ExtractionRun) -> Any:
     return ((run.results or {}).get("provenance") or {}).get("review_context")
 
@@ -64,11 +79,13 @@ async def test_first_resolve_pins_the_rendered_block(db_session: AsyncSession) -
     run = await engine_setup.run_in_extract(db_session)
     await _set_picots(db_session, run.project_id, _PICOT_FIRST)
 
+    revision = await _revision(db_session, run.project_id)
+
     context = await resolve_run_prompt_context(db_session, run)
 
-    assert context.review_context == _BLOCK_FIRST
+    assert context.review_question == _BLOCK_FIRST
     await db_session.refresh(run)
-    assert _pinned_raw(run) == {"text": _BLOCK_FIRST}
+    assert _pinned_raw(run) == {"text": _BLOCK_FIRST, "revision": revision}
     await db_session.rollback()
 
 
@@ -90,9 +107,9 @@ async def test_a_mid_run_picot_edit_cannot_change_what_an_open_run_sees(
     await db_session.refresh(run)
     second = await resolve_run_prompt_context(db_session, run)
 
-    assert first.review_context == _BLOCK_FIRST
-    assert second.review_context == _BLOCK_FIRST, (
-        f"a mid-run edit leaked into an open run: {second.review_context!r}"
+    assert first.review_question == _BLOCK_FIRST
+    assert second.review_question == _BLOCK_FIRST, (
+        f"a mid-run edit leaked into an open run: {second.review_question!r}"
     )
     await db_session.rollback()
 
@@ -110,16 +127,17 @@ async def test_an_empty_review_pins_a_recorded_nothing_not_an_absent_key(
     """
     run = await engine_setup.run_in_extract(db_session)
     await _set_picots(db_session, run.project_id, None)
+    revision = await _revision(db_session, run.project_id)
 
     context = await resolve_run_prompt_context(db_session, run)
-    assert context.review_context is None
+    assert context.review_question is None
     await db_session.refresh(run)
-    assert _pinned_raw(run) == {"text": None}
+    assert _pinned_raw(run) == {"text": None, "revision": revision}
 
     await _set_picots(db_session, run.project_id, _PICOT_FIRST)
     await db_session.refresh(run)
     again = await resolve_run_prompt_context(db_session, run)
-    assert again.review_context is None, (
+    assert again.review_question is None, (
         "a pinned empty context re-resolved — the truthy-dict guard is broken"
     )
     await db_session.rollback()
@@ -137,11 +155,11 @@ async def test_a_run_that_predates_the_feature_is_pinned_on_its_next_call(
     """
     run = await engine_setup.run_in_extract(db_session)
     await _set_picots(db_session, run.project_id, _PICOT_FIRST)
-    assert read_pinned_review_context(run.results) is None
+    assert read_pinned_review_question(run.results) is None
 
     context = await resolve_run_prompt_context(db_session, run)
 
-    assert context.review_context == _BLOCK_FIRST
+    assert context.review_question == _BLOCK_FIRST
     await db_session.rollback()
 
 
@@ -153,13 +171,14 @@ async def test_the_pin_preserves_sibling_provenance_keys(db_session: AsyncSessio
     await runs.freeze_engine(run.id, {"provider": "openai", "model": "gpt-4o-mini"})
     await db_session.refresh(run)
     await _set_picots(db_session, run.project_id, _PICOT_FIRST)
+    revision = await _revision(db_session, run.project_id)
 
     await resolve_run_prompt_context(db_session, run)
 
     await db_session.refresh(run)
     provenance = (run.results or {}).get("provenance") or {}
     assert provenance["engine"]["model"] == "gpt-4o-mini"
-    assert provenance["review_context"] == {"text": _BLOCK_FIRST}
+    assert provenance["review_context"] == {"text": _BLOCK_FIRST, "revision": revision}
     await db_session.rollback()
 
 
@@ -180,7 +199,7 @@ async def test_the_toggle_switches_the_block_off(db_session: AsyncSession) -> No
 
     context = await resolve_run_prompt_context(db_session, run)
 
-    assert context.review_context is None
+    assert context.review_question is None
     await db_session.rollback()
 
 
@@ -188,7 +207,7 @@ async def test_the_toggle_switches_the_block_off(db_session: AsyncSession) -> No
 async def test_the_run_view_serves_the_pin_and_never_installs_one(
     db_session: AsyncSession,
 ) -> None:
-    """``RunViewResponse.review_context`` is the run's pin, read-only.
+    """``RunViewResponse.review_question`` is the run's pin, read-only.
 
     Its sibling ``general_instructions`` exists so the screen can never show a
     text the model did not get; shipping the block without this field would
@@ -202,7 +221,9 @@ async def test_the_run_view_serves_the_pin_and_never_installs_one(
     before = await build_run_view(
         db_session, run.id, caller_id=SEED.primary_profile, can_see_peers=False
     )
-    assert before.review_context is None, "a read path installed a pin"
+    assert before.review_question is None, "a read path installed a pin"
+    assert before.review_question_revision is None
+    assert before.review_question_drift is False
     await db_session.refresh(run)
     assert _pinned_raw(run) is None, "a GET wrote provenance"
 
@@ -212,21 +233,122 @@ async def test_the_run_view_serves_the_pin_and_never_installs_one(
     after = await build_run_view(
         db_session, run.id, caller_id=SEED.primary_profile, can_see_peers=False
     )
-    assert after.review_context == _BLOCK_FIRST
+    assert after.review_question == _BLOCK_FIRST
+    assert after.review_question_revision == after.project_protocol_revision
+    assert after.review_question_drift is False
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_protocol_save_after_the_pin_shows_drift_and_a_new_run_pins_the_new_revision(
+    db_session: AsyncSession,
+) -> None:
+    """The pin keeps its revision; the run view reports that the project moved.
+
+    A run created after the save pins the new revision and shows no drift.
+    """
+    run = await engine_setup.run_in_extract(db_session)
+    await _set_picots(db_session, run.project_id, _PICOT_FIRST)
+    pinned_at = await _revision(db_session, run.project_id)
+    await resolve_run_prompt_context(db_session, run)
+
+    await set_ai_context(
+        db_session,
+        run.project_id,
+        picots=None,
+        picots_enabled=None,
+        slot_updates={"population": _PICOT_EDITED["population"]},
+    )
+    assert await _revision(db_session, run.project_id) == pinned_at + 1
+    await db_session.refresh(run)
+
+    drifted = await build_run_view(
+        db_session, run.id, caller_id=SEED.primary_profile, can_see_peers=False
+    )
+    assert drifted.review_question == _BLOCK_FIRST
+    assert drifted.review_question_revision == pinned_at
+    assert drifted.project_protocol_revision == pinned_at + 1
+    assert drifted.review_question_drift is True
+
+    fresh = await engine_setup.run_in_extract(db_session)
+    await resolve_run_prompt_context(db_session, fresh)
+    await db_session.refresh(fresh)
+    assert _pinned_raw(fresh)["revision"] == pinned_at + 1
+    view = await build_run_view(
+        db_session, fresh.id, caller_id=SEED.primary_profile, can_see_peers=False
+    )
+    assert view.review_question_revision == pinned_at + 1
+    assert view.review_question_drift is False
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_text_only_pin_reads_and_never_drifts(db_session: AsyncSession) -> None:
+    """Pins written before the revision existed hold ``{"text": ...}`` only."""
+    run = await engine_setup.run_in_extract(db_session)
+    await ExtractionRunRepository(db_session).freeze_provenance_key(
+        run.id, "review_context", {"text": "x"}
+    )
+    await set_ai_context(
+        db_session,
+        run.project_id,
+        picots=None,
+        picots_enabled=None,
+        slot_updates={"population": _PICOT_EDITED["population"]},
+    )
+    await db_session.refresh(run)
+
+    view = await build_run_view(
+        db_session, run.id, caller_id=SEED.primary_profile, can_see_peers=False
+    )
+    assert view.review_question == "x"
+    assert view.review_question_revision is None
+    assert view.review_question_drift is False
     await db_session.rollback()
 
 
 @pytest.mark.asyncio
 async def test_a_missing_project_renders_nothing(db_session: AsyncSession) -> None:
     """A run whose project is gone must not raise on the prompt path."""
-    assert await build_review_context(db_session, uuid4()) is None
+    assert await build_review_question(db_session, uuid4()) is None
+    assert await current_protocol_revision(db_session, uuid4()) is None
     await db_session.rollback()
 
 
+@pytest.mark.asyncio
+async def test_the_review_question_carries_the_protocol_revision(db_session: AsyncSession) -> None:
+    question = await build_review_question(db_session, SEED.primary_project)
+    assert question is not None
+    assert question.revision == await _revision(db_session, SEED.primary_project)
+    assert await current_protocol_revision(db_session, SEED.primary_project) == question.revision
+    await db_session.rollback()
+
+
+@pytest.mark.parametrize(
+    ("pin", "current", "expected"),
+    [
+        (None, 3, None),
+        (ReviewQuestionPin(text="x"), 3, False),
+        (ReviewQuestionPin(text="x", revision=3), None, False),
+        (ReviewQuestionPin(text="x", revision=3), 3, False),
+        (ReviewQuestionPin(text=None, revision=2), 3, True),
+    ],
+    ids=["unpinned", "legacy", "no-current", "same", "moved"],
+)
+def test_drift_is_a_pure_function_of_the_pin_and_the_current_revision(
+    pin: ReviewQuestionPin | None, current: int | None, expected: bool | None
+) -> None:
+    assert review_question_drift(pin, current) is expected
+
+
 def test_reading_a_pin_is_a_pure_function_of_results() -> None:
-    assert read_pinned_review_context(None) is None
-    assert read_pinned_review_context({}) is None
-    assert read_pinned_review_context({"provenance": {}}) is None
-    assert read_pinned_review_context({"provenance": {"review_context": {}}}) is None
-    pin = read_pinned_review_context({"provenance": {"review_context": {"text": "- P: x"}}})
-    assert pin is not None and pin.text == "- P: x"
+    assert read_pinned_review_question(None) is None
+    assert read_pinned_review_question({}) is None
+    assert read_pinned_review_question({"provenance": {}}) is None
+    assert read_pinned_review_question({"provenance": {"review_context": {}}}) is None
+    pin = read_pinned_review_question({"provenance": {"review_context": {"text": "- P: x"}}})
+    assert pin is not None and pin.text == "- P: x" and pin.revision is None
+    pin = read_pinned_review_question(
+        {"provenance": {"review_context": {"text": "- P: x", "revision": 4}}}
+    )
+    assert pin is not None and pin.revision == 4

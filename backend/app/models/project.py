@@ -9,7 +9,18 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -107,6 +118,12 @@ class Project(BaseModel):
         nullable=True,
     )
 
+    # Counts changes to the review protocol; bumped only by
+    # ``services/project_protocol.bump_protocol_revision`` (0088).
+    protocol_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+
     # Relationships
     created_by: Mapped["Profile"] = relationship(
         "Profile",
@@ -138,6 +155,7 @@ class Project(BaseModel):
             "idx_projects_eligibility_criteria_gin", "eligibility_criteria", postgresql_using="gin"
         ),
         Index("idx_projects_study_design_gin", "study_design", postgresql_using="gin"),
+        CheckConstraint("protocol_revision >= 1", name="protocol_revision"),
         {"schema": "public"},
     )
 

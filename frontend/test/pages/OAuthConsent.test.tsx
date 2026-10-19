@@ -21,6 +21,7 @@ const REQUEST = {
   client_name: 'Claude',
   redirect_host: 'claude.ai:8443',
   offers_write: true,
+  offers_ai_run: false,
   requested_scopes: ['read', 'write'],
   expires_at: '2026-10-15T12:10:00Z',
 };
@@ -104,7 +105,7 @@ describe('OAuthConsent', () => {
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(APPROVED_URL));
-    expect(posts).toEqual([{approve: true, write: true}]);
+    expect(posts).toEqual([{approve: true, write: true, ai_run: false}]);
     expect(screen.getByText(t('oauthConsent', 'returning'))).toBeInTheDocument();
   });
 
@@ -115,7 +116,7 @@ describe('OAuthConsent', () => {
     await user.click(await screen.findByRole('button', {name: t('oauthConsent', 'allow')}));
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(APPROVED_URL));
-    expect(posts).toEqual([{approve: true, write: false}]);
+    expect(posts).toEqual([{approve: true, write: false, ai_run: false}]);
   });
 
   it('Deny posts approve: false, write: false and leaves to the access_denied URL', async () => {
@@ -127,7 +128,7 @@ describe('OAuthConsent', () => {
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'deny')}));
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(DENIED_URL));
-    expect(posts).toEqual([{approve: false, write: false}]);
+    expect(posts).toEqual([{approve: false, write: false, ai_run: false}]);
   });
 
   it('a read-only request renders no checkbox and posts write: false', async () => {
@@ -140,7 +141,54 @@ describe('OAuthConsent', () => {
     expect(screen.queryByText(t('oauthConsent', 'editHint'))).toBeNull();
 
     await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
-    await waitFor(() => expect(posts).toEqual([{approve: true, write: false}]));
+    await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: false}]));
+  });
+
+  it('renders no AI runs box when the app did not ask for ai_run', async () => {
+    renderAt(`?request=${ID}`);
+
+    expect(await screen.findByRole('checkbox', {name: t('oauthConsent', 'editLabel')})).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')})).toBeNull();
+    expect(screen.queryByText(t('oauthConsent', 'aiRunHint'))).toBeNull();
+  });
+
+  describe('when the app asks for ai_run', () => {
+    const AI_REQUEST = {...REQUEST, offers_ai_run: true, requested_scopes: ['read', 'write', 'ai_run']};
+
+    it('shows a separate AI runs box, unchecked, and Allow posts ai_run: false', async () => {
+      stubGet(() => ok(AI_REQUEST));
+      const user = userEvent.setup();
+      renderAt(`?request=${ID}`);
+
+      const box = await screen.findByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')});
+      expect(box).not.toBeChecked();
+      expect(box).toHaveAccessibleDescription(t('oauthConsent', 'aiRunHint'));
+      await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
+
+      await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: false}]));
+    });
+
+    it('ticking the AI runs box posts ai_run: true without ticking edits', async () => {
+      stubGet(() => ok(AI_REQUEST));
+      const user = userEvent.setup();
+      renderAt(`?request=${ID}`);
+
+      await user.click(await screen.findByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')}));
+      await user.click(screen.getByRole('button', {name: t('oauthConsent', 'allow')}));
+
+      await waitFor(() => expect(posts).toEqual([{approve: true, write: false, ai_run: true}]));
+    });
+
+    it('Deny posts ai_run: false even with the box ticked', async () => {
+      stubGet(() => ok(AI_REQUEST));
+      const user = userEvent.setup();
+      renderAt(`?request=${ID}`);
+
+      await user.click(await screen.findByRole('checkbox', {name: t('oauthConsent', 'aiRunLabel')}));
+      await user.click(screen.getByRole('button', {name: t('oauthConsent', 'deny')}));
+
+      await waitFor(() => expect(posts).toEqual([{approve: false, write: false, ai_run: false}]));
+    });
   });
 
   it('GET 404 shows the expired state', async () => {
@@ -212,8 +260,8 @@ describe('OAuthConsent', () => {
 
     await waitFor(() => expect(leaveAppMock).toHaveBeenCalledWith(APPROVED_URL));
     expect(posts).toEqual([
-      {approve: true, write: true},
-      {approve: true, write: true},
+      {approve: true, write: true, ai_run: false},
+      {approve: true, write: true, ai_run: false},
     ]);
   });
 

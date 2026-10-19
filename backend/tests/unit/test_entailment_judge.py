@@ -29,7 +29,7 @@ def _canned_verdict(label: str, rationale: str | None) -> FunctionModel:
 @pytest.mark.asyncio
 async def test_judge_returns_label():
     model = _canned_verdict("entailed", "states the dose")
-    v = await judge_entailment(
+    v, _usage = await judge_entailment(
         field_label="dose",
         value="50 mg",
         premise="Patients got 50 mg twice daily.",
@@ -41,7 +41,7 @@ async def test_judge_returns_label():
 @pytest.mark.asyncio
 async def test_judge_returns_rationale():
     model = _canned_verdict("weak", "tangentially related")
-    v = await judge_entailment(
+    v, _usage = await judge_entailment(
         field_label="dose",
         value="50 mg",
         premise="The study used a low dose.",
@@ -54,7 +54,7 @@ async def test_judge_returns_rationale():
 @pytest.mark.asyncio
 async def test_judge_unsupported_with_null_rationale():
     model = _canned_verdict("unsupported", None)
-    v = await judge_entailment(
+    v, _usage = await judge_entailment(
         field_label="endpoint",
         value="overall survival",
         premise="Recruitment procedures were described.",

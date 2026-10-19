@@ -90,7 +90,12 @@ async def decide_consent_request(
     if not settings.oauth_enabled:
         raise ConsentRequestNotFoundError()
     redirect_url = await decide_request(
-        db, request_id=request_id, user_id=user_id, approve=body.approve, write=body.write
+        db,
+        request_id=request_id,
+        user_id=user_id,
+        approve=body.approve,
+        write=body.write,
+        ai_run=body.ai_run,
     )
     await db.commit()
     return ApiResponse.success(

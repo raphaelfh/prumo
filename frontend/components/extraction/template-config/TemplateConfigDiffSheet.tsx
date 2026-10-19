@@ -239,10 +239,21 @@ function DiffRow({
           {row.label_path.join(' › ')}
         </p>
       )}
-      {(attributeLabel != null || before != null || after != null) && (
+      {(row.affects_ai ||
+        attributeLabel != null ||
+        before != null ||
+        after != null) && (
         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
           {attributeLabel != null && (
             <span className="text-muted-foreground">{attributeLabel}</span>
+          )}
+          {row.affects_ai && (
+            <Badge
+              variant="outline"
+              className="shrink-0 border-ai/30 bg-ai/10 text-[0.6875rem] font-normal text-ai"
+            >
+              {t('templateConfig', 'diffAffectsAiBadge')}
+            </Badge>
           )}
           {before != null && (
             <span className="rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] line-through decoration-muted-foreground/60">

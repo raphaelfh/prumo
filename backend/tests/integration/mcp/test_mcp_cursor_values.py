@@ -43,13 +43,14 @@ async def test_list_articles_rejects_bad_cursor_values(
 @pytest.mark.parametrize(
     "values",
     [
-        ["0.5", "not-a-uuid"],
-        ["not-a-rank", str(uuid4())],
-        ["1e300", str(uuid4())],
-        ["1e-300", str(uuid4())],
-        [10**400, str(uuid4())],
+        ["b", "0.5", "not-a-uuid"],
+        ["b", "not-a-rank", str(uuid4())],
+        ["b", "1e300", str(uuid4())],
+        ["b", "1e-300", str(uuid4())],
+        ["b", 10**400, str(uuid4())],
+        ["x", "0.5", str(uuid4())],
     ],
-    ids=["bad-uuid", "bad-rank", "rank-overflow", "rank-underflow", "rank-huge-int"],
+    ids=["bad-uuid", "bad-rank", "rank-overflow", "rank-underflow", "rank-huge-int", "bad-mode"],
 )
 async def test_search_rejects_bad_cursor_values(
     mcp_client: Any, pat_primary_read: Any, values: list[str | int]

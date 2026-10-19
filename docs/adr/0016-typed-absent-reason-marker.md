@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-08-29
+last_reviewed: 2026-10-18
 owner: '@raphaelfh'
 adr_number: '0016'
 ---
@@ -153,6 +153,40 @@ Two consequences worth stating, because they read like contradictions:
 This narrows the ADR's scope; it does not supersede it. The marker remains the
 only encoding of "no value, on purpose" wherever a field has no such answer,
 which is every field in every other seeded template.
+
+## Amendment (2026-10)
+
+The AI output now speaks the marker directly instead of having it inferred from
+`status = "not_found"`.
+
+**What the model is offered.** Each field's output model carries
+`absent_reason` with only the codes the field allows: `no_information` iff
+`allows_no_information` and the field is not an uncertainty scale,
+`not_applicable` iff `allows_not_applicable`. `not_evaluated` is never offered:
+it records a reviewer's choice not to assess, which a model cannot make. The
+property is omitted when no code is offered. An **uncertainty scale** is a field
+whose option codes include `Unclear` (any case); its status has no `not_found`
+and it is never offered `no_information`, because the scale's own answer is
+Unclear.
+
+**What is written**, by the first rule that applies
+(`backend/app/services/ai_extraction/_candidates.py`):
+
+1. An offered `absent_reason` becomes its marker `{value: null, absent_reason}`.
+   A code the field does not offer is logged (`absent_reason_not_offered`) and
+   never written; the answer falls through as if it were null.
+2. An in-domain option answer is kept as the value whatever the status (for
+   lists: non-empty, every item in the domain). PROBAST+AI's `NI` lands as `NI`.
+3. An uncertainty scale's `not_found` stores the field's own `Unclear` code,
+   exact case, never a marker (the write-time half of PRU-66).
+4. Any other `not_found` becomes the `no_information` marker when the field
+   allows it, else a bare `{value: null}`.
+5. `found` / `ambiguous` lands the value as answered.
+
+A marker or a `not_found` answer drops the confidence and keeps the reasoning.
+A `not_applicable` marker keeps its cited quotes as evidence (they show why the
+criterion does not apply); they are never sent to the entailment gate, which
+judges found values only. A bare null or a `no_information` marker cites none.
 
 ## More Information
 

@@ -1,4 +1,4 @@
-"""The review-context block in the three prompts.
+"""The review-question block in the three prompts.
 
 The goldens below are LITERALS captured from the tree BEFORE the block existed
 (``git show HEAD~:...`` -> render -> paste). Re-rendering them at test time
@@ -17,11 +17,12 @@ from app.llm import prompts
 from app.llm.prompts import (
     entry_identification,
     quality_assessment,
-    render_review_context_section,
+    render_review_question_section,
     section_extraction,
 )
 
 # --- goldens: the exact prompts this repo shipped before the block existed ---
+# (the "evidence" line is the one later edit: evidence became {block_ref, quote}).
 
 GOLDEN_SECTION_EXTRACTION = (
     "Extract the following information from the scientific article:\n"
@@ -39,8 +40,9 @@ GOLDEN_SECTION_EXTRACTION = (
     " (1 = very confident, 0 = not found/uncertain)\n"
     '- "reasoning": a brief explanation (1-2 sentences) of why you extracted this value or'
     " why you're uncertain\n"
-    '- "evidence": an object with "text" (short quoted passage from the article supporting'
-    ' the value) and "page_number" (integer, if known), or null\n'
+    '- "evidence": a list of up to 3 objects {"block_ref": the ref shown before the quoted'
+    ' block, e.g. "p3·b12", "quote": a short verbatim passage from that block}; [] when'
+    " status is not_found\n"
 )
 
 GOLDEN_QUALITY_ASSESSMENT = (
@@ -57,8 +59,9 @@ GOLDEN_QUALITY_ASSESSMENT = (
     '- "confidence": number between 0 and 1 (1 = very confident in the judgment, 0 = no'
     " signal in the article)\n"
     '- "reasoning": 1-2 sentences justifying the judgment against the F criterion\n'
-    '- "evidence": an object with "text" (short quoted passage supporting the judgment)'
-    ' and "page_number" (integer, if known), or null\n'
+    '- "evidence": a list of up to 3 objects {"block_ref": the ref shown before the quoted'
+    ' block, e.g. "p3·b12", "quote": a short verbatim passage from that block}; [] when'
+    " status is not_found\n"
 )
 
 #: ``entry_identification`` post-dates the review-context block, so its golden
@@ -73,11 +76,26 @@ GOLDEN_ENTRY_IDENTIFICATION = 'Analyze the following scientific article and iden
 #: that module's last version: a parameterized prompt is a different
 #: prompt), and the three on ``dev`` ``bf93a278`` before the trees train's B1
 #: gave a singleton under an entry the scope block and made the parent
-#: clause a chain. §IX: a changed prompt is a new version, so VERSION may
-#: equal none of these.
+#: clause a chain, and the two article-text prompts before block citation
+#: refs were explained in their system prompts, and the two before evidence
+#: became ``{block_ref, quote}``, and the two before the absent-reason rules
+#: replaced the bare not_found instruction. §IX: a changed prompt is a
+#: new version, so VERSION may equal none of these.
 RETIRED_VERSIONS = {
-    "section_extraction": {"d1d4d2483a3b", "bb62071982f1"},
-    "quality_assessment": {"6f04461c6f23", "19018644da80"},
+    "section_extraction": {
+        "d1d4d2483a3b",
+        "bb62071982f1",
+        "76166aeb85bc",
+        "44b61dd14d96",
+        "6381d05671f7",
+    },
+    "quality_assessment": {
+        "6f04461c6f23",
+        "19018644da80",
+        "95fca9f91a55",
+        "a4a2f3a7a04f",
+        "122e6e10fa62",
+    },
     "entry_identification": {"046fd17ca366", "f7cacd2a4efb"},
 }
 
@@ -105,8 +123,8 @@ def _render_entry_id(**kwargs: object) -> str:
 
 
 def test_the_renderer_is_inert_on_nothing() -> None:
-    assert render_review_context_section(None) == ""
-    assert render_review_context_section("") == ""
+    assert render_review_question_section(None) == ""
+    assert render_review_question_section("") == ""
 
 
 def test_an_empty_context_reproduces_the_pre_change_prompt_byte_for_byte() -> None:
@@ -128,7 +146,7 @@ def test_the_review_question_frames_the_task_before_the_template_instruction() -
     """
     body = "- Population: Adults"
     for render in (_render_section, _render_qa, _render_entry_id):
-        prompt = render(review_context=body, general_instructions="Judge conservatively.")
+        prompt = render(review_question=body, general_instructions="Judge conservatively.")
         assert prompt.startswith(
             "Review question and scope:\n"
             "- Population: Adults\n"
@@ -140,7 +158,7 @@ def test_the_review_question_frames_the_task_before_the_template_instruction() -
 
 
 def test_the_block_stands_alone_without_a_template_instruction() -> None:
-    prompt = _render_section(review_context="- Population: Adults")
+    prompt = _render_section(review_question="- Population: Adults")
     assert prompt.startswith("Review question and scope:\n- Population: Adults\n\n")
     assert "General instructions" not in prompt
 
@@ -154,6 +172,26 @@ def test_version_moved_from_every_retired_hash(module) -> None:
     assert module.VERSION not in RETIRED_VERSIONS[module.NAME]
 
 
+#: Literal VERSIONs of the shipped prompts. A code-only rename (a parameter,
+#: a renderer name) leaves the prompt bytes alone, so it must leave the
+#: recorded prompt version alone too; the template's format placeholders are
+#: hashed into VERSION, which is why they keep their names.
+CURRENT_VERSIONS = {
+    "section_extraction": "3ce3d11a33ef",
+    "quality_assessment": "a62f2639cd9d",
+    "entry_identification": "1e461aa1faeb",
+}
+
+
+@pytest.mark.parametrize(
+    "module",
+    [section_extraction, quality_assessment, entry_identification],
+    ids=lambda m: m.NAME,
+)
+def test_version_is_pinned_to_the_shipped_prompt(module) -> None:
+    assert CURRENT_VERSIONS[module.NAME] == module.VERSION
+
+
 @pytest.mark.parametrize(
     "module",
     [section_extraction, quality_assessment, entry_identification],
@@ -165,11 +203,11 @@ def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> 
     Asserting ``VERSION != "<old hash>"`` would pass trivially forever and
     cannot tell "the template gained a placeholder" from "the canary argument
     was added" — and the canary is the thing under test. Only a mutation
-    proves it: editing ``render_review_context_section`` changes production
+    proves it: editing ``render_review_question_section`` changes production
     prompts, so §IX requires it to bump the version too.
     """
     before = module.VERSION
-    monkeypatch.setattr(prompts, "render_review_context_section", lambda _body: "MUTATED")
+    monkeypatch.setattr(prompts, "render_review_question_section", lambda _body: "MUTATED")
     try:
         importlib.reload(module)
         assert before != module.VERSION

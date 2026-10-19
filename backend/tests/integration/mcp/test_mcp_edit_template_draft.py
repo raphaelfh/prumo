@@ -25,19 +25,51 @@ from app.core.config import settings
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import template_field_naming, template_field_service
 from app.services.pat_service import create_token, resolve_principal
+from app.services.template_versioning import TemplateVersionService
 from app.utils.compact_json import RESULT_CAP, compact_json
-from tests.integration.conftest import SEED, clean_project_clones
+from tests.integration.conftest import SEED, clean_project_clones, make_proposal, open_session
 from tests.integration.helpers.engine_setup import run_in_extract
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
     add_field,
     add_section,
     draft_lock_holder,
+    entity_id,
+    entry_key_holders,
     force_narrow_baseline,
     fresh_charms,
+    set_entry_key,
+    set_options_silently,
 )
+from tests.integration.helpers.template_fixtures import field_id as fixture_field_id
 from tests.integration.mcp.conftest import SeededPat
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
+
+_ALLOWED = [
+    "add_question",
+    "add_section",
+    "delete_question",
+    "delete_section",
+    "move_question",
+    "reorder_questions",
+    "set_instruction",
+    "set_options",
+    "update_question",
+    "update_section",
+]
+_EDITABLE = [
+    "allow_other",
+    "allowed_units",
+    "allows_no_information",
+    "allows_not_applicable",
+    "allows_not_evaluated",
+    "description",
+    "instructions",
+    "is_entity_key",
+    "label",
+    "required",
+    "unit",
+]
 
 
 class _Pg(Exception):
@@ -155,7 +187,10 @@ async def test_success_returns_unpublished_draft(
         "diff.changes[].label_path[]",
         "diff.changes[].before",
         "diff.changes[].after",
+        "diff.changes[].id",
     }
+    assert body["diff"]["fingerprint"] == body["draft_fingerprint"]
+    assert all(change["id"] for change in body["diff"]["changes"])
 
     row = (
         await db_session.execute(
@@ -366,13 +401,21 @@ async def test_draft_lock_held_precedes_baseline_refusals(
 @pytest.mark.parametrize(
     "extra_op",
     [
-        {"op": "delete_question"},
-        {"op": "move_question"},
-        {"op": "add_section"},
+        {"op": "publish"},
+        {"op": "clone_template"},
+        {"op": "import_template"},
         {"op": "update_question", "type": "number"},
         {"op": "update_question", "options": ["a"]},
+        {"op": "update_question", "name": "renamed"},
     ],
-    ids=["delete_question", "move_question", "add_section", "update_type", "update_options"],
+    ids=[
+        "publish",
+        "clone_template",
+        "import_template",
+        "update_type",
+        "update_options",
+        "update_name",
+    ],
 )
 async def test_disallowed_op_refused(
     mcp_client, pat_primary_rw, db_session: AsyncSession, extra_op: dict[str, Any]
@@ -397,13 +440,21 @@ async def test_disallowed_op_refused(
     payload = error_payload(result)
     assert payload["code"] == "OP_NOT_ALLOWED_VIA_AGENT"
     assert payload["op_index"] == 1
-    assert payload["allowed_ops"] == ["add_question", "update_question"]
-    blocked_key = {"type", "options"} & bad.keys()
+    assert payload["allowed_ops"] == _ALLOWED
+    blocked_key = {"name", "type", "options"} & bad.keys()
     if blocked_key:
-        assert payload["field"] == blocked_key.pop()
-        assert payload["editable_fields"] == ["description", "instructions", "label"]
-        assert "update_question" in payload["next_step"]
-        assert "prumo UI" in payload["next_step"]
+        key = blocked_key.pop()
+        assert payload["field"] == key
+        assert payload["editable_fields"] == _EDITABLE
+        if key == "options":
+            assert "set_options" in payload["message"]
+            assert "set_options" in payload["next_step"]
+        else:
+            assert payload["message"] == (
+                "A question's type or name can only be changed in the prumo UI."
+            )
+            assert "update_question" in payload["next_step"]
+            assert "prumo UI" in payload["next_step"]
     else:
         assert payload["next_step"] == "do this in the prumo UI"
         assert "field" not in payload
@@ -1130,7 +1181,7 @@ async def test_non_ascii_draft_diff_stays_within_the_result_cap(
             ],
             "INVALID_ARGUMENT",
         ),
-        (lambda _section_id, _field_id: [{"op": "delete_question"}], "OP_NOT_ALLOWED_VIA_AGENT"),
+        (lambda _section_id, _field_id: [{"op": "publish"}], "OP_NOT_ALLOWED_VIA_AGENT"),
         (
             lambda _section_id, field_id: [
                 {"op": "update_question", "field_id": field_id, "type": "number"}
@@ -1167,3 +1218,845 @@ async def test_post_membership_refusals_carry_names(
     )
     assert payload["code"] == code
     _assert_named(payload, await _names(db_session, project_id, template_id))
+
+
+# --------------------------------------------------------------------------
+# delete / move / reorder questions and the fingerprint guard
+# --------------------------------------------------------------------------
+
+
+def _sections_with_fields(schema: dict[str, Any], minimum: int = 1) -> list[dict[str, Any]]:
+    return [et for et in schema["entity_types"] if len(et.get("fields") or []) >= minimum]
+
+
+async def _ordered_field_ids(db: AsyncSession, section_id: str) -> list[str]:
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id FROM public.extraction_fields WHERE entity_type_id = :sid "
+                "ORDER BY sort_order, id"
+            ),
+            {"sid": section_id},
+        )
+    ).scalars()
+    return [str(row) for row in rows]
+
+
+async def _sort_orders(db: AsyncSession, section_id: str) -> list[int]:
+    rows = (
+        await db.execute(
+            text(
+                "SELECT sort_order FROM public.extraction_fields WHERE entity_type_id = :sid "
+                "ORDER BY sort_order, id"
+            ),
+            {"sid": section_id},
+        )
+    ).scalars()
+    return list(rows)
+
+
+async def _fingerprint(mcp_client, pat, project_id: UUID, template_id: UUID) -> str:
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id), "view": "changes"},
+        )
+    )
+    assert body["fingerprint"]
+    return body["fingerprint"]
+
+
+async def _edit(mcp_client, pat, project_id: UUID, template_id: UUID, ops, **extra: Any):
+    return await call_tool(
+        mcp_client,
+        pat,
+        "edit_template_draft",
+        {"project_id": str(project_id), "template_id": str(template_id), "ops": ops, **extra},
+    )
+
+
+async def test_delete_question_applies_with_fingerprint(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    label = _label_of(schema, section_id, field_id)
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": field_id}],
+            expected_fingerprint=fp,
+        )
+    )
+    assert body["applied"] == [{"op_index": 0, "op": "delete_question", "field_id": field_id}]
+    assert field_id not in await _ordered_field_ids(db_session, section_id)
+    assert body["draft_fingerprint"] != fp
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT before, after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert row.before["ops"][0]["label"] == label
+    assert row.before["ops"][0]["section_id"] == section_id
+    assert row.after["ops"][0] == {
+        "op_index": 0,
+        "op": "delete_question",
+        "field_id": field_id,
+    }
+
+
+async def test_delete_without_fingerprint_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    before = await _label_set(db_session, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": field_id}],
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "expected_fingerprint"
+    assert payload["message"] == "required when a batch deletes or moves"
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_stale_fingerprint_is_stale_value(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    current = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+    before = await _label_set(db_session, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": field_id}],
+            expected_fingerprint="stale",
+        )
+    )
+    assert payload["code"] == "STALE_VALUE"
+    assert payload["current_fingerprint"] == current
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == 1
+    assert await _audit_count(db_session, outcome="applied") == 0
+
+
+async def test_delete_question_with_recorded_values_is_in_use(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    owner = await entity_id(db_session, template_id, "sample_size")
+    target = await fixture_field_id(
+        db_session, template_id, "sample_size", "number_of_participants"
+    )
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+    before = await _label_set(db_session, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "delete_question", "field_id": str(target)}],
+            expected_fingerprint=fp,
+        )
+    )
+    assert payload["code"] == "IN_USE"
+    assert payload["op_index"] == 0
+    assert payload["retryable"] is False
+    assert await _label_set(db_session, template_id) == before
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_move_question_renumbers_destination(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    source, destination = _sections_with_fields(schema)[:2]
+    moved = source["fields"][0]["id"]
+    existing = await _ordered_field_ids(db_session, destination["id"])
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "move_question",
+                    "field_id": moved,
+                    "section_id": destination["id"],
+                    "position": 0,
+                }
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    assert await _ordered_field_ids(db_session, destination["id"]) == [moved, *existing]
+    assert await _sort_orders(db_session, destination["id"]) == list(range(len(existing) + 1))
+    applied = body["applied"][0]
+    assert applied["op"] == "move_question"
+    assert applied["field_id"] == moved
+    assert applied["section_id"] == destination["id"]
+    assert applied["section_label"] == destination["label"]
+
+
+async def test_move_question_past_the_end_appends(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    source, destination = _sections_with_fields(schema)[:2]
+    moved = source["fields"][0]["id"]
+    existing = await _ordered_field_ids(db_session, destination["id"])
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "move_question",
+                    "field_id": moved,
+                    "section_id": destination["id"],
+                    "position": 999,
+                }
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    assert await _ordered_field_ids(db_session, destination["id"]) == [*existing, moved]
+    assert await _sort_orders(db_session, destination["id"]) == list(range(len(existing) + 1))
+
+
+async def test_reorder_questions_sets_order(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section = _sections_with_fields(schema, minimum=2)[0]
+    reversed_ids = list(reversed(await _ordered_field_ids(db_session, section["id"])))
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "reorder_questions", "section_id": section["id"], "field_ids": reversed_ids}],
+        )
+    )
+    assert await _ordered_field_ids(db_session, section["id"]) == reversed_ids
+    assert await _sort_orders(db_session, section["id"]) == list(range(len(reversed_ids)))
+    assert body["applied"] == [
+        {
+            "op_index": 0,
+            "op": "reorder_questions",
+            "section_id": section["id"],
+            "section_label": section["label"],
+            "count": len(reversed_ids),
+        }
+    ]
+
+
+@pytest.mark.parametrize("shape", ["missing_one", "duplicate"], ids=["wrong_ids", "duplicate_ids"])
+async def test_reorder_with_mismatched_ids_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, shape: str
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section = _sections_with_fields(schema, minimum=2)[0]
+    ids = await _ordered_field_ids(db_session, section["id"])
+    sent = ids[1:] if shape == "missing_one" else [*ids, ids[0]]
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "reorder_questions", "section_id": section["id"], "field_ids": sent}],
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "field_ids"
+    assert payload["op_index"] == 0
+    assert payload["message"] == "field_ids must name exactly this section's questions"
+    assert await _ordered_field_ids(db_session, section["id"]) == ids
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def _bulk_section(
+    db: AsyncSession, template_id: UUID, name: str, questions: int
+) -> tuple[str, list[str]]:
+    """A section labelled at the 200-char label cap with ``questions`` text fields."""
+    section_id = await add_section(db, template_id, name)
+    await db.execute(
+        text("UPDATE public.extraction_entity_types SET label = :l WHERE id = :id"),
+        {"l": ("Seção de intervenção " * 10)[:200], "id": str(section_id)},
+    )
+    ids = [uuid4() for _ in range(questions)]
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required, sort_order, "
+            " allow_other, allows_not_applicable, allows_not_evaluated) "
+            "VALUES (:id, :et, :name, :name, 'text', false, :o, false, false, false)"
+        ),
+        [
+            {"id": str(fid), "et": str(section_id), "name": f"{name}_q{i}", "o": i}
+            for i, fid in enumerate(ids)
+        ],
+    )
+    await db.flush()
+    return str(section_id), [str(fid) for fid in ids]
+
+
+@pytest.mark.parametrize(
+    ("sections", "questions", "ops_per_section"),
+    [(1, 32, 25), (2, 500, 1)],
+    ids=["25x32", "2x500"],
+)
+async def test_reorder_reply_stays_under_result_cap(
+    mcp_client,
+    pat_primary_rw,
+    db_session: AsyncSession,
+    sections: int,
+    questions: int,
+    ops_per_section: int,
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    built = [
+        await _bulk_section(db_session, template_id, f"bulk_{n}", questions)
+        for n in range(sections)
+    ]
+    ops = [
+        {
+            "op": "reorder_questions",
+            "section_id": section_id,
+            "field_ids": ids if k % 2 else list(reversed(ids)),
+        }
+        for section_id, ids in built
+        for k in range(ops_per_section)
+    ]
+
+    body = structured(await _edit(mcp_client, pat_primary_rw, project_id, template_id, ops))
+    assert len(compact_json(body)) <= RESULT_CAP
+    assert [a["count"] for a in body["applied"]] == [questions] * len(ops)
+    assert all("field_ids" not in a for a in body["applied"])
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert [op["field_ids"] for op in row.after["ops"]] == [op["field_ids"] for op in ops]
+
+
+async def test_failing_op_rolls_back_batch(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    before = await _label_set(db_session, template_id)
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {"op": "add_question", "section_id": section_id, "label": "New Q", "type": "text"},
+                {"op": "update_question", "field_id": field_id, "label": "Reworded"},
+                {"op": "delete_question", "field_id": str(uuid4())},
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    assert payload["code"] == "NOT_FOUND"
+    assert payload["op_index"] == 2
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+
+
+async def test_unknown_op_lists_allowed_ops(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    payload = error_payload(
+        await _edit(mcp_client, pat_primary_rw, project_id, template_id, [{"op": "publish"}])
+    )
+    assert payload["code"] == "OP_NOT_ALLOWED_VIA_AGENT"
+    assert payload["allowed_ops"] == _ALLOWED
+
+
+async def test_one_applied_row_covers_each_op(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    shrinking = _sections_with_fields(schema, minimum=2)[0]
+    others = [s for s in _sections_with_fields(schema) if s["id"] != shrinking["id"]]
+    target, landing = others[:2]
+    moved = (await _ordered_field_ids(db_session, shrinking["id"]))[0]
+    remaining = (await _ordered_field_ids(db_session, shrinking["id"]))[1:]
+    fp = await _fingerprint(mcp_client, pat_primary_rw, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "add_question",
+                    "section_id": target["id"],
+                    "label": "Extra",
+                    "type": "text",
+                },
+                {"op": "update_question", "field_id": target["fields"][0]["id"], "label": "New"},
+                {
+                    "op": "move_question",
+                    "field_id": moved,
+                    "section_id": landing["id"],
+                    "position": 0,
+                },
+                {
+                    "op": "reorder_questions",
+                    "section_id": shrinking["id"],
+                    "field_ids": list(reversed(remaining)),
+                },
+            ],
+            expected_fingerprint=fp,
+        )
+    )
+    expected = ["add_question", "update_question", "move_question", "reorder_questions"]
+    assert [a["op"] for a in body["applied"]] == expected
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT before, after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert [op["op"] for op in row.after["ops"]] == expected
+    assert row.after["ops"][3]["field_ids"] == list(reversed(remaining))
+    assert row.before["ops"][2]["section_id"] == shrinking["id"]
+
+
+# --- richer add/update question and set_options ------------------------------
+
+_YES_NO_CODED = [{"value": "y", "label": "Yes"}, {"value": "n", "label": "No"}]
+
+
+async def _field_row(db: AsyncSession, field_id: str | UUID) -> Any:
+    return (
+        await db.execute(
+            text(
+                "SELECT is_required, unit, allowed_units, allowed_values, allow_other, "
+                "allows_not_applicable, allows_not_evaluated, allows_no_information, "
+                "is_entity_key FROM public.extraction_fields WHERE id = :id"
+            ),
+            {"id": str(field_id)},
+        )
+    ).one()
+
+
+async def _coded_select(db: AsyncSession, project_id: UUID, template_id: UUID) -> UUID:
+    """Publish a baseline whose ``outcome_to_be_predicted.outcome_assessed_blinded`` select
+    (a top-level section, so a session opens an instance of it) stores the
+    codes ``y``/``n`` behind the labels ``Yes``/``No``."""
+    target = await fixture_field_id(
+        db, template_id, "outcome_to_be_predicted", "outcome_assessed_blinded"
+    )
+    await set_options_silently(db, target, _YES_NO_CODED)
+    await TemplateVersionService(db).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    return target
+
+
+def _set_options(field_id: str | UUID, options: list[dict[str, str]]) -> list[dict[str, Any]]:
+    return [{"op": "set_options", "field_id": str(field_id), "options": options}]
+
+
+async def _option_rows(mcp_client, pat, project_id: UUID, template_id: UUID) -> list[str]:
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id), "view": "changes"},
+        )
+    )
+    return [row["variant"] for row in body["changes"] if row["attribute"] == "allowed_values"]
+
+
+async def test_add_question_with_flags_and_units(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "add_question",
+                    "section_id": section_id,
+                    "label": "Dose",
+                    "type": "number",
+                    "required": True,
+                    "unit": "mg",
+                    "allowed_units": ["mg", "g"],
+                    "allows_not_applicable": True,
+                    "allows_not_evaluated": True,
+                    "allows_no_information": False,
+                }
+            ],
+        )
+    )
+    row = await _field_row(db_session, body["applied"][0]["field_id"])
+    assert row.is_required is True
+    assert row.unit == "mg"
+    assert row.allowed_units == ["mg", "g"]
+    assert row.allows_not_applicable is True
+    assert row.allows_not_evaluated is True
+    assert row.allows_no_information is False
+    assert row.allow_other is False
+
+
+async def test_add_question_defaults_keep_no_information(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "add_question", "section_id": section_id, "label": "Plain", "type": "text"}],
+        )
+    )
+    row = await _field_row(db_session, body["applied"][0]["field_id"])
+    assert (row.is_required, row.allows_not_applicable, row.allows_no_information) == (
+        False,
+        False,
+        True,
+    )
+
+
+async def test_update_question_sets_entity_key_and_flags(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, field_id = _section_and_field(schema)
+    holder = (await entry_key_holders(db_session, template_id)).get(UUID(section_id))
+    if holder is not None:
+        await set_entry_key(db_session, holder, False)
+    stored = await _field_row(db_session, field_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "update_question",
+                    "field_id": field_id,
+                    "is_entity_key": True,
+                    "required": True,
+                    "unit": "years",
+                    "allowed_units": ["years"],
+                    "allows_not_applicable": True,
+                    "allows_not_evaluated": True,
+                    "allows_no_information": False,
+                    "allow_other": True,
+                }
+            ],
+        )
+    )
+    assert body["applied"][0]["op"] == "update_question"
+    row = await _field_row(db_session, field_id)
+    assert row.is_entity_key is True
+    assert row.is_required is True
+    assert (row.unit, row.allowed_units) == ("years", ["years"])
+    assert (row.allows_not_applicable, row.allows_not_evaluated) == (True, True)
+    assert (row.allows_no_information, row.allow_other) == (False, True)
+    audit = (
+        await db_session.execute(
+            text(
+                "SELECT before FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert audit.before["ops"][0]["is_entity_key"] is False
+    assert audit.before["ops"][0]["required"] is stored.is_required
+    assert audit.before["ops"][0]["unit"] == stored.unit
+
+
+async def test_second_entity_key_is_structure_conflict(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section = _sections_with_fields(schema, minimum=2)[0]
+    first, second = (await _ordered_field_ids(db_session, section["id"]))[:2]
+    holder = (await entry_key_holders(db_session, template_id)).get(UUID(section["id"]))
+    if holder is not None and str(holder) != first:
+        await set_entry_key(db_session, holder, False)
+    await set_entry_key(db_session, UUID(first), True)
+    refused_before = await _audit_count(db_session, outcome="refused")
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [{"op": "update_question", "field_id": second, "is_entity_key": True}],
+        )
+    )
+    assert payload["code"] == "STRUCTURE_CONFLICT"
+    assert payload["rule"] == "duplicate_entity_key"
+    assert payload["op_index"] == 0
+    assert (await _field_row(db_session, second)).is_entity_key is False
+    assert await _audit_count(db_session, outcome="refused") == refused_before + 1
+
+
+async def test_set_options_keeps_codes_and_derives_new(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+
+    body = structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"value": "y", "label": "Yes!"}, {"label": " Maybe "}]),
+        )
+    )
+    assert body["applied"][0]["op"] == "set_options"
+    assert body["applied"][0]["field_id"] == str(target)
+    assert (await _field_row(db_session, target)).allowed_values == [
+        {"value": "y", "label": "Yes!"},
+        {"value": "Maybe", "label": " Maybe "},
+    ]
+    audit = (
+        await db_session.execute(
+            text(
+                "SELECT before, after FROM public.agent_actions "
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
+            )
+        )
+    ).one()
+    assert audit.before["ops"][0] == {"options": _YES_NO_CODED}
+    assert audit.after["ops"][0]["options"] == [
+        {"value": "y", "label": "Yes!"},
+        {"value": "Maybe", "label": " Maybe "},
+    ]
+
+
+@pytest.mark.parametrize("label", ["Yes", " Yes "], ids=["exact", "padded"])
+async def test_set_options_label_match_keeps_stored_code(
+    mcp_client, pat_primary_rw, db_session: AsyncSession, label: str
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+
+    structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"label": label}, {"label": "No"}]),
+        )
+    )
+    assert (await _field_row(db_session, target)).allowed_values == [
+        {"value": "y", "label": label},
+        {"value": "n", "label": "No"},
+    ]
+    variants = await _option_rows(mcp_client, pat_primary_rw, project_id, template_id)
+    assert "field_option_removed" not in variants
+    assert "field_option_added" not in variants
+    if label == "Yes":
+        assert variants == []
+
+
+async def test_set_options_collision_is_structure_conflict(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+    refused_before = await _audit_count(db_session, outcome="refused")
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"value": "a", "label": "A"}, {"label": "a"}]),
+        )
+    )
+    assert payload["code"] == "STRUCTURE_CONFLICT"
+    assert payload["rule"] == "option_value_conflict"
+    assert payload["op_index"] == 0
+    assert (await _field_row(db_session, target)).allowed_values == _YES_NO_CODED
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == refused_before + 1
+
+
+async def test_set_options_on_a_text_question_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await fixture_field_id(
+        db_session, template_id, "sample_size", "number_of_participants"
+    )
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"label": "A"}]),
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "options"
+    assert payload["op_index"] == 0
+    assert payload["message"] == "set_options applies to select and multiselect questions"
+    assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_add_question_duplicate_options_stays_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+
+    payload = error_payload(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            [
+                {
+                    "op": "add_question",
+                    "section_id": section_id,
+                    "label": "Dup",
+                    "type": "select",
+                    "options": [{"value": "a", "label": "A"}, {"label": "a"}],
+                }
+            ],
+        )
+    )
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "options"
+    assert "rule" not in payload
+
+
+async def test_set_options_removing_value_with_data_shows_destructive_row(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    target = await _coded_select(db_session, project_id, template_id)
+    owner = await entity_id(db_session, template_id, "outcome_to_be_predicted")
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+        value="n",
+    )
+
+    structured(
+        await _edit(
+            mcp_client,
+            pat_primary_rw,
+            project_id,
+            template_id,
+            _set_options(target, [{"value": "y", "label": "Yes"}]),
+        )
+    )
+    body = structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw,
+            "get_template",
+            {"project_id": str(project_id), "template_id": str(template_id), "view": "changes"},
+        )
+    )
+    removed = [r for r in body["changes"] if r["variant"] == "field_option_removed"]
+    assert len(removed) == 1
+    assert removed[0]["tier"] == "destructive"
+    assert removed[0]["affects_recorded_data"] is True

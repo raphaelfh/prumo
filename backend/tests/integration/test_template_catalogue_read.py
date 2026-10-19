@@ -22,7 +22,7 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
     TemplateKind,
 )
-from tests.integration.conftest import SEED
+from tests.integration.conftest import CHARMS_GLOBAL_ID, SEED, clone_charms
 from tests.integration.helpers import template_fixtures
 
 auth_as_reviewer = template_fixtures.auth_as_reviewer
@@ -172,3 +172,32 @@ async def test_project_templates_refuses_a_non_member(
         PROJECT_TEMPLATES.format(pid=SEED.primary_project), params={"kind": "extraction"}
     )
     assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_global_catalogue_carries_the_instrument_code(
+    db_client: AsyncClient, auth_as_reviewer: UUID
+) -> None:
+    del auth_as_reviewer  # consumed for its dependency-override side effect
+    r = await db_client.get(GLOBAL_CATALOGUE, params={"kind": "extraction"})
+
+    assert r.status_code == 200, r.text
+    by_id = {row["id"]: row for row in r.json()["data"]}
+    assert by_id[str(CHARMS_GLOBAL_ID)]["instrument"] == "charms"
+
+
+@pytest.mark.asyncio
+async def test_project_template_read_carries_its_clone_code(
+    db_session: AsyncSession, db_client: AsyncClient, auth_as_reviewer: UUID
+) -> None:
+    del auth_as_reviewer  # consumed for its dependency-override side effect
+    clone = await clone_charms(db_session, SEED.primary_project, SEED.primary_profile)
+
+    r = await db_client.get(
+        PROJECT_TEMPLATES.format(pid=SEED.primary_project), params={"kind": "extraction"}
+    )
+
+    assert r.status_code == 200, r.text
+    by_id = {row["id"]: row for row in r.json()["data"]}
+    assert by_id[str(clone.project_template_id)]["instrument"] == "charms"
+    assert by_id[str(SEED.primary_template)]["instrument"] == "custom"

@@ -7,7 +7,7 @@
  * Based on Supabase generated types for consistency.
  */
 
-import type {Database, Json} from '@/integrations/supabase/types';
+import type {Database} from '@/integrations/supabase/types';
 
 /** Review type (Supabase enum). */
 export type ReviewType = Database['public']['Enums']['review_type'];
@@ -130,17 +130,4 @@ export type ProjectSummary = Pick<
     'id' | 'name' | 'description' | 'review_title' | 'condition_studied'
 >;
 
-
-export interface EligibilityCriteria {
-  inclusion?: string[];
-  exclusion?: string[];
-  notes?: string;
-  [key: string]: Json | undefined;
-}
-
-export interface StudyDesign {
-  types?: string[];
-  notes?: string;
-  [key: string]: Json | undefined;
-}
 

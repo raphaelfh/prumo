@@ -34,7 +34,13 @@ from app.schemas.mcp_projects import (
 from app.schemas.project_details import ProjectDetailsValues
 from app.services.extraction_snapshot import snapshot_is_narrow
 
-__all__ = ["get_project_overview", "list_projects_for_user", "project_name", "template_summaries"]
+__all__ = [
+    "article_text_counts",
+    "get_project_overview",
+    "list_projects_for_user",
+    "project_name",
+    "template_summaries",
+]
 
 
 async def list_projects_for_user(
@@ -67,6 +73,24 @@ async def project_name(db: AsyncSession, project_id: UUID) -> str:
     return name
 
 
+async def article_text_counts(db: AsyncSession, project_id: UUID) -> tuple[int, int]:
+    """``(articles, articles_with_text)``: an article has text once one of
+    its files is parsed."""
+    parsed_exists = exists(
+        select(1).where(
+            ArticleFile.article_id == Article.id, ArticleFile.extraction_status == "parsed"
+        )
+    )
+    articles, with_text = (
+        await db.execute(
+            select(func.count(Article.id), func.count(Article.id).filter(parsed_exists)).where(
+                Article.project_id == project_id
+            )
+        )
+    ).one()
+    return int(articles), int(with_text)
+
+
 async def get_project_overview(
     db: AsyncSession, *, project_id: UUID, user_id: UUID
 ) -> McpProjectOverview | None:
@@ -79,25 +103,15 @@ async def get_project_overview(
         {field: getattr(project, field) for field in ProjectDetailsValues.model_fields}
     )
 
-    parsed_exists = exists(
-        select(1).where(
-            ArticleFile.article_id == Article.id, ArticleFile.extraction_status == "parsed"
-        )
-    )
-    counts_row = (
-        await db.execute(
-            select(func.count(Article.id), func.count(Article.id).filter(parsed_exists)).where(
-                Article.project_id == project_id
-            )
-        )
-    ).one()
+    articles, articles_with_text = await article_text_counts(db, project_id)
 
     return McpProjectOverview(
         project_id=project_id,
         role=cast(ProjectRoleValue, member.role),
         is_active=project.is_active,
         details=details,
-        counts=McpProjectCounts(articles=counts_row[0], articles_with_text=counts_row[1]),
+        protocol_revision=project.protocol_revision,
+        counts=McpProjectCounts(articles=articles, articles_with_text=articles_with_text),
         templates=await template_summaries(db, project_id=project_id),
     )
 
@@ -132,6 +146,7 @@ async def template_summaries(db: AsyncSession, *, project_id: UUID) -> list[McpT
                 template_id=template.id,
                 name=template.name,
                 kind=template.kind,
+                instrument=template.instrument,
                 is_active=template.is_active,
                 published_version=version.version if version is not None else None,
                 narrow=narrow,

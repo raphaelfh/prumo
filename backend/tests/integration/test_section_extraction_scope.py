@@ -38,6 +38,7 @@ from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories.extraction_repository import ExtractionInstanceRepository
 from app.services import engine_credentials, llm_connection_service
 from app.services.llm_connection_service import MissingCredentialError
+from app.worker import queue_health
 from tests.integration.conftest import CHARMS_GLOBAL_ID, SEED, first_entity_type_id
 from tests.integration.helpers import engine_setup
 from tests.integration.helpers.template_fixtures import add_instance, fresh_charms
@@ -154,7 +155,7 @@ def _stub_queue(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     The endpoint enqueues through ``apply_async`` (keyed by the attempt); a
     ``delay`` stub would leave every "never enqueued" assertion vacuous.
     """
-    monkeypatch.setattr(se, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
     # The credential precheck runs for real; a deployment key makes it pass
     # whatever the developer's or CI's environment holds.
     monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")

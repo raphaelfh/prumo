@@ -27,7 +27,7 @@ from app.api.mcp.errors import (
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_project_details import UpdateProjectDetailsResult
-from app.schemas.project_details import ProjectDetailsFields
+from app.schemas.project_details import ProjectDetailsExpected, ProjectDetailsFields
 from app.services import project_details_service
 from app.services.project_read_service import project_name
 from app.utils.json_schema import inline_json_schema
@@ -41,6 +41,8 @@ _EDITABLE = sorted(ProjectDetailsFields.model_fields)
 # Advertised only: `_parse` still validates, so an unknown key stays an audited
 # FIELD_NOT_EDITABLE (with the editable list), not an SDK-level refusal.
 _Details = Annotated[dict[str, Any], WithJsonSchema(inline_json_schema(ProjectDetailsFields))]
+# Loose: a stored shape that predates the typed write bounds must be echoable.
+_Expected = Annotated[dict[str, Any], WithJsonSchema(inline_json_schema(ProjectDetailsExpected))]
 _DESCRIPTION = (
     "Edit a project's descriptive fields (name, description, review type and the other "
     "whitelisted columns from get_project). `expected` must carry the value of each field "
@@ -59,7 +61,7 @@ _DESCRIPTION = (
     idempotent=True,
 )
 async def update_project_details(
-    db: AsyncSession, project_id: UUID, fields: _Details, expected: _Details
+    db: AsyncSession, project_id: UUID, fields: _Details, expected: _Expected
 ) -> UpdateProjectDetailsResult:
     scope = AuditScope(
         tool=_TOOL,
@@ -112,7 +114,7 @@ async def _apply(
 
 def _parse(
     fields: dict[str, Any], expected: dict[str, Any]
-) -> tuple[ProjectDetailsFields, ProjectDetailsFields]:
+) -> tuple[ProjectDetailsFields, ProjectDetailsExpected]:
     # Order: NUL, whitelist (FIELD_NOT_EDITABLE), presence, types (INVALID_ARGUMENT).
     reject_nul({"fields": fields, "expected": expected})
     for key in sorted({*fields, *expected}):
@@ -136,13 +138,12 @@ def _parse(
                 "expected must carry the prior value of every key in fields.",
                 field=f"expected.{key}",
             )
-    return _validated(fields, prefix=""), _validated(
-        {k: expected[k] for k in fields}, prefix="expected"
-    )
-
-
-def _validated(raw: dict[str, Any], *, prefix: str) -> ProjectDetailsFields:
     try:
-        return ProjectDetailsFields.model_validate(raw)
+        parsed_fields = ProjectDetailsFields.model_validate(fields)
     except ValidationError as exc:
-        raise validation_failure(exc, prefix=prefix) from exc
+        raise validation_failure(exc) from exc
+    try:
+        parsed_expected = ProjectDetailsExpected.model_validate({k: expected[k] for k in fields})
+    except ValidationError as exc:
+        raise validation_failure(exc, prefix="expected") from exc
+    return parsed_fields, parsed_expected

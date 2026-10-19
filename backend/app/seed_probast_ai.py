@@ -67,9 +67,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ExtractionTemplateGlobal,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.seed import (
     _PROBAST_JUDGMENT,
@@ -718,6 +718,7 @@ async def seed_probast_ai(session: AsyncSession) -> None:
     # manager-customized ✨ text, seeded (and a retired default replaced) by
     # ``backfill_llm_template_instructions``. Converging must not clobber it.
     template.name = "PROBAST+AI"
+    template.instrument = "probast_ai"
     template.description = _DESCRIPTION
     template.framework = "CUSTOM"
     template.version = "2.2.0"

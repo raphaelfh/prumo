@@ -29,7 +29,10 @@ def build_model(
     api_key: str | None = None,
     base_url: str | None = None,
     output_mode: OutputMode | None = None,
+    allow_global_key: bool = True,
 ) -> Model:
+    """``allow_global_key=False`` (agent-started batches) refuses the
+    operator's global key: with no key of the caller's own it raises."""
     if not model_name or not model_name.strip():
         raise ValueError("model_name must be a non-empty string.")
     provider = provider.lower()
@@ -44,7 +47,12 @@ def build_model(
             raise ValueError(f"{provider} requires a base_url.")
         return build(model_name, api_key or "no-key-required", base_url, mode)
 
-    key = api_key or global_key_for(provider)
+    key = api_key or (global_key_for(provider) if allow_global_key else None)
+    if not key and not allow_global_key:
+        raise MissingLLMKeyError(
+            f"No {spec.label} API key of your own or the project's is set, and this run "
+            "may not use the deployment's key."
+        )
     if not key:
         raise MissingLLMKeyError(
             f"No {spec.label} API key available: pass a key or set {spec.global_key_setting}."

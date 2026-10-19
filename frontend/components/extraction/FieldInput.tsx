@@ -59,7 +59,8 @@ interface FieldInputProps {
   ) => void | Promise<void>;
   disabled?: boolean;
   /** Threaded to the review popover's generation dialog so it can lazily fetch
-   *  the stored markdown the LLM received. */
+   *  the stored article markdown the prompt was built from (the prompt also
+   *  carries block refs, which that view omits). */
   articleId?: string;
 }
 

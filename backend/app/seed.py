@@ -63,9 +63,9 @@ from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ExtractionTemplateGlobal,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import TemplateKind
 from app.seed_instruction_defaults import (
     CHARMS_INSTRUCTION,
@@ -3190,9 +3190,8 @@ _RETIRED_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
 async def backfill_llm_template_instructions(session: AsyncSession) -> None:
     """Seed the framework default where a global has none or a retired default.
 
-    Separate from the per-template seeders, which never write this column —
-    whether they early-return or converge — so existing databases receive new
-    defaults while a manager's customized text is never overwritten.
+    Separate from the per-template seeders, which never write this column, so
+    existing databases get new defaults and a manager's text is never overwritten.
     """
     # Function-local for the same circularity reason as ``main``'s import.
     from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
@@ -3220,8 +3219,8 @@ async def backfill_llm_template_instructions(session: AsyncSession) -> None:
 
 
 async def main() -> None:
-    # Function-local: seed_probast_ai imports this module's shared helpers, so a
-    # top-level import here would be circular.
+    # Function-local: both import this module's helpers (circular otherwise).
+    from app.seed_instrument import converge_seeded_globals
     from app.seed_probast_ai import seed_probast_ai
 
     print("Starting database seeding process...")
@@ -3233,7 +3232,7 @@ async def main() -> None:
             await seed_probast(session)
             await seed_quadas2(session)
             await seed_probast_ai(session)
-            await backfill_llm_template_instructions(session)
+            await converge_seeded_globals(session)
             await session.commit()
             print("Seeding completed successfully.")
         except Exception as e:

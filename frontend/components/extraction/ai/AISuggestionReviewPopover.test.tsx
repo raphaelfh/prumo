@@ -16,9 +16,14 @@ vi.mock('@/lib/copy', () => ({
     )[key] ?? key),
 }));
 
+const locate = vi.hoisted(() => vi.fn());
+vi.mock('@/hooks/extraction/useReaderLocate', () => ({
+  useReaderLocate: () => ({ locate, isAvailable: true }),
+}));
+
 import { AISuggestionReviewPopover } from './AISuggestionReviewPopover';
 import { RunEditabilityProvider } from '@/components/runs/RunEditabilityContext';
-import type { AISuggestionHistoryItem } from '@/types/ai-extraction';
+import type { AISuggestionHistoryItem, EvidenceCitation } from '@/types/ai-extraction';
 
 function v(over: Partial<AISuggestionHistoryItem>): AISuggestionHistoryItem {
   return {
@@ -663,5 +668,45 @@ describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
     // row repeats it.
     expect(screen.getAllByText(/Run by Carla/)).toHaveLength(1);
     expect(screen.getByText(/Run by Carla · /)).toBeInTheDocument();
+  });
+});
+
+describe('AISuggestionReviewPopover — locate by evidence state', () => {
+  async function openWith(over: Partial<EvidenceCitation>) {
+    locate.mockReset();
+    const user = userEvent.setup();
+    const evidence: EvidenceCitation[] = [
+      { text: 'cited passage', pageNumber: 4, blockIds: [7], attributionLabel: 'entailed', rank: 0, grounded: true, stale: false, ...over },
+    ];
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ evidence })]}
+        selectedProposalId="p1"
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText(/cited passage/);
+    return user;
+  }
+
+  it('locates a current citation with its page and block hints', async () => {
+    const user = await openWith({});
+    await user.click(screen.getByRole('button', { name: 'evidenceLocate' }));
+    expect(locate).toHaveBeenCalledWith('cited passage', 4, [7]);
+  });
+
+  it('locates a stale citation by its text only', async () => {
+    const user = await openWith({ stale: true });
+    await user.click(screen.getByRole('button', { name: 'evidenceLocate' }));
+    expect(locate).toHaveBeenCalledWith('cited passage', null, []);
+  });
+
+  it('offers no Locate for an ungrounded citation', async () => {
+    await openWith({ grounded: false, attributionLabel: 'ungroundable', pageNumber: null });
+    expect(screen.queryByRole('button', { name: /evidenceLocate/ })).not.toBeInTheDocument();
+    expect(locate).not.toHaveBeenCalled();
   });
 });

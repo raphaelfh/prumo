@@ -30,7 +30,8 @@ from app.utils.opaque_cursor import InvalidCursorError
     destructive=False,
     description=(
         "List a project's articles (title, authors, year, text_status, has_pdf, has_text), "
-        "ordered by title. Page with next_cursor. Call get_article next."
+        "ordered by title. query matches a case-insensitive substring of the title or authors. "
+        "Page with next_cursor. Call get_article next."
     ),
 )
 async def list_articles(

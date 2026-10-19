@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
@@ -54,12 +54,17 @@ from app.models.extraction import ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem
 from app.models.extraction_versioning import TemplateKind
-from app.models.extraction_workflow import ExtractionProposalRecord
 from app.repositories.extraction_batch_repository import ExtractionBatchRepository
 from app.schemas.extraction import SectionExtractionRequest
-from app.schemas.extraction_batch import ATTEMPT_LIVE, ATTEMPT_LIVE_WINDOW
+from app.schemas.extraction_batch import ATTEMPT_LIVE, ATTEMPT_LIVE_WINDOW, ENGINE_STOP_CODES
 from app.services.article_read_service import ArticleNotFoundError, owned_articles
 from app.services.extraction_attempt_service import ExtractionAttemptService
+from app.services.extraction_batch_agent_guard import agent_stop_reason
+from app.services.extraction_batch_guards import (
+    run_write_reason,
+    runs_with_ai_suggestions,
+    runs_with_owner_live_attempt,
+)
 from app.services.extraction_run_write import RunWriteError, open_run_for_write
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
 from app.services.project_template_active_service import (
@@ -78,6 +83,15 @@ _LOCK_SQL = "SELECT pg_advisory_lock(hashtextextended(:k, 0))"
 _UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtextextended(:k, 0))"
 #: Postgres ``lock_not_available`` — what ``lock_timeout`` raises on a wait.
 _LOCK_NOT_AVAILABLE = "55P03"
+
+
+def _halted_item_reason(batch: ExtractionBatch) -> str:
+    """The reason a halted batch's queued items carry, picked by why it halted."""
+    if batch.cancelled_at is not None:
+        return "CANCELLED"
+    if batch.stop_code in ENGINE_STOP_CODES:
+        return "STOPPED_ENGINE_ERROR"
+    return "STOPPED_AGENT_GUARD"
 
 
 def batch_request_id(item_id: UUID) -> UUID:
@@ -173,17 +187,19 @@ class ExtractionBatchDispatcher:
             return  # cascaded away with its project, tool or owner
 
         if batch.cancelled_at is not None or batch.stop_code is not None:
-            reason = "CANCELLED" if batch.cancelled_at is not None else "STOPPED_ENGINE_ERROR"
-            await self.batches.cancel_queued(batch.id, reason)
+            await self.batches.cancel_queued(batch.id, _halted_item_reason(batch))
             await self.db.commit()
             return
 
         failure = await self.batches.engine_stop_failure(batch.id)
         if failure is not None:
-            batch.stop_code, batch.stop_message = failure
-            await self.batches.cancel_queued(batch.id, "STOPPED_ENGINE_ERROR")
-            await self.db.commit()
-            logger.warning("extraction_batch.stopped", batch_id=str(batch.id), stop_code=failure[0])
+            await self._stop(batch.id, failure, "STOPPED_ENGINE_ERROR")
+            return
+
+        if batch.agent_plan_digest is not None and (
+            guard := await agent_stop_reason(self.db, batch)
+        ):
+            await self._stop(batch.id, guard, "STOPPED_AGENT_GUARD")
             return
 
         # From here on nothing reads the ORM row: a skip may roll back and
@@ -223,6 +239,17 @@ class ExtractionBatchDispatcher:
             targets = [(item.id, item.article_id) for item in claimed]
             for item_id, article_id in targets:
                 await self._dispatch_one(ctx, item_id, article_id, kind, is_reviewer=is_reviewer)
+
+    async def _stop(self, batch_id: UUID, stop: tuple[str, str | None], item_reason: str) -> None:
+        """Stop the batch and withhold its queued items; in-flight ones finish.
+
+        A cancel that landed after the batch was read wins: the conditional
+        write then matches nothing, and the cancel already withheld the items.
+        """
+        if await self.batches.stop(batch_id, *stop):
+            await self.batches.cancel_queued(batch_id, item_reason)
+            logger.warning("extraction_batch.stopped", batch_id=str(batch_id), stop_code=stop[0])
+        await self.db.commit()
 
     async def _template_kind(self, ctx: _BatchContext) -> str | None:
         try:
@@ -334,41 +361,20 @@ class ExtractionBatchDispatcher:
         try:
             await open_run_for_write(self.db, run_id, expect=ExtractionRunStage.EXTRACT.only())
         except RunWriteError as exc:
-            if exc.reason == "missing":
-                return "NO_LONGER_AVAILABLE"
-            if exc.stage == ExtractionRunStage.FINALIZED.value:
-                return "RUN_FINALIZED"
-            return "RUN_NOT_EDITABLE"
-        running = (
-            await self.db.execute(
-                select(ExtractionAttempt.id)
-                .where(
-                    ExtractionAttempt.owner_id == ctx.owner_id,
-                    ExtractionAttempt.run_id == run_id,
-                    ExtractionAttempt.status.in_(ATTEMPT_LIVE),
-                    ExtractionAttempt.updated_at >= self.now() - self.LIVE_WINDOW,
-                    ExtractionAttempt.request_id != batch_request_id(item_id),
-                )
-                .limit(1)
-            )
-        ).first()
-        if running is not None:
+            return run_write_reason(exc)
+        if run_id in await runs_with_owner_live_attempt(
+            self.db,
+            run_ids=[run_id],
+            owner_id=ctx.owner_id,
+            since=self.now() - self.LIVE_WINDOW,
+            exclude_request_id=batch_request_id(item_id),
+        ):
             return "AI_ALREADY_RUNNING"
-        if ctx.skip_articles_with_ai_suggestions and await self._run_has_ai_suggestions(run_id):
+        if ctx.skip_articles_with_ai_suggestions and run_id in await runs_with_ai_suggestions(
+            self.db, [run_id]
+        ):
             return "ALREADY_HAS_AI_SUGGESTIONS"
         return None
-
-    async def _run_has_ai_suggestions(self, run_id: UUID) -> bool:
-        return (
-            await self.db.execute(
-                select(ExtractionProposalRecord.id)
-                .where(
-                    ExtractionProposalRecord.run_id == run_id,
-                    ExtractionProposalRecord.source == "ai",
-                )
-                .limit(1)
-            )
-        ).first() is not None
 
     async def _skip(self, item_id: UUID, reason: str, *, discard_writes: bool = False) -> None:
         # Only a half-done session open has writes to discard; a guard skip has

@@ -26,7 +26,7 @@ function Wrapper({children}: {children: ReactNode}) {
 }
 
 const singleCitation: EvidenceCitation[] = [
-  {text: 'some evidence text', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0},
+  {text: 'some evidence text', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0, grounded: true, stale: false},
 ];
 
 function renderEvidence() {

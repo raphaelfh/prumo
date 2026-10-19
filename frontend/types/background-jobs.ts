@@ -165,6 +165,9 @@ export interface AiBatchJob extends BackgroundJob {
     stalled: boolean;
     stopCode: string | null;
     counts: ExtractionBatchCounts;
+    startedByAgent: boolean;
+    /** User-chosen token label: render as plain text. Null once the token is gone. */
+    agentTokenName: string | null;
   };
 }
 

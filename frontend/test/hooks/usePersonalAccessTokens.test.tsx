@@ -43,7 +43,7 @@ describe('usePersonalAccessTokens', () => {
     const {result} = renderHook(() => useCreateMyToken(), {wrapper: wrapperFor(client)});
 
     await act(async () => {
-      await result.current.mutateAsync({name: 'cli', scope: 'read', expires_in_days: 90});
+      await result.current.mutateAsync({name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false});
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({queryKey: meKeys.tokens()});
@@ -70,7 +70,7 @@ describe('usePersonalAccessTokens', () => {
 
     await expect(
       act(async () => {
-        await result.current.mutateAsync({name: 'cli', scope: 'read', expires_in_days: 90});
+        await result.current.mutateAsync({name: 'cli', scope: 'read', expires_in_days: 90, ai_run: false});
       }),
     ).rejects.toBe(error);
   });

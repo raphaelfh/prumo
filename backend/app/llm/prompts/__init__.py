@@ -25,16 +25,16 @@ class Ancestor:
     label: str
 
 
-def render_review_context_section(review_context: str | None) -> str:
-    """Project-level review question (from the run-pinned review context).
+def render_review_question_section(review_question: str | None) -> str:
+    """Project-level review question (from the run-pinned review question).
 
     Emitted BEFORE the template instruction in every prompt: the review
     question frames the task, and the template instruction is the more
     specific guidance, so it belongs closest to it.
     """
-    if not review_context:
+    if not review_question:
         return ""
-    return f"Review question and scope:\n{review_context}\n\n"
+    return f"Review question and scope:\n{review_question}\n\n"
 
 
 def render_general_instructions_section(general_instructions: str | None) -> str:

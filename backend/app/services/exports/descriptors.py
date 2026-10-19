@@ -27,7 +27,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.models.extraction import ExtractionCardinality, ExtractionInstance
+from app.models.extraction import ExtractionCardinality
+from app.models.extraction_instance import ExtractionInstance
 
 if TYPE_CHECKING:  # descriptors live in the service; importing them at
     # runtime would close an import cycle.

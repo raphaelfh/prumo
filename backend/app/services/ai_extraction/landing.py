@@ -42,10 +42,10 @@ from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionField,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
 from app.repositories import ExtractionInstanceRepository, ExtractionRunRepository
 from app.repositories.extraction_proposal_repository import ExtractionProposalRepository
@@ -86,6 +86,9 @@ _SNAPSHOT_KEYS = frozenset(
         "params",
         "tokens",
         "prompt_composition",
+        "passes_detail",
+        "template_version",
+        "schema_sha256",
     }
 )
 _NESTED_SNAPSHOT_KEYS = {
@@ -99,8 +102,18 @@ _NESTED_SNAPSHOT_KEYS = {
         "fields_requested",
         "llm_calls",
     },
+    "template_version": {"id", "version"},
 }
-_ARTICLE_REF_KEYS = {"file_id", "file_name", "truncated", "est_tokens"}
+_ARTICLE_REF_KEYS = {
+    "file_id",
+    "file_name",
+    "truncated",
+    "est_tokens",
+    "content_version",
+    "text_sha256",
+}
+#: One ``passes_detail`` entry (``schemas.prompt_composition.PassDetail``).
+_PASS_DETAIL_KEYS = {"kind", "prompt_name", "prompt_version", "tokens", "request_ids"}
 
 #: The execution facts a verdict heal must carry with it; engine identity
 #: (provider/model/connection_id/key_scope/mode_requested) is never rewritten.
@@ -120,7 +133,20 @@ def _sanitize(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
         composition["article_ref"] = {
             k: v for k, v in composition["article_ref"].items() if k in _ARTICLE_REF_KEYS
         }
+    if isinstance(clean.get("passes_detail"), list):
+        clean["passes_detail"] = [
+            _sanitize_pass(entry) for entry in clean["passes_detail"] if isinstance(entry, dict)
+        ]
     return deepcopy(clean)
+
+
+def _sanitize_pass(entry: dict[str, Any]) -> dict[str, Any]:
+    """One ``passes_detail`` entry, reduced to its known keys."""
+    clean = {k: v for k, v in entry.items() if k in _PASS_DETAIL_KEYS}
+    if isinstance(clean.get("tokens"), dict):
+        allowed = _NESTED_SNAPSHOT_KEYS["tokens"]
+        clean["tokens"] = {k: v for k, v in clean["tokens"].items() if k in allowed}
+    return clean
 
 
 @dataclass
@@ -434,10 +460,14 @@ def _heal_verdict(
     sibling (fast re-run / flaked verify) never clears a stored verdict.
 
     The verdict and the execution record describe the SAME pass, so they
-    move together. Engine IDENTITY is deliberately not refreshed: the model
+    move together. Only a row WITHOUT a call snapshot heals: an attempt's row
+    is its immutable record (verdict, execution facts and ``passes_detail``
+    together), so a later write never claims a pass its snapshot lacks. Engine IDENTITY is deliberately not refreshed: the model
     recorded here did produce this value, and a corroborating re-run under
     a different engine is a separate fact (append-only, constitution §IX).
     """
+    if latest.generation_snapshot is not None:
+        return
     incoming = proposed_value.get("verification")
     if incoming is None or incoming == latest.proposed_value.get("verification"):
         return

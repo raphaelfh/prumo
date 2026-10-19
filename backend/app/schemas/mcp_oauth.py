@@ -40,6 +40,12 @@ class OAuthConsentRequestRead(BaseModel):
     offers_write: bool = Field(
         description="True when the app asked for `write`, so the page may offer it."
     )
+    offers_ai_run: bool = Field(
+        description=(
+            "True when the app asked for `ai_run`, so the page may offer it "
+            "(a separate box, unchecked by default)."
+        )
+    )
     expires_at: datetime = Field(description="When the request stops accepting a decision.")
 
 
@@ -53,6 +59,12 @@ class OAuthConsentDecisionRequest(BaseModel):
         description=(
             "Grant `write` too. Ignored on a deny and on a request that did not ask for it."
         )
+    )
+    ai_run: bool = Field(
+        default=False,
+        description=(
+            "Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it."
+        ),
     )
 
 
@@ -82,6 +94,7 @@ class OAuthConnectionRead(BaseModel):
     id: UUID
     client_name: str = Field(description="The name the app registered with.")
     scope: TokenScope = Field(description="What the user granted the app.")
+    ai_run: bool = Field(description="Whether the user let the app start AI extraction runs.")
     status: TokenStatus
     created_at: datetime = Field(description="When the user approved the app.")
     last_used_at: datetime | None = Field(description="Last time the app called `/mcp`.")

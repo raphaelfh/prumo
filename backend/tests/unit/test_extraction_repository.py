@@ -10,10 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.extraction import (
-    ExtractionEntityType,
-    ExtractionInstance,
-)
+from app.models.extraction import ExtractionEntityType
+from app.models.extraction_instance import ExtractionInstance
 from app.repositories.extraction_repository import (
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,

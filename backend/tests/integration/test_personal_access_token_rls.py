@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import NamedTuple
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import SEED
@@ -171,3 +172,29 @@ async def test_policy_floor_denies_select_even_with_grant(
         f"deny_all is not the floor: with SELECT re-granted, {table} "
         f"returned rows to the owner's JWT (outcome={outcome})"
     )
+
+
+async def _insert_ai_run_pat(db: AsyncSession, lifetime: timedelta) -> None:
+    await db.execute(
+        text(
+            "INSERT INTO public.personal_access_tokens "
+            "(id, user_id, name, token_prefix, token_hash, scope, ai_run, expires_at) "
+            "VALUES (:id, :uid, 'ai-run', 'prumo_pat_abcdef', :hash, 'read_write', true, "
+            "now() + CAST(:lifetime AS interval))"
+        ),
+        {
+            "id": str(uuid4()),
+            "uid": str(SEED.primary_profile),
+            "hash": uuid4().hex,
+            "lifetime": lifetime,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_ai_run_lifetime_check_rejects_over_30_days(db_session: AsyncSession) -> None:
+    await _insert_ai_run_pat(db_session, timedelta(days=30))
+
+    with pytest.raises(IntegrityError, match="ck_personal_access_tokens_ai_run_lifetime_check"):
+        async with db_session.begin_nested():
+            await _insert_ai_run_pat(db_session, timedelta(days=31))

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
-from app.core.factories import create_document_parser
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from app.core.factories import create_document_parser, create_ledger_session_factory
 from app.infrastructure.parsing.docling_parser import DoclingParser
 from app.infrastructure.parsing.fallback_parser import FallbackDocumentParser
 from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
@@ -48,3 +50,17 @@ def test_docling_is_opt_in_only():
 def test_unknown_backend_falls_back_to_pymupdf():
     p = create_document_parser(SimpleNamespace(PARSER_BACKEND="nope"))
     assert isinstance(p, PymupdfParser)
+
+
+async def test_ledger_session_factory_binds_the_engine():
+    """A second session factory on the caller's engine: ledger rows commit on
+    their own connection, independently of the run transaction."""
+    engine = create_async_engine("postgresql+asyncpg://u:p@localhost:1/none")
+    try:
+        factory = create_ledger_session_factory(engine)
+        async with factory() as session:
+            assert session.bind is engine
+            assert session.sync_session.expire_on_commit is False
+            assert session.sync_session.autoflush is False
+    finally:
+        await engine.dispose()

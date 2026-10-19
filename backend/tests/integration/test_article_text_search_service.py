@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.article_text_search_service import search_project_text
+from app.services.article_text_search_service import EmptySearchQueryError, search_project_text
 from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
@@ -71,15 +71,20 @@ async def test_search_article_filter(db_session) -> None:
     assert len(result.articles[0].hits) == 1
 
 
-@pytest.mark.parametrize(
-    "q",
-    ["'", "&", "|", "!", ":*", "(", ")", "<->", "a & | b", "", "the"],
-)
+@pytest.mark.parametrize("q", ["a & | b", "the", "x:*", "(a) <-> b"])
 async def test_special_characters_never_raise(db_session, q: str) -> None:
     result = await search_project_text(
         db_session, project_id=SEED.primary_project, query=q, article_id=None
     )
     assert result is not None
+
+
+@pytest.mark.parametrize("q", ["'", "&", "|", "!", ":*", "(", ")", "<->", "", "  "])
+async def test_termless_query_raises_empty_search_query(db_session, q: str) -> None:
+    with pytest.raises(EmptySearchQueryError):
+        await search_project_text(
+            db_session, project_id=SEED.primary_project, query=q, article_id=None
+        )
 
 
 async def test_search_paging_by_rank_then_id(db_session) -> None:
@@ -167,3 +172,30 @@ async def test_search_hit_titles_are_capped(db_session) -> None:
 
 def _hits(result):
     return [hit for row in result.articles for hit in row.hits]
+
+
+@pytest.mark.parametrize(
+    ("heading", "excluded"),
+    [
+        ("Referências", True),
+        ("Literature Cited", True),
+        ("1.2. bibliografia", True),
+        ("  REFERENCES  ", True),
+        ("References and notes", False),
+        ("Reference standard", False),
+    ],
+    ids=["pt-accented", "literature-cited", "numbered-pt", "padded-upper", "suffix", "prefix"],
+)
+async def test_references_heading_variants(db_session, heading: str, excluded: bool) -> None:
+    article = await insert_article(db_session, SEED.primary_project, title="Heading variants")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article)
+    await insert_blocks(
+        db_session,
+        file_id,
+        [(1, 0, heading, "heading"), (1, 1, "headvariantmarker cited.", "list_item")],
+    )
+    result = await search_project_text(
+        db_session, project_id=SEED.primary_project, query="headvariantmarker"
+    )
+    assert (len(_hits(result)) == 0) is excluded
+    assert result.references_excluded is True

@@ -39,6 +39,7 @@ from app.utils.text_caps import cap_text
 class McpErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     MANAGER_REQUIRED = "MANAGER_REQUIRED"
+    REVIEWER_REQUIRED = "REVIEWER_REQUIRED"
     SCOPE_INSUFFICIENT = "SCOPE_INSUFFICIENT"
     INVALID_ARGUMENT = "INVALID_ARGUMENT"
     DRAFT_LOCK_HELD = "DRAFT_LOCK_HELD"
@@ -49,9 +50,17 @@ class McpErrorCode(StrEnum):
     FIELD_NOT_EDITABLE = "FIELD_NOT_EDITABLE"
     STALE_VALUE = "STALE_VALUE"
     DUPLICATE_NAME = "DUPLICATE_NAME"
+    IN_USE = "IN_USE"
+    STRUCTURE_CONFLICT = "STRUCTURE_CONFLICT"
     RETRY = "RETRY"
     RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    AI_RUNS_NOT_ALLOWED = "AI_RUNS_NOT_ALLOWED"
+    PLAN_STALE = "PLAN_STALE"
+    AI_NOT_CONFIGURED = "AI_NOT_CONFIGURED"
+    AI_RUN_ACTIVE = "AI_RUN_ACTIVE"
+    AI_RUN_LIMIT = "AI_RUN_LIMIT"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
 NOT_FOUND_MESSAGE = "Not found, or not in a project this token's user belongs to."
@@ -66,7 +75,12 @@ class _CodeSpec:
 _SPECS: dict[McpErrorCode, _CodeSpec] = {  # one entry per code; next_step text from spec §7
     McpErrorCode.NOT_FOUND: _CodeSpec(False, "call list_projects / list_articles"),
     McpErrorCode.MANAGER_REQUIRED: _CodeSpec(False, "ask a project manager"),
-    McpErrorCode.SCOPE_INSUFFICIENT: _CodeSpec(False, "use a read_write token"),
+    McpErrorCode.REVIEWER_REQUIRED: _CodeSpec(False, "ask a project manager for the reviewer role"),
+    McpErrorCode.SCOPE_INSUFFICIENT: _CodeSpec(
+        False,
+        "this token lacks required_scope; a token with that access is created by the researcher "
+        "in prumo Settings → Integrations",
+    ),
     McpErrorCode.INVALID_ARGUMENT: _CodeSpec(False, "fix that argument and resend"),
     McpErrorCode.DRAFT_LOCK_HELD: _CodeSpec(
         False, "tell the user who holds the draft; do not retry"
@@ -86,11 +100,29 @@ _SPECS: dict[McpErrorCode, _CodeSpec] = {  # one entry per code; next_step text 
     McpErrorCode.DUPLICATE_NAME: _CodeSpec(
         True, "call get_template, then resend; the server re-derives the name"
     ),
+    McpErrorCode.IN_USE: _CodeSpec(
+        False,
+        "the question or section holds recorded data; tell the user, it can only change in "
+        "prumo after that data is handled",
+    ),
+    McpErrorCode.STRUCTURE_CONFLICT: _CodeSpec(
+        False, "read get_template(view='draft'), fix the structure named by rule, and resend"
+    ),
     McpErrorCode.RETRY: _CodeSpec(True, "call get_template to check state before resending"),
     McpErrorCode.RATE_LIMITED: _CodeSpec(True, "wait retry_after_seconds, then retry"),
     McpErrorCode.INTERNAL_ERROR: _CodeSpec(
         False, "the error was logged; tell the user and do not retry blindly"
     ),
+    McpErrorCode.AI_RUNS_NOT_ALLOWED: _CodeSpec(
+        False, "a project manager can allow agent runs in prumo Settings → AI engine"
+    ),
+    McpErrorCode.PLAN_STALE: _CodeSpec(
+        False, "call plan_ai_run again, show the new confirmation and get a fresh yes"
+    ),
+    McpErrorCode.AI_NOT_CONFIGURED: _CodeSpec(False, "configure the AI engine or a key in prumo"),
+    McpErrorCode.AI_RUN_ACTIVE: _CodeSpec(False, "check it with get_ai_runs"),
+    McpErrorCode.AI_RUN_LIMIT: _CodeSpec(False, "run fewer articles, or wait for the window"),
+    McpErrorCode.SERVICE_UNAVAILABLE: _CodeSpec(True, "try again in a few minutes"),
 }
 
 
@@ -105,7 +137,14 @@ AUDITED_CODES: frozenset[McpErrorCode] = frozenset(
         McpErrorCode.FIELD_NOT_EDITABLE,
         McpErrorCode.STALE_VALUE,
         McpErrorCode.DUPLICATE_NAME,
+        McpErrorCode.IN_USE,
+        McpErrorCode.STRUCTURE_CONFLICT,
         McpErrorCode.RETRY,
+        McpErrorCode.AI_RUNS_NOT_ALLOWED,
+        McpErrorCode.PLAN_STALE,
+        McpErrorCode.AI_NOT_CONFIGURED,
+        McpErrorCode.AI_RUN_ACTIVE,
+        McpErrorCode.AI_RUN_LIMIT,
     }
 )
 """Codes whose refusal writes one ``agent_actions`` row (spec §6.1/§7). The rest are

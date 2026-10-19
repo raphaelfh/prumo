@@ -10,6 +10,8 @@ landing savepoint) are pinned on the seam itself in ``test_proposal_landing``.
 """
 
 import asyncio
+import hashlib
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -18,13 +20,21 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.error_handler import AuthorizationError
-from app.llm.prompts import entry_identification
-from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRun
+from app.llm import entailment, verify
+from app.llm.extractor import LlmUsage
+from app.llm.prompts import entry_identification, section_extraction
+from app.models.extraction import (
+    ExtractionEvidence,
+    ExtractionRun,
+)
 from app.models.extraction_attempt import ExtractionAttempt
+from app.models.extraction_instance import ExtractionInstance
+from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.repositories import ExtractionRunRepository
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
+from app.services.ai_extraction._model_calls import ARTICLE_MARKDOWN_MARKER
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_run_write import RunWriteError
 from app.services.llm_engine_service import LlmEngineService, resolve_engine
@@ -33,11 +43,13 @@ from tests.factories.template_factory import TemplateFactory
 from tests.fakes.recorded_llm import Call, RecordedLlm
 from tests.integration.conftest import SEED
 from tests.integration.helpers.ai_extraction import (
+    attempt_on,
     extraction,
     request,
     run_in_extract,
     seed_article_text,
 )
+from tests.integration.helpers.template_fixtures import publish_rules
 from tests.integration.test_entry_group_extraction import _fake, _group
 from tests.integration.test_extraction_attempt_repository import create as create_attempt
 from tests.integration.test_extraction_attempt_repository import graph as attempt_graph
@@ -45,7 +57,7 @@ from tests.integration.test_extraction_attempt_repository import graph as attemp
 graph = attempt_graph
 
 #: The graph template's one field answers this, with a cited quote.
-LATE = {"value": {"value": "late", "evidence": [{"text": "late citation", "page_number": 1}]}}
+LATE = {"value": {"value": "late", "evidence": [{"block_ref": "p1·b0", "quote": "late citation"}]}}
 
 
 def _section_request(scope: Any, entity_type_id: Any) -> SectionExtractionRequest:
@@ -322,18 +334,7 @@ async def test_repeating_entries_keep_distinct_call_snapshots(db_session):
     never its sibling's."""
     entity_id, _, _ = await _group(db_session)
     run = await run_in_extract(db_session)
-    attempt = ExtractionAttempt(
-        request_id=uuid4(),
-        owner_id=SEED.primary_profile,
-        project_id=run.project_id,
-        article_id=run.article_id,
-        template_id=run.template_id,
-        run_id=run.id,
-        request_payload={},
-        engine={"provider": "openai", "model": "gpt-5.6-luna"},
-    )
-    db_session.add(attempt)
-    await db_session.flush()
+    attempt = await attempt_on(db_session, run)
     fake = _fake(["apparent", "internal"])
 
     async def grow_usage(call: Call) -> None:
@@ -411,3 +412,136 @@ async def test_cancel_during_identification_does_not_commit_instance(graph, _eng
         )
         assert count == 0
     assert fake.field_calls() == []
+
+
+async def test_passes_detail_counts_verify_and_entailment_tokens(db_session):
+    """A verified run records every pass of the section in its proposal
+    snapshot — extract, verify, then the entailment judge summed over its
+    calls — and the record survives the landing sanitizer."""
+    quotes = ("A total of 142 participants were enrolled.", "Sample: 142 subjects total.")
+    await seed_article_text(db_session, *quotes)
+    run = await run_in_extract(db_session)
+    fake = RecordedLlm(
+        fields={
+            "sample_size": {
+                "value": 142,
+                "evidence": [{"block_ref": "p1·b0", "quote": q} for q in quotes],
+            }
+        },
+        verdicts={"sample_size": "confirmed"},
+        usages={
+            section_extraction.NAME: LlmUsage(100, 10, ["x1"]),
+            verify.NAME: LlmUsage(50, 5, ["v1"]),
+            entailment.NAME: LlmUsage(7, 1, ["e1"]),
+        },
+    )
+
+    attempt = await attempt_on(db_session, run, mode="verified")
+
+    await extraction(db_session, fake, attempt_id=attempt.id).run_from_request(
+        request(entity_type_id=SEED.primary_entity_type, run_id=run.id)
+    )
+
+    assert len(fake.prompts(entailment.NAME)) == 2, "precondition: two judge calls"
+    (record,) = (
+        await db_session.scalars(
+            select(ExtractionProposalRecord).where(ExtractionProposalRecord.run_id == run.id)
+        )
+    ).all()
+    assert record.generation_snapshot["passes_detail"] == [
+        {
+            "kind": "extract",
+            "prompt_name": section_extraction.NAME,
+            "prompt_version": section_extraction.VERSION,
+            "tokens": {"prompt": 100, "completion": 10, "total": 110},
+            "request_ids": ["x1"],
+        },
+        {
+            "kind": "verify",
+            "prompt_name": verify.NAME,
+            "prompt_version": verify.VERSION,
+            "tokens": {"prompt": 50, "completion": 5, "total": 55},
+            "request_ids": ["v1"],
+        },
+        {
+            "kind": "entailment",
+            "prompt_name": entailment.NAME,
+            "prompt_version": entailment.VERSION,
+            "tokens": {"prompt": 14, "completion": 2, "total": 16},
+            "request_ids": ["e1", "e1"],
+        },
+    ]
+    # The section's own tokens stay extract + verify.
+    assert record.generation_snapshot["tokens"] == {"prompt": 150, "completion": 15, "total": 165}
+
+
+async def test_snapshot_records_template_version_schema_and_text_hash(db_session):
+    """The proposal snapshot proves its inputs: the template version the run
+    was pinned to when the prompt was built (a republish while the model runs
+    does not relabel it), the hash of the output schemas sent, and the article
+    version and hash of the exact text substituted for the article marker."""
+    file_id = await seed_article_text(db_session, "A total of 142 participants were enrolled.")
+    await db_session.execute(
+        text("UPDATE public.article_files SET content_version = 3 WHERE id = :id"),
+        {"id": file_id},
+    )
+    run = await run_in_extract(db_session)
+    pinned_id = run.version_id
+    pinned = await db_session.get(ExtractionTemplateVersion, pinned_id)
+    pinned_version = pinned.version
+    republished: list[bool] = []
+
+    async def republish(call: Call) -> None:
+        if republished or call.prompt_name != section_extraction.NAME:
+            return
+        republished.append(True)
+        await publish_rules(
+            db_session,
+            project_id=SEED.primary_project,
+            template_id=SEED.primary_template,
+            user_id=SEED.primary_profile,
+            rules={"derived_judgments": []},
+        )
+
+    fake = RecordedLlm(fields={"sample_size": {"value": 142}}, during=republish)
+    attempt = await attempt_on(db_session, run)
+    await extraction(db_session, fake, attempt_id=attempt.id).run_from_request(
+        request(entity_type_id=SEED.primary_entity_type, run_id=run.id)
+    )
+
+    active = await db_session.scalar(
+        select(ExtractionTemplateVersion.id).where(
+            ExtractionTemplateVersion.project_template_id == SEED.primary_template,
+            ExtractionTemplateVersion.is_active.is_(True),
+        )
+    )
+    assert republished and active != pinned_id, "precondition: a new version was published"
+    await db_session.refresh(run)
+    assert run.version_id == active, "precondition: the republish re-pinned the run"
+    (record,) = (
+        await db_session.scalars(
+            select(ExtractionProposalRecord).where(ExtractionProposalRecord.run_id == run.id)
+        )
+    ).all()
+    snapshot = record.generation_snapshot
+    assert snapshot["template_version"] == {"id": str(pinned_id), "version": pinned_version}
+
+    sent = [c.output_model for c in fake.field_calls()]
+    assert sent, "precondition: a field call was made"
+    canonical = json.dumps(
+        [m.model_json_schema(by_alias=True) for m in sent], sort_keys=True, separators=(",", ":")
+    )
+    assert snapshot["schema_sha256"] == hashlib.sha256(canonical.encode()).hexdigest()
+
+    composition = snapshot["prompt_composition"]
+    instruction = composition["section_instruction"]
+    head, tail = instruction.split(ARTICLE_MARKDOWN_MARKER)
+    (user_prompt,) = fake.prompts(section_extraction.NAME)
+    assert user_prompt.startswith(head) and user_prompt.endswith(tail)
+    article_text = user_prompt[len(head) : len(user_prompt) - len(tail)]
+    assert "142 participants" in article_text
+    assert composition["article_ref"]["content_version"] == 3
+    assert (
+        composition["article_ref"]["text_sha256"]
+        == hashlib.sha256(article_text.encode("utf-8")).hexdigest()
+    )

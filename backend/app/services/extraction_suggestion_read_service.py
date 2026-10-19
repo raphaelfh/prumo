@@ -18,14 +18,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import (
-    ExtractionEvidence,
-    ExtractionInstance,
-)
+from app.domain.evidence_block_refs import evidence_is_stale
+from app.models.extraction import ExtractionEvidence
+from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -33,13 +31,14 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
-from app.schemas.extraction import parse_position
+from app.schemas.extraction import stored_anchor
 from app.schemas.extraction_suggestion import (
     AISuggestionHistoryItem,
     AISuggestionItem,
     AISuggestionsResponse,
     EvidenceResponse,
 )
+from app.services.evidence_reanchor import file_versions
 from app.services.proposal_generation_read import (
     serialize_proposal_generation,
     suggestion_reveal_context,
@@ -47,17 +46,25 @@ from app.services.proposal_generation_read import (
 from app.services.value_semantics import is_value_empty
 
 
-def _extract_block_ids(ev: ExtractionEvidence) -> list[int]:
-    """Return block_ids from the stored PositionV1 anchor, or [] on missing/invalid position."""
-    if not ev.position:
-        return []
-    try:
-        pos = parse_position(ev.position)
-    except (ValidationError, ValueError):
-        return []
-    if pos is None:
-        return []
-    return list(pos.anchor.block_ids)
+def _evidence_response(
+    p_id: UUID, ev: ExtractionEvidence, versions: dict[UUID, int]
+) -> EvidenceResponse:
+    """Map one evidence row; ``block_ids`` and ``grounded`` come from one parse."""
+    pos = stored_anchor(ev.position)
+    grounded = pos is not None
+    file_version = versions.get(ev.article_file_id) if ev.article_file_id else None
+    return EvidenceResponse(
+        proposal_record_id=p_id,
+        text_content=ev.text_content,
+        page_number=ev.page_number,
+        blockIds=list(pos.anchor.block_ids) if pos is not None else [],
+        rank=ev.rank,
+        attributionLabel=ev.attribution_label,
+        grounded=grounded,
+        stale=evidence_is_stale(
+            grounded=grounded, evidence_version=ev.content_version, file_version=file_version
+        ),
+    )
 
 
 async def get_article_instance_ids(db: AsyncSession, article_id: UUID) -> list[UUID]:
@@ -179,6 +186,9 @@ async def load_suggestions(
             evidence_by_proposal.setdefault(ev.proposal_record_id, []).append(ev)
     for rows in evidence_by_proposal.values():
         rows.sort(key=lambda e: (e.rank, str(e.id)))
+    versions = await file_versions(
+        db, {ev.article_file_id for ev in evidence_rows if ev.article_file_id}
+    )
 
     # --- Step 4: load CALLER's reviewer_states → decisions (blind boundary) ---
     # NOTE: this query is intentionally NOT filtered by article — article scope is
@@ -216,15 +226,7 @@ async def load_suggestions(
     context = await suggestion_reveal_context(db, deduped, caller_id=caller_id)
     for p in deduped:
         evidence_list = [
-            EvidenceResponse(
-                proposal_record_id=p.id,
-                text_content=ev.text_content,
-                page_number=ev.page_number,
-                blockIds=_extract_block_ids(ev),
-                rank=ev.rank,
-                attributionLabel=ev.attribution_label,
-            )
-            for ev in evidence_by_proposal.get(p.id, [])
+            _evidence_response(p.id, ev, versions) for ev in evidence_by_proposal.get(p.id, [])
         ]
         coord = (p.instance_id, p.field_id)
         status = _resolve_status(decision_by_coord.get(coord))
@@ -316,20 +318,15 @@ async def get_suggestion_history(
             evidence_by_proposal.setdefault(ev.proposal_record_id, []).append(ev)
     for rows in evidence_by_proposal.values():
         rows.sort(key=lambda e: (e.rank, str(e.id)))
+    versions = await file_versions(
+        db, {ev.article_file_id for ev in evidence_rows if ev.article_file_id}
+    )
 
     items: list[AISuggestionHistoryItem] = []
     context = await suggestion_reveal_context(db, proposals, caller_id=caller_id)
     for p in proposals:
         evidence_list = [
-            EvidenceResponse(
-                proposal_record_id=p.id,
-                text_content=ev.text_content,
-                page_number=ev.page_number,
-                blockIds=_extract_block_ids(ev),
-                rank=ev.rank,
-                attributionLabel=ev.attribution_label,
-            )
-            for ev in evidence_by_proposal.get(p.id, [])
+            _evidence_response(p.id, ev, versions) for ev in evidence_by_proposal.get(p.id, [])
         ]
         items.append(
             AISuggestionHistoryItem(

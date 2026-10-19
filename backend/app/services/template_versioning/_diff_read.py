@@ -19,6 +19,7 @@ from uuid import UUID
 from app.domain.template_change import ChangeVariant, OpaqueValueState
 from app.schemas.hitl_session import TemplateChangeRowRead
 from app.services.template_versioning._diff import (
+    AI_INPUT_ATTRIBUTES,
     OPTION_KEY,
     ChangeKind,
     NodeKind,
@@ -192,6 +193,7 @@ def _to_row(change: TemplateChange, *, affects_recorded_data: bool) -> TemplateC
         after_opaque_state=after_state,
         reorder_count=int(change.after) if reordered else None,
         affects_recorded_data=affects_recorded_data,
+        affects_ai=change.attribute is None or change.attribute in AI_INPUT_ATTRIBUTES,
     )
 
 

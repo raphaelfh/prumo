@@ -414,7 +414,7 @@ export interface paths {
         head?: never;
         /**
          * Rename or re-key one extraction instance
-         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.
+         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history. A re-key onto an identity a sibling already holds answers a typed 409 ENTRY_KEY_DUPLICATE and changes nothing.
          */
         patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
         trace?: never;
@@ -731,8 +731,34 @@ export interface paths {
          *
          *     Returning the re-read model (rather than echoing the request) is what makes
          *     the preview trustworthy: it is rendered from what was actually stored.
+         *     A stale ``expected_revision`` raises ``StaleProtocolRevisionError`` (409,
+         *     via the global handler) before anything is written.
          */
         put: operations["update_ai_context_api_v1_projects__project_id__ai_context_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/ai-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ai Policy
+         * @description The project's AI agents policy; an unset policy reads as the defaults.
+         */
+        get: operations["read_ai_policy_api_v1_projects__project_id__ai_policy_get"];
+        /**
+         * Update Ai Policy
+         * @description Replace the project's AI agents policy and return what was stored.
+         */
+        put: operations["update_ai_policy_api_v1_projects__project_id__ai_policy_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2084,6 +2110,63 @@ export interface components {
             target_stage: string;
         };
         /**
+         * AiPolicyRead
+         * @description The project's AI agents policy, as any member sees it.
+         */
+        AiPolicyRead: {
+            /**
+             * Agent Runs
+             * @description Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.
+             * @default off
+             * @enum {string}
+             */
+            agent_runs: "off" | "managers" | "reviewers";
+            /**
+             * Daily Agent Article Cap
+             * @description Most articles agent-started runs may cover in this project per day.
+             * @default 100
+             */
+            daily_agent_article_cap: number;
+            /**
+             * Max Articles Per Run
+             * @description Most articles one agent-started run may cover.
+             * @default 25
+             */
+            max_articles_per_run: number;
+            /**
+             * Updated At
+             * @description When the policy last changed.
+             */
+            updated_at?: string | null;
+            /**
+             * Updated By
+             * @description Manager who last changed the policy.
+             */
+            updated_by?: string | null;
+        };
+        /**
+         * AiPolicyUpdateRequest
+         * @description A manager's full replacement of the project's AI agents policy.
+         */
+        AiPolicyUpdateRequest: {
+            /**
+             * Agent Runs
+             * @description Who may start AI extraction runs through a connected agent: nobody (off), managers only, or reviewers and managers.
+             * @enum {string}
+             */
+            agent_runs: "off" | "managers" | "reviewers";
+            /**
+             * Daily Agent Article Cap
+             * @description Most articles agent-started runs may cover in this project per day.
+             */
+            daily_agent_article_cap: number;
+            /**
+             * Max Articles Per Run
+             * @description Most articles one agent-started run may cover.
+             */
+            max_articles_per_run: number;
+        };
+        /**
          * ApiResponse
          * @description Response padronizado da API.
          *
@@ -2115,6 +2198,23 @@ export interface components {
         ApiResponse_AISuggestionsResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["AISuggestionsResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[AiPolicyRead] */
+        ApiResponse_AiPolicyRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["AiPolicyRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3889,6 +3989,18 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** EligibilityCriteria */
+        EligibilityCriteria: {
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
         /**
          * EntryBulkDeleteRequest
          * @description Delete several entries of a repeating section, all or none.
@@ -4023,6 +4135,12 @@ export interface components {
              * @description block_index values for deterministic reader highlight
              */
             blockIds?: number[];
+            /**
+             * Grounded
+             * @description the position resolves to a parsed-text anchor
+             * @default false
+             */
+            grounded: boolean;
             /** Page Number */
             page_number: number | null;
             /** Proposal Record Id */
@@ -4032,6 +4150,12 @@ export interface components {
              * @default 0
              */
             rank: number;
+            /**
+             * Stale
+             * @description grounded, and the article was re-parsed since this anchor was made: the location may have moved
+             * @default false
+             */
+            stale: boolean;
             /** Text Content */
             text_content: string | null;
         };
@@ -4140,6 +4264,8 @@ export interface components {
         };
         /** ExtractionBatchDetail */
         ExtractionBatchDetail: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4166,6 +4292,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4208,6 +4336,8 @@ export interface components {
         };
         /** ExtractionBatchSummary */
         ExtractionBatchSummary: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4232,6 +4362,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4568,6 +4700,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Instrument
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
             /**
              * Kind
              * @enum {string}
@@ -4940,6 +5077,11 @@ export interface components {
          */
         OAuthConnectionRead: {
             /**
+             * Ai Run
+             * @description Whether the user let the app start AI extraction runs.
+             */
+            ai_run: boolean;
+            /**
              * Client Name
              * @description The name the app registered with.
              */
@@ -4994,6 +5136,12 @@ export interface components {
          * @description Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.
          */
         OAuthConsentDecisionRequest: {
+            /**
+             * Ai Run
+             * @description Grant `ai_run` too. Ignored on a deny and on a request that did not ask for it.
+             * @default false
+             */
+            ai_run: boolean;
             /**
              * Approve
              * @description True to connect the app, false to deny it.
@@ -5052,6 +5200,11 @@ export interface components {
              * @description When the request stops accepting a decision.
              */
             expires_at: string;
+            /**
+             * Offers Ai Run
+             * @description True when the app asked for `ai_run`, so the page may offer it (a separate box, unchecked by default).
+             */
+            offers_ai_run: boolean;
             /**
              * Offers Write
              * @description True when the app asked for `write`, so the page may offer it.
@@ -5157,6 +5310,12 @@ export interface components {
          */
         PersonalAccessTokenCreateRequest: {
             /**
+             * Ai Run
+             * @description Allow this token to start AI extraction runs in projects whose manager allowed agent runs. At most 30 days.
+             * @default false
+             */
+            ai_run: boolean;
+            /**
              * Expires In Days
              * @description Token lifetime, in days, from creation.
              */
@@ -5198,6 +5357,11 @@ export interface components {
          * @description A token row, never including the secret.
          */
         PersonalAccessTokenRead: {
+            /**
+             * Ai Run
+             * @description Whether the token may start AI extraction runs.
+             */
+            ai_run: boolean;
             /**
              * Created At
              * Format: date-time
@@ -5291,6 +5455,21 @@ export interface components {
             inclusion?: string[];
         };
         /**
+         * PicotsSlotWrite
+         * @description One PICOTS slot as written. The read model (``PicotsSlot``) stays unbounded.
+         */
+        PicotsSlotWrite: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+        };
+        /**
          * PicotsSlots
          * @description The six slots, in the instrument's P-I-C-O-T-S order.
          */
@@ -5301,6 +5480,18 @@ export interface components {
             population?: components["schemas"]["PicotsSlot"];
             setting_and_intended_use?: components["schemas"]["PicotsSlot"];
             timing?: components["schemas"]["PicotsSlot"];
+        };
+        /**
+         * PicotsSlotsWrite
+         * @description The six slots as written; an omitted slot is written empty.
+         */
+        PicotsSlotsWrite: {
+            comparator_models?: components["schemas"]["PicotsSlotWrite"];
+            index_models?: components["schemas"]["PicotsSlotWrite"];
+            outcomes?: components["schemas"]["PicotsSlotWrite"];
+            population?: components["schemas"]["PicotsSlotWrite"];
+            setting_and_intended_use?: components["schemas"]["PicotsSlotWrite"];
+            timing?: components["schemas"]["PicotsSlotWrite"];
         };
         /**
          * PortableField
@@ -5416,6 +5607,12 @@ export interface components {
              */
             framework: "CHARMS" | "PICOS" | "CUSTOM";
             /**
+             * Instrument
+             * @default custom
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
+            /**
              * Kind
              * @constant
              */
@@ -5456,6 +5653,8 @@ export interface components {
             preview?: string | null;
             /** Review Type */
             review_type?: string | null;
+            /** Revision */
+            revision: number;
         };
         /**
          * ProjectAiContextUpdate
@@ -5464,9 +5663,15 @@ export interface components {
          *     Each field is optional: omitting ``picots`` changes only the switch and vice
          *     versa, which is what lets the toggle and the editor share one endpoint
          *     without either clobbering the other's value.
+         *
+         *     ``expected_revision`` is the ``revision`` last read: when the protocol moved
+         *     since, the save is refused with 409 ``STALE_VALUE`` and nothing is written.
+         *     Omitting it saves unconditionally.
          */
         ProjectAiContextUpdate: {
-            picots?: components["schemas"]["PicotsSlots"] | null;
+            /** Expected Revision */
+            expected_revision?: number | null;
+            picots?: components["schemas"]["PicotsSlotsWrite"] | null;
             /** Picots Enabled */
             picots_enabled?: boolean | null;
         };
@@ -5519,10 +5724,13 @@ export interface components {
             id: string;
         };
         /**
-         * ProjectDetailsFields
-         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         * ProjectDetailsExpected
+         * @description The values the caller last read, echoed back as the write's precondition.
+         *
+         *     Loose on purpose: the two JSON columns may hold a shape written before the
+         *     typed write bounds existed, and the caller must be able to echo it.
          */
-        ProjectDetailsFields: {
+        ProjectDetailsExpected: {
             /** Condition Studied */
             condition_studied?: string | null;
             /** Description */
@@ -5549,6 +5757,32 @@ export interface components {
             study_design?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ProjectDetailsFields
+         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         */
+        ProjectDetailsFields: {
+            /** Condition Studied */
+            condition_studied?: string | null;
+            /** Description */
+            description?: string | null;
+            eligibility_criteria?: components["schemas"]["EligibilityCriteria"] | null;
+            /** Name */
+            name?: string | null;
+            /** Review Context */
+            review_context?: string | null;
+            /** Review Keywords */
+            review_keywords?: string[] | null;
+            /** Review Rationale */
+            review_rationale?: string | null;
+            /** Review Title */
+            review_title?: string | null;
+            /** Review Type */
+            review_type?: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy?: string | null;
+            study_design?: components["schemas"]["StudyDesign"] | null;
         };
         /**
          * ProjectDetailsRead
@@ -5635,7 +5869,7 @@ export interface components {
          *     each of those columns still holds its ``expected`` value, else 409.
          */
         ProjectDetailsUpdate: {
-            expected: components["schemas"]["ProjectDetailsFields"];
+            expected: components["schemas"]["ProjectDetailsExpected"];
             fields: components["schemas"]["ProjectDetailsFields"];
         };
         /**
@@ -5667,6 +5901,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Instrument
+             * @enum {string}
+             */
+            instrument: "charms" | "charms_mm" | "probast" | "probast_ai" | "quadas2" | "custom";
             /** Is Active */
             is_active: boolean;
             /**
@@ -6314,6 +6553,11 @@ export interface components {
              * @default false
              */
             peers_revealed: boolean;
+            /**
+             * Project Protocol Revision
+             * @description The project's protocol revision now.
+             */
+            project_protocol_revision?: number | null;
             /** Proposals */
             proposals: components["schemas"]["ProposalRecordResponse"][];
             /** Published States */
@@ -6323,8 +6567,19 @@ export interface components {
              * @default 0
              */
             ready_count: number;
-            /** Review Context */
-            review_context?: string | null;
+            /** Review Question */
+            review_question?: string | null;
+            /**
+             * Review Question Drift
+             * @description True when the project's protocol changed since this run pinned its review question; new runs use the current one.
+             * @default false
+             */
+            review_question_drift: boolean;
+            /**
+             * Review Question Revision
+             * @description Protocol revision the pinned review question was built from; null when nothing is pinned yet or the pin predates revisions.
+             */
+            review_question_revision?: number | null;
             /**
              * Reviewer Count
              * @default 0
@@ -6564,6 +6819,16 @@ export interface components {
             /** Storage Key */
             storage_key: string;
         };
+        /** StudyDesign */
+        StudyDesign: {
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Types */
+            types?: string[];
+        };
         /** SyncCollectionResponse */
         SyncCollectionResponse: {
             /** Message */
@@ -6700,6 +6965,8 @@ export interface components {
          *     shipped.
          */
         TemplateChangeRowRead: {
+            /** Affects Ai */
+            affects_ai: boolean;
             /**
              * Affects Recorded Data
              * @default false
@@ -8263,6 +8530,13 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
                 };
             };
+            /** @description ENTRY_KEY_DUPLICATE: a sibling entry already holds the requested key. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8989,6 +9263,13 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_ProjectAiContextRead_"];
                 };
             };
+            /** @description The review question changed since it was read (STALE_VALUE). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8997,6 +9278,98 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    read_ai_policy_api_v1_projects__project_id__ai_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AiPolicyRead_"];
+                };
+            };
+            /** @description Not a member of the project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The project row is missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ai_policy_api_v1_projects__project_id__ai_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiPolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AiPolicyRead_"];
+                };
+            };
+            /** @description Not a manager of the project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The project row is missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown field, or a value out of bounds */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -8,13 +8,16 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
+from tests.integration.helpers.batch_fixtures import make_batch
 from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.article_seed import insert_article, insert_pdf
+from tests.integration.mcp.conftest import SeededPat, _seed_pat
 from tests.integration.mcp.tool_calls import call_tool, error_payload
 
 BOLA_CASES = [
@@ -200,6 +203,96 @@ BOLA_CASES = [
         "SCOPE_INSUFFICIENT",
         id="edit_template_draft-read-token",
     ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_review_question",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="get_review_question-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
+        "list_template_catalogue",
+        {"project_id": str(SEED.primary_project), "kind": "extraction"},
+        "NOT_FOUND",
+        id="list_template_catalogue-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_setup_readiness",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="get_setup_readiness-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
+        "set_review_question",
+        {"project_id": str(SEED.primary_project), "expected_revision": 1, "picots_enabled": True},
+        "NOT_FOUND",
+        id="set_review_question-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_reviewer_rw",
+        "set_review_question",
+        {"project_id": str(SEED.primary_project), "expected_revision": 1, "picots_enabled": True},
+        "MANAGER_REQUIRED",
+        id="set_review_question-reviewer-not-manager",
+    ),
+    pytest.param(
+        "pat_primary_read",
+        "set_review_question",
+        {"project_id": str(SEED.primary_project), "expected_revision": 1, "picots_enabled": True},
+        "SCOPE_INSUFFICIENT",
+        id="set_review_question-read-token",
+    ),
+    pytest.param(
+        "pat_outsider_ai_run",
+        "plan_ai_run",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="plan_ai_run-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_primary_rw_ai_run",
+        "plan_ai_run",
+        {"project_id": str(uuid4())},
+        "NOT_FOUND",
+        id="plan_ai_run-random-project",
+    ),
+    pytest.param(
+        "pat_outsider_ai_run",
+        "start_ai_run",
+        {
+            "project_id": str(SEED.primary_project),
+            "plan_token": "aip1.x.y",
+            "expected_article_count": 1,
+            "expected_model": "openai:m",
+            "expected_payer": "your_key",
+        },
+        "NOT_FOUND",
+        id="start_ai_run-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_ai_runs",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="get_ai_runs-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_primary_rw",
+        "get_ai_runs",
+        {"project_id": str(SEED.primary_project), "batch_id": str(uuid4())},
+        "NOT_FOUND",
+        id="get_ai_runs-random-batch",
+    ),
+    pytest.param(
+        "pat_outsider_ai_run",
+        "cancel_ai_run",
+        {"project_id": str(SEED.primary_project), "batch_id": str(uuid4())},
+        "NOT_FOUND",
+        id="cancel_ai_run-outsider-on-foreign-project",
+    ),
 ]
 
 
@@ -210,6 +303,8 @@ async def test_bola_returns_expected_code(
     pat_primary_rw,
     pat_reviewer_rw,
     pat_primary_read,
+    pat_outsider_ai_run,
+    pat_primary_rw_ai_run,
     pat_fixture: str,
     tool: str,
     arguments: dict,
@@ -225,6 +320,8 @@ async def test_bola_returns_expected_code(
         "pat_primary_rw": pat_primary_rw,
         "pat_reviewer_rw": pat_reviewer_rw,
         "pat_primary_read": pat_primary_read,
+        "pat_outsider_ai_run": pat_outsider_ai_run,
+        "pat_primary_rw_ai_run": pat_primary_rw_ai_run,
     }
     result = await call_tool(mcp_client, pats[pat_fixture], tool, arguments)
     assert error_payload(result)["code"] == expected_code
@@ -512,7 +609,9 @@ async def test_edit_template_draft_bola_writes_no_row(
 # --- per-project token restriction ------------------------------------------
 
 
-def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[str, dict]:
+def _coordinate_cases(
+    b_article: str, b_template: str, b_section: str, b_batch: str
+) -> dict[str, dict]:
     """Arguments naming project B for every tool with a project or article coordinate."""
     b = str(SEED.secondary_project)
     return {
@@ -534,14 +633,42 @@ def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[s
             "template_id": b_template,
             "ops": [{"op": "add_question", "section_id": b_section, "label": "Q", "type": "text"}],
         },
+        "get_review_question": {"project_id": b},
+        "list_template_catalogue": {"project_id": b, "kind": "extraction"},
+        "get_setup_readiness": {"project_id": b},
+        "set_review_question": {"project_id": b, "expected_revision": 1, "picots_enabled": True},
+        "plan_ai_run": {"project_id": b},
+        "start_ai_run": {
+            "project_id": b,
+            "plan_token": "aip1.x.y",
+            "expected_article_count": 1,
+            "expected_model": "openai:m",
+            "expected_payer": "your_key",
+        },
+        "get_ai_runs": {"project_id": b, "batch_id": b_batch},
+        "cancel_ai_run": {"project_id": b, "batch_id": b_batch},
     }
 
 
-_COORDINATE_TOOLS = sorted(_coordinate_cases("a", "t", "s"))
+_COORDINATE_TOOLS = sorted(_coordinate_cases("a", "t", "s", "b"))
 
 
-async def test_restriction_table_covers_every_coordinate_tool(mcp_client, pat_primary_rw) -> None:
-    async with mcp_client(pat_primary_rw) as client:
+@pytest_asyncio.fixture
+async def pat_primary_rw_ai_run_only_a(db_session: AsyncSession) -> SeededPat:
+    """``pat_primary_rw_only_a`` holding the ``ai_run`` grant too."""
+    return await _seed_pat(
+        db_session,
+        SEED.primary_profile,
+        "read_write",
+        project_ids=[SEED.primary_project],
+        ai_run=True,
+    )
+
+
+async def test_restriction_table_covers_every_coordinate_tool(
+    mcp_client, pat_primary_rw_ai_run
+) -> None:
+    async with mcp_client(pat_primary_rw_ai_run) as client:
         tools = (await client.list_tools()).tools
     with_coordinate = {
         t.name
@@ -554,16 +681,24 @@ async def test_restriction_table_covers_every_coordinate_tool(mcp_client, pat_pr
 @pytest.mark.parametrize("tool", _COORDINATE_TOOLS)
 async def test_token_restricted_to_a_gets_not_found_on_b(
     mcp_client,
-    pat_primary_rw,
-    pat_primary_rw_only_a,
+    pat_primary_rw_ai_run,
+    pat_primary_rw_ai_run_only_a,
     db_session: AsyncSession,
     tool: str,
 ) -> None:
+    pat_primary_rw, pat_primary_rw_only_a = pat_primary_rw_ai_run, pat_primary_rw_ai_run_only_a
     b_article = await insert_article(db_session, SEED.secondary_project, title="B article")
     await insert_pdf(db_session, SEED.secondary_project, b_article)
     _project_id, b_template, schema = await fresh_charms(db_session)
     b_section = next(et for et in schema["entity_types"] if et.get("fields"))["id"]
-    arguments = _coordinate_cases(str(b_article), str(b_template), b_section)[tool]
+    b_batch = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.secondary_project,
+        template_id=b_template,
+        article_ids=[b_article],
+    )
+    arguments = _coordinate_cases(str(b_article), str(b_template), b_section, str(b_batch))[tool]
 
     # Same user, unrestricted token: membership alone lets the call through.
     unrestricted = await call_tool(mcp_client, pat_primary_rw, tool, arguments)

@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.schemas.mcp_articles import McpArticleDetail, McpArticleList
+from app.services import article_text_block_read_service as block_svc
 from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import decode_cursor, encode_cursor
 from tests.integration.conftest import SEED
@@ -164,6 +165,46 @@ async def test_get_article_returns_raw_outline_headings(mcp_client, pat_primary_
     assert len(headings) == 2
     assert [heading["text"] for heading in headings] == ["Intro", "Methods"]
     assert "outline.headings[].text" in body["untrusted_fields"]
+
+
+async def test_outline_drops_junk_headings(mcp_client, pat_primary_rw, db_session):
+    article_id = await insert_article(db_session, SEED.primary_project, title="ZQ-Junk-Outline")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await insert_blocks(
+        db_session,
+        file_id,
+        [
+            (1, 0, "1 3", "heading"),
+            (1, 1, "1. Introduction", "heading"),
+            (2, 0, "2.1", "heading"),
+            (2, 1, "1234567890", "heading"),  # longer than 8: kept
+        ],
+    )
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    assert [h["text"] for h in body["outline"]["headings"]] == ["1. Introduction", "1234567890"]
+    assert body["outline"]["headings_truncated"] is False
+
+
+async def test_junk_headings_do_not_count_toward_the_outline_cap(
+    mcp_client, pat_primary_rw, db_session
+):
+    cap = block_svc._HEADING_CAP
+    junk_count = real_count = cap + 10
+    article_id = await insert_article(db_session, SEED.primary_project, title="ZQ-Junk-Cap")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    junk = [(1, i, f"{i}." if i % 2 else f"{i % 10} {i % 7}", "heading") for i in range(junk_count)]
+    real = [(2, i, f"Section {i}", "heading") for i in range(real_count)]
+    await insert_blocks(db_session, file_id, junk + real)
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    headings = body["outline"]["headings"]
+    assert [h["text"] for h in headings] == [f"Section {i}" for i in range(cap)]
+    assert body["outline"]["headings_truncated"] is True
 
 
 async def test_get_article_without_pdf(mcp_client, pat_primary_rw, db_session):
