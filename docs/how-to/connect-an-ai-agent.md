@@ -219,6 +219,12 @@ from a blank template to a questionnaire ready to publish:
    `fingerprint` the `changes` view shows. `get_setup_readiness` then
    reports no template item.
 
+Clients that show a prompt menu offer a `read_write` token three guided
+prompts: *Set up the review question*, *Build the extraction form* and
+*Review the draft before publishing*. Each walks the agent through the
+tools above in order and takes an optional project id. Read-only tokens
+do not see them, and publishing stays a person's action in prumo.
+
 Changes to the review question, eligibility, study design or review type
 reach only AI runs started afterwards; a run that already made its first
 AI call keeps the review question it started with.

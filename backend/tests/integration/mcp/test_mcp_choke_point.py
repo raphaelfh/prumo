@@ -501,6 +501,7 @@ async def test_server_info_instructions_and_cache_hints(
         assert client.server_info.version == API_VERSION
         assert client.instructions is not None
         assert len(client.instructions) <= 2048
+        assert len(server.INSTRUCTIONS) == 1810  # pinned: later slices must not grow it
         assert len(client.instructions) <= _PRE_HARDEN_INSTRUCTIONS_LEN + 250 + 300 + 350
         assert "explicitly asks" in client.instructions
         assert "list_projects" in client.instructions
