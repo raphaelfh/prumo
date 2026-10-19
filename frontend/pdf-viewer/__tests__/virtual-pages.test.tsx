@@ -81,6 +81,11 @@ describe('Viewer.Pages virtualization', () => {
 
   it('keeps the reading position when a page above it turns out landscape', async () => {
     const {store, scroller, mounted, scrollTo} = await renderDocument(18);
+    // The virtualizer holds a size correction instead of writing scrollTop
+    // while the position reads past `scrollHeight - clientHeight` (a
+    // rubber-band overscroll), and jsdom reports 0 for both.
+    Object.defineProperty(scroller, 'clientHeight', {configurable: true, value: VIEWPORT});
+    Object.defineProperty(scroller, 'scrollHeight', {configurable: true, value: layout.totalHeight});
     scrollTo(layout.offsetOf(10));
     await waitFor(() => expect(mounted()).toContain(9));
     // Precondition: page 9 was laid out on page 1's portrait estimate. The
