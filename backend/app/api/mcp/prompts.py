@@ -46,9 +46,11 @@ reports blockers, tell me each one with its fix and stop.
 3. Show me the plan's confirmation text verbatim: the article count, the model \
 and who pays.
 4. Wait for a clear, explicit yes from me. Anything else means do not start.
-5. Call start_ai_run with the plan_token and the confirm values from the plan, \
-unchanged. My client may ask me to approve that call. If it answers \
-PLAN_STALE, plan again and ask me again.
+5. Call start_ai_run with plan_token = the plan's plan_token, \
+expected_article_count = confirm.article_count, expected_model = \
+confirm.model and expected_payer = confirm.payer, all unchanged. My client \
+may ask me to approve that call. If it answers PLAN_STALE, plan again and ask \
+me again.
 6. Tell me the AI only adds suggestions, which reviewers check in prumo. Call \
 get_ai_runs only when I ask for status; do not poll. If I ask you to stop the \
 run, call cancel_ai_run.

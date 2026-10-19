@@ -246,7 +246,12 @@ class _PrumoMCPServer(MCPServer[Any]):
     async def list_prompts(self) -> list[Prompt]:
         principal = current_principal()
         prompts = await super().list_prompts()
-        return [p for p in prompts if _has_scope(principal, _PROMPT_SCOPES[p.name])]
+        # A prompt registered past ``agent_prompt`` has no scope: never listed.
+        return [
+            p
+            for p in prompts
+            if (scope := _PROMPT_SCOPES.get(p.name)) is not None and _has_scope(principal, scope)
+        ]
 
     async def get_prompt(
         self,

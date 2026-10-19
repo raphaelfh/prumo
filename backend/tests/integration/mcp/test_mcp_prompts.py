@@ -7,11 +7,14 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from mcp.server.mcpserver.prompts import Prompt
 from mcp.shared.exceptions import MCPError
 
+from app.api.mcp.server import mcp
 from tests.integration.mcp.conftest import SeededPat
 
 _NAME = "run_ai_extraction"
+_ECHOES = ("expected_article_count", "expected_model", "expected_payer")
 
 
 async def _refusal(mcp_client, pat: SeededPat, name: str, arguments=None) -> MCPError:
@@ -80,3 +83,41 @@ async def test_a_valid_project_uuid_appears_in_the_text(mcp_client, pat_primary_
 
     assert str(project) in text
     assert str(project).upper() not in text  # interpolated as a parsed UUID, not the raw input
+
+
+async def test_the_steps_name_each_start_argument_and_its_plan_value(
+    mcp_client, pat_primary_read_ai_run
+):
+    text = await _text(mcp_client, pat_primary_read_ai_run)
+
+    for arg, source in zip(
+        _ECHOES, ("confirm.article_count", "confirm.model", "confirm.payer"), strict=True
+    ):
+        assert f"{arg} = {source}" in text
+
+
+async def test_start_ai_run_description_names_each_echo_argument(mcp_client, pat_primary_rw_ai_run):
+    async with mcp_client(pat_primary_rw_ai_run) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools["start_ai_run"].description or ""
+    for arg in _ECHOES:
+        assert arg in description
+
+
+async def test_a_prompt_without_a_recorded_scope_is_hidden_not_a_crash(
+    mcp_client, pat_primary_read_ai_run
+):
+    """Registered past ``agent_prompt`` (no scope recorded): never listed."""
+
+    def stray() -> str:
+        return "stray"
+
+    mcp.add_prompt(Prompt.from_function(stray, name="stray_prompt", description="test"))
+    try:
+        async with mcp_client(pat_primary_read_ai_run) as client:
+            names = {p.name for p in (await client.list_prompts()).prompts}
+    finally:
+        mcp._prompt_manager._prompts.pop("stray_prompt")
+
+    assert _NAME in names and "stray_prompt" not in names
