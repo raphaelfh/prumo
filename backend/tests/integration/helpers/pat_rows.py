@@ -113,14 +113,18 @@ async def insert_oauth_connection(
     scope: str = "read_write",
     name: str = "Claude",
     expires_in: timedelta = timedelta(days=90),
+    ai_run: bool = False,
 ) -> UUID:
-    """Insert an unrevoked ``kind='oauth'`` credential row (no hash, no prefix)."""
+    """Insert an unrevoked ``kind='oauth'`` credential row (no hash, no prefix).
+
+    ``ai_run=True`` needs ``expires_in <= 30 days`` (``ai_run_lifetime_check``)."""
     connection_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.personal_access_tokens "
-            "(id, user_id, kind, oauth_client_id, name, scope, expires_at) "
-            "VALUES (:id, :uid, 'oauth', :cid, :name, :scope, now() + CAST(:interval AS interval))"
+            "(id, user_id, kind, oauth_client_id, name, scope, ai_run, expires_at) "
+            "VALUES (:id, :uid, 'oauth', :cid, :name, :scope, :ai_run, "
+            "now() + CAST(:interval AS interval))"
         ),
         {
             "id": str(connection_id),
@@ -128,6 +132,7 @@ async def insert_oauth_connection(
             "cid": str(client_id),
             "name": name,
             "scope": scope,
+            "ai_run": ai_run,
             "interval": expires_in,
         },
     )

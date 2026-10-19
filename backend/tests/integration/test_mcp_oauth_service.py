@@ -844,9 +844,11 @@ async def test_active_access_row_applies_extra_predicates(db_session: AsyncSessi
     assert await svc._active_access_row(db_session, access, false()) is None
 
 
-@pytest.mark.parametrize(("write", "scope"), [(True, "read_write"), (False, "read")])
+@pytest.mark.parametrize(
+    ("write", "scopes"), [(True, {"read", "write"}), (False, {"read"})], ids=["write", "read"]
+)
 async def test_resolve_principal_returns_the_connection_principal(
-    db_session: AsyncSession, write: bool, scope: str
+    db_session: AsyncSession, write: bool, scopes: set[str]
 ) -> None:
     _, access, _, connection_id = await _issued(db_session, write=write)
 
@@ -856,7 +858,7 @@ async def test_resolve_principal_returns_the_connection_principal(
     assert principal is not None
     assert principal.user_sub == SEED.primary_profile
     assert principal.token_id == connection_id
-    assert principal.scope == scope
+    assert principal.scopes == frozenset(scopes)
     assert principal.token_expires_at == connection.expires_at
     assert principal.project_ids is None
 

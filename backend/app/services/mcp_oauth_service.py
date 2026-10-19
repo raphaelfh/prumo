@@ -54,7 +54,7 @@ from app.core.error_handler import AppError, NotFoundError
 from app.core.integrity import violates_constraint
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
-from app.schemas.mcp_auth import McpPrincipal
+from app.schemas.mcp_auth import McpPrincipal, scope_set
 from app.schemas.mcp_oauth import (
     OAuthConnectionRead,
     OAuthConsentRefusalCode,
@@ -641,7 +641,7 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
     return McpPrincipal(
         user_sub=connection.user_id,
         token_id=connection.id,
-        scope=connection.scope,
+        scopes=scope_set(connection.scope, connection.ai_run),
         token_expires_at=connection.expires_at,
         project_ids=None if connection.project_ids is None else frozenset(connection.project_ids),
     )

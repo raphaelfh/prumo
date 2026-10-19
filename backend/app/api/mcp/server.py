@@ -112,10 +112,10 @@ class _PrumoMCPServer(MCPServer[Any]):
     error envelope instead of the SDK's plain-text pydantic dump."""
 
     async def list_tools(self) -> list[Tool]:
-        scope = current_principal().scope
+        scopes = current_principal().scopes
         tools = await super().list_tools()
         return sorted(
-            (t for t in tools if scope == "read_write" or _RULES[t.name].requires == "read"),
+            (t for t in tools if "write" in scopes or _RULES[t.name].requires == "read"),
             key=lambda t: t.name,
         )
 
@@ -222,7 +222,7 @@ def agent_tool(
 def _charge(rule: _ToolRule, token_id: str) -> None:
     """Scope, then the rate tier (charged): the first two `_dispatch` checks."""
     write = rule.requires == "write"
-    if write and current_principal().scope != "read_write":
+    if write and "write" not in current_principal().scopes:
         raise McpToolError(
             McpErrorCode.SCOPE_INSUFFICIENT, "This token's scope cannot call a write tool."
         )

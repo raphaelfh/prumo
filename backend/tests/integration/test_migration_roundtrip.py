@@ -1332,7 +1332,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0091_ai_usage_ledger"
+    expected_head = "0092_pat_ai_run"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2593,3 +2593,89 @@ async def test_migration_0091_ai_usage_ledger_roundtrip(
         ).scalar_one()
         await session.rollback()
         assert granted is False, f"{role} regained SELECT on ai_usage_ledger after re-upgrade"
+
+
+@pytest.mark.asyncio
+async def test_migration_0092_pat_ai_run_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The ``ai_run`` column and its lifetime CHECK exist at head, go with the
+    downgrade and come back with the re-upgrade; a 90-day OAuth connection
+    written before 0092 survives the upgrade with ``ai_run = false``."""
+    user_id, client_id, connection_id = uuid4(), uuid4(), uuid4()
+    session = migration_session
+
+    async def schema() -> tuple[set[str], set[str]]:
+        columns = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'personal_access_tokens' "
+                        "AND column_name = 'ai_run'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checks = set(
+            (
+                await session.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint WHERE contype = 'c' "
+                        "AND conrelid = to_regclass('public.personal_access_tokens') "
+                        "AND conname LIKE '%ai_run%'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.rollback()
+        return columns, checks
+
+    at_head = ({"ai_run"}, {"ck_personal_access_tokens_ai_run_lifetime_check"})
+    assert await schema() == at_head
+    try:
+        _run_alembic("downgrade", "0091_ai_usage_ledger", database_url=migration_db_url)
+        try:
+            assert await schema() == (set(), set())
+            for sql in (
+                "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (:u,"
+                " 'pat-0092@test.local', '00000000-0000-0000-0000-000000000000',"
+                " 'authenticated', 'authenticated')",
+                "INSERT INTO public.profiles (id, email) VALUES (:u, 'pat-0092@test.local')",
+                "INSERT INTO public.mcp_oauth_clients (client_id, client_name, redirect_uris,"
+                " scope) VALUES (:c, 'Claude', ARRAY['https://claude.ai/cb'], 'read write')",
+                "INSERT INTO public.personal_access_tokens (id, user_id, kind, oauth_client_id,"
+                " name, scope, expires_at) VALUES (:id, :u, 'oauth', :c, 'Claude', 'read_write',"
+                " now() + interval '90 days')",
+            ):
+                await session.execute(
+                    text(sql), {"u": str(user_id), "c": str(client_id), "id": str(connection_id)}
+                )
+            await session.commit()
+        finally:
+            _run_alembic("upgrade", "head", database_url=migration_db_url)
+        assert await schema() == at_head
+        ai_run = (
+            await session.execute(
+                text("SELECT ai_run FROM public.personal_access_tokens WHERE id = :id"),
+                {"id": str(connection_id)},
+            )
+        ).scalar_one()
+        await session.rollback()
+        assert ai_run is False
+    finally:
+        await session.rollback()
+        for sql in (
+            "DELETE FROM public.personal_access_tokens WHERE id = :id",
+            "DELETE FROM public.mcp_oauth_clients WHERE client_id = :c",
+            "DELETE FROM public.profiles WHERE id = :u",
+            "DELETE FROM auth.users WHERE id = :u",
+        ):
+            await session.execute(
+                text(sql), {"u": str(user_id), "c": str(client_id), "id": str(connection_id)}
+            )
+        await session.commit()

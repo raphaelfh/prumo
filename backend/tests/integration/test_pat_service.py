@@ -251,7 +251,7 @@ async def test_resolve_principal_matches_only_active_well_formed(db_session: Asy
     assert principal == McpPrincipal(
         user_sub=SEED.reviewer_profile,
         token_id=created.token.id,
-        scope="read_write",
+        scopes=frozenset({"read", "write"}),
         token_expires_at=created.token.expires_at,
         project_ids=None,
     )
@@ -272,6 +272,49 @@ async def test_resolve_principal_matches_only_active_well_formed(db_session: Asy
         {"id": str(aged.token.id)},
     )
     assert await resolve_principal(db_session, aged.secret) is None
+
+
+@pytest.mark.asyncio
+async def test_ai_run_defaults_to_false(db_session: AsyncSession) -> None:
+    created = await create_token(
+        db_session, user_id=SEED.reviewer_profile, payload=_req(scope="read_write")
+    )
+
+    ai_run = (
+        await db_session.execute(
+            text("SELECT ai_run FROM public.personal_access_tokens WHERE id = :id"),
+            {"id": str(created.token.id)},
+        )
+    ).scalar_one()
+    assert ai_run is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scope", "ai_run", "expected"),
+    [
+        ("read", False, {"read"}),
+        ("read", True, {"read", "ai_run"}),
+        ("read_write", False, {"read", "write"}),
+        ("read_write", True, {"read", "write", "ai_run"}),
+    ],
+    ids=["read", "read-ai_run", "read_write", "read_write-ai_run"],
+)
+async def test_resolve_principal_yields_the_four_scope_sets(
+    db_session: AsyncSession, scope: str, ai_run: bool, expected: set[str]
+) -> None:
+    created = await create_token(
+        db_session, user_id=SEED.reviewer_profile, payload=_req(scope=scope)
+    )
+    await db_session.execute(
+        text("UPDATE public.personal_access_tokens SET ai_run = :ai_run WHERE id = :id"),
+        {"ai_run": ai_run, "id": str(created.token.id)},
+    )
+
+    principal = await resolve_principal(db_session, created.secret)
+
+    assert principal is not None
+    assert principal.scopes == frozenset(expected)
 
 
 @pytest.mark.asyncio

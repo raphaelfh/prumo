@@ -49,7 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_handler import AppError
 from app.models.personal_access_token import PersonalAccessToken
 from app.models.user import Profile
-from app.schemas.mcp_auth import McpPrincipal
+from app.schemas.mcp_auth import McpPrincipal, scope_set
 from app.schemas.personal_access_token import (
     PersonalAccessTokenCreated,
     PersonalAccessTokenCreateRequest,
@@ -294,7 +294,7 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
     return McpPrincipal(
         user_sub=row.user_id,
         token_id=row.id,
-        scope=row.scope,
+        scopes=scope_set(row.scope, row.ai_run),
         token_expires_at=row.expires_at,
         project_ids=None if row.project_ids is None else frozenset(row.project_ids),
     )

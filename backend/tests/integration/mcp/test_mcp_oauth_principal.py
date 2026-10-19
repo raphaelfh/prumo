@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.mcp_oauth_service import revoke_connection
 from app.services.pat_service import hash_secret
 from tests.integration.conftest import SEED
-from tests.integration.mcp.conftest import expected_challenge
+from tests.integration.mcp.conftest import expected_challenge, seed_oauth_principal
 from tests.integration.mcp.oauth_flow import (
     OAuthTokens,
     authorize,
@@ -240,3 +241,21 @@ async def test_revoke_connection_ends_mcp_and_refresh(
     r = await refresh(oauth_http_client, tokens.client_id, tokens.refresh)
     assert r.status_code == 400, r.text
     assert r.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.parametrize(
+    ("ai_run", "expected"),
+    [(False, {"read", "write"}), (True, {"read", "write", "ai_run"})],
+    ids=["no-grant", "ai_run"],
+)
+async def test_connection_scope_set_carries_the_ai_run_grant(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    ai_run: bool,
+    expected: set[str],
+) -> None:
+    seeded = await seed_oauth_principal(
+        db_session, monkeypatch, SEED.primary_profile, "read_write", ai_run=ai_run
+    )
+
+    assert seeded.principal.scopes == frozenset(expected)

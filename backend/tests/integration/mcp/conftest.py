@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from mcp import Client
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.mcp import server
@@ -180,6 +182,8 @@ async def _seed_pat(
     user_id: UUID,
     scope: Literal["read", "read_write"],
     project_ids: list[UUID] | None = None,
+    *,
+    ai_run: bool = False,
 ) -> SeededPat:
     created = await create_token(
         db,
@@ -188,6 +192,12 @@ async def _seed_pat(
             name=f"pytest-{scope}", scope=scope, expires_in_days=30, project_ids=project_ids
         ),
     )
+    if ai_run:
+        # No issuance path sets the grant yet; the 30-day expiry already fits its CHECK.
+        await db.execute(
+            text("UPDATE public.personal_access_tokens SET ai_run = true WHERE id = :id"),
+            {"id": str(created.token.id)},
+        )
     principal = await resolve_principal(db, created.secret)
     assert principal is not None
     return SeededPat(created.secret, principal)
@@ -198,16 +208,21 @@ async def seed_oauth_principal(
     monkeypatch: pytest.MonkeyPatch,
     user_id: UUID,
     scope: Literal["read", "read_write"],
+    *,
+    ai_run: bool = False,
 ) -> SeededPat:
     """An OAuth connection of ``scope`` for ``user_id`` with one live access
     token, resolved through the OAuth lookup. Turns OAuth on (the access token
-    is bound to ``settings.mcp_resource_url``)."""
+    is bound to ``settings.mcp_resource_url``). ``ai_run`` connections live
+    30 days (``ai_run_lifetime_check``)."""
     monkeypatch.setattr(settings, "PUBLIC_API_URL", OAUTH_BASE_URL)
     connection_id = await insert_oauth_connection(
         db,
         user_id=user_id,
         client_id=await insert_oauth_client(db),
         scope=scope,
+        ai_run=ai_run,
+        expires_in=timedelta(days=30 if ai_run else 90),
     )
     secret = new_secret(mcp_oauth_service.ACCESS_PREFIX)
     await insert_oauth_access_token(
@@ -246,6 +261,35 @@ async def pat_reviewer_rw(db_session: AsyncSession) -> SeededPat:
 @pytest_asyncio.fixture
 async def pat_outsider_rw(db_session: AsyncSession) -> SeededPat:
     return await _seed_pat(db_session, SEED.outsider_profile, "read_write")
+
+
+@pytest_asyncio.fixture
+async def pat_primary_rw_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.primary_profile, "read_write", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_primary_read_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.primary_profile, "read", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_viewer_ai_run(db_session: AsyncSession) -> SeededPat:
+    """``reviewer_profile`` demoted to ``viewer`` on ``SEED.primary_project``
+    (in the test transaction), holding a ``read`` + ``ai_run`` token."""
+    await db_session.execute(
+        text(
+            "UPDATE public.project_members SET role = 'viewer' "
+            "WHERE project_id = :p AND user_id = :u"
+        ),
+        {"p": str(SEED.primary_project), "u": str(SEED.reviewer_profile)},
+    )
+    return await _seed_pat(db_session, SEED.reviewer_profile, "read", ai_run=True)
+
+
+@pytest_asyncio.fixture
+async def pat_outsider_ai_run(db_session: AsyncSession) -> SeededPat:
+    return await _seed_pat(db_session, SEED.outsider_profile, "read_write", ai_run=True)
 
 
 @pytest.fixture

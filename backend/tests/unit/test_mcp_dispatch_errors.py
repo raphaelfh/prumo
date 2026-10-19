@@ -51,7 +51,7 @@ def _principal() -> Iterator[None]:
         McpPrincipal(
             user_sub=uuid4(),
             token_id=uuid4(),
-            scope="read",
+            scopes=frozenset({"read"}),
             token_expires_at=datetime(2099, 1, 1, tzinfo=UTC),
             project_ids=None,
         )
