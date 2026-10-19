@@ -134,7 +134,7 @@ class _FakeClient:
             is_error=False,
         )
 
-    async def get_prompt(self, name: str, arguments: dict[str, str]) -> Any:
+    async def get_prompt(self, _name: str, _arguments: dict[str, str]) -> Any:
         return SimpleNamespace(
             messages=[SimpleNamespace(content=SimpleNamespace(type="text", text="prompt"))]
         )
@@ -158,7 +158,6 @@ def _scripted(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
 
 
 def _deps(
-    tmp_path: Path,
     record: dict[str, Any],
     *,
     tools: list[str],
@@ -168,7 +167,7 @@ def _deps(
     record.setdefault("teardown", 0)
     record.setdefault("calls", [])
 
-    async def build(db: Any, *, user_id: Any, model_key: str, storage: Any) -> Any:
+    async def build(*_args: Any, **_kwargs: Any) -> Any:
         record["build"] += 1
         facts = dict.fromkeys(
             ["project_name", "most_articles_project", "article_title", "phrase", "sample_size"],
@@ -181,7 +180,7 @@ def _deps(
             facts={**facts, "phrase_article_titles": [], "extracted_fields": []},
         )
 
-    async def teardown(db: Any, fx: Any, *, storage: Any) -> None:
+    async def teardown(*_args: Any, **_kwargs: Any) -> None:
         record["teardown"] += 1
 
     def open_client_factory(_url: str, _fx: Any) -> Any:
@@ -221,7 +220,7 @@ async def test_main_async_refuses_a_remote_mcp_url_before_building(
 ) -> None:
     monkeypatch.setenv(ENV_KEY, "k")
     record: dict[str, Any] = {}
-    deps = _deps(tmp_path, record, tools=[])
+    deps = _deps(record, tools=[])
     with pytest.raises(SystemExit):
         await runner.main_async(
             _args(tmp_path, "--mcp-url", "https://api.example.com/mcp"), deps=deps
@@ -236,9 +235,7 @@ async def test_main_async_skips_survives_cancels_and_tears_down(
     record: dict[str, Any] = {}
     # E1 needs list_projects (missing -> skipped); E2 raises in the model;
     # E14 calls start_ai_run, whose batch must be cancelled.
-    deps = _deps(
-        tmp_path, record, tools=["get_article_text", "plan_ai_run", "start_ai_run", "cancel_ai_run"]
-    )
+    deps = _deps(record, tools=["get_article_text", "plan_ai_run", "start_ai_run", "cancel_ai_run"])
     code = await runner.main_async(_args(tmp_path, "--only", "E1,E2,E14"), deps=deps)
 
     assert code == 1  # 0 of 3 passed: thresholds fail
@@ -258,7 +255,7 @@ async def test_main_async_tears_down_once_when_a_task_raises_outside_the_model(
 ) -> None:
     monkeypatch.setenv(ENV_KEY, "k")
     record: dict[str, Any] = {}
-    deps = _deps(tmp_path, record, tools=["get_setup_readiness"])
+    deps = _deps(record, tools=["get_setup_readiness"])
 
     async def explode(*_a: Any, **_kw: Any) -> Any:
         raise RuntimeError("transport down")
@@ -276,10 +273,10 @@ async def test_main_async_returns_zero_when_thresholds_hold_and_the_baseline_is_
 ) -> None:
     monkeypatch.setenv(ENV_KEY, "k")
     record: dict[str, Any] = {}
-    deps = _deps(tmp_path, record, tools=[])
+    deps = _deps(record, tools=[])
     baseline = tmp_path / "baseline.md"
     baseline.write_text("<!-- mcp-chat-eval-baseline -->\n```json\nnull\n```\n")
-    monkeypatch.setattr(runner, "summarize", lambda tasks, metrics: _met(metrics))
+    monkeypatch.setattr(runner, "summarize", lambda _tasks, metrics: _met(metrics))
     code = await runner.main_async(
         _args(tmp_path, "--only", "E1", "--baseline", str(baseline)), deps=deps
     )

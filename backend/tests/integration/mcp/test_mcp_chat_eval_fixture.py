@@ -63,9 +63,7 @@ class _RecordingStorage(StorageAdapter):
 
 
 @pytest.fixture
-async def built(
-    db_session: AsyncSession, fake_storage: Any
-) -> tuple[EvalFixture, _RecordingStorage]:
+async def built(db_session: AsyncSession) -> tuple[EvalFixture, _RecordingStorage]:
     rec = _RecordingStorage()
     fx = await eval_fixture.build(
         db_session, user_id=SEED.primary_profile, model_key="test-key", storage=rec
@@ -118,8 +116,9 @@ async def test_build_uploads_mints_three_limited_pats_and_fills_facts(
     assert eval_articles > other_articles > 0
 
 
+@pytest.mark.usefixtures("built")
 async def test_a_second_build_for_the_same_user_refuses_before_minting(
-    db_session: AsyncSession, built: tuple[EvalFixture, _RecordingStorage]
+    db_session: AsyncSession,
 ) -> None:
     before = await _count(
         db_session,

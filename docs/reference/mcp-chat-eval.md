@@ -92,12 +92,63 @@ on it.
 
 ## How to run
 
-Pending: the runner and its fixture land in the next change of this suite.
+The runner (`runner.py`) drives a real model through the local `/mcp` server.
+Its fixture (`fixture.py`, with the synthetic content in `world.py`) builds the
+world the tasks expect and deletes it afterwards. A live run makes paid model
+calls, so run it by hand, never from CI.
+
+Before you start:
+
+1. Start the local stack with `make start`: Supabase (database and storage) and
+   the backend serving `/mcp` at `http://localhost:8000/mcp`. The stack is
+   shared by every session and worktree, so coordinate first. The runner
+   starts no Celery worker: an AI run the agent starts stays queued and is
+   cancelled at the end.
+2. Pick a dedicated local user id: a profile with no Anthropic key of its own.
+   The fixture refuses a user that already has one. A second profile must
+   exist to act as the peer reviewer; the seed provides both.
+3. Export the model key as `MCP_CHAT_EVAL_ANTHROPIC_API_KEY`. The runner reads
+   the key from this variable only, never from the app settings or
+   `ANTHROPIC_API_KEY`.
+4. Choose a model id and a token budget for the whole run. Each task gets the
+   budget the earlier tasks left.
+
+Then run, from the repository root:
+
+```bash
+cd backend && MCP_CHAT_EVAL_ANTHROPIC_API_KEY=<key> PYTHONPATH=scripts \
+  uv run python -m mcp_chat_eval.runner --user-id <uuid> --model <model id> \
+  --budget-tokens <n> --out <dir>
+```
+
+Options: `--mcp-url` (default `http://localhost:8000/mcp`), `--only E1,E9` to
+run a subset of tasks, and `--baseline <file>` (default this page).
+
+The runner refuses to start unless both the database host (`DATABASE_URL` in
+`backend/.env`) and the `--mcp-url` host are `localhost`, `127.0.0.1` or `::1`.
+
+The fixture creates two projects owned by the user, a peer reviewer
+membership, synthetic articles with text blocks, one PDF object in local
+storage, two templates with a few recorded values, the AI policy, a user
+connection holding the run's key as the user's engine, and three personal
+access tokens (`read`, `read_write`, `ai_run`) limited to the two projects and
+expiring after one day. Token secrets stay in memory and never reach a report.
+Teardown always runs, even after a failed task: it cancels every AI run the
+agent started, revokes the three tokens, deletes the PDF object and the
+connection, and deletes both projects.
+
+The runner writes `report.json` and `report.md` to `--out` and prints the
+Markdown report. It exits `0` when the thresholds hold and nothing regresses
+against the baseline, and `1` when a threshold fails, a regression is found,
+the key is missing or a host is not local.
 
 ## Baseline
 
-The first maintainer run after merge records the baseline here: pass count,
-total tokens, model id and commit SHA. Until then the block is `null`
+The baseline is recorded after merge by the maintainer, not in the change that
+ships the runner. The maintainer picks the model id and the token budget, runs
+the suite as above with their own key, and records here, in a separate docs
+change: the `report.md`, plus pass count, total tokens, model id and commit SHA
+in the JSON block below. Until then the block is `null`
 (pending), and no regression is computed.
 
 <!-- mcp-chat-eval-baseline -->
