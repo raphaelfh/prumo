@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
+from tests.integration.helpers.batch_fixtures import make_batch
 from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.article_seed import insert_article, insert_pdf
 from tests.integration.mcp.conftest import SeededPat, _seed_pat
@@ -270,6 +271,27 @@ BOLA_CASES = [
         },
         "NOT_FOUND",
         id="start_ai_run-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_ai_runs",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="get_ai_runs-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_primary_rw",
+        "get_ai_runs",
+        {"project_id": str(SEED.primary_project), "batch_id": str(uuid4())},
+        "NOT_FOUND",
+        id="get_ai_runs-random-batch",
+    ),
+    pytest.param(
+        "pat_outsider_ai_run",
+        "cancel_ai_run",
+        {"project_id": str(SEED.primary_project), "batch_id": str(uuid4())},
+        "NOT_FOUND",
+        id="cancel_ai_run-outsider-on-foreign-project",
     ),
 ]
 
@@ -587,7 +609,9 @@ async def test_edit_template_draft_bola_writes_no_row(
 # --- per-project token restriction ------------------------------------------
 
 
-def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[str, dict]:
+def _coordinate_cases(
+    b_article: str, b_template: str, b_section: str, b_batch: str
+) -> dict[str, dict]:
     """Arguments naming project B for every tool with a project or article coordinate."""
     b = str(SEED.secondary_project)
     return {
@@ -621,10 +645,12 @@ def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[s
             "expected_model": "openai:m",
             "expected_payer": "your_key",
         },
+        "get_ai_runs": {"project_id": b, "batch_id": b_batch},
+        "cancel_ai_run": {"project_id": b, "batch_id": b_batch},
     }
 
 
-_COORDINATE_TOOLS = sorted(_coordinate_cases("a", "t", "s"))
+_COORDINATE_TOOLS = sorted(_coordinate_cases("a", "t", "s", "b"))
 
 
 @pytest_asyncio.fixture
@@ -665,7 +691,14 @@ async def test_token_restricted_to_a_gets_not_found_on_b(
     await insert_pdf(db_session, SEED.secondary_project, b_article)
     _project_id, b_template, schema = await fresh_charms(db_session)
     b_section = next(et for et in schema["entity_types"] if et.get("fields"))["id"]
-    arguments = _coordinate_cases(str(b_article), str(b_template), b_section)[tool]
+    b_batch = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.secondary_project,
+        template_id=b_template,
+        article_ids=[b_article],
+    )
+    arguments = _coordinate_cases(str(b_article), str(b_template), b_section, str(b_batch))[tool]
 
     # Same user, unrestricted token: membership alone lets the call through.
     unrestricted = await call_tool(mcp_client, pat_primary_rw, tool, arguments)

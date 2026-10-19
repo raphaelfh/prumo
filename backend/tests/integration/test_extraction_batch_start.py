@@ -359,3 +359,80 @@ async def test_concurrent_same_plan_starts_write_one_batch() -> None:
         assert outcomes[0].batch_id == outcomes[1].batch_id
         async with world.sessions() as db:
             assert await _batches_for_digest(db, agent.plan_digest) == 1
+
+
+# --- cancel is a conditional transition -------------------------------------
+
+
+async def _cancel_and_commit(world: _World, batch_id: UUID, now: datetime) -> int | None:
+    async with world.sessions() as db:
+        cancelled = await ExtractionBatchService(db).cancel(
+            SEED.primary_profile, batch_id, now=now, project_id=world.project_id
+        )
+        await db.commit()
+        return cancelled
+
+
+@pytest.mark.asyncio
+async def test_concurrent_service_cancels_apply_once() -> None:
+    async with _committed_world(3) as world:
+        async with world.sessions() as db:
+            batch_id = await make_batch(
+                db,
+                owner_id=SEED.primary_profile,
+                project_id=world.project_id,
+                template_id=world.templates[0],
+                article_ids=world.articles,
+            )
+            await db.commit()
+        first, second = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)
+
+        outcomes = await asyncio.gather(
+            _cancel_and_commit(world, batch_id, first),
+            _cancel_and_commit(world, batch_id, second),
+            return_exceptions=True,
+        )
+
+        applied = [o for o in outcomes if isinstance(o, int)]
+        assert applied == [3] and outcomes.count(None) == 1, outcomes
+        winner = first if outcomes[0] == 3 else second
+        async with world.sessions() as db:
+            cancelled_at = (
+                await db.execute(
+                    text("SELECT cancelled_at FROM public.extraction_batches WHERE id = :id"),
+                    {"id": str(batch_id)},
+                )
+            ).scalar_one()
+        assert cancelled_at == winner
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_stop_writes_nothing(db_session: AsyncSession) -> None:
+    articles = await _articles(db_session, 2)
+    batch_id = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=articles,
+        stop_code="MISSING_API_KEY",
+    )
+
+    cancelled = await ExtractionBatchService(db_session).cancel(
+        SEED.primary_profile, batch_id, now=datetime.now(UTC), project_id=SEED.primary_project
+    )
+
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT b.cancelled_at, array_agg(i.status ORDER BY i.created_at) "
+                "FROM public.extraction_batches b "
+                "JOIN public.extraction_batch_items i ON i.batch_id = b.id "
+                "WHERE b.id = :id GROUP BY b.cancelled_at"
+            ),
+            {"id": str(batch_id)},
+        )
+    ).one()
+    assert cancelled is None
+    assert row[0] is None
+    assert list(row[1]) == ["queued", "queued"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +15,9 @@ from app.services.extraction_batch_service import (
     owned_batch,
 )
 from tests.integration.conftest import SEED
-from tests.integration.helpers.batch_fixtures import make_article, make_batch
+from tests.integration.helpers import engine_setup
+from tests.integration.helpers.batch_fixtures import make_agent_batch, make_article, make_batch
+from tests.integration.helpers.pat_rows import insert_pat_row
 
 
 @pytest.mark.asyncio
@@ -139,3 +142,85 @@ async def test_list_is_seven_days_newest_first_and_filters_active(db_session: As
         )
         == []
     )
+
+
+client_as_manager = engine_setup.client_as_manager
+
+
+@pytest.mark.asyncio
+async def test_rest_reads_of_a_ui_batch_carry_no_agent_label(
+    client_as_manager: AsyncClient, db_session: AsyncSession
+) -> None:
+    a = await make_article(db_session, SEED.primary_project)
+    batch_id = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[a],
+    )
+
+    listed = await client_as_manager.get(
+        "/api/v1/extraction/batches", params={"project_id": str(SEED.primary_project)}
+    )
+    detail = await client_as_manager.get(f"/api/v1/extraction/batches/{batch_id}")
+
+    assert listed.status_code == 200 and detail.status_code == 200, (listed.text, detail.text)
+    row = next(r for r in listed.json()["data"] if r["id"] == str(batch_id))
+    for body in (row, detail.json()["data"]):
+        assert (body["started_by_agent"], body["agent_token_name"]) == (False, None)
+
+
+@pytest.mark.asyncio
+async def test_an_agent_batch_names_its_token_until_the_token_is_gone(
+    db_session: AsyncSession,
+) -> None:
+    token_id = await insert_pat_row(db_session, "Claude Desktop")
+    batch_id = await make_agent_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        token_id=token_id,
+    )
+    service = ExtractionBatchService(db_session)
+
+    named = await service.detail(SEED.primary_profile, batch_id, now=datetime.now(UTC))
+    await db_session.execute(
+        text("DELETE FROM public.personal_access_tokens WHERE id = :id"), {"id": str(token_id)}
+    )
+    gone = await service.detail(SEED.primary_profile, batch_id, now=datetime.now(UTC))
+
+    assert (named.started_by_agent, named.agent_token_name) == (True, "Claude Desktop")
+    assert (gone.started_by_agent, gone.agent_token_name) == (True, None)
+
+
+@pytest.mark.asyncio
+async def test_a_project_scoped_read_misses_the_owners_batch_in_another_project(
+    db_session: AsyncSession,
+) -> None:
+    a = await make_article(db_session, SEED.primary_project)
+    batch_id = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[a],
+    )
+    service = ExtractionBatchService(db_session)
+    now = datetime.now(UTC)
+
+    found = await service.detail(
+        SEED.primary_profile, batch_id, now=now, project_id=SEED.primary_project
+    )
+    with pytest.raises(BatchNotFoundError) as other:
+        await service.detail(
+            SEED.primary_profile, batch_id, now=now, project_id=SEED.secondary_project
+        )
+    with pytest.raises(BatchNotFoundError) as cancel_other:
+        await service.cancel(
+            SEED.primary_profile, batch_id, now=now, project_id=SEED.secondary_project
+        )
+
+    assert found.id == batch_id
+    assert str(other.value) == str(cancel_other.value) == "Batch not found"

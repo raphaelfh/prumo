@@ -153,6 +153,15 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
         }
     ),
     "start_ai_run": frozenset({"engine.provider", "engine.model", "engine.mode"}),
+    "get_ai_runs": frozenset(
+        {
+            "runs[].stop_code",
+            "run.stop_code",
+            "run.attention_items[].reason_code",
+            "run.next_cursor",
+        }
+    ),
+    "cancel_ai_run": frozenset(),
 }
 _FLAG_FIELDS = frozenset({"untrusted_content", "untrusted_fields"})
 _PINNED_FORMATS = frozenset({"uuid", "date-time"})

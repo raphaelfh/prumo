@@ -25,7 +25,7 @@ from app.schemas.llm_target import EngineIdentity
 from app.services import engine_credentials
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.article_read_service import ArticleNotFoundError, owned_articles
-from app.services.extraction_batch_view import derive_batch
+from app.services.extraction_batch_view import BatchWork, batch_work, derive_batch
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
@@ -86,13 +86,17 @@ class BatchAlreadyActiveError(AppError):
         )
 
 
-async def owned_batch(db: AsyncSession, *, owner_id: UUID, batch_id: UUID) -> ExtractionBatch:
-    """THE batch guard: owned by ``owner_id``, who is still a project member.
+async def owned_batch(
+    db: AsyncSession, *, owner_id: UUID, batch_id: UUID, project_id: UUID | None = None
+) -> ExtractionBatch:
+    """THE batch guard: owned by ``owner_id``, who is still a project member,
+    and (when given) in ``project_id``.
 
-    Owner and membership live in the WHERE clause, so a foreign batch and a
-    missing one raise the same error with the same message.
+    Owner, membership and project live in the WHERE clause, so a foreign
+    batch, another project's and a missing one raise the same error with the
+    same message.
     """
-    batch = await ExtractionBatchRepository(db).get_owned(batch_id, owner_id)
+    batch = await ExtractionBatchRepository(db).get_owned(batch_id, owner_id, project_id=project_id)
     if batch is None:
         raise BatchNotFoundError("Batch not found")
     return batch
@@ -113,9 +117,20 @@ class ExtractionBatchService:
         self.batches = ExtractionBatchRepository(db)
 
     async def detail(
-        self, owner_id: UUID, batch_id: UUID, *, now: datetime
+        self, owner_id: UUID, batch_id: UUID, *, now: datetime, project_id: UUID | None = None
     ) -> ExtractionBatchDetail:
-        batch = await owned_batch(self.db, owner_id=owner_id, batch_id=batch_id)
+        detail, _work = await self.detail_with_work(
+            owner_id, batch_id, now=now, project_id=project_id
+        )
+        return detail
+
+    async def detail_with_work(
+        self, owner_id: UUID, batch_id: UUID, *, now: datetime, project_id: UUID | None = None
+    ) -> tuple[ExtractionBatchDetail, BatchWork]:
+        """The detail and what its attempts produced, from one read of the items."""
+        batch = await owned_batch(
+            self.db, owner_id=owner_id, batch_id=batch_id, project_id=project_id
+        )
         rows = (await self.batches.item_rows([batch.id]))[batch.id]
         summary = await self._summary(batch, rows, now)
         items = derive_batch(
@@ -125,7 +140,7 @@ class ExtractionBatchService:
             rows=rows,
             now=now,
         ).items
-        return ExtractionBatchDetail(**summary.model_dump(), items=items)
+        return ExtractionBatchDetail(**summary.model_dump(), items=items), batch_work(rows)
 
     async def list_for_owner(
         self, owner_id: UUID, *, project_id: UUID | None, active_only: bool, now: datetime
@@ -147,7 +162,7 @@ class ExtractionBatchService:
             rows=rows,
             now=now,
         )
-        project_name, template_name, kind = await self.batches.labels(batch)
+        project_name, template_name, kind, token_name = await self.batches.labels(batch)
         return ExtractionBatchSummary(
             id=batch.id,
             project_id=batch.project_id,
@@ -162,6 +177,8 @@ class ExtractionBatchService:
             stop_code=batch.stop_code,
             stop_message=batch.stop_message,
             counts=view.counts,
+            started_by_agent=batch.agent_plan_digest is not None,
+            agent_token_name=token_name,
         )
 
     async def lock_agent_starts(self, project_id: UUID) -> None:
@@ -274,10 +291,22 @@ class ExtractionBatchService:
         await self.db.flush()
         return stopped
 
-    async def cancel(self, owner_id: UUID, batch_id: UUID, *, now: datetime) -> None:
-        """Queued articles become not-run; in-flight ones finish (spec §7.1)."""
-        batch = await owned_batch(self.db, owner_id=owner_id, batch_id=batch_id)
-        if batch.cancelled_at is None:
-            batch.cancelled_at = now
-        await self.batches.cancel_queued(batch.id, "CANCELLED")
+    async def cancel(
+        self, owner_id: UUID, batch_id: UUID, *, now: datetime, project_id: UUID | None = None
+    ) -> int | None:
+        """Queued articles become not-run; in-flight ones finish (spec §7.1).
+
+        The one cancel path (REST and MCP). Returns how many queued articles
+        were cancelled, or ``None`` when the batch was already cancelled or
+        stopped: the conditional UPDATE decides, so of concurrent cancels (or
+        a cancel racing a stop) exactly one applies, and the other writes
+        nothing. Flush only.
+        """
+        batch = await owned_batch(
+            self.db, owner_id=owner_id, batch_id=batch_id, project_id=project_id
+        )
+        if not await self.batches.cancel_if_active(batch.id, now=now):
+            return None
+        cancelled = await self.batches.cancel_queued(batch.id, "CANCELLED")
         await self.db.flush()
+        return cancelled

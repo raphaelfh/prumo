@@ -53,6 +53,8 @@ def _detail(batch_id: UUID) -> ExtractionBatchDetail:
         stalled=False,
         stop_code=None,
         stop_message=None,
+        started_by_agent=False,
+        agent_token_name=None,
         counts=ExtractionBatchCounts(
             total=1,
             queued=1,

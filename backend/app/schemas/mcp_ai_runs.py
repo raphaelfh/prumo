@@ -160,3 +160,76 @@ class McpAiRunStarted(BaseModel):
         "AI only adds suggestions; reviewers must check them in prumo. Check progress with "
         "get_ai_runs when the user asks; do not poll in a loop."
     )
+
+
+AttentionOutcome = Literal["needs_attention", "done_with_issues", "skipped", "not_run"]
+
+
+class McpAiRunSummary(BaseModel):
+    """One of the caller's runs; titles and names are capped."""
+
+    batch_id: UUID
+    template_name: str
+    state: BatchState
+    stalled: bool
+    started_by_agent: bool
+    agent_token_name: str | None
+    created_at: datetime
+    finished_at: datetime | None
+    counts: ExtractionBatchCounts
+    stop_code: str | None
+    stop_message: str | None
+
+
+class McpAiRunAttentionItem(BaseModel):
+    article_id: UUID
+    title: str
+    outcome: AttentionOutcome
+    reason_code: str | None
+    message: str | None
+    failed_sections: int | None
+    total_sections: int | None
+
+
+class McpAiRunDetail(McpAiRunSummary):
+    suggestions_created: int
+    tokens_used: int | None
+    attention_items: list[McpAiRunAttentionItem]
+    next_cursor: str | None
+    review_hint: Literal[
+        "Review the AI suggestions in prumo: open the project's extraction view for each article."
+    ] = "Review the AI suggestions in prumo: open the project's extraction view for each article."
+
+
+class McpAiRuns(BaseModel):
+    """``mode="list"``: the caller's runs in the project (``runs``), active first;
+    ``mode="detail"``: one run (``run``) with the articles that need attention."""
+
+    mode: Literal["list", "detail"]
+    project_id: UUID
+    project_name: str
+    runs: list[McpAiRunSummary]
+    run: McpAiRunDetail | None
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "project_name",
+        "runs[].template_name",
+        "runs[].agent_token_name",
+        "runs[].stop_message",
+        "run.template_name",
+        "run.agent_token_name",
+        "run.stop_message",
+        "run.attention_items[].title",
+        "run.attention_items[].message",
+    ]
+
+
+class McpAiRunCancelled(BaseModel):
+    """``already_finished``: the run had already finished, been cancelled or
+    stopped; nothing was written."""
+
+    batch_id: UUID
+    already_finished: bool
+    state: BatchState
+    cancelled_queued: int
+    in_flight_finishing: int

@@ -4264,6 +4264,8 @@ export interface components {
         };
         /** ExtractionBatchDetail */
         ExtractionBatchDetail: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4290,6 +4292,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}
@@ -4332,6 +4336,8 @@ export interface components {
         };
         /** ExtractionBatchSummary */
         ExtractionBatchSummary: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
             counts: components["schemas"]["ExtractionBatchCounts"];
             /**
              * Created At
@@ -4356,6 +4362,8 @@ export interface components {
             project_name: string;
             /** Stalled */
             stalled: boolean;
+            /** Started By Agent */
+            started_by_agent: boolean;
             /**
              * State
              * @enum {string}

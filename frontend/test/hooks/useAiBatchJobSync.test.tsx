@@ -38,6 +38,8 @@ function summary(state: 'active' | 'finished', overrides: Partial<ReturnType<typ
     stalled: false,
     stop_code: null,
     stop_message: null,
+    started_by_agent: false,
+    agent_token_name: null,
     created_at: '2026-09-15T00:00:00Z',
     finished_at: null,
     counts: {...baseCounts(), ...overrides},

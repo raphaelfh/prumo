@@ -5530,6 +5530,17 @@
       },
       "ExtractionBatchDetail": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "counts": {
             "$ref": "#/components/schemas/ExtractionBatchCounts"
           },
@@ -5577,6 +5588,10 @@
           },
           "stalled": {
             "title": "Stalled",
+            "type": "boolean"
+          },
+          "started_by_agent": {
+            "title": "Started By Agent",
             "type": "boolean"
           },
           "state": {
@@ -5635,6 +5650,8 @@
           "stop_code",
           "stop_message",
           "counts",
+          "started_by_agent",
+          "agent_token_name",
           "items"
         ],
         "title": "ExtractionBatchDetail",
@@ -5723,6 +5740,17 @@
       },
       "ExtractionBatchSummary": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "counts": {
             "$ref": "#/components/schemas/ExtractionBatchCounts"
           },
@@ -5763,6 +5791,10 @@
           },
           "stalled": {
             "title": "Stalled",
+            "type": "boolean"
+          },
+          "started_by_agent": {
+            "title": "Started By Agent",
             "type": "boolean"
           },
           "state": {
@@ -5820,7 +5852,9 @@
           "stalled",
           "stop_code",
           "stop_message",
-          "counts"
+          "counts",
+          "started_by_agent",
+          "agent_token_name"
         ],
         "title": "ExtractionBatchSummary",
         "type": "object"

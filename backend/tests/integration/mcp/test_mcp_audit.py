@@ -735,3 +735,51 @@ async def test_option_value_conflict_writes_one_refused_row(
         == 1
     )
     assert await _audit_count(db_session, outcome="applied", tool="edit_template_draft") == 0
+
+
+async def test_cancel_ai_run_applied_row_shape_and_not_found_writes_none(
+    mcp_client, pat_primary_rw_ai_run, db_session: AsyncSession
+) -> None:
+    article = await make_article(db_session, SEED.primary_project, "audited cancel")
+    batch_id = await make_batch(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[article],
+    )
+    project = str(SEED.primary_project)
+
+    missing = await call_tool(
+        mcp_client,
+        pat_primary_rw_ai_run,
+        "cancel_ai_run",
+        {"project_id": project, "batch_id": str(uuid4())},
+    )
+    assert error_payload(missing)["code"] == "NOT_FOUND"
+    assert await _audit_count(db_session, outcome="refused", tool="cancel_ai_run") == 0
+    structured(
+        await call_tool(
+            mcp_client,
+            pat_primary_rw_ai_run,
+            "cancel_ai_run",
+            {"project_id": project, "batch_id": str(batch_id)},
+        )
+    )
+
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT token_id, user_id, project_id, template_id, input, before, after, "
+                "error_code FROM public.agent_actions "
+                "WHERE tool = 'cancel_ai_run' AND outcome = 'applied'"
+            )
+        )
+    ).one()
+    assert row.token_id == pat_primary_rw_ai_run.principal.token_id
+    assert (row.user_id, row.project_id) == (SEED.primary_profile, SEED.primary_project)
+    assert row.template_id == SEED.primary_template
+    assert row.input == {"project_id": project, "batch_id": str(batch_id)}
+    assert row.before == {"state": "active"}
+    assert row.after == {"batch_id": str(batch_id), "cancelled_queued": 1}
+    assert row.error_code is None
