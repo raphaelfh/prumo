@@ -11,10 +11,13 @@ from uuid import uuid4
 
 import pytest
 from limits import parse
+from starlette.requests import Request
 from structlog.testing import capture_logs
 
+from app.core.config import settings
 from app.utils import rate_limiter
 from app.utils.rate_limiter import (
+    _principal_key,
     build_limiter,
     client_ip,
     hit_shared,
@@ -151,3 +154,69 @@ def test_too_many_is_none_while_allowed_then_a_429(monkeypatch: pytest.MonkeyPat
 )
 def test_client_ip(scope: dict, expected: str) -> None:
     assert client_ip(scope) == expected  # type: ignore[arg-type]
+
+
+def _peer(headers: list[tuple[bytes, bytes]] | None = None) -> dict:
+    return {"type": "http", "headers": headers or [], "client": ("10.0.0.1", 9)}
+
+
+_SPOOFED = [(b"x-real-ip", b"203.0.113.7")]
+
+
+def test_client_ip_ignores_forwarding_headers_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", None)
+    assert client_ip(_peer(_SPOOFED)) == "10.0.0.1"  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("name", ["X-Real-IP", "x-real-ip", " X-Real-IP "])
+def test_client_ip_reads_the_trusted_header(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", name)
+    assert client_ip(_peer(_SPOOFED)) == "203.0.113.7"  # type: ignore[arg-type]
+
+
+def test_client_ip_normalizes_an_ipv6_header(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    scope = _peer([(b"x-real-ip", b" 2001:DB8::0001 ")])
+    assert client_ip(scope) == "2001:db8::1"  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [],
+        [(b"x-real-ip", b"")],
+        [(b"x-real-ip", b"not-an-ip")],
+        [(b"x-real-ip", b"1.2.3.4, 5.6.7.8")],
+    ],
+    ids=["absent", "empty", "garbage", "list"],
+)
+def test_client_ip_falls_back_to_the_peer_on_a_bad_header(
+    monkeypatch: pytest.MonkeyPatch, headers: list
+) -> None:
+    """A header that is not one IP literal never becomes a bucket key."""
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    assert client_ip(_peer(headers)) == "10.0.0.1"  # type: ignore[arg-type]
+
+
+def test_client_ip_blank_setting_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "  ")
+    assert client_ip(_peer(_SPOOFED)) == "10.0.0.1"  # type: ignore[arg-type]
+
+
+def test_trusted_header_defaults_unset() -> None:
+    from app.core.config import Settings
+
+    assert Settings.model_fields["TRUSTED_CLIENT_IP_HEADER"].default is None
+
+
+def test_principal_key_anonymous_uses_client_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    assert _principal_key(Request(_peer(_SPOOFED))) == "ip:203.0.113.7"  # type: ignore[arg-type]
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", None)
+    assert _principal_key(Request(_peer(_SPOOFED))) == "ip:10.0.0.1"  # type: ignore[arg-type]
+
+
+def test_principal_key_bearer_ignores_the_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    request = Request(_peer([*_SPOOFED, (b"authorization", b"Bearer abc")]))  # type: ignore[arg-type]
+    assert _principal_key(request).startswith("token:")

@@ -74,6 +74,9 @@ dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 #                            (live value as of 2026-08-09; the retired
 #                             prumo-alpha origin was dropped from it)
 #                            REDIS_URL=${{Redis.REDIS_URL}}
+#                            TRUSTED_CLIENT_IP_HEADER=X-Real-IP
+#                            (per-IP rate-limit keys read the edge's
+#                             client-IP header; unset = proxy address)
 #
 #   worker  (id: 7acd0799-9685-4445-971a-707bc1b9c41f)
 #     Source:                raphaelfh/prumo, branch main, rootDirectory /backend

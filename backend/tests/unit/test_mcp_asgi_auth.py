@@ -592,3 +592,19 @@ async def test_resolve_dispatches_by_prefix_and_oauth_mode(
     called.assert_awaited_once_with(db, secret)
     idle.assert_not_awaited()
     assert got is (PRINCIPAL if oauth_called else None)
+
+
+async def test_unauthenticated_bucket_keys_on_the_trusted_client_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asgi_auth.settings, "TRUSTED_CLIENT_IP_HEADER", "X-Real-IP")
+    keys: list[tuple] = []
+    monkeypatch.setattr(asgi_auth, "hit_shared", lambda _limit, *k: keys.append(k) or True)
+
+    app = asgi_auth._PatAuthApp(lambda *_a: None)  # type: ignore[arg-type]
+    await app(_scope([(b"x-real-ip", b"203.0.113.7")]), _receive, lambda _m: _noop())
+    assert keys == [("mcp401", "203.0.113.7")]
+
+
+async def _noop() -> None:
+    return None

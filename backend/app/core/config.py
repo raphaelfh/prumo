@@ -246,6 +246,11 @@ class Settings(BaseSettings):
     # Shared limiter storage (Redis in production) so budgets hold across
     # processes and restarts. Unset -> per-process ``memory://``.
     RATE_LIMIT_STORAGE_URI: str | None = None
+    # Request header carrying the caller's IP, set by the hosting edge proxy
+    # (Railway: ``X-Real-IP``). Per-IP buckets key on it only when set; unset
+    # keys on the TCP peer. Trust assumption: the edge overwrites any copy the
+    # caller sends, and no path bypasses the edge (docs/reference/deployment.md).
+    TRUSTED_CLIENT_IP_HEADER: str | None = None
 
     # =================== REDIS ===================
     # Celery broker/result backend and the job-owner records.
