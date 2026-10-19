@@ -80,6 +80,7 @@ with a logged note** — never silently dropped.
 | `section_recall` / `reference_recall` | IMRaD headings / reference list recovery | normalised (NFKC + whitespace + casefold). |
 | `mean_latency_s`, `total_cost_usd` | per-article ops cost | quality means exclude errored docs; cost/latency include them. |
 | `column_inversions` (+ `paragraphs_matched`) | pairs of gold paragraphs read in the wrong order | body blocks matched to the JATS abstract+body `<p>` sequence (`gold.paragraphs`) by their first 24 normalized alphanumeric characters; a block starting mid-paragraph matches nothing. |
+| `order_breaks` | places the reading order jumps backwards | adjacent descents in the same matched sequence; one displaced paragraph is one break, while `column_inversions` counts it once per paragraph it jumped. |
 | `chrome_leakage` | running heads/footers left typed as content | non-`header`/`footer` blocks in the top/bottom 8% band whose digit-masked text recurs there on ≥ 3 pages (the PyMuPDF chrome rule, over each parser's own blocks). |
 | `zw_chars` | invisible characters in stored text | U+200B–U+200D, U+2060, U+FEFF, U+00AD after the ingest normalization pass. |
 | `parse_seconds`, `p95_parse_seconds`, `peak_rss_mb` | per-paper time, its nearest-rank p95, the parser subprocess's peak RSS | RSS from `os.wait4` (macOS bytes and Linux KiB both normalized to MB). |
