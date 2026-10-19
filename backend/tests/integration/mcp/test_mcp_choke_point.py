@@ -58,6 +58,20 @@ async def pat_primary_read(
 
 
 @pytest_asyncio.fixture(params=["pat", "oauth"])
+async def pat_primary_rw_ai_run(
+    request: pytest.FixtureRequest,
+    pat_primary_rw_ai_run: SeededPat,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SeededPat:
+    if request.param == "pat":
+        return pat_primary_rw_ai_run
+    return await seed_oauth_principal(
+        db_session, monkeypatch, SEED.primary_profile, "read_write", ai_run=True
+    )
+
+
+@pytest_asyncio.fixture(params=["pat", "oauth"])
 async def pat_primary_read_ai_run(
     request: pytest.FixtureRequest,
     pat_primary_read_ai_run: SeededPat,
@@ -730,13 +744,14 @@ async def test_descriptions_document_search_syntax(
 
 async def test_annotation_policy_is_pinned(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
-    pat_primary_rw: SeededPat,
+    pat_primary_rw_ai_run: SeededPat,
 ) -> None:
     """Reads are (read-only, non-destructive, idempotent, closed-world); config
     writes are non-destructive, closed-world and carry no per-call prompt."""
-    async with mcp_client(pat_primary_rw) as client:
+    async with mcp_client(pat_primary_rw_ai_run) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     assert "update_project_details" in tools and "edit_template_draft" in tools
+    assert "plan_ai_run" in tools
     for name, tool in tools.items():
         a = tool.annotations
         assert a is not None, name

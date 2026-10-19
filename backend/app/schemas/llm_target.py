@@ -66,3 +66,13 @@ class EngineIdentity(BaseModel):
     model: str
     mode: str  # LlmTarget.mode_requested
     connection_id: str | None  # LlmTarget.connection_id
+
+    @classmethod
+    def from_target(cls, target: LlmTarget) -> EngineIdentity:
+        """The identity of the engine ``target`` resolves to."""
+        return cls(
+            provider=target.provider,
+            model=target.model,
+            mode=target.mode_requested,
+            connection_id=target.connection_id,
+        )

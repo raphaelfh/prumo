@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
+from app.schemas.ai_policy import AiPolicyUpdateRequest
+from app.services import ai_policy_service, engine_credentials, llm_connection_service
+from app.services.ai_run_plan_service import build_plan
 from app.services.current_run import CurrentRunResolver
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher
 from app.services.extraction_batch_guards import (
@@ -21,8 +25,10 @@ from app.services.extraction_batch_guards import (
 )
 from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.worker import queue_health
 from tests.integration.conftest import SEED, make_ai_proposal, open_session
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
+from tests.integration.mcp.article_seed import insert_pdf
 
 _CASES = [
     "no-run",
@@ -185,6 +191,46 @@ async def test_guard_parity_with_the_dispatcher(db_session: AsyncSession, case: 
     dispatched = await _dispatched_reason(db_session, article_id)
 
     assert predicted == dispatched == _EXPECTED[case]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", _CASES, ids=_CASES)
+async def test_build_plan_parity_with_the_dispatcher(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """The plan reports the dispatcher's reason; no reason <=> will run."""
+
+    async def availability(_db: Any, *, providers: list[str], **_kw: Any) -> dict:
+        return dict.fromkeys(providers, "user")
+
+    monkeypatch.setattr(engine_credentials, "availability_map", availability)
+    monkeypatch.setattr(llm_connection_service, "availability_map", availability)
+    monkeypatch.setattr(queue_health, "is_queue_available", lambda: True)
+    await ai_policy_service.set_for_project(
+        db_session,
+        project_id=SEED.primary_project,
+        update=AiPolicyUpdateRequest(
+            agent_runs="reviewers", max_articles_per_run=25, daily_agent_article_cap=100
+        ),
+        user_id=SEED.primary_profile,
+    )
+    article_id = await _arrange(db_session, case)
+    await insert_pdf(db_session, SEED.primary_project, article_id)
+
+    plan = await build_plan(
+        db_session,
+        owner_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[article_id],
+        rerun=False,
+        caller_is_manager=True,
+        now=datetime.now(UTC),
+    )
+    dispatched = await _dispatched_reason(db_session, article_id)
+
+    assert plan.skipped.get(article_id) == dispatched == _EXPECTED[case]
+    assert (article_id in plan.will_run_ids) == (dispatched is None)
 
 
 async def _counts(db: AsyncSession) -> tuple[int, int, int]:

@@ -140,6 +140,18 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
     "set_review_question": frozenset({"review_type", "slots{}.label", "note"}),
     "list_template_catalogue": frozenset({"next_step", "note"}),
     "get_setup_readiness": frozenset({"items[].next_step"}),
+    "plan_ai_run": frozenset(
+        {
+            "template.kind",
+            "engine.provider",
+            "engine.model",
+            "blockers[].message",
+            "blockers[].fix",
+            "warnings[].message",
+            "plan_token",
+            "confirm.model",
+        }
+    ),
 }
 _FLAG_FIELDS = frozenset({"untrusted_content", "untrusted_fields"})
 _PINNED_FORMATS = frozenset({"uuid", "date-time"})
@@ -177,8 +189,8 @@ def _text_paths(schema: dict, defs: dict, path: str) -> set[str]:
     return set()
 
 
-async def test_untrusted_fields_declare_every_untrusted_string(mcp_client, pat_primary_rw):
-    async with mcp_client(pat_primary_rw) as client:
+async def test_untrusted_fields_declare_every_untrusted_string(mcp_client, pat_primary_rw_ai_run):
+    async with mcp_client(pat_primary_rw_ai_run) as client:
         tools = [t for t in (await client.list_tools()).tools if t.output_schema is not None]
 
     assert {t.name for t in tools} == set(_TRUSTED_PATHS)

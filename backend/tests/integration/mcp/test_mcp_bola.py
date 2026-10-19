@@ -8,6 +8,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
 from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.article_seed import insert_article, insert_pdf
+from tests.integration.mcp.conftest import SeededPat, _seed_pat
 from tests.integration.mcp.tool_calls import call_tool, error_payload
 
 BOLA_CASES = [
@@ -242,6 +244,20 @@ BOLA_CASES = [
         "SCOPE_INSUFFICIENT",
         id="set_review_question-read-token",
     ),
+    pytest.param(
+        "pat_outsider_ai_run",
+        "plan_ai_run",
+        {"project_id": str(SEED.primary_project)},
+        "NOT_FOUND",
+        id="plan_ai_run-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_primary_rw_ai_run",
+        "plan_ai_run",
+        {"project_id": str(uuid4())},
+        "NOT_FOUND",
+        id="plan_ai_run-random-project",
+    ),
 ]
 
 
@@ -252,6 +268,8 @@ async def test_bola_returns_expected_code(
     pat_primary_rw,
     pat_reviewer_rw,
     pat_primary_read,
+    pat_outsider_ai_run,
+    pat_primary_rw_ai_run,
     pat_fixture: str,
     tool: str,
     arguments: dict,
@@ -267,6 +285,8 @@ async def test_bola_returns_expected_code(
         "pat_primary_rw": pat_primary_rw,
         "pat_reviewer_rw": pat_reviewer_rw,
         "pat_primary_read": pat_primary_read,
+        "pat_outsider_ai_run": pat_outsider_ai_run,
+        "pat_primary_rw_ai_run": pat_primary_rw_ai_run,
     }
     result = await call_tool(mcp_client, pats[pat_fixture], tool, arguments)
     assert error_payload(result)["code"] == expected_code
@@ -580,14 +600,29 @@ def _coordinate_cases(b_article: str, b_template: str, b_section: str) -> dict[s
         "list_template_catalogue": {"project_id": b, "kind": "extraction"},
         "get_setup_readiness": {"project_id": b},
         "set_review_question": {"project_id": b, "expected_revision": 1, "picots_enabled": True},
+        "plan_ai_run": {"project_id": b},
     }
 
 
 _COORDINATE_TOOLS = sorted(_coordinate_cases("a", "t", "s"))
 
 
-async def test_restriction_table_covers_every_coordinate_tool(mcp_client, pat_primary_rw) -> None:
-    async with mcp_client(pat_primary_rw) as client:
+@pytest_asyncio.fixture
+async def pat_primary_rw_ai_run_only_a(db_session: AsyncSession) -> SeededPat:
+    """``pat_primary_rw_only_a`` holding the ``ai_run`` grant too."""
+    return await _seed_pat(
+        db_session,
+        SEED.primary_profile,
+        "read_write",
+        project_ids=[SEED.primary_project],
+        ai_run=True,
+    )
+
+
+async def test_restriction_table_covers_every_coordinate_tool(
+    mcp_client, pat_primary_rw_ai_run
+) -> None:
+    async with mcp_client(pat_primary_rw_ai_run) as client:
         tools = (await client.list_tools()).tools
     with_coordinate = {
         t.name
@@ -600,11 +635,12 @@ async def test_restriction_table_covers_every_coordinate_tool(mcp_client, pat_pr
 @pytest.mark.parametrize("tool", _COORDINATE_TOOLS)
 async def test_token_restricted_to_a_gets_not_found_on_b(
     mcp_client,
-    pat_primary_rw,
-    pat_primary_rw_only_a,
+    pat_primary_rw_ai_run,
+    pat_primary_rw_ai_run_only_a,
     db_session: AsyncSession,
     tool: str,
 ) -> None:
+    pat_primary_rw, pat_primary_rw_only_a = pat_primary_rw_ai_run, pat_primary_rw_ai_run_only_a
     b_article = await insert_article(db_session, SEED.secondary_project, title="B article")
     await insert_pdf(db_session, SEED.secondary_project, b_article)
     _project_id, b_template, schema = await fresh_charms(db_session)
