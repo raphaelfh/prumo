@@ -103,7 +103,9 @@ Doc index: [`docs/README.md`](docs/README.md).
   the current lands. Squash with `--subject "<conventional title>"` when the
   branch tip is a merge commit.
 - Unstick a `BEHIND` PR with `gh api -X PUT .../pulls/<n>/update-branch` — never
-  hand-rebase, never `@dependabot rebase` a grouped PR.
+  hand-rebase, never `@dependabot rebase` a grouped PR. Nothing updates PRs for
+  you: an update made by `github-actions[bot]` leaves its `pull_request` CI
+  awaiting approval, so the required checks never report.
 - Promotion `dev → main` is hook-enforced (`.claude/hooks/bash-guard.sh`) via
   `/ship-spec` with `ceiling=prod`.
 
