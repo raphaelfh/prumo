@@ -36,6 +36,7 @@ Revises: 0093_batch_agent_origin
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.schema import SchemaItem
 
 from alembic import op
 
@@ -70,7 +71,7 @@ def _created_at() -> sa.Column:
     )
 
 
-def _ruling_columns_and_checks() -> list[sa.SchemaItem]:
+def _ruling_columns_and_checks() -> list[SchemaItem]:
     # SHORT names: the "ck" convention expands them to ck_<table>_<name>.
     return [
         sa.Column("decision", sa.Text(), nullable=False),
