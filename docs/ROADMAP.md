@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-09-10
+last_reviewed: 2026-10-23
 owner: '@raphaelfh'
 ---
 
 # Roadmap
 
-> **Status:** Stable · Last reviewed: 2026-09-10 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-10-23 · Owner: @raphaelfh
 
 The day-to-day roadmap with status, priority, owner, and target dates lives
 on the GitHub Project:
@@ -42,7 +42,11 @@ Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-t
   extraction HITL/consensus pattern, with AI seams (single-article verdict,
   active-learning prioritization, stop criteria) present but deferred. It
   supersedes the closed PR #7 and records why that attempt was rejected.
-  **Nothing is implemented** — verified 2026-08-30 against production.
+  **v1 approved 2026-10-23** in
+  [`docs/superpowers/specs/2026-10-23-screening-v1-ai-prescreen-design.md`](superpowers/specs/2026-10-23-screening-v1-ai-prescreen-design.md):
+  PubMed import, human title/abstract screening and PRISMA counts (slice A),
+  then an AI pre-screen with on-read calibration (slice B). It narrows the
+  05-03 design, which stays background.
 
 ## Recently shipped (2026-Q2)
 

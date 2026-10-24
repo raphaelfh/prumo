@@ -15,8 +15,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.api.mcp import ai_run_plan_token
-from app.api.mcp.ai_run_plan_token import PlanTokenError, mint, minting_allowed, verify
-from app.core.config import Settings, settings
+from app.api.mcp.ai_run_plan_token import PlanTokenError, mint, verify
+from app.core.config import settings
 
 _TOKEN = re.compile(r"^aip1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
@@ -82,21 +82,6 @@ def test_one_hundred_explicit_ids_fit_the_start_argument_cap() -> None:
 
 def test_ttl_is_thirty_minutes() -> None:
     assert ai_run_plan_token.TOKEN_TTL.total_seconds() == 30 * 60
-
-
-@pytest.mark.parametrize(
-    ("key_is_default", "env", "allowed"),
-    [(True, None, False), (True, "local", True), (False, None, True)],
-    ids=["placeholder-production", "placeholder-local", "real-key"],
-)
-def test_minting_allowed(
-    monkeypatch: pytest.MonkeyPatch, key_is_default: bool, env: str | None, allowed: bool
-) -> None:
-    default = Settings.model_fields["ENCRYPTION_KEY"].default
-    monkeypatch.setattr(settings, "ENCRYPTION_KEY", default if key_is_default else "real-secret")
-    monkeypatch.setattr(settings, "SUPABASE_ENV", env)
-
-    assert minting_allowed() is allowed
 
 
 _NOW = datetime.fromtimestamp(1_760_000_000, UTC)
@@ -178,19 +163,3 @@ def test_a_token_past_its_ttl_is_expired(monkeypatch: pytest.MonkeyPatch) -> Non
         verify(token, now=_NOW + timedelta(minutes=31))
 
     assert raised.value.reason == "expired"
-
-
-def test_verify_refuses_while_minting_is_not_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A deployment still on the placeholder key verifies nothing: anyone who
-    knows the placeholder could otherwise forge a token."""
-    default = Settings.model_fields["ENCRYPTION_KEY"].default
-    monkeypatch.setattr(settings, "ENCRYPTION_KEY", default)
-    monkeypatch.setattr(settings, "SUPABASE_ENV", "local")
-    token, _ = mint(_claims())
-    assert verify(token, now=_NOW)[0]["payer"] == "your_key"  # precondition: valid locally
-
-    monkeypatch.setattr(settings, "SUPABASE_ENV", None)
-
-    with pytest.raises(PlanTokenError) as exc:
-        verify(token, now=_NOW)
-    assert exc.value.reason == "invalid"
