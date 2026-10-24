@@ -1,7 +1,7 @@
 """Import Celery tasks.
 
-Celery tasks that import external data (currently Zotero collections
-and Zotero library sync) into a project.
+Celery tasks that import external data (Zotero collections, Zotero
+library sync, PubMed records by PMID) into a project.
 
 The async bridge is via ``app.worker._runner.run_task`` — see that
 module's docstring for the event-loop rationale.
@@ -14,8 +14,11 @@ from uuid import UUID
 
 from celery import Task
 
+from app.core.logging import get_logger
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
+
+logger = get_logger(__name__)
 
 
 @celery_app.task(
@@ -226,3 +229,52 @@ def sync_zotero_library_task(
         return run_task(run)
     except Exception as exc:
         self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=0, time_limit=1800)
+def import_pubmed_task(
+    self: Task[Any, Any],
+    project_id: str,
+    sync_run_id: str,
+    pmids: list[str],
+    trace_id: str | None = None,
+) -> dict[str, str]:
+    """Import PubMed records by PMID into the run the endpoint created.
+
+    Never retried and never re-raised: a redelivery resumes from the run's
+    events, and any failure here fails the run instead.
+    """
+
+    async def run() -> dict[str, str]:
+        from app.core.config import settings
+        from app.services.pubmed_client import PubMedClient
+        from app.services.pubmed_import_service import PubmedImportService
+        from app.worker._session import worker_session
+
+        async with worker_session() as session:
+            try:
+                # A worker without NCBI_EMAIL raises ValueError here, failing the run.
+                client = PubMedClient(email=settings.NCBI_EMAIL or "")
+                status = await PubmedImportService(session).run_import(
+                    project_id=UUID(project_id),
+                    sync_run_id=UUID(sync_run_id),
+                    pmids=pmids,
+                    client=client,
+                )
+                await session.commit()
+                return {"sync_run_id": sync_run_id, "status": status or "missing"}
+            except Exception:
+                await session.rollback()
+                await PubmedImportService(session).mark_failed(
+                    project_id=UUID(project_id), sync_run_id=UUID(sync_run_id)
+                )
+                await session.commit()
+                logger.exception(
+                    "pubmed_import.aborted",
+                    sync_run_id=sync_run_id,
+                    trace_id=trace_id,
+                    task_id=self.request.id,
+                )
+                return {"sync_run_id": sync_run_id, "status": "failed"}
+
+    return run_task(run)

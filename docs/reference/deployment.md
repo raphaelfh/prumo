@@ -119,7 +119,9 @@ pass it inline (`DATABASE_URL=... uv run ...`), never by editing
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
 | `web` | `RATE_LIMIT_STORAGE_URI` | `${{Redis.REDIS_URL}}` (reference variable). Unset falls back to `memory://`, which is per process: limits then reset on restart and are not shared across instances. |
 | `web` | `TRUSTED_CLIENT_IP_HEADER` | `X-Real-IP` in production. The request header every per-IP rate-limit key reads (OAuth `/register` and `/token`, unauthenticated `/mcp`, anonymous REST). Unset keys on the TCP peer, which behind Railway's edge is the proxy: every caller then shares one bucket. Trust assumption: Railway's edge overwrites a caller-supplied `X-Real-IP` (its http logs record the real `srcIp` for a request that spoofed the header), and `web` has no TCP proxy or other public path that bypasses the edge. A value that is not one IP literal falls back to the peer. Never set it on a service reachable without the edge. |
+| `web` | `NCBI_EMAIL` | Optional. Contact email sent to NCBI E-utilities with `tool=prumo` on PubMed imports (NCBI asks for one). Unset, a non-dry-run PubMed import is refused with 503 `NCBI_EMAIL_NOT_CONFIGURED`; dry runs need none. |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
+| `worker` | `NCBI_EMAIL` | Optional. Same value as `web`: the worker's efetch calls send it with `tool=prumo`. |
 
 ### Feedback / Linear
 

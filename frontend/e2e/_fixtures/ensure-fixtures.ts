@@ -42,7 +42,8 @@ async function ensureUser(email: string, password: string): Promise<string> {
   );
 }
 
-async function login(email: string, password: string): Promise<string> {
+/** Password-grant login: the access token an API call sends as its bearer. */
+export async function login(email: string, password: string): Promise<string> {
   const env = loadE2EEnv();
   const res = await fetch(`${env.supabaseUrl}/auth/v1/token?grant_type=password`, {
     method: "POST",
@@ -188,4 +189,14 @@ export async function ensureFixtures(): Promise<void> {
   await ensureArticle(F.IDENTITY_ARTICLE_ID, F.IDENTITY_PROJECT_ID, "E2E Identity Article");
   await ensureArticleText(F.IDENTITY_PROJECT_ID, F.IDENTITY_ARTICLE_ID);
   await ensureCharmsImported(F.IDENTITY_PROJECT_ID, ownerToken);
+
+  // Screening flow: owner manages and arbitrates; reviewers B & C screen.
+  // Its own project, because enrollment and decisions are project-wide.
+  await ensureProject(F.SCREENING_PROJECT_ID, "E2E Screening Project", ownerId);
+  await ensureMembership(F.SCREENING_PROJECT_ID, ownerId, "manager");
+  await ensureMembership(F.SCREENING_PROJECT_ID, reviewerBId, "reviewer");
+  await ensureMembership(F.SCREENING_PROJECT_ID, reviewerCId, "reviewer");
+  for (const article of F.SCREENING_ARTICLES) {
+    await ensureArticle(article.id, F.SCREENING_PROJECT_ID, article.title);
+  }
 }

@@ -69,6 +69,16 @@ export const PORTABLE_PROJECT_ID = "e2e00001-0000-4000-8000-000000000002";
 export const IDENTITY_PROJECT_ID = "e2e00001-0000-4000-8000-000000000003";
 export const IDENTITY_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c5";
 
+/** Dedicated project for the screening flow (`flows/screening.ui.e2e.ts`):
+ * enrollment, blind decisions and arbitration are project-wide state, so the
+ * flow owns its project and `resetScreeningProject` wipes it before each run.
+ * No template: screening needs none. */
+export const SCREENING_PROJECT_ID = "e2e00001-0000-4000-8000-000000000004";
+export const SCREENING_ARTICLES = [
+  { id: "f00dc63a-6b47-42c3-8a93-af69eb28a1c6", title: "E2E Screening Alpha" },
+  { id: "f00dc63a-6b47-42c3-8a93-af69eb28a1c7", title: "E2E Screening Beta" },
+] as const;
+
 /** Fixed global-catalogue ids (match backend/app/seed.py). */
 export const CHARMS_GLOBAL_TEMPLATE_ID = "000c0000-0000-0000-0000-000000000001";
 export const PROBAST_GLOBAL_TEMPLATE_ID = "00b00000-0000-0000-0000-000000000001";

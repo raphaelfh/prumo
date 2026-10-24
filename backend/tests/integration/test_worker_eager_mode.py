@@ -269,3 +269,137 @@ def test_import_zotero_collection_task_signature_and_kwargs_alignment() -> None:
     assert result["results"][0]["zotero_key"] == "KEY1"
     fake_service.import_collection.assert_awaited_once()
     session.commit.assert_awaited()  # task commits on the happy path
+
+
+# ----------------------------------------------------------------------
+# 4. import_tasks.import_pubmed_task
+# ----------------------------------------------------------------------
+
+
+def _fake_pubmed_service(
+    order: list[str], run_import: AsyncMock | None = None
+) -> tuple[MagicMock, MagicMock]:
+    """A ``PubmedImportService`` class double and the instance it returns."""
+    instance = MagicMock()
+    instance.run_import = run_import or AsyncMock(return_value="completed")
+    instance.mark_failed = AsyncMock(side_effect=lambda **_: order.append("mark_failed"))
+    return MagicMock(return_value=instance), instance
+
+
+def _pubmed_kwargs() -> dict[str, Any]:
+    return {
+        "project_id": str(uuid4()),
+        "sync_run_id": str(uuid4()),
+        "pmids": ["42908551"],
+        "trace_id": "t-1",
+    }
+
+
+def _recording_session(order: list[str]) -> _FakeAsyncSession:
+    session = _FakeAsyncSession()
+    session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+    session.rollback = AsyncMock(side_effect=lambda: order.append("rollback"))
+    return session
+
+
+def test_import_pubmed_task_signature_and_kwargs_alignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    from uuid import UUID
+
+    from app.core.config import settings
+    from app.services.pubmed_client import PubMedClient
+    from app.worker.tasks.import_tasks import import_pubmed_task
+
+    monkeypatch.setattr(settings, "NCBI_EMAIL", "dev@prumo.test")
+    order: list[str] = []
+    session = _recording_session(order)
+    service_cls, service = _fake_pubmed_service(order)
+    kwargs = _pubmed_kwargs()
+    assert json.loads(json.dumps(kwargs)) == kwargs
+
+    with (
+        patch("app.services.pubmed_import_service.PubmedImportService", new=service_cls),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+    ):
+        result = import_pubmed_task.apply(kwargs=kwargs).get(timeout=5)
+
+    assert result == {"sync_run_id": kwargs["sync_run_id"], "status": "completed"}
+    service.run_import.assert_awaited_once()
+    call = service.run_import.await_args.kwargs
+    assert call["project_id"] == UUID(kwargs["project_id"])
+    assert call["sync_run_id"] == UUID(kwargs["sync_run_id"])
+    assert call["pmids"] == ["42908551"]
+    assert isinstance(call["client"], PubMedClient)
+    session.commit.assert_awaited()
+    service.mark_failed.assert_not_awaited()
+
+
+def test_import_pubmed_task_fails_the_run_when_run_import_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import UUID
+
+    from app.core.config import settings
+    from app.worker.tasks.import_tasks import import_pubmed_task
+
+    monkeypatch.setattr(settings, "NCBI_EMAIL", "dev@prumo.test")
+    order: list[str] = []
+    session = _recording_session(order)
+    service_cls, service = _fake_pubmed_service(
+        order, run_import=AsyncMock(side_effect=RuntimeError("db went away"))
+    )
+    kwargs = _pubmed_kwargs()
+
+    with (
+        patch("app.services.pubmed_import_service.PubmedImportService", new=service_cls),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        patch.object(import_pubmed_task, "retry") as retry,
+    ):
+        result = import_pubmed_task.apply(kwargs=kwargs).get(timeout=5)
+
+    assert result == {"sync_run_id": kwargs["sync_run_id"], "status": "failed"}
+    assert order == ["rollback", "mark_failed", "commit"]
+    service.mark_failed.assert_awaited_once_with(
+        project_id=UUID(kwargs["project_id"]), sync_run_id=UUID(kwargs["sync_run_id"])
+    )
+    retry.assert_not_called()
+
+
+def test_import_pubmed_task_without_ncbi_email_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import UUID
+
+    from app.core.config import settings
+    from app.worker.tasks.import_tasks import import_pubmed_task
+
+    monkeypatch.setattr(settings, "NCBI_EMAIL", None)
+    order: list[str] = []
+    session = _recording_session(order)
+    service_cls, service = _fake_pubmed_service(order)
+    kwargs = _pubmed_kwargs()
+
+    with (
+        patch("app.services.pubmed_import_service.PubmedImportService", new=service_cls),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+    ):
+        result = import_pubmed_task.apply(kwargs=kwargs).get(timeout=5)
+
+    assert result == {"sync_run_id": kwargs["sync_run_id"], "status": "failed"}
+    service.run_import.assert_not_awaited()
+    service.mark_failed.assert_awaited_once_with(
+        project_id=UUID(kwargs["project_id"]), sync_run_id=UUID(kwargs["sync_run_id"])
+    )
+
+
+def test_import_pubmed_task_never_retries() -> None:
+    from app.worker.tasks.import_tasks import import_pubmed_task
+
+    assert import_pubmed_task.max_retries == 0
+    assert import_pubmed_task.time_limit == 1800
+    assert (
+        import_pubmed_task.time_limit
+        < celery_app.conf.broker_transport_options["visibility_timeout"]
+    )

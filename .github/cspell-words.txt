@@ -273,3 +273,5 @@ XPASS
 zotero
 CIMD
 Cowork
+efetch
+NCBI

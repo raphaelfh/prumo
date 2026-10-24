@@ -206,6 +206,20 @@ class TestGetByCanonicalIdentity:
 
         assert result is art
 
+    @pytest.mark.asyncio
+    async def test_zotero_key_short_circuits_before_pmid(self) -> None:
+        db = make_db()
+        art = make_article()
+        repo = ArticleRepository(db)
+
+        with patch.object(repo, "get_by_zotero_item_key", AsyncMock(return_value=art)):
+            result = await repo.get_by_canonical_identity(
+                PROJECT_ID, zotero_item_key="KEY123", pmid="111"
+            )
+
+        assert result is art
+        db.execute.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # ArticleRepository.upsert_by_canonical_identity

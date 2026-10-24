@@ -978,6 +978,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/imports/pubmed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Pubmed */
+        post: operations["import_pubmed_api_v1_projects__project_id__imports_pubmed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/imports/{sync_run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Import Run */
+        get: operations["get_import_run_api_v1_projects__project_id__imports__sync_run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/llm-engine": {
         parameters: {
             query?: never;
@@ -1058,6 +1092,92 @@ export interface paths {
         get?: never;
         /** Set Parser Settings */
         put: operations["set_parser_settings_api_v1_projects__project_id__parser_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/prisma": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prisma Counts */
+        get: operations["get_prisma_counts_api_v1_projects__project_id__prisma_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/screening/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Screening Config */
+        get: operations["get_screening_config_api_v1_projects__project_id__screening_config_get"];
+        /** Put Screening Config */
+        put: operations["put_screening_config_api_v1_projects__project_id__screening_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/screening/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Screening Conflicts */
+        get: operations["get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/screening/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Screening */
+        post: operations["enroll_screening_api_v1_projects__project_id__screening_enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/screening/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Screening Queue */
+        get: operations["get_screening_queue_api_v1_projects__project_id__screening_queue_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1921,6 +2041,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/screening/assignments/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Screening Assignment */
+        get: operations["get_screening_assignment_api_v1_screening_assignments__assignment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/screening/assignments/{assignment_id}/arbitration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Screening Arbitration */
+        post: operations["post_screening_arbitration_api_v1_screening_assignments__assignment_id__arbitration_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/screening/assignments/{assignment_id}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Screening Decision */
+        post: operations["post_screening_decision_api_v1_screening_assignments__assignment_id__decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/templates/global": {
         parameters: {
             query?: never;
@@ -2228,6 +2399,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[Annotated[Union[PubmedDryRunRead, PubmedImportStarted], FieldInfo(annotation=NoneType, required=True, discriminator='kind')]] */
+        ApiResponse_Annotated_Union_PubmedDryRunRead__PubmedImportStarted___FieldInfo_annotation_NoneType__required_True__discriminator__kind____: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: (components["schemas"]["PubmedDryRunRead"] | components["schemas"]["PubmedImportStarted"]) | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ApproveFinalizeResponse] */
         ApiResponse_ApproveFinalizeResponse_: {
             /** @description Dados da resposta */
@@ -2500,6 +2691,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ImportRunRead] */
+        ApiResponse_ImportRunRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ImportRunRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[LlmConnectionDeleteResult] */
         ApiResponse_LlmConnectionDeleteResult_: {
             /** @description Dados da resposta */
@@ -2741,6 +2949,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[PrismaCountsRead] */
+        ApiResponse_PrismaCountsRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["PrismaCountsRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ProjectAiContextRead] */
         ApiResponse_ProjectAiContextRead_: {
             /** @description Dados da resposta */
@@ -2949,6 +3174,91 @@ export interface components {
         ApiResponse_RunViewResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["RunViewResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ScreeningAssignmentRead] */
+        ApiResponse_ScreeningAssignmentRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ScreeningAssignmentRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ScreeningConfigRead] */
+        ApiResponse_ScreeningConfigRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ScreeningConfigRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ScreeningConflictsRead] */
+        ApiResponse_ScreeningConflictsRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ScreeningConflictsRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ScreeningEnrollResult] */
+        ApiResponse_ScreeningEnrollResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ScreeningEnrollResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ScreeningQueueRead] */
+        ApiResponse_ScreeningQueueRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ScreeningQueueRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4775,6 +5085,44 @@ export interface components {
             scope_kind: "project" | "template" | "system_default";
         };
         /**
+         * ImportRunRead
+         * @description One import run's status and counts.
+         */
+        ImportRunRead: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Failed */
+            failed: number;
+            /** Persisted */
+            persisted: number;
+            /** Skipped */
+            skipped: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "pubmed" | "zotero";
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "running" | "completed" | "failed";
+            /**
+             * Sync Run Id
+             * Format: uuid
+             */
+            sync_run_id: string;
+            /** Total Received */
+            total_received: number;
+            /** Updated */
+            updated: number;
+        };
+        /**
          * InstanceIdentityUpdateRequest
          * @description Rename and/or re-key one extraction instance (the run form's rename
          *     dialog). ``entity_key`` is the identity an AI re-run matches against; the
@@ -5305,6 +5653,38 @@ export interface components {
             type: "auto" | "standard" | "llamaparse" | "docling";
         };
         /**
+         * PeerDecisionRead
+         * @description Another reviewer's current decision, shown only once the review is unblinded.
+         */
+        PeerDecisionRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "include" | "exclude" | "maybe";
+            /** Exclusion Reason */
+            exclusion_reason: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rationale */
+            rationale: string | null;
+            /**
+             * Reviewer Id
+             * Format: uuid
+             */
+            reviewer_id: string;
+            /** Reviewer Name */
+            reviewer_name: string | null;
+        };
+        /**
          * PersonalAccessTokenCreateRequest
          * @description Body of ``POST /api/v1/me/tokens``.
          */
@@ -5633,6 +6013,45 @@ export interface components {
              * @default 1.0.0
              */
             version: string;
+        };
+        /** PrismaCountsRead */
+        PrismaCountsRead: {
+            /** Duplicates Removed */
+            duplicates_removed: number;
+            /** Excluded */
+            excluded: number;
+            /** Excluded By Reason */
+            excluded_by_reason: components["schemas"]["PrismaReasonCount"][];
+            /** Excluded Reasons Differ */
+            excluded_reasons_differ: number;
+            /** Excluded Without Reason */
+            excluded_without_reason: number;
+            /** Identified */
+            identified: components["schemas"]["PrismaSourceCount"][];
+            /** Identified Total */
+            identified_total: number;
+            /** Imported Not Enrolled */
+            imported_not_enrolled: number;
+            /** Not Retrieved */
+            not_retrieved: number;
+            /** Screened */
+            screened: number;
+            /** Sought For Retrieval */
+            sought_for_retrieval: number;
+        };
+        /** PrismaReasonCount */
+        PrismaReasonCount: {
+            /** Count */
+            count: number;
+            /** Reason */
+            reason: string;
+        };
+        /** PrismaSourceCount */
+        PrismaSourceCount: {
+            /** Count */
+            count: number;
+            /** Source */
+            source: string;
         };
         /**
          * ProjectAiContextRead
@@ -6037,6 +6456,61 @@ export interface components {
             };
             /** Version */
             version: number;
+        };
+        /**
+         * PubmedDryRunRead
+         * @description What an import of these PMIDs would do; nothing was written.
+         */
+        PubmedDryRunRead: {
+            /** Already In Project */
+            already_in_project: number;
+            /** Distinct */
+            distinct: number;
+            /** Duplicate In Request */
+            duplicate_in_request: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "dry_run";
+            /** New */
+            new: number;
+            /** Received */
+            received: number;
+        };
+        /**
+         * PubmedImportRequest
+         * @description PMIDs to import into the project; ``dry_run`` only counts them.
+         */
+        PubmedImportRequest: {
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /** Pmids */
+            pmids: string[];
+        };
+        /**
+         * PubmedImportStarted
+         * @description The import was queued; poll its run for progress.
+         */
+        PubmedImportStarted: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "started";
+            /**
+             * Status
+             * @constant
+             */
+            status: "pending";
+            /**
+             * Sync Run Id
+             * Format: uuid
+             */
+            sync_run_id: string;
         };
         /**
          * RepublishTemplateVersionRequest
@@ -6603,6 +7077,223 @@ export interface components {
         SaveCredentialsResponse: {
             /** Integration Id */
             integration_id: string;
+        };
+        /**
+         * ScreeningArbitrationCreate
+         * @description A ruling on the decisions the arbitrator saw: select one of them, or override.
+         *
+         *     A new ruling is always a new row; the latest one stands.
+         */
+        ScreeningArbitrationCreate: {
+            /** Decision */
+            decision?: ("include" | "exclude" | "maybe") | null;
+            /** Exclusion Reason */
+            exclusion_reason?: string | null;
+            /** Rationale */
+            rationale?: string | null;
+            /** Ruled On Decision Ids */
+            ruled_on_decision_ids: string[];
+            /** Selected Decision Id */
+            selected_decision_id?: string | null;
+        };
+        /**
+         * ScreeningArticle
+         * @description The bibliographic record a reviewer screens.
+         */
+        ScreeningArticle: {
+            /** Abstract */
+            abstract: string | null;
+            /** Authors */
+            authors: string[] | null;
+            /** Doi */
+            doi: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Journal Title */
+            journal_title: string | null;
+            /** Pmid */
+            pmid: string | null;
+            /** Publication Year */
+            publication_year: number | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ScreeningAssignmentRead
+         * @description One record as the caller may see it: peers stay hidden until there is an outcome.
+         */
+        ScreeningAssignmentRead: {
+            article: components["schemas"]["ScreeningArticle"];
+            /** Exclusion Reasons */
+            exclusion_reasons: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            my_decision: components["schemas"]["ScreeningDecisionRead"] | null;
+            outcome: components["schemas"]["ScreeningOutcomeRead"] | null;
+            /** Peer Decisions */
+            peer_decisions: components["schemas"]["PeerDecisionRead"][];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_me" | "awaiting_others" | "conflict" | "decided";
+        };
+        /**
+         * ScreeningConfigRead
+         * @description Screening setup of a project plus the caller's roles in it.
+         */
+        ScreeningConfigRead: {
+            /** Can Arbitrate */
+            can_arbitrate: boolean;
+            /** Can Manage */
+            can_manage: boolean;
+            /** Can Review */
+            can_review: boolean;
+            /** Enrolled */
+            enrolled: number;
+            /** Not Enrolled */
+            not_enrolled: number;
+            /** Reviewer Capable */
+            reviewer_capable: number;
+            /** Reviewer Count */
+            reviewer_count: number | null;
+            /** Reviewer Count Locked */
+            reviewer_count_locked: boolean;
+        };
+        /**
+         * ScreeningConfigUpdate
+         * @description Reviewers per record (1 to 3).
+         */
+        ScreeningConfigUpdate: {
+            /** Reviewer Count */
+            reviewer_count: number;
+        };
+        /**
+         * ScreeningConflictItem
+         * @description One unruled conflict with every reviewer's current decision.
+         */
+        ScreeningConflictItem: {
+            article: components["schemas"]["ScreeningArticle"];
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /** Decisions */
+            decisions: components["schemas"]["PeerDecisionRead"][];
+        };
+        /**
+         * ScreeningConflictsRead
+         * @description The project's unruled conflicts, and the protocol reasons an override may cite.
+         */
+        ScreeningConflictsRead: {
+            /** Exclusion Reasons */
+            exclusion_reasons: string[];
+            /** Items */
+            items: components["schemas"]["ScreeningConflictItem"][];
+        };
+        /**
+         * ScreeningDecisionCreate
+         * @description One reviewer decision; an exclusion reason only on ``exclude``.
+         */
+        ScreeningDecisionCreate: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "include" | "exclude" | "maybe";
+            /** Exclusion Reason */
+            exclusion_reason?: string | null;
+            /** Rationale */
+            rationale?: string | null;
+        };
+        /** ScreeningDecisionRead */
+        ScreeningDecisionRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "include" | "exclude" | "maybe";
+            /** Exclusion Reason */
+            exclusion_reason: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rationale */
+            rationale: string | null;
+        };
+        /**
+         * ScreeningEnrollRequest
+         * @description Articles to enroll; omit ``article_ids`` to enroll every article of the project.
+         */
+        ScreeningEnrollRequest: {
+            /** Article Ids */
+            article_ids?: string[] | null;
+        };
+        /** ScreeningEnrollResult */
+        ScreeningEnrollResult: {
+            /** Already Enrolled */
+            already_enrolled: number;
+            /** Enrolled */
+            enrolled: number;
+        };
+        /** ScreeningOutcomeRead */
+        ScreeningOutcomeRead: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "include" | "exclude" | "maybe";
+            /** Exclusion Reason */
+            exclusion_reason: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "solo" | "consensus" | "arbitrated";
+            /** Reasons Differ */
+            reasons_differ: boolean;
+        };
+        /** ScreeningQueueItem */
+        ScreeningQueueItem: {
+            article: components["schemas"]["ScreeningArticle"];
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+        };
+        /**
+         * ScreeningQueueRead
+         * @description The caller's next records to screen, with the counts around them.
+         */
+        ScreeningQueueRead: {
+            /** Awaiting Me */
+            awaiting_me: number;
+            /** Awaiting Others */
+            awaiting_others: number;
+            /** Exclusion Reasons */
+            exclusion_reasons: string[];
+            /** Items */
+            items: components["schemas"]["ScreeningQueueItem"][];
         };
         /**
          * SectionCreateRequest
@@ -9891,6 +10582,94 @@ export interface operations {
             };
         };
     };
+    import_pubmed_api_v1_projects__project_id__imports_pubmed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubmedImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry run: counts only, nothing written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_Annotated_Union_PubmedDryRunRead__PubmedImportStarted___FieldInfo_annotation_NoneType__required_True__discriminator__kind____"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Task queue unavailable or NCBI_EMAIL unset */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_import_run_api_v1_projects__project_id__imports__sync_run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                sync_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ImportRunRead_"];
+                };
+            };
+            /** @description No import run of the caller in this project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_llm_engine_api_v1_projects__project_id__llm_engine_get: {
         parameters: {
             query?: never;
@@ -10081,6 +10860,242 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ParserSettingsRead_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prisma_counts_api_v1_projects__project_id__prisma_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_PrismaCountsRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_screening_config_api_v1_projects__project_id__screening_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningConfigRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_screening_config_api_v1_projects__project_id__screening_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreeningConfigUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningConfigRead_"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Config frozen by a decision, or fewer reviewers than requested */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningConflictsRead_"];
+                };
+            };
+            /** @description Manager or consensus role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enroll_screening_api_v1_projects__project_id__screening_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ScreeningEnrollRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningEnrollResult_"];
+                };
+            };
+            /** @description An article is not in this project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_screening_queue_api_v1_projects__project_id__screening_queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningQueueRead_"];
+                };
+            };
+            /** @description Reviewer role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Screening is not set up for this project */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11477,6 +12492,163 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewResponse_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_screening_assignment_api_v1_screening_assignments__assignment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningAssignmentRead_"];
+                };
+            };
+            /** @description Not a member of the assignment's project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Assignment not found, or its article left the project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_screening_arbitration_api_v1_screening_assignments__assignment_id__arbitration_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreeningArbitrationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningAssignmentRead_"];
+                };
+            };
+            /** @description Manager or consensus role required in the assignment's project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Assignment not found, its article left the project, or a decision is not in this assignment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, or the exclusion reason is not in the protocol */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_screening_decision_api_v1_screening_assignments__assignment_id__decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreeningDecisionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningAssignmentRead_"];
+                };
+            };
+            /** @description Reviewer role required in the assignment's project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Assignment not found, or its article left the project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Screening not set up, the record has all its reviewers, or the exclusion reason is not in the protocol */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -265,6 +265,11 @@ class Settings(BaseSettings):
     # not convention (net_guard._private_ranges_allowed).
     ALLOW_PRIVATE_LLM_ENDPOINTS: bool = False
 
+    # =================== NCBI (PubMed E-utilities) ===================
+    # Sent as `email` with `tool=prumo` on every E-utilities call; a non-dry-run
+    # PubMed import refuses while unset.
+    NCBI_EMAIL: str | None = None
+
     # =================== FEEDBACK / LINEAR ===================
     LINEAR_API_KEY: str | None = None
     LINEAR_TEAM_ID: str | None = None

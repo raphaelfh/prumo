@@ -41,6 +41,7 @@ interface AppDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   confirmVariant?: ButtonProps['variant'];
+  confirmDisabled?: boolean;
   isLoading?: boolean;
   showFooter?: boolean;
 }
@@ -57,6 +58,7 @@ export function AppDialog({
                               confirmLabel = t('common', 'confirm'),
                               cancelLabel = t('common', 'cancel'),
   confirmVariant = 'default',
+  confirmDisabled = false,
   isLoading = false,
   showFooter = true,
 }: AppDialogProps) {
@@ -82,7 +84,7 @@ export function AppDialog({
               {cancelLabel}
             </Button>
             {onConfirm && (
-              <Button variant={confirmVariant} size="sm" onClick={onConfirm} disabled={isLoading}>
+              <Button variant={confirmVariant} size="sm" onClick={onConfirm} disabled={isLoading || confirmDisabled}>
                 {confirmLabel}
               </Button>
             )}
