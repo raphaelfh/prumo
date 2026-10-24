@@ -38,7 +38,7 @@ and no article read or write in that tab goes around the typed API.
 | Open PR #1055 adds a **second**, independent paging loop for the tab (ordering `id` desc where the helper orders `id` asc) | PR #1055 |
 | The PDF badge/filter sends **every** article id in one `.in('article_id', ids)` GET: ~37 bytes per UUID, ~73 KB of URL at 1,976 articles, and its response is capped at 1,000 rows too. Errors are swallowed ("best-effort") | `ArticlesList.tsx:291-308`, `articlesService.ts:305` |
 | Search (title, abstract, authors, journal, keywords, MeSH, DOI, PMID, PMCID), 8 panel filters, 4 facets, 6 sort keys, select-all and export ids are all computed over the in-memory array | `ArticlesList.tsx:392-660` |
-| The list select carries heavy JSONB (`source_payload`, `sync_conflict_log`, `source_lineage`) and full abstracts for every row | `projectsService.ts:88` |
+| The list select carries every JSONB column (`source_payload`, `sync_conflict_log`, `registration`, `funding`) and full abstracts for every row; `source_payload` holds the whole source record | `projectsService.ts:88`; `models/article.py:107-108,115,127` |
 | The table renders every row (no virtualization); `@tanstack/react-virtual` is already a dependency | `ArticlesList.tsx:763`, `package.json` |
 | The list is `useState` + manual reload callbacks, not TanStack Query | `ProjectView.tsx:27,151-162` |
 | The direct read is grandfathered debt in the data-path ratchet (constitution §VI) | `scripts/fitness/check_frontend_data_path.baseline`: `projectsService.ts\|articles:1`, `articlesService.ts\|articles:6`, `articlesService.ts\|article_files:7` |
@@ -161,7 +161,13 @@ list in `.claude/rules/backend.md` in the same PR.
 | `created_at` | `created_at` |
 
 Coalescing to a non-null key is deliberate: it matches today's order and makes
-the keyset tuple comparison valid without `NULLS LAST` special cases.
+the keyset tuple comparison valid without `NULLS LAST` special cases. The
+same-direction `id` tie-break keeps the keyset predicate a single row-tuple
+comparison `(sort_key, id) < (:k, :id)` (or `>`), which one composite index can
+serve. *Design call:* this flips today's `created_at desc, id asc` within a run
+of equal timestamps to `id desc` for every consumer (§7.4). Ids are random
+UUIDs, so neither order means anything to a user; the pager tests that pin
+`id asc` are updated, not worked around.
 
 ### 6.2 `GET /api/v1/projects/{project_id}/articles`
 
@@ -179,16 +185,22 @@ the keyset tuple comparison valid without `NULLS LAST` special cases.
   - `total: int` — all articles in the project
   - `matched: int` — articles matching the query (equals `total` with no
     filters)
-- `ArticleListRow`: every scalar column the table can display today
-  (`ARTICLES_DATA_COLUMN_DEFS` + the core columns), `abstract` capped
-  server-side (`text_caps`, ~500 chars, with an `abstract_truncated` flag),
-  `has_pdf: bool`, and **no** JSONB (`source_payload`, `sync_conflict_log`,
-  `source_lineage`). The side panel already reads the full record on open.
+- `ArticleListRow`: every column the table can display today
+  (`ARTICLES_DATA_COLUMN_DEFS` + the core columns), with three server-side
+  caps: `abstract` cut to ~500 chars (`text_caps`, plus `abstract_truncated`),
+  and `source_payload` / `sync_conflict_log` sent as **text previews**
+  (`source_payload_preview`, `sync_conflict_log_preview`: compact JSON cut to
+  the 80 chars the cell shows today, computed in SQL so the full document never
+  leaves Postgres). `registration` and `funding` are small and go as-is.
+  *Design call:* the list keeps every column it has today; no column loses its
+  only UI.
 - Shared with the MCP read: the escape util and, if it reads cleanly, the
   `has_pdf` expression. `list_project_articles` keeps its own shape and
   `(title, id)` order; it is not rewritten in this work.
 - Counts run as two `count(*)` queries on the same builder (project-scoped;
-  cheap at 50k). Not cached.
+  cheap at 50k), **only on the first page** (no `cursor`); later pages return
+  `total`/`matched` as `null` and the client keeps the first page's values.
+  Not cached.
 
 ### 6.3 `GET /api/v1/projects/{project_id}/articles/facets`
 
@@ -221,15 +233,25 @@ into ids.
 `selection: ArticleSelection` (`project_id` stays in the body and is the
 scope `resolve_selection` uses). The endpoint resolves it before its existing
 logic (sync path ≤ 50 metadata-only articles, Celery path otherwise). The
-frontend is the only caller; types are regenerated in the same PR. A selection
-that resolves to zero articles keeps today's 422.
+frontend is the only caller; types are regenerated in the same PR. Export keeps
+its current error contract (HTTP 200 envelopes: `FORBIDDEN` for a non-member,
+`VALIDATION_ERROR` for an empty selection, pinned by
+`test_articles_export_endpoint.py` and `test_membership_guards.py`); changing
+it is out of scope. Export needs no drift guard: it is non-destructive and its
+file lists what it exported.
 
 **Delete** — new `POST /api/v1/projects/{project_id}/articles/delete`, body
-`ArticleSelection`:
+`{selection: ArticleSelection, expected_count: int}`:
 
 1. Non-member → 404; member who is not a manager → **403, before anything is
    touched**.
-2. Resolve the selection; collect the `article_files.storage_key`s.
+2. Resolve the selection. If the resolved count ≠ `expected_count` → **409**
+   with the current count, nothing deleted. A `query` selection is evaluated
+   when the request runs, so an import or edit after the user confirmed could
+   otherwise delete rows they never saw. The client sends the count it showed
+   in the confirm dialog (`matched − |exclude_ids|`, or `ids.length`); on 409
+   the dialog shows the new count and asks again. Collect the
+   `article_files.storage_key`s.
 3. Delete the article rows in one transaction (existing FK cascades apply,
    unchanged), commit.
 4. After commit, remove storage objects through the backend storage adapter,
@@ -304,8 +326,7 @@ lead with `project_id`.
 `loadProjectArticles` + `PROJECT_ARTICLES_SELECT`, `fetchArticleIdsWithMainFile`,
 `deleteArticle`, `bulkDeleteArticles`, `selectAllProjectArticles`,
 `loadExtractionTableArticles`, `fetchProjectArticles`, the client-side
-filter/sort/facet code in `ArticlesList.tsx`, and the JSONB preview columns
-from `ARTICLES_DATA_COLUMN_DEFS`. Tighten `check_frontend_data_path.baseline`;
+filter/sort/facet code in `ArticlesList.tsx`. Tighten `check_frontend_data_path.baseline`;
 `knip` both modes at zero; copy keys removed through the copy-key gate.
 
 ### 7.4 Slim full-list consumers
@@ -313,9 +334,10 @@ from `ARTICLES_DATA_COLUMN_DEFS`. Tighten `check_frontend_data_path.baseline`;
 `useProjectArticlesQuery` (worklist, ⌘K, run-screen pager, QA and extraction
 dashboards), `HITLArticleTable` and `ArticleExtractionTable` all read through
 `useProjectArticlesQuery` → `fetchAllProjectArticles`. The two components that
-call a service from an effect today move onto the shared hook. Order stays
-`created_at desc, id` (the run pager's "next article" contract; one ordering,
-pinned by the existing pager tests and `extraction-article-pager.ui.e2e.ts`).
+call a service from an effect today move onto the shared hook. Order is
+`created_at desc, id desc` (§6.1 design call; today's helper uses `id asc`,
+`articlesService.ts:418-419`, and `frontend/test/services/articlesService.test.ts:236-239`
+pins it — that test and any pager fixture relying on it are updated).
 
 ## 8. Performance budgets (verified, not assumed)
 
@@ -328,6 +350,7 @@ On a seeded 50,000-article project, local stack, warm cache:
 | Next page (any sort) | 150 ms |
 | One facet (keywords, no prefix) | 300 ms |
 | Delete 5,000 selected articles with files (request) | builder measures; see 6.4 |
+| Slim full list (`fetchAllProjectArticles`, 50k → 100 pages of 500, counts skipped after page 1) | ≤ 5 s end to end; recorded, not a merge gate — these surfaces narrow to included records once screening lands (§3 non-goals) |
 
 Frontend: Articles tab at 50k shows the first rows within 1 s of the API
 response and scrolls without dropped frames (virtualized). The builder
@@ -345,9 +368,11 @@ records the numbers in the PR.
 - Each filter and `q` matches the client semantics it replaces (table-driven,
   one case per field; `%`/`_` literal).
 - Cursor from another sort → 422.
-- Authorization: non-member 404 on all four endpoints; member 403 on delete
+- Authorization: non-member 404 on the three new endpoints (export keeps its
+  `FORBIDDEN` envelope); member 403 on delete
   **and storage untouched**; `ids` selection containing a foreign article →
   the `owned_articles` error, nothing deleted or exported.
+- `expected_count` mismatch → 409, nothing deleted.
 - Delete order: rows gone after commit; a storage failure leaves no live row
   and is reported in `storage_failures`.
 - Export with `query` selection exports exactly the matched set minus
@@ -363,8 +388,9 @@ records the numbers in the PR.
 - Delete controls hidden for a reviewer.
 - Writers invalidate `articleKeys.project`.
 
-**E2E** — extend `articles.e2e.ts`: import > 1,000 records (fixture RIS),
-check the counter and that the oldest record is reachable by search.
+**E2E** — extend `articles.e2e.ts` with > 1,000 articles **seeded server-side**
+by the E2E fixture (not a RIS import: RIS inserts one row per request from the
+browser), check the counter and that the oldest record is reachable by search.
 
 ## 10. Rollout
 
@@ -399,8 +425,13 @@ to the API but stay full-list.
 
 - Substring search, not full-text — parity first; ranking is a separate
   product decision.
-- JSONB preview columns leave the list (the side panel shows them).
-- Abstract capped in list rows.
+- Every list column stays; `source_payload` / `sync_conflict_log` become
+  server-computed 80-char previews; abstract capped in list rows.
+- Same-direction `id` tie-break everywhere (flips the pager's order inside a
+  same-timestamp batch from `id asc` to `id desc`).
+- Delete carries `expected_count` (409 on drift); export does not.
+- Export keeps its HTTP-200 error envelopes.
+- Counts only on the first page.
 - Facets stay project-wide (ignore active filters), as today.
 - No index without a measurement.
 
