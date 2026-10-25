@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 last_reviewed: 2026-10-25
 owner: '@raphaelfh'
 ---
@@ -425,9 +425,9 @@ browser), check the counter and that the oldest record is reachable by search.
 
 Order, each a PR into `dev`:
 
-0. **Stopgap (optional, today):** merge #1055 for LabMIMIC, ideally changed to
-   call the existing `selectAllProjectArticles` instead of adding a loop.
-   Deleted again by PR 2.
+0. **Stopgap (ruled 2026-10-25):** #1055 merges as written (its own loop in
+   `loadProjectArticles`, `Refs #1054` so the issue stays open). PR 3 deletes
+   it with `loadProjectArticles`.
 1. **Delete safety (small, ship first):** the delete endpoint (6.4) +
    frontend routed through it + role-gated controls. Stops the PDF loss now,
    independent of the list work.
@@ -457,7 +457,7 @@ to the API but stay full-list.
 **Calls made in this design (review these):**
 
 - Substring search, not full-text — parity first; ranking is a separate
-  product decision.
+  product decision, tracked as PRU-109.
 - Every list column stays; `source_payload` / `sync_conflict_log` become
   server-computed 80-char previews; abstract capped in list rows.
 - Same-direction `id` tie-break everywhere (flips the pager's order inside a
