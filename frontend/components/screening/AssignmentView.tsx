@@ -1,8 +1,9 @@
 /**
  * One record as the caller may see it. Blindness is the server's: this view
  * renders `peer_decisions` and `outcome` exactly as the API returns them.
- * A reviewer who has not decided may decide here; a decision is final, so
- * once made it is read-only, as is everything for anyone else.
+ * A reviewer the record awaits (`status === 'awaiting_me'`) may decide here;
+ * a decision is final, so once made it is read-only, as is everything for
+ * anyone else (including a reviewer not seated on a decided record).
  */
 import {ArrowLeft} from 'lucide-react';
 import {useRef, type ReactNode} from 'react';
@@ -152,7 +153,7 @@ export function AssignmentView({assignmentId, canReview, onBack}: AssignmentView
       <div className="mx-auto w-full max-w-3xl px-4 py-4">
         <AssignmentDetails read={read} />
       </div>
-      {canReview && read.my_decision === null && (
+      {canReview && read.status === 'awaiting_me' && (
         <div className="sticky bottom-0 border-t border-border/40 bg-background px-4 py-3">
           <div className="mx-auto w-full max-w-3xl">
             <DecisionButtons reasons={read.exclusion_reasons} disabled={decide.isPending} onDecide={onDecide} />

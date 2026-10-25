@@ -10,6 +10,7 @@ import {useEffect, useRef, useState} from 'react';
 import {AppDialog} from '@/components/patterns/AppDialog';
 import {Button} from '@/components/ui/button';
 import {KbdBadge} from '@/components/ui/kbd-badge';
+import {isDialogOpen} from '@/hooks/useKeyboardShortcuts';
 import {t} from '@/lib/copy';
 import {screeningKeyAction} from '@/lib/screening/keymap';
 import type {ScreeningDecisionCreate} from '@/services/screeningService';
@@ -18,13 +19,6 @@ interface DecisionButtonsProps {
   reasons: string[];
   disabled: boolean;
   onDecide: (body: ScreeningDecisionCreate) => void;
-}
-
-const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"]';
-
-/** True when an overlay is open that does not hold `own` (the reasons list). */
-function foreignOverlayOpen(own: Element | null): boolean {
-  return Array.from(document.querySelectorAll(OVERLAY_SELECTOR)).some((overlay) => !own || !overlay.contains(own));
 }
 
 export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsProps) {
@@ -40,7 +34,7 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
     const onKeyDown = (event: KeyboardEvent) => {
       if (disabled || event.repeat || event.defaultPrevented) return;
       // Another overlay (the PubMed import, a menu, a confirm) owns the keys.
-      if (foreignOverlayOpen(reasonsOpen ? reasonsList.current : null)) return;
+      if (isDialogOpen(reasonsOpen ? reasonsList.current : null)) return;
       const action = screeningKeyAction(event, reasonsOpen);
       if (action === null) return;
       if (action.kind === 'decide') {

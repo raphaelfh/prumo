@@ -11,15 +11,22 @@ interface TrackedImport {
 }
 
 interface PubmedImportRunsStore {
+  ownerId: string | null;
   runs: Record<string, TrackedImport>;
+  /** AuthContext's identity boundary: another account (or none) drops every tracked run. */
+  adoptOwner: (ownerId: string | null) => void;
   track: (projectId: string, runId: string) => void;
   settle: (projectId: string, runId: string) => void;
   clear: (projectId: string) => void;
 }
 
 /** Session memory only: a reload drops the tracking, never the import itself. */
-export const usePubmedImportRuns = create<PubmedImportRunsStore>((set) => ({
+export const usePubmedImportRuns = create<PubmedImportRunsStore>((set, get) => ({
+  ownerId: null,
   runs: {},
+  adoptOwner: (ownerId) => {
+    if (get().ownerId !== ownerId) set({ownerId, runs: {}});
+  },
   track: (projectId, runId) => set((state) => ({runs: {...state.runs, [projectId]: {runId, settled: false}}})),
   settle: (projectId, runId) =>
     set((state) =>

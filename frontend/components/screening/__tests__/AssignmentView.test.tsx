@@ -73,7 +73,7 @@ function renderView({canReview = true, onBack = vi.fn()} = {}) {
       <AssignmentView assignmentId="a1" canReview={canReview} onBack={onBack} />
     </QueryClientProvider>,
   );
-  return {onBack};
+  return {onBack, client};
 }
 
 describe('AssignmentView', () => {
@@ -139,6 +139,13 @@ describe('AssignmentView', () => {
     expect(screen.queryByRole('button', {name: 'Exclude'})).not.toBeInTheDocument();
   });
 
+  it('hides decision buttons from a reviewer not seated on the record', async () => {
+    serveAssignment(assignment({status: 'conflict', my_decision: null}));
+    renderView({canReview: true});
+    await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
+    expect(screen.queryByRole('button', {name: 'Include'})).not.toBeInTheDocument();
+  });
+
   it('lets a reviewer decide a record they have not decided', async () => {
     const calls = serveAssignment(assignment({status: 'awaiting_me', my_decision: null}));
     let body: unknown = null;
@@ -168,15 +175,15 @@ describe('AssignmentView', () => {
         return HttpResponse.json({ok: true, data: assignment()});
       }),
     );
-    renderView({canReview: true});
+    const {client} = renderView({canReview: true});
     await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
 
     fireEvent.keyDown(window, {key: '1'});
     fireEvent.keyDown(window, {key: '2'});
 
-    await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(bodies).toEqual([{decision: 'include'}]);
+    // A decision starts its mutation synchronously in the key handler.
+    expect(client.getMutationCache().getAll()).toHaveLength(1);
+    await waitFor(() => expect(bodies).toEqual([{decision: 'include'}]));
   });
 
   it('decides again once a failed first decision settles', async () => {

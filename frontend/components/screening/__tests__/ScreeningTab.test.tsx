@@ -65,13 +65,14 @@ function serveConfig(read: ConfigRead) {
 
 function renderTab(path = '/projects/p1?tab=screening') {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <ScreeningTab projectId="p1" />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return {...view, client};
 }
 
 const ARTICLE = {
@@ -422,14 +423,15 @@ describe('ScreeningTab', () => {
       }),
     );
     const user = userEvent.setup();
-    renderTab();
+    const {client} = renderTab();
     await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
 
     await user.click(screen.getByRole('button', {name: 'Import from PubMed'}));
     await screen.findByRole('dialog', {name: 'Import from PubMed'});
     await user.keyboard('1');
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A decision starts its mutation synchronously in the key handler.
+    expect(client.getMutationCache().getAll()).toHaveLength(0);
     expect(posted).toBe(0);
   });
 });

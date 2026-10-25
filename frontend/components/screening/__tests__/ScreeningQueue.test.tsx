@@ -133,29 +133,29 @@ describe('ScreeningQueue', () => {
   it('ignores a held key', async () => {
     serveQueue(queue());
     const posted = serveDecision();
-    renderQueue();
+    const {client} = renderQueue();
     await screen.findByRole('heading', {name: 'Title a1'});
 
     fireEvent.keyDown(window, {key: '1', repeat: true});
 
-    // Give a stray POST the chance to land before asserting there was none.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A decision starts its mutation synchronously in the key handler.
+    expect(client.getMutationCache().getAll()).toHaveLength(0);
     expect(posted).toEqual([]);
   });
 
   it('sends one decision for two back-to-back keys', async () => {
     serveQueue(queue());
     const posted = serveDecision();
-    renderQueue();
+    const {client} = renderQueue();
     await screen.findByRole('heading', {name: 'Title a1'});
 
     // No re-render between the two keys: `isPending` has not reached the props yet.
     fireEvent.keyDown(window, {key: '1'});
     fireEvent.keyDown(window, {key: '2'});
 
-    await waitFor(() => expect(posted.length).toBeGreaterThan(0));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(posted).toEqual([{assignmentId: 'a1', body: {decision: 'include'}}]);
+    // A decision starts its mutation synchronously in the key handler.
+    expect(client.getMutationCache().getAll()).toHaveLength(1);
+    await waitFor(() => expect(posted).toEqual([{assignmentId: 'a1', body: {decision: 'include'}}]));
   });
 
   it('excludes with a numbered reason', async () => {
@@ -306,35 +306,53 @@ describe('ScreeningQueue', () => {
   it('ignores a key another handler already handled', async () => {
     serveQueue(queue());
     const posted = serveDecision();
-    renderQueue();
+    const {client} = renderQueue();
     await screen.findByRole('heading', {name: 'Title a1'});
 
     const event = new KeyboardEvent('keydown', {key: '1', bubbles: true, cancelable: true});
     event.preventDefault();
     window.dispatchEvent(event);
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(client.getMutationCache().getAll()).toHaveLength(0);
     expect(posted).toEqual([]);
   });
 
   it.each([
     ['role', 'dialog'],
     ['role', 'alertdialog'],
+    ['role', 'menu'],
+    ['role', 'listbox'],
     ['aria-modal', 'true'],
   ])('ignores keys while an overlay with %s=%s is open', async (name, value) => {
     serveQueue(queue());
     const posted = serveDecision();
-    renderQueue();
+    const {client} = renderQueue();
     await screen.findByRole('heading', {name: 'Title a1'});
     const overlay = document.createElement('div');
     overlay.setAttribute(name, value);
     document.body.append(overlay);
 
     fireEvent.keyDown(document.body, {key: '1'});
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
     overlay.remove();
+
+    expect(client.getMutationCache().getAll()).toHaveLength(0);
     expect(posted).toEqual([]);
+  });
+
+  it('decides while a closed overlay stays in the DOM', async () => {
+    serveQueue(queue());
+    serveDecision();
+    const {client} = renderQueue();
+    await screen.findByRole('heading', {name: 'Title a1'});
+    const overlay = document.createElement('div');
+    overlay.setAttribute('role', 'menu');
+    overlay.setAttribute('data-state', 'closed');
+    document.body.append(overlay);
+
+    fireEvent.keyDown(document.body, {key: '1'});
+    overlay.remove();
+
+    expect(client.getMutationCache().getAll()).toHaveLength(1);
   });
 
   it('closes the reasons dialog when the current record changes', async () => {
