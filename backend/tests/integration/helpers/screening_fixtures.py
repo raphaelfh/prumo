@@ -2,8 +2,9 @@
 
 Later screening suites extend this file. ``make_project`` lives in
 ``shared_fixtures.py``. Timestamp trap: ``db_session`` is one outer
-transaction, so every default ``now()`` ties; a test that needs an order seeds
-the earlier row with an explicit past ``enrolled_at`` / ``created_at``.
+transaction, so a default ``enrolled_at`` (``now()``) ties; ``created_at`` is
+``clock_timestamp()`` and does not. A test that needs an order still seeds the
+earlier row with an explicit past ``enrolled_at`` / ``created_at``.
 """
 
 from __future__ import annotations
@@ -99,7 +100,7 @@ async def add_decision(
     reason: str | None = None,
     created_at: datetime | None = None,
 ) -> UUID:
-    """One decision row; ``None`` keeps the SQL default ``now()``."""
+    """One decision row; ``None`` keeps the SQL default ``clock_timestamp()``."""
     row = ScreeningDecision(
         assignment_id=assignment_id,
         reviewer_id=reviewer_id,
@@ -122,7 +123,7 @@ async def add_ruling(
     selected: UUID | None = None,
     created_at: datetime | None = None,
 ) -> UUID:
-    """One arbitration row, for setup; ``None`` keeps the SQL default ``now()``."""
+    """One arbitration row, for setup; ``None`` keeps the SQL default ``clock_timestamp()``."""
     row = ScreeningArbitration(
         assignment_id=assignment_id,
         decided_by=decided_by,

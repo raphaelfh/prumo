@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.project import Project
 from app.models.screening import ScreeningArbitration, ScreeningDecision
+from app.repositories.screening_repository import ScreeningRepository
 from app.schemas.screening import ScreeningArbitrationCreate, ScreeningDecisionCreate
 from app.services.screening_config_service import ScreeningConfigService, reviewer_count_of
 from app.services.screening_errors import ScreeningStateError
@@ -195,3 +196,57 @@ async def test_arbitration_racing_a_decision_change_is_stale(session_factory: Fa
         assert rulings == 0
         mine = next(d for d in states[assignment].decisions if d.reviewer_id == a)
         assert mine.decision == "maybe"
+
+
+async def _current_decision_of(factory: Factory, project: UUID, assignment: UUID, who: UUID) -> str:
+    async with factory() as s:
+        rows = await ScreeningRepository(s).current_decisions(
+            project_id=project, assignment_ids=[assignment]
+        )
+    return next(d.decision for d in rows if d.reviewer_id == who)
+
+
+async def _latest_ruling_of(factory: Factory, project: UUID, assignment: UUID) -> str:
+    async with factory() as s:
+        rulings = await ScreeningRepository(s).latest_rulings(
+            project_id=project, assignment_ids=[assignment]
+        )
+    return rulings[assignment].decision
+
+
+async def test_latest_decision_is_the_last_committed_not_the_first_started(
+    session_factory: Factory,
+) -> None:
+    """Two writes of one seat overlap: the one whose transaction began first commits last.
+
+    ``now()`` stamps the transaction start, so the late committer would carry
+    the EARLIER ``created_at`` and the superseded row would read as current.
+    """
+    async with _screening(session_factory, reviewers=1) as (project_id, (a,), assignment):
+        async with session_factory() as first, session_factory() as second:
+            await first.execute(text("SELECT 1"))  # first's transaction starts now
+            await ScreeningRepository(second).add_decision(assignment, a, "exclude", None, None)
+            await second.commit()
+            await ScreeningRepository(first).add_decision(assignment, a, "include", None, None)
+            await first.commit()
+
+        assert await _current_decision_of(session_factory, project_id, assignment, a) == "include"
+
+
+async def test_latest_ruling_is_the_last_committed_not_the_first_started(
+    session_factory: Factory,
+) -> None:
+    """Two arbitrators re-rule at once: same overlap, same trap, on the rulings."""
+    async with _screening(session_factory, reviewers=1) as (project_id, _, assignment):
+        async with session_factory() as first, session_factory() as second:
+            await first.execute(text("SELECT 1"))  # first's transaction starts now
+            await ScreeningRepository(second).add_arbitration(
+                assignment, "exclude", None, None, None, MANAGER
+            )
+            await second.commit()
+            await ScreeningRepository(first).add_arbitration(
+                assignment, "include", None, None, None, MANAGER
+            )
+            await first.commit()
+
+        assert await _latest_ruling_of(session_factory, project_id, assignment) == "include"

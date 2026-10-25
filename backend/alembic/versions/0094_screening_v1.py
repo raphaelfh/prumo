@@ -18,7 +18,11 @@ extraction.
 Decisions and arbitrations are INSERT-only (constitution §IX: human
 selections are append-only; the current one is the latest row): the 0081
 ``refuse_append_only_change`` trigger refuses UPDATE and DELETE from any role
-but the owner, which keeps cascades working.
+but the owner, which keeps cascades working. Their ``created_at`` defaults to
+``clock_timestamp()`` so that "latest" follows the INSERT, not the transaction
+start: two overlapping writes on one assignment serialize on its row lock, and
+under ``now()`` the one that waited would carry the earlier stamp and lose.
+``enrolled_at`` keeps ``now()``: every row of one enroll shares it.
 
 The PRISMA flow reads ``article_sync_runs`` / ``article_sync_events``, so
 their counts must come only from the backend: nothing in ``frontend/`` writes
@@ -66,8 +70,14 @@ def _link(table: str, column: str, target: str, ondelete: str, *, nullable: bool
 
 
 def _created_at() -> sa.Column:
+    # clock_timestamp(), not now(): the current row is the latest by created_at,
+    # and now() is the transaction START, which precedes the assignment lock a
+    # writer waits on. The write that commits last must also sort last.
     return sa.Column(
-        "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        "created_at",
+        sa.DateTime(timezone=True),
+        server_default=sa.func.clock_timestamp(),
+        nullable=False,
     )
 
 

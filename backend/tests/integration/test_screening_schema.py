@@ -243,6 +243,35 @@ async def test_one_assignment_per_article_and_phase(db_session: AsyncSession) ->
             await db_session.flush()
 
 
+# --- Timestamps ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "expected"),
+    [
+        ("screening_decisions", "created_at", "clock_timestamp()"),
+        ("screening_arbitrations", "created_at", "clock_timestamp()"),
+        ("screening_assignments", "enrolled_at", "now()"),
+    ],
+    ids=["decision-created", "arbitration-created", "enrolled-shares-transaction-time"],
+)
+async def test_timestamp_defaults(
+    db_session: AsyncSession, table: str, column: str, expected: str
+) -> None:
+    """The current row is the latest by ``created_at``, so a decision and a ruling are stamped by
+    the clock at INSERT; an enroll's rows share one transaction time (spec §5)."""
+    default = (
+        await db_session.execute(
+            text(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = :t AND column_name = :c"
+            ),
+            {"t": table, "c": column},
+        )
+    ).scalar_one()
+    assert default == expected
+
+
 # --- Foreign keys ----------------------------------------------------------------
 
 

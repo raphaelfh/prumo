@@ -2,7 +2,9 @@
 
 Backend-only tables (RLS deny-all, no PostgREST read path): blind review needs
 the API to decide what each reviewer sees. Decisions and arbitrations are
-append-only; the current one is the latest row per coordinate.
+append-only; the current one is the latest row per coordinate, ordered by a
+``created_at`` that defaults to ``clock_timestamp()`` (the INSERT), not ``now()``
+(the transaction start, which a writer waiting on the assignment lock predates).
 """
 
 from __future__ import annotations
@@ -86,7 +88,7 @@ class ScreeningDecision(Base, UUIDMixin):
     exclusion_reason: Mapped[str | None] = mapped_column(Text)
     rationale: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.clock_timestamp()
     )
 
     __table_args__ = (
@@ -126,7 +128,7 @@ class ScreeningArbitration(Base, UUIDMixin):
         PG_UUID(as_uuid=True), ForeignKey("public.profiles.id", ondelete="RESTRICT"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.clock_timestamp()
     )
 
     __table_args__ = (

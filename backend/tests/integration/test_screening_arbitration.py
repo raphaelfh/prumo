@@ -1,8 +1,9 @@
 """Screening conflicts and arbitration over HTTP, on real Postgres.
 
-Timestamp trap: ``db_session`` is one outer transaction, so every default
-``now()`` ties. A test that needs "latest" seeds the earlier rows with explicit
-past timestamps; rows written afterwards through the API are strictly later.
+Timestamp trap: ``db_session`` is one outer transaction, so a default
+``enrolled_at`` (``now()``) ties. A test that needs "latest" still seeds the
+earlier rows with explicit past timestamps; rows written afterwards through the
+API are strictly later (``created_at`` is ``clock_timestamp()``).
 """
 
 from __future__ import annotations
