@@ -1,9 +1,11 @@
 /**
  * Include / Exclude / Maybe, and "Exclude with reason" when the protocol
  * lists reasons. The keyboard goes through the pure `screeningKeyAction`; one
- * window listener applies it.
+ * window listener applies it, unless another handler took the key or an
+ * overlay other than its own reasons dialog is open. The caller keys this
+ * component by record, so a record change closes the reasons dialog.
  */
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 import {AppDialog} from '@/components/patterns/AppDialog';
 import {Button} from '@/components/ui/button';
@@ -18,8 +20,16 @@ interface DecisionButtonsProps {
   onDecide: (body: ScreeningDecisionCreate) => void;
 }
 
+const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+
+/** True when an overlay is open that does not hold `own` (the reasons list). */
+function foreignOverlayOpen(own: Element | null): boolean {
+  return Array.from(document.querySelectorAll(OVERLAY_SELECTOR)).some((overlay) => !own || !overlay.contains(own));
+}
+
 export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsProps) {
   const [reasonsOpen, setReasonsOpen] = useState(false);
+  const reasonsList = useRef<HTMLOListElement>(null);
 
   const pickReason = (reason: string) => {
     setReasonsOpen(false);
@@ -28,9 +38,9 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (disabled || event.repeat) return;
-      // Another dialog (the PubMed import) owns its own keys.
-      if (!reasonsOpen && event.target instanceof Element && event.target.closest('[role="dialog"]')) return;
+      if (disabled || event.repeat || event.defaultPrevented) return;
+      // Another overlay (the PubMed import, a menu, a confirm) owns the keys.
+      if (foreignOverlayOpen(reasonsOpen ? reasonsList.current : null)) return;
       const action = screeningKeyAction(event, reasonsOpen);
       if (action === null) return;
       if (action.kind === 'decide') {
@@ -52,20 +62,38 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="default" disabled={disabled} onClick={() => onDecide({decision: 'include'})}>
+        <Button size="default" aria-keyshortcuts="1" disabled={disabled} onClick={() => onDecide({decision: 'include'})}>
           {t('screening', 'decisionInclude')}
           <KbdBadge keys={['1']} />
         </Button>
-        <Button size="default" variant="outline" disabled={disabled} onClick={() => onDecide({decision: 'exclude'})}>
+        <Button
+          size="default"
+          variant="outline"
+          aria-keyshortcuts="2"
+          disabled={disabled}
+          onClick={() => onDecide({decision: 'exclude'})}
+        >
           {t('screening', 'decisionExclude')}
           <KbdBadge keys={['2']} />
         </Button>
-        <Button size="default" variant="outline" disabled={disabled} onClick={() => onDecide({decision: 'maybe'})}>
+        <Button
+          size="default"
+          variant="outline"
+          aria-keyshortcuts="3"
+          disabled={disabled}
+          onClick={() => onDecide({decision: 'maybe'})}
+        >
           {t('screening', 'decisionMaybe')}
           <KbdBadge keys={['3']} />
         </Button>
         {reasons.length > 0 && (
-          <Button size="default" variant="ghost" disabled={disabled} onClick={() => setReasonsOpen(true)}>
+          <Button
+            size="default"
+            variant="ghost"
+            aria-keyshortcuts="E"
+            disabled={disabled}
+            onClick={() => setReasonsOpen(true)}
+          >
             {t('screening', 'excludeWithReason')}
             <KbdBadge keys={['E']} />
           </Button>
@@ -79,7 +107,7 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
         size="sm"
         showFooter={false}
       >
-        <ol className="flex flex-col gap-1">
+        <ol ref={reasonsList} className="flex flex-col gap-1">
           {reasons.map((reason, index) => (
             <li key={reason}>
               <Button

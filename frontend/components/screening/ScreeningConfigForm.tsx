@@ -10,7 +10,7 @@ import {toast} from 'sonner';
 import {z} from 'zod';
 
 import {Button} from '@/components/ui/button';
-import {Form, FormControl, FormField, FormItem, FormMessage} from '@/components/ui/form';
+import {Form, FormControl, FormDescription, FormField, FormItem, FormMessage} from '@/components/ui/form';
 import {RadioGroup, RadioGroupItem} from '@/components/ui/radio-group';
 import {useSetScreeningConfig} from '@/hooks/screening/useScreeningConfig';
 import {t} from '@/lib/copy';
@@ -100,6 +100,7 @@ export function ScreeningConfigForm({projectId, config}: ScreeningConfigFormProp
                   })}
                 </RadioGroup>
               </FormControl>
+              <FormDescription className="text-xs">{t('screening', 'configureConflictHint')}</FormDescription>
               <FormMessage />
             </FormItem>
           )}

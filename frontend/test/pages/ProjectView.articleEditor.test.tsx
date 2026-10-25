@@ -5,6 +5,7 @@
  * produced `mode="add"` WITH a live articleId, letting the Document segment
  * enable and render another article's PDF beside a blank add form.
  */
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen} from '@testing-library/react';
 import {MemoryRouter, Route, Routes} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
@@ -28,14 +29,18 @@ import {ProjectProvider} from '@/contexts/ProjectContext';
 import {loadProjectArticles, loadProjectById} from '@/services/projectsService';
 
 function renderAt(path: string) {
+    // ProjectView polls a tracked PubMed import run through TanStack Query.
+    const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
     return render(
-        <MemoryRouter initialEntries={[path]}>
-            <ProjectProvider>
-                <Routes>
-                    <Route path="/projects/:projectId" element={<ProjectView/>}/>
-                </Routes>
-            </ProjectProvider>
-        </MemoryRouter>,
+        <QueryClientProvider client={client}>
+            <MemoryRouter initialEntries={[path]}>
+                <ProjectProvider>
+                    <Routes>
+                        <Route path="/projects/:projectId" element={<ProjectView/>}/>
+                    </Routes>
+                </ProjectProvider>
+            </MemoryRouter>
+        </QueryClientProvider>,
     );
 }
 

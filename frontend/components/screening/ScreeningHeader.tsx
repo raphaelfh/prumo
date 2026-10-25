@@ -1,7 +1,8 @@
 /**
- * The running tab's thin header: enrolment and reviewers-per-record chips,
- * a PubMed import for every member, and for a manager an "Enroll {{n}} new"
- * action while articles wait.
+ * The configured tab's thin header, above every state once screening is set
+ * up: enrolment and reviewers-per-record chips, the one PubMed import for
+ * every member (it stays mounted across tab states), and for a manager an
+ * "Enroll {{n}} new" action while articles wait beside enrolled ones.
  */
 import {useState} from 'react';
 import {toast} from 'sonner';
@@ -44,12 +45,11 @@ export function EnrollAllButton({projectId, label, disabled = false, size, class
 interface PubMedImportButtonProps {
   projectId: string;
   canManage: boolean;
-  onImportComplete?: () => void;
   className?: string;
 }
 
 /** Any project member may import (import role is membership); the dialog owns the rest. */
-export function PubMedImportButton({projectId, canManage, onImportComplete, className}: PubMedImportButtonProps) {
+function PubMedImportButton({projectId, canManage, className}: PubMedImportButtonProps) {
   const [importOpen, setImportOpen] = useState(false);
   return (
     <>
@@ -61,7 +61,6 @@ export function PubMedImportButton({projectId, canManage, onImportComplete, clas
         onOpenChange={setImportOpen}
         projectId={projectId}
         canManage={canManage}
-        onImportComplete={onImportComplete}
       />
     </>
   );
@@ -78,10 +77,9 @@ function Chip({children}: {children: string}) {
 interface ScreeningHeaderProps {
   projectId: string;
   config: ScreeningConfigRead;
-  onImportComplete?: () => void;
 }
 
-export function ScreeningHeader({projectId, config, onImportComplete}: ScreeningHeaderProps) {
+export function ScreeningHeader({projectId, config}: ScreeningHeaderProps) {
   const reviewers =
     config.reviewer_count === 1
       ? t('screening', 'summaryReviewerOne')
@@ -97,10 +95,9 @@ export function ScreeningHeader({projectId, config, onImportComplete}: Screening
       <PubMedImportButton
         projectId={projectId}
         canManage={config.can_manage}
-        onImportComplete={onImportComplete}
         className="shrink-0"
       />
-      {config.can_manage && config.not_enrolled > 0 && (
+      {config.can_manage && config.enrolled > 0 && config.not_enrolled > 0 && (
         <EnrollAllButton
           projectId={projectId}
           className="shrink-0"

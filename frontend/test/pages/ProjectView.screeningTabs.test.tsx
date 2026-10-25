@@ -2,6 +2,7 @@
  * ProjectView renders the Screening and PRISMA tabs themselves, no longer
  * the coming-soon placeholder.
  */
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen} from '@testing-library/react';
 import {MemoryRouter, Route, Routes} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
@@ -23,14 +24,18 @@ import {ProjectProvider} from '@/contexts/ProjectContext';
 import {loadProjectArticles, loadProjectById} from '@/services/projectsService';
 
 function renderAt(path: string) {
+    // ProjectView polls a tracked PubMed import run through TanStack Query.
+    const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
     return render(
-        <MemoryRouter initialEntries={[path]}>
-            <ProjectProvider>
-                <Routes>
-                    <Route path="/projects/:projectId" element={<ProjectView/>}/>
-                </Routes>
-            </ProjectProvider>
-        </MemoryRouter>,
+        <QueryClientProvider client={client}>
+            <MemoryRouter initialEntries={[path]}>
+                <ProjectProvider>
+                    <Routes>
+                        <Route path="/projects/:projectId" element={<ProjectView/>}/>
+                    </Routes>
+                </ProjectProvider>
+            </MemoryRouter>
+        </QueryClientProvider>,
     );
 }
 

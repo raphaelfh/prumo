@@ -15,6 +15,7 @@ vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
 import {PubMedImportDialog} from '@/components/screening/PubMedImportDialog';
 import {MAX_CSV_BYTES, MAX_PMIDS} from '@/lib/screening/pmidInput';
+import {usePubmedImportRuns} from '@/stores/pubmedImportRuns';
 import {server} from '@/test/mocks/server';
 import type {components} from '@/types/api/schema';
 
@@ -51,7 +52,6 @@ function run(overrides: Partial<ImportRun> = {}): ImportRun {
 }
 
 const onOpenChange = vi.fn();
-const onImportComplete = vi.fn();
 
 function renderDialog(canManage = true) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
@@ -62,7 +62,6 @@ function renderDialog(canManage = true) {
         onOpenChange={onOpenChange}
         projectId="p1"
         canManage={canManage}
-        onImportComplete={onImportComplete}
       />
     </QueryClientProvider>,
   );
@@ -99,7 +98,7 @@ function serveImport(runs: ImportRun[]) {
 
 beforeEach(() => {
   onOpenChange.mockClear();
-  onImportComplete.mockClear();
+  usePubmedImportRuns.setState({runs: {}});
 });
 
 describe('PubMedImportDialog input', () => {
@@ -195,7 +194,10 @@ describe('PubMedImportDialog dry run', () => {
 
     expect(await screen.findByText('4 PMIDs')).toBeInTheDocument();
     expect(screen.getByText('1 already in this project')).toBeInTheDocument();
-    expect(screen.getByText('2 new')).toBeInTheDocument();
+    expect(screen.getByText('2 not in this project by PMID')).toBeInTheDocument();
+    expect(
+      screen.getByText('Some of these may match an existing article by DOI; those are updated instead of added.'),
+    ).toBeInTheDocument();
     expect(screen.getByText('1 repeated in the list')).toBeInTheDocument();
     expect(body).toEqual({pmids: ['1', '2', '2', '3'], dry_run: true});
     expect(screen.getByRole('button', {name: 'Import 3 PMIDs'})).toBeEnabled();
@@ -251,7 +253,7 @@ describe('PubMedImportDialog dry run', () => {
 describe('PubMedImportDialog import', () => {
   it('imports, shows progress, then the result', async () => {
     let startBody: unknown = null;
-    serveImport([run({status: 'running', persisted: 1, total_received: 4}), run({status: 'completed', persisted: 2, skipped: 1, failed: 1})]);
+    serveImport([run({status: 'running', persisted: 1, total_received: 4}), run({status: 'completed', persisted: 2, skipped: 1, failed: 1, not_found: 1})]);
     server.use(
       http.post(IMPORT_URL, async ({request}) => {
         const body = (await request.json()) as {dry_run: boolean};
@@ -267,13 +269,70 @@ describe('PubMedImportDialog import', () => {
     expect(await screen.findByText('Importing… 1 of 4')).toBeInTheDocument();
     expect(startBody).toEqual({pmids: ['1', '2', '2', '3'], dry_run: false});
     expect(await screen.findByText('Imported: 2 new, 0 updated', {}, {timeout: 4000})).toBeInTheDocument();
-    expect(
-      screen.getByText('1 PMIDs were not found in PubMed or could not be fetched.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('1 not found in PubMed')).toBeInTheDocument();
     // The footer button and the dialog's corner X share the name.
     expect(screen.getAllByRole('button', {name: 'Close'})).toHaveLength(2);
-    await waitFor(() => expect(onImportComplete).toHaveBeenCalledTimes(1));
   }, 10_000);
+
+  it('counts records already up to date as progress', async () => {
+    serveImport([run({status: 'running', persisted: 1, unchanged: 2, total_received: 4})]);
+    const user = userEvent.setup();
+    renderDialog();
+    await pasteCheckAndImport(user);
+    expect(await screen.findByText('Importing… 3 of 4')).toBeInTheDocument();
+  });
+
+  it('separates not found, could not fetch and already up to date', async () => {
+    serveImport([
+      run({status: 'completed', persisted: 1, updated: 1, failed: 3, not_found: 1, fetch_failed: 2, unchanged: 4}),
+    ]);
+    const user = userEvent.setup();
+    renderDialog();
+    await pasteCheckAndImport(user);
+    expect(await screen.findByText('Imported: 1 new, 1 updated')).toBeInTheDocument();
+    expect(screen.getByText('1 not found in PubMed')).toBeInTheDocument();
+    expect(
+      screen.getByText('2 could not be fetched from PubMed. Import the same file again to retry them.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('4 already up to date')).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'NCBI_UNAVAILABLE',
+      'PubMed did not respond, so the import stopped. Records imported so far are kept; import the same file again to retry the rest.',
+    ],
+    [
+      'IMPORT_STALE',
+      'The import stopped responding and was ended. Records imported so far are kept; import the same file again to retry the rest.',
+    ],
+    [
+      'IMPORT_TIME_LIMIT',
+      'The import ran out of time. Records imported so far are kept; import the same file again to retry the rest.',
+    ],
+  ] as const)('explains a run that failed with %s', async (code, message) => {
+    serveImport([run({status: 'failed', persisted: 1, error_code: code})]);
+    const user = userEvent.setup();
+    renderDialog();
+    await pasteCheckAndImport(user);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  it('shows the active run when reopened', async () => {
+    serveImport([run({status: 'running', persisted: 1, total_received: 4})]);
+    usePubmedImportRuns.setState({runs: {p1: {runId: 's1', settled: false}}});
+    renderDialog();
+    expect(await screen.findByText('Importing… 1 of 4')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', {name: 'Paste PMIDs'})).not.toBeInTheDocument();
+  });
+
+  it('records the started run for the project', async () => {
+    serveImport([run({status: 'running'})]);
+    const user = userEvent.setup();
+    renderDialog();
+    await pasteCheckAndImport(user);
+    await waitFor(() => expect(usePubmedImportRuns.getState().runs.p1?.runId).toBe('s1'));
+  });
 
   it('explains a missing NCBI email', async () => {
     server.use(
@@ -328,7 +387,6 @@ describe('PubMedImportDialog import', () => {
         'The import stopped. Articles imported so far are kept; you can import the same list again.',
       ),
     ).toBeInTheDocument();
-    expect(onImportComplete).not.toHaveBeenCalled();
   });
 
   it('reports a run that disappeared', async () => {
@@ -352,6 +410,8 @@ describe('PubMedImportDialog import', () => {
     await pasteCheckAndImport(user);
     expect(await screen.findByText('Enroll the new articles to screen them.')).toBeInTheDocument();
     manager.unmount();
+    // A new session: the tracked run belongs to the first dialog.
+    usePubmedImportRuns.setState({runs: {}});
 
     const memberUser = userEvent.setup();
     renderDialog(false);

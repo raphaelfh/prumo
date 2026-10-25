@@ -2,14 +2,15 @@ import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {renderHook, waitFor} from '@testing-library/react';
 import {http, HttpResponse} from 'msw';
 import type {ReactNode} from 'react';
-import {afterEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: {access_token: 'test-token'}}})}},
 }));
 
-import {useImportRun} from '@/hooks/screening/usePubmedImport';
+import {useImportRun, useImportRunTracker} from '@/hooks/screening/usePubmedImport';
 import {screeningKeys} from '@/lib/query-keys/screening';
+import {usePubmedImportRuns} from '@/stores/pubmedImportRuns';
 import {server} from '@/test/mocks/server';
 
 const RUN_URL = '*/api/v1/projects/:projectId/imports/:syncRunId';
@@ -19,7 +20,10 @@ function runBody(status: string) {
     ok: true,
     data: {
       completed_at: null,
+      error_code: null,
       failed: 0,
+      fetch_failed: 0,
+      not_found: 0,
       persisted: 1,
       skipped: 0,
       source: 'pubmed',
@@ -27,6 +31,7 @@ function runBody(status: string) {
       status,
       sync_run_id: 's1',
       total_received: 1,
+      unchanged: 0,
       updated: 0,
     },
   };
@@ -55,31 +60,51 @@ function setup() {
   return {client, invalidate, wrapper};
 }
 
+describe('useImportRunTracker', () => {
+  beforeEach(() => {
+    usePubmedImportRuns.setState({runs: {p1: {runId: 's1', settled: false}}});
+  });
+
+  it('refreshes the screening family and reports once when the run completes', async () => {
+    serveRuns(['running', 'completed']);
+    const onFinished = vi.fn();
+    const {client, wrapper} = setup();
+    const {rerender} = renderHook(() => useImportRunTracker('p1', onFinished), {wrapper});
+
+    await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1), {timeout: 4000});
+    expect(client.getQueryState(screeningKeys.config('p1'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState([...screeningKeys.project('p1'), 'probe'])?.isInvalidated).toBe(true);
+    expect(usePubmedImportRuns.getState().runs.p1).toEqual({runId: 's1', settled: true});
+    rerender();
+    expect(onFinished).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
+  it('reports a failed run too: its partial import is kept', async () => {
+    serveRuns(['failed']);
+    const onFinished = vi.fn();
+    const {client, wrapper} = setup();
+    renderHook(() => useImportRunTracker('p1', onFinished), {wrapper});
+    await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));
+    expect(client.getQueryState(screeningKeys.config('p1'))?.isInvalidated).toBe(true);
+  });
+
+  it('does not report a settled run again after a remount', async () => {
+    usePubmedImportRuns.setState({runs: {p1: {runId: 's1', settled: true}}});
+    serveRuns(['completed']);
+    const onFinished = vi.fn();
+    const {wrapper} = setup();
+    const {result} = renderHook(() => {
+      useImportRunTracker('p1', onFinished);
+      return useImportRun('p1', 's1');
+    }, {wrapper});
+    await waitFor(() => expect(result.current.data?.status).toBe('completed'));
+    expect(onFinished).not.toHaveBeenCalled();
+  });
+});
+
 describe('useImportRun', () => {
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  it('refreshes the whole screening family once when the run completes', async () => {
-    serveRuns(['running', 'completed']);
-    const {client, invalidate, wrapper} = setup();
-    const {result} = renderHook(() => useImportRun('p1', 's1'), {wrapper});
-
-    await waitFor(() => expect(result.current.data?.status).toBe('running'));
-    expect(invalidate).not.toHaveBeenCalled();
-
-    await waitFor(() => expect(result.current.data?.status).toBe('completed'), {timeout: 4000});
-    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
-    expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project('p1')});
-    expect(client.getQueryState(screeningKeys.config('p1'))?.isInvalidated).toBe(true);
-    expect(client.getQueryState([...screeningKeys.project('p1'), 'probe'])?.isInvalidated).toBe(true);
-  }, 10_000);
-
-  it('refreshes the screening family when the run fails', async () => {
-    serveRuns(['failed']);
-    const {client, wrapper} = setup();
-    renderHook(() => useImportRun('p1', 's1'), {wrapper});
-    await waitFor(() => expect(client.getQueryState(screeningKeys.config('p1'))?.isInvalidated).toBe(true));
   });
 
   it('stops polling a run that errors after it was running', async () => {

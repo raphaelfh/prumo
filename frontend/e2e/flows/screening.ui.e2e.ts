@@ -63,16 +63,19 @@ async function decideByApi(token: string, assignmentId: string, decision: "inclu
   expect(res.status, await res.clone().text()).toBe(200);
 }
 
-/** Press "1" (include) on the record on screen and wait until the decision settles. */
+/**
+ * Press "1" (include) on the record on screen and wait for the decision's
+ * response. Decisions are final: there is no change step afterwards. The
+ * buttons are enabled only once the previous decision settled, which also
+ * releases the queue's one-decision-at-a-time guard.
+ */
 async function includeCurrentRecord(page: Page) {
+  await expect(page.getByRole("button", { name: "Include", exact: true })).toBeEnabled();
   const saved = page.waitForResponse(
     (r) => r.request().method() === "POST" && /\/screening\/assignments\/[^/]+\/decisions$/.test(r.url()),
   );
   await page.keyboard.press("1");
   expect((await saved).status()).toBe(200);
-  // The link appears once the decision's success callback ran, which also
-  // releases the queue's one-decision-at-a-time guard.
-  await expect(page.getByRole("link", { name: "Change last decision" })).toBeVisible();
 }
 
 test.describe.configure({ mode: "serial" });

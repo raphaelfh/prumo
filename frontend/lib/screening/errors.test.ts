@@ -15,6 +15,8 @@ const MAPPED_CODES = [
   'SCREENING_NOT_CONFIGURED',
   'SCREENING_STALE_DECISIONS',
   'SCREENING_NOT_IN_CONFLICT',
+  'SCREENING_DECISION_FINAL',
+  'SCREENING_SELF_ARBITRATION',
 ];
 
 describe('screeningErrorMessage', () => {
@@ -29,6 +31,18 @@ describe('screeningErrorMessage', () => {
   it('maps a validation error to the generic validation copy', () => {
     expect(screeningErrorMessage(new ApiError('VALIDATION_ERROR', 'x', 422))).toBe(
       'That was not accepted. Check what you entered and try again.',
+    );
+  });
+
+  it('says a decision is final', () => {
+    expect(screeningErrorMessage(new ApiError('SCREENING_DECISION_FINAL', 'x', 409))).toBe(
+      'You already decided on this record. Decisions are final.',
+    );
+  });
+
+  it('says a reviewer of the record cannot resolve its conflict', () => {
+    expect(screeningErrorMessage(new ApiError('SCREENING_SELF_ARBITRATION', 'x', 403))).toBe(
+      'You screened this record, so a manager or consensus member who did not screen it resolves the conflict.',
     );
   });
 

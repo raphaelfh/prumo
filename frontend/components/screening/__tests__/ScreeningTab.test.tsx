@@ -7,6 +7,7 @@ import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {http, HttpResponse} from 'msw';
+import {useState} from 'react';
 import {MemoryRouter} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -18,6 +19,8 @@ vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 import {toast} from 'sonner';
 
 import {ScreeningTab} from '@/components/screening/ScreeningTab';
+import {useImportRunTracker} from '@/hooks/screening/usePubmedImport';
+import {usePubmedImportRuns} from '@/stores/pubmedImportRuns';
 import type {components} from '@/types/api/schema';
 import {server} from '@/test/mocks/server';
 
@@ -28,6 +31,8 @@ const ENROLL_URL = '*/api/v1/projects/:projectId/screening/enroll';
 const QUEUE_URL = '*/api/v1/projects/:projectId/screening/queue';
 const CONFLICTS_URL = '*/api/v1/projects/:projectId/screening/conflicts';
 const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
+const IMPORT_URL = '*/api/v1/projects/:projectId/imports/pubmed';
+const RUN_URL = '*/api/v1/projects/:projectId/imports/:syncRunId';
 
 function config(overrides: Partial<ConfigRead> = {}): ConfigRead {
   return {
@@ -81,6 +86,7 @@ const ARTICLE = {
 };
 
 beforeEach(() => {
+  usePubmedImportRuns.setState({runs: {}});
   vi.mocked(toast.success).mockClear();
   vi.mocked(toast.error).mockClear();
 });
@@ -128,6 +134,9 @@ describe('ScreeningTab', () => {
     expect(screen.getByRole('radio', {name: '2 reviewers'})).toBeEnabled();
     expect(screen.getByRole('radio', {name: '3 reviewers'})).toBeDisabled();
     expect(screen.getByText('Needs 3 reviewers in the project')).toBeInTheDocument();
+    expect(
+      screen.getByText('Conflicts are resolved by a manager or consensus member who did not screen that record.'),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', {name: '2 reviewers'}));
     await user.click(screen.getByRole('button', {name: 'Save'}));
@@ -423,4 +432,126 @@ describe('ScreeningTab', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(posted).toBe(0);
   });
+});
+
+/** The project view: the tracker outlives the tab, which a button can leave. */
+function ProjectHarness({onFinished}: {onFinished: () => void}) {
+  useImportRunTracker('p1', onFinished);
+  const [shown, setShown] = useState(true);
+  return (
+    <>
+      {shown && <ScreeningTab projectId="p1" />}
+      <button type="button" onClick={() => setShown(false)}>
+        Leave tab
+      </button>
+    </>
+  );
+}
+
+function renderProject(onFinished: () => void) {
+  const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/projects/p1?tab=screening']}>
+        <ProjectHarness onFinished={onFinished} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** Dry run, start (202), then `running` until `finish()` flips the run to `completed`. */
+function serveImportRun() {
+  let finished = false;
+  server.use(
+    http.post(IMPORT_URL, async ({request}) => {
+      const body = (await request.json()) as {dry_run: boolean};
+      return body.dry_run
+        ? ok({kind: 'dry_run', received: 1, distinct: 1, already_in_project: 0, new: 1, duplicate_in_request: 0})
+        : HttpResponse.json({ok: true, data: {kind: 'started', status: 'pending', sync_run_id: 's1'}}, {status: 202});
+    }),
+    http.get(RUN_URL, () =>
+      ok({
+        completed_at: null,
+        error_code: null,
+        failed: 0,
+        fetch_failed: 0,
+        not_found: 0,
+        persisted: finished ? 1 : 0,
+        skipped: 0,
+        source: 'pubmed',
+        started_at: '2026-10-23T00:00:00Z',
+        status: finished ? 'completed' : 'running',
+        sync_run_id: 's1',
+        total_received: 1,
+        unchanged: 0,
+        updated: 0,
+      }),
+    ),
+  );
+  return {finish: () => (finished = true)};
+}
+
+async function startImport(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', {name: 'Import from PubMed'}));
+  await user.click(screen.getByRole('tab', {name: 'Paste PMIDs'}));
+  await user.click(screen.getByRole('textbox'));
+  await user.paste('12345');
+  await user.click(screen.getByRole('button', {name: 'Check'}));
+  await user.click(await screen.findByRole('button', {name: 'Import 1 PMIDs'}));
+  expect(await screen.findByText('Importing… 0 of 1')).toBeInTheDocument();
+}
+
+describe('ScreeningTab import tracking', () => {
+  it('renders one import button whatever the tab state', async () => {
+    serveConfig(config({reviewer_count: 2, enrolled: 0, not_enrolled: 2}));
+    renderTab();
+    await screen.findByText('No records to screen');
+    expect(screen.getAllByRole('button', {name: 'Import from PubMed'})).toHaveLength(1);
+  });
+
+  it('keeps polling across enrollment and reloads articles on completion', async () => {
+    let enrolled = false;
+    server.use(
+      http.get(CONFIG_URL, () =>
+        ok(config({reviewer_count: 2, enrolled: enrolled ? 2 : 0, not_enrolled: enrolled ? 0 : 2})),
+      ),
+      http.post(ENROLL_URL, () => {
+        enrolled = true;
+        return ok({enrolled: 2, already_enrolled: 0});
+      }),
+      http.get(QUEUE_URL, () => ok({items: [], awaiting_me: 0, awaiting_others: 0, exclusion_reasons: []})),
+    );
+    const run = serveImportRun();
+    const onFinished = vi.fn();
+    const user = userEvent.setup();
+    renderProject(onFinished);
+
+    await startImport(user);
+    await user.click(screen.getAllByRole('button', {name: 'Close'})[0]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', {name: 'Enroll all articles'}));
+    expect(await screen.findByText('2 enrolled')).toBeInTheDocument();
+
+    run.finish();
+    await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1), {timeout: 5000});
+    await user.click(screen.getByRole('button', {name: 'Import from PubMed'}));
+    expect(await screen.findByText('Imported: 1 new, 0 updated')).toBeInTheDocument();
+  }, 15_000);
+
+  it('reloads articles when the run completes after the tab is left', async () => {
+    serveConfig(config({reviewer_count: 2, enrolled: 0, not_enrolled: 0}));
+    const run = serveImportRun();
+    const onFinished = vi.fn();
+    const user = userEvent.setup();
+    renderProject(onFinished);
+
+    await startImport(user);
+    await user.click(screen.getAllByRole('button', {name: 'Close'})[0]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', {name: 'Leave tab'}));
+    expect(screen.queryByRole('button', {name: 'Import from PubMed'})).not.toBeInTheDocument();
+
+    run.finish();
+    await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1), {timeout: 5000});
+  }, 15_000);
 });

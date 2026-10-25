@@ -130,8 +130,17 @@ describe('AssignmentView', () => {
     expect(screen.queryByText('Reviewers gave different reasons')).not.toBeInTheDocument();
   });
 
-  it('lets a reviewer change the decision', async () => {
-    const calls = serveAssignment(assignment());
+  it('shows a decided reviewer their decision read-only', async () => {
+    serveAssignment(assignment());
+    renderView({canReview: true});
+    await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
+    expect(screen.getByText('Your decision')).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Include'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Exclude'})).not.toBeInTheDocument();
+  });
+
+  it('lets a reviewer decide a record they have not decided', async () => {
+    const calls = serveAssignment(assignment({status: 'awaiting_me', my_decision: null}));
     let body: unknown = null;
     server.use(
       http.post(DECIDE_URL, async ({request}) => {
@@ -151,7 +160,7 @@ describe('AssignmentView', () => {
   });
 
   it('sends one decision for two back-to-back keys', async () => {
-    serveAssignment(assignment());
+    serveAssignment(assignment({status: 'awaiting_me', my_decision: null}));
     const bodies: unknown[] = [];
     server.use(
       http.post(DECIDE_URL, async ({request}) => {
@@ -170,12 +179,15 @@ describe('AssignmentView', () => {
     expect(bodies).toEqual([{decision: 'include'}]);
   });
 
-  it('decides again once the first decision settles', async () => {
-    serveAssignment(assignment());
+  it('decides again once a failed first decision settles', async () => {
+    serveAssignment(assignment({status: 'awaiting_me', my_decision: null}));
     const bodies: unknown[] = [];
     server.use(
       http.post(DECIDE_URL, async ({request}) => {
         bodies.push(await request.json());
+        if (bodies.length === 1) {
+          return HttpResponse.json({ok: false, error: {code: 'INTERNAL_ERROR', message: 'x'}}, {status: 500});
+        }
         return HttpResponse.json({ok: true, data: assignment()});
       }),
     );
@@ -184,6 +196,7 @@ describe('AssignmentView', () => {
     await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
 
     await user.click(screen.getByRole('button', {name: 'Include'}));
+    await waitFor(() => expect(bodies).toHaveLength(1));
     await waitFor(() => expect(screen.getByRole('button', {name: 'Exclude'})).toBeEnabled());
     await user.click(screen.getByRole('button', {name: 'Exclude'}));
 

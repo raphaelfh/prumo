@@ -1,21 +1,29 @@
 /**
  * Import records from PubMed into the project: a CSV export or pasted PMIDs,
- * checked locally, counted by a dry run, then imported and polled to its end.
- * Any project member may import; whether the new articles then need a manager
- * to enroll them is the last line of the result.
+ * checked locally, counted by a dry run, then imported. The started run is
+ * tracked per project (`usePubmedImportRuns`); the project view's tracker
+ * reloads the articles when it ends, and reopening this dialog shows it. Any
+ * project member may import; whether the new articles then need a manager to
+ * enroll them is the last line of the result.
  */
 import {Loader2} from 'lucide-react';
-import {useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent} from 'react';
+import {useId, useState, type ChangeEvent, type DragEvent} from 'react';
 
 import {AppDialog} from '@/components/patterns/AppDialog';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {Textarea} from '@/components/ui/textarea';
-import {usePubmedDryRun, useImportRun, useStartPubmedImport} from '@/hooks/screening/usePubmedImport';
+import {
+  usePubmedDryRun,
+  useImportRun,
+  useStartPubmedImport,
+  useTrackedImportRunId,
+} from '@/hooks/screening/usePubmedImport';
 import {ApiError} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import {parsePmidCsv, parsePmidText, type PmidParseResult} from '@/lib/screening/pmidInput';
 import type {ImportRunRead} from '@/services/screeningService';
+import {usePubmedImportRuns} from '@/stores/pubmedImportRuns';
 
 type InputTab = 'csv' | 'paste';
 
@@ -24,8 +32,6 @@ interface PubMedImportDialogProps {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   canManage: boolean;
-  /** Fires once when the run completes, so the caller can reload its article list. */
-  onImportComplete?: () => void;
 }
 
 function inputErrorMessage(result: Extract<PmidParseResult, {ok: false}>): string {
@@ -105,6 +111,7 @@ function DryRunCounts({counts}: {counts: {received: number; already_in_project: 
       <p>{fill(t('screening', 'dryRunReceived'), {n: counts.received})}</p>
       <p>{fill(t('screening', 'dryRunAlready'), {n: counts.already_in_project})}</p>
       <p>{fill(t('screening', 'dryRunNew'), {n: counts.new})}</p>
+      {counts.new > 0 && <p className="text-muted-foreground">{t('screening', 'dryRunNewByDoi')}</p>}
       {counts.duplicate_in_request > 0 && (
         <p>{fill(t('screening', 'dryRunRepeated'), {n: counts.duplicate_in_request})}</p>
       )}
@@ -112,6 +119,12 @@ function DryRunCounts({counts}: {counts: {received: number; already_in_project: 
     </div>
   );
 }
+
+const FAILED_KEY = {
+  NCBI_UNAVAILABLE: 'importFailedNcbi',
+  IMPORT_STALE: 'importFailedStale',
+  IMPORT_TIME_LIMIT: 'importFailedTimeLimit',
+} as const satisfies Record<NonNullable<ImportRunRead['error_code']>, string>;
 
 function RunProgress({run, error, canManage, total}: {
   run: ImportRunRead | undefined;
@@ -123,15 +136,23 @@ function RunProgress({run, error, canManage, total}: {
     const gone = error instanceof ApiError && error.status === 404;
     return <Problem>{gone ? t('screening', 'importRunNotFound') : screeningErrorMessage(error)}</Problem>;
   }
-  if (run?.status === 'failed') return <Problem>{t('screening', 'importFailed')}</Problem>;
+  if (run?.status === 'failed') {
+    return <Problem>{t('screening', run.error_code ? FAILED_KEY[run.error_code] : 'importFailed')}</Problem>;
+  }
   if (run?.status === 'completed') {
     return (
       <div role="status" className="flex flex-col gap-1 text-[13px]">
         <p className="font-medium text-foreground">
           {fill(t('screening', 'importDone'), {inserted: run.persisted, updated: run.updated})}
         </p>
-        {run.failed > 0 && (
-          <p className="text-muted-foreground">{fill(t('screening', 'importNotFound'), {n: run.failed})}</p>
+        {run.unchanged > 0 && (
+          <p className="text-muted-foreground">{fill(t('screening', 'importUnchanged'), {n: run.unchanged})}</p>
+        )}
+        {run.not_found > 0 && (
+          <p className="text-muted-foreground">{fill(t('screening', 'importNotFound'), {n: run.not_found})}</p>
+        )}
+        {run.fetch_failed > 0 && (
+          <p className="text-muted-foreground">{fill(t('screening', 'importFetchFailed'), {n: run.fetch_failed})}</p>
         )}
         <p className="text-muted-foreground">
           {t('screening', canManage ? 'importNextStepManager' : 'importNextStepMember')}
@@ -139,7 +160,7 @@ function RunProgress({run, error, canManage, total}: {
       </div>
     );
   }
-  const done = run ? run.persisted + run.updated + run.skipped + run.failed : 0;
+  const done = run ? run.persisted + run.updated + run.unchanged + run.skipped + run.failed : 0;
   return (
     <p role="status" className="flex items-center gap-2 text-[13px] text-foreground">
       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
@@ -153,7 +174,6 @@ export function PubMedImportDialog({
   onOpenChange,
   projectId,
   canManage,
-  onImportComplete,
 }: PubMedImportDialogProps) {
   const [tab, setTab] = useState<InputTab>('csv');
   const [text, setText] = useState('');
@@ -161,18 +181,9 @@ export function PubMedImportDialog({
 
   const dryRun = usePubmedDryRun(projectId);
   const start = useStartPubmedImport(projectId);
-  const runId = start.data?.sync_run_id ?? null;
+  const runId = useTrackedImportRunId(projectId);
+  const clearRun = usePubmedImportRuns((state) => state.clear);
   const run = useImportRun(projectId, runId);
-
-  // One notification per run, however often the caller's callback changes.
-  const notifiedRun = useRef<string | null>(null);
-  const completed = run.data?.status === 'completed';
-  useEffect(() => {
-    if (completed && runId && notifiedRun.current !== runId) {
-      notifiedRun.current = runId;
-      onImportComplete?.();
-    }
-  }, [completed, runId, onImportComplete]);
 
   const parsed: PmidParseResult | null =
     tab === 'paste' ? (text === '' ? null : parsePmidText(text)) : (csv?.result ?? null);
@@ -205,6 +216,7 @@ export function PubMedImportDialog({
       setText('');
       setCsv(null);
       discardCheck();
+      clearRun(projectId);
     }
     onOpenChange(next);
   };
