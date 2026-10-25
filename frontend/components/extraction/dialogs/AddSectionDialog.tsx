@@ -91,7 +91,7 @@ const getAddSectionSchema = () => z.object({
       .max(50, t('templateConfig', 'entryLabelMax50'))
     .optional(),
   cardinality: z.enum(['one', 'many'], {
-      required_error: t('extraction', 'cardinalityRequired'),
+      error: t('extraction', 'cardinalityRequired'),
   }),
     is_required: z.boolean().default(false),
 }).superRefine((data, ctx) => {
@@ -99,7 +99,7 @@ const getAddSectionSchema = () => z.object({
   // blank one); a section that repeats once carries none.
   if (data.cardinality === 'many' && !data.entry_label) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['entry_label'],
       message: t('templateConfig', 'entryLabelRequired'),
     });

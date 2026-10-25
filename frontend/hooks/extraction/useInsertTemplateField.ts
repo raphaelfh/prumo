@@ -234,7 +234,7 @@ async function runInsert(
     toast.error(
       t('extraction', 'errors_validationPrefix').replace(
         '{{message}}',
-        zodResult.error.errors[0].message,
+        zodResult.error.issues[0].message,
       ),
     );
     s.deps.onFailed(clientKey);
