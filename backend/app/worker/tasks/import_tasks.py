@@ -243,23 +243,24 @@ def import_pubmed_task(
     """Import PubMed records by PMID into the run the endpoint created.
 
     Never retried and never re-raised: a redelivery resumes from the run's
-    events, and any failure here fails the run instead (``IMPORT_TIME_LIMIT``
-    at the soft time limit). Every efetch passes the deployment-wide Redis
-    gate, so concurrent imports share NCBI's 3 requests/s.
+    events, and any failure here fails the run instead. The soft time limit
+    fails it with ``IMPORT_TIME_LIMIT`` on the sync side: prefork raises it
+    from a signal handler, so while the loop awaits I/O it escapes
+    ``asyncio.run`` and the coroutine only sees a cancellation. Every efetch
+    passes the deployment-wide Redis gate, so concurrent imports share
+    NCBI's 3 requests/s.
     """
 
     async def run() -> dict[str, str]:
         from redis.asyncio import Redis
 
         from app.core.config import settings
-        from app.schemas.pubmed_import import ImportRunErrorCode
         from app.services.pubmed_client import PubMedClient, RedisIntervalGate
         from app.services.pubmed_import_service import PubmedImportService
         from app.worker._session import worker_session
 
         redis = Redis.from_url(settings.REDIS_URL)
         async with worker_session() as session:
-            error_code: ImportRunErrorCode | None = None
             try:
                 # A worker without NCBI_EMAIL raises ValueError here, failing the run.
                 client = PubMedClient(
@@ -274,13 +275,7 @@ def import_pubmed_task(
                 await session.commit()
                 return {"sync_run_id": sync_run_id, "status": status or "missing"}
             except SoftTimeLimitExceeded:
-                error_code = "IMPORT_TIME_LIMIT"
-                logger.warning(
-                    "pubmed_import.time_limit",
-                    sync_run_id=sync_run_id,
-                    trace_id=trace_id,
-                    task_id=self.request.id,
-                )
+                raise  # one handler, on the sync side
             except Exception:
                 logger.exception(
                     "pubmed_import.aborted",
@@ -292,9 +287,31 @@ def import_pubmed_task(
                 await redis.aclose()
             await session.rollback()
             await PubmedImportService(session).mark_failed(
-                project_id=UUID(project_id), sync_run_id=UUID(sync_run_id), error_code=error_code
+                project_id=UUID(project_id), sync_run_id=UUID(sync_run_id)
             )
             await session.commit()
             return {"sync_run_id": sync_run_id, "status": "failed"}
 
-    return run_task(run)
+    async def fail_at_time_limit() -> dict[str, str]:
+        from app.services.pubmed_import_service import PubmedImportService
+        from app.worker._session import worker_session
+
+        async with worker_session() as session:
+            await PubmedImportService(session).mark_failed(
+                project_id=UUID(project_id),
+                sync_run_id=UUID(sync_run_id),
+                error_code="IMPORT_TIME_LIMIT",
+            )
+            await session.commit()
+        return {"sync_run_id": sync_run_id, "status": "failed"}
+
+    try:
+        return run_task(run)
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            "pubmed_import.time_limit",
+            sync_run_id=sync_run_id,
+            trace_id=trace_id,
+            task_id=self.request.id,
+        )
+        return run_task(fail_at_time_limit)

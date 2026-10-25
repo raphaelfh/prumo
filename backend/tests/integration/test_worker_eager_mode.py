@@ -365,7 +365,6 @@ def test_import_pubmed_task_fails_the_run_when_run_import_raises(
     service.mark_failed.assert_awaited_once_with(
         project_id=UUID(kwargs["project_id"]),
         sync_run_id=UUID(kwargs["sync_run_id"]),
-        error_code=None,
     )
     retry.assert_not_called()
 
@@ -395,7 +394,6 @@ def test_import_pubmed_task_without_ncbi_email_fails_the_run(
     service.mark_failed.assert_awaited_once_with(
         project_id=UUID(kwargs["project_id"]),
         sync_run_id=UUID(kwargs["sync_run_id"]),
-        error_code=None,
     )
 
 
@@ -424,12 +422,60 @@ def test_import_pubmed_task_fails_the_run_at_the_soft_time_limit(
         result = import_pubmed_task.apply(kwargs=kwargs).get(timeout=5)
 
     assert result == {"sync_run_id": kwargs["sync_run_id"], "status": "failed"}
-    assert order == ["rollback", "mark_failed", "commit"]
+    assert order[-2:] == ["mark_failed", "commit"]
     service.mark_failed.assert_awaited_once_with(
         project_id=UUID(kwargs["project_id"]),
         sync_run_id=UUID(kwargs["sync_run_id"]),
         error_code="IMPORT_TIME_LIMIT",
     )
+
+
+def test_import_pubmed_task_fails_the_run_when_the_soft_limit_signal_lands_mid_await(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prefork delivers the soft limit by signal: it escapes ``asyncio.run``."""
+    import asyncio
+    import signal
+    from uuid import UUID
+
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from app.core.config import settings
+    from app.worker.tasks.import_tasks import import_pubmed_task
+
+    monkeypatch.setattr(settings, "NCBI_EMAIL", "dev@prumo.test")
+    order: list[str] = []
+    session = _recording_session(order)
+
+    async def awaits_io(**_: Any) -> str:
+        await asyncio.sleep(5)  # interrupted by the timer below
+        return "completed"
+
+    service_cls, service = _fake_pubmed_service(order, run_import=AsyncMock(side_effect=awaits_io))
+    kwargs = _pubmed_kwargs()
+
+    def soft_limit(_signum: int, _frame: Any) -> None:
+        raise SoftTimeLimitExceeded()
+
+    previous = signal.signal(signal.SIGALRM, soft_limit)
+    try:
+        with (
+            patch("app.services.pubmed_import_service.PubmedImportService", new=service_cls),
+            patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        ):
+            signal.setitimer(signal.ITIMER_REAL, 0.05)
+            result = import_pubmed_task.apply(kwargs=kwargs).get(timeout=5)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+    assert result == {"sync_run_id": kwargs["sync_run_id"], "status": "failed"}
+    service.mark_failed.assert_awaited_once_with(
+        project_id=UUID(kwargs["project_id"]),
+        sync_run_id=UUID(kwargs["sync_run_id"]),
+        error_code="IMPORT_TIME_LIMIT",
+    )
+    assert order[-2:] == ["mark_failed", "commit"]
 
 
 def test_import_pubmed_task_never_retries() -> None:
