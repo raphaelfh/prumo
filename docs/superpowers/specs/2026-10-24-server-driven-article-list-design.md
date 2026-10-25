@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-10-24
+last_reviewed: 2026-10-25
 owner: '@raphaelfh'
 ---
 
@@ -26,7 +26,9 @@ record, count them correctly, and stay fast at that scale.
 **Success:** a 50,000-article project opens its Articles tab in about the time a
 100-article project does today; the counter shows the real totals; search,
 filters, sort, select-all, export and bulk delete cover every matching record;
-and no article read or write in that tab goes around the typed API.
+and no `articles` / `article_files` table read or write in the Articles tab or
+its side panel goes around the typed API (file **bytes** still go browser →
+Storage directly; their registration already goes through the API).
 
 ## 2. Evidence (dev @ 01c4f83, 2026-10-24)
 
@@ -67,6 +69,10 @@ and no article read or write in that tab goes around the typed API.
    paging helper, `loadProjectArticles`, `fetchArticleIdsWithMainFile` and the
    client delete paths are deleted, and the §VI baseline shrinks.
 7. Measured performance at 50,000 articles (§8).
+8. Article writes and detail reads leave PostgREST (§7.5, ruled 2026-10-25):
+   RIS import becomes one server-side import, article create/update and the
+   detail read become typed endpoints, and the `article_files` reads and
+   single-file delete move to the API.
 
 **Non-goals**
 
@@ -339,6 +345,29 @@ call a service from an effect today move onto the shared hook. Order is
 `articlesService.ts:418-419`, and `frontend/test/services/articlesService.test.ts:236-239`
 pins it — that test and any pager fixture relying on it are updated).
 
+### 7.5 Article writes and detail reads (scope ruled 2026-10-25)
+
+Ruling: the remaining direct `articles` / `article_files` table access in the
+tab moves to typed endpoints in this work. What moves, and the shape each
+takes. The backend half of each item reuses the guards above:
+`is_project_member` / `is_project_manager` for the project, `owned_article` /
+`owned_article_file` for ids.
+
+| Today (frontend) | Becomes | Notes |
+| --- | --- | --- |
+| `RISImportDialog.handleImport`: one browser `insert` per record, sequential, failures counted client-side (`RISImportDialog.tsx:79-117`) | **Server-side RIS import.** Browser parses (keep `lib/risParser.ts`) or uploads the file; one request creates the rows | Must not reinvent import: build on the canonical-identity import path #1053 introduces for PubMed (sync run + one sync event per record, PMID → DOI → URL identity, idempotent). That also makes PRISMA's identified/duplicates lines count RIS records correctly. **Design this item only after #1053 merges**, against its merged shape; size (sync vs Celery on `imports`) follows the PubMed endpoint |
+| `insertArticle`, `updateArticle` (`articlesService.ts:97-135`) | `POST /api/v1/projects/{id}/articles`, `PATCH /api/v1/articles/{article_id}` | Member-level today (RLS `articles_insert` / `articles_update` = `is_project_member`); keep that. Update must refuse a missing/foreign article with one 404 (`owned_article`). Decide whether update carries optimistic concurrency (`row_version` exists on the table) — the builder checks how `project_details` does `expected` and mirrors it if the form can race |
+| `fetchArticle` (`select('*')`, `articlesService.ts:140`) | `GET /api/v1/articles/{article_id}` | Full record incl. JSONB (the side panel is where full payloads belong) |
+| `fetchArticleFiles`, `fetchMainFileInfo`, `fetchArticlePdfSignedUrl` (`articlesService.ts:168,238,325`) | `GET /api/v1/articles/{article_id}/files` already exists (`article_files.py:81`) — reuse it; signed URL via a backend endpoint | Check whether the existing files list returns what the three callers need before adding anything |
+| `deleteArticleFile` (`articlesService.ts:205-225`): storage first, then row, unchecked | `DELETE /api/v1/article-files/{article_file_id}` | Same order rule as §6.4: row first, commit, then storage best-effort. Same role as today's RLS for `article_files` delete (builder reads the policy) |
+
+Deleted with their replacements: `insertArticle`, `updateArticle`,
+`fetchArticle`, `fetchArticleFiles`, `fetchMainFileInfo`,
+`fetchArticlePdfSignedUrl`, `deleteArticleFile`, the RIS insert loop; the
+`articlesService.ts|articles`, `articlesService.ts|article_files` and
+`RISImportDialog.tsx|articles` baseline lines go to zero (or to whatever
+non-tab reads remain, each named in the PR).
+
 ## 8. Performance budgets (verified, not assumed)
 
 On a seeded 50,000-article project, local stack, warm cache:
@@ -408,6 +437,10 @@ Order, each a PR into `dev`:
    export `selection`, deletions in 7.3 for the tab.
 4. **Slim consumers:** 7.4, delete the remaining client helpers, tighten the
    §VI baseline.
+5. **Article detail + writes:** 7.5 create/update/detail/files endpoints and
+   single-file delete; frontend side panel onto them.
+6. **RIS import server-side:** 7.5 first row, after #1053 merges, on its
+   import path.
 
 Sequence against #1053 (screening): it touches `ArticlesList.tsx` (PubMed
 source option) and `ProjectView.tsx`. Start PR 3 after #1053 merges and carry
