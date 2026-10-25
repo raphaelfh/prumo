@@ -4,7 +4,14 @@ The endpoint writes a ``pending`` run and enqueues; the worker's
 :meth:`PubmedImportService.run_import` fetches serial efetch batches and
 writes one ``article_sync_events`` row per received PMID (repeats included),
 so a redelivered or concurrent delivery of the same run never writes a PMID
-twice.
+twice. A PMID whose article already has every fill field is recorded
+``unchanged`` without asking NCBI, so a re-import does no work.
+
+A run stops as ``failed`` with an error code in ``failure_summary``: after
+``MAX_CONSECUTIVE_FAILED_BATCHES`` failed fetches in a row
+(``NCBI_UNAVAILABLE``), at the task's soft time limit (``IMPORT_TIME_LIMIT``),
+or when it is still live ``IMPORT_RUN_STALE_AFTER`` after its creation
+(``IMPORT_STALE``: written when the task starts on it, derived on poll).
 
 Lock order, everywhere: the per-project advisory lock, then the run row.
 :meth:`PubmedImportService.mark_failed` takes only the run row, so the two
@@ -16,6 +23,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import get_args
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +39,7 @@ from app.repositories.article_repository import (
     ArticleSyncRunRepository,
 )
 from app.schemas.common import ApiErrorCode
-from app.schemas.pubmed_import import ImportRunRead, PubmedDryRunRead
+from app.schemas.pubmed_import import ImportRunErrorCode, ImportRunRead, PubmedDryRunRead
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.article_source_normalization import (
     PUBMED_FILL_FIELDS,
@@ -39,11 +48,24 @@ from app.services.article_source_normalization import (
 from app.services.pubmed_client import EFETCH_BATCH_SIZE, PubMedClient, PubMedFetchError
 from app.worker import queue_health
 
-#: Right half of the per-project advisory key that serializes PubMed writes.
 logger = get_logger(__name__)
 
+#: Right half of the per-project advisory key that serializes PubMed writes.
 PUBMED_IMPORT_LOCK = UUID("e2d0f3dc-4692-406e-bcaa-5df90c43fcf6")
 LIVE_RUN_STATUSES = ("pending", "running")
+MAX_CONSECUTIVE_FAILED_BATCHES = 3
+#: Past the task's hard time limit (30 min): a run still live this long after
+#: its creation was killed or never consumed.
+IMPORT_RUN_STALE_AFTER = timedelta(hours=1)
+
+
+def _is_stale(run: ArticleSyncRun, now: datetime) -> bool:
+    return run.status in LIVE_RUN_STATUSES and run.created_at <= now - IMPORT_RUN_STALE_AFTER
+
+
+def _error_code(run: ArticleSyncRun) -> ImportRunErrorCode | None:
+    code = (run.failure_summary or {}).get("error_code")
+    return code if code in get_args(ImportRunErrorCode) else None
 
 
 class NcbiEmailMissingError(AppError):
@@ -113,11 +135,24 @@ class PubmedImportService:
         )
         return run.id
 
-    async def mark_failed(self, *, project_id: UUID, sync_run_id: UUID) -> None:
-        """Fail a live run; a missing, foreign or terminal run is left untouched."""
+    async def mark_failed(
+        self,
+        *,
+        project_id: UUID,
+        sync_run_id: UUID,
+        error_code: ImportRunErrorCode | None = None,
+    ) -> str | None:
+        """Fail a live run; a missing, foreign or terminal run is left untouched.
+
+        Returns the run's status afterwards (``None`` when there is no run).
+        """
         run = await self._runs.run_in_project(sync_run_id, project_id=project_id, for_update=True)
-        if run is not None and run.status in LIVE_RUN_STATUSES:
-            await self._runs.update_counts(run, {}, "failed")
+        if run is None:
+            return None
+        if run.status in LIVE_RUN_STATUSES:
+            summary = {"error_code": error_code} if error_code else None
+            await self._runs.update_counts(run, {}, "failed", failure_summary=summary)
+        return run.status
 
     async def get_run(
         self, *, project_id: UUID, requester_id: UUID, sync_run_id: UUID
@@ -127,16 +162,24 @@ class PubmedImportService:
         )
         if run is None:
             raise ImportRunNotFoundError()
+        by_status = await self._events.status_counts(run.id)
+        status, error_code = run.status, _error_code(run)
+        if _is_stale(run, datetime.now(UTC)):
+            status, error_code = "failed", "IMPORT_STALE"
         return ImportRunRead.model_validate(
             {
                 "sync_run_id": run.id,
                 "source": run.source,
-                "status": run.status,
+                "status": status,
                 "total_received": run.total_received,
                 "persisted": run.persisted,
                 "updated": run.updated,
+                "unchanged": by_status.get("unchanged", 0),
                 "skipped": run.skipped,
                 "failed": run.failed,
+                "not_found": by_status.get("not_found", 0),
+                "fetch_failed": by_status.get("failed", 0),
+                "error_code": error_code,
                 "started_at": run.started_at,
                 "completed_at": run.completed_at,
             }
@@ -161,11 +204,18 @@ class PubmedImportService:
             return None
         if run.status not in LIVE_RUN_STATUSES:
             return run.status
+        if _is_stale(run, datetime.now(UTC)):
+            await self._runs.update_counts(
+                run, {}, "failed", failure_summary={"error_code": "IMPORT_STALE"}
+            )
+            await self.db.commit()
+            return "failed"
         await self._runs.update_counts(run, {}, "running")
         await self.db.commit()
 
         distinct = list(dict.fromkeys(pmids))
         repeats = Counter(pmids)
+        failed_in_a_row = 0
         for start in range(0, len(distinct), batch_size):
             chunk = distinct[start : start + batch_size]
             # Unlocked pre-filter: no NCBI call for PMIDs an earlier delivery wrote.
@@ -173,17 +223,39 @@ class PubmedImportService:
             batch = [pmid for pmid in chunk if pmid not in done]
             if not batch:
                 continue
-            records: dict[str, ET.Element] | None
-            try:
-                records = await client.efetch(batch)
-            except PubMedFetchError:
-                logger.warning(
-                    "pubmed_efetch_failed",
-                    sync_run_id=str(sync_run_id),
-                    pmids=batch,
-                    exc_info=True,
-                )
-                records = None
+            # Nothing to fill: recorded ``unchanged`` without an NCBI call.
+            complete = await self._articles.complete_pmid_matches(
+                project_id, batch, PUBMED_FILL_FIELDS
+            )
+            to_fetch = [pmid for pmid in batch if pmid not in complete]
+            records: dict[str, ET.Element] | None = {}
+            if to_fetch:
+                try:
+                    records = await client.efetch(to_fetch)
+                    failed_in_a_row = 0
+                except PubMedFetchError:
+                    failed_in_a_row += 1
+                    if failed_in_a_row >= MAX_CONSECUTIVE_FAILED_BATCHES:
+                        logger.error(
+                            "pubmed_import_ncbi_unavailable",
+                            sync_run_id=str(sync_run_id),
+                            failed_batches=failed_in_a_row,
+                            exc_info=True,
+                        )
+                        stopped = await self.mark_failed(
+                            project_id=project_id,
+                            sync_run_id=sync_run_id,
+                            error_code="NCBI_UNAVAILABLE",
+                        )
+                        await self.db.commit()
+                        return stopped
+                    logger.warning(
+                        "pubmed_efetch_failed",
+                        sync_run_id=str(sync_run_id),
+                        pmids=to_fetch,
+                        exc_info=True,
+                    )
+                    records = None
 
             await take_advisory_xact_lock(self.db, project_id, PUBMED_IMPORT_LOCK)
             run = await self._runs.run_in_project(
@@ -199,7 +271,12 @@ class PubmedImportService:
                 if pmid in done:
                     continue
                 await self._write_pmid(
-                    project_id, sync_run_id, pmid, records, repeats=repeats[pmid]
+                    project_id,
+                    sync_run_id,
+                    pmid,
+                    records,
+                    repeats=repeats[pmid],
+                    complete_article_id=complete.get(pmid),
                 )
             await self._save_counts(run, total_received=len(pmids), status="running")
             await self.db.commit()
@@ -221,12 +298,19 @@ class PubmedImportService:
         records: Mapping[str, ET.Element] | None,
         *,
         repeats: int,
+        complete_article_id: UUID | None,
     ) -> None:
-        """One event for the PMID, plus one ``duplicate_in_request`` per repeat."""
+        """One event for the PMID, plus one ``duplicate_in_request`` per repeat.
+
+        ``complete_article_id`` is the PMID's article when it had nothing left
+        to fill (the PMID was not fetched).
+        """
         article_id: UUID | None = None
         error_code: str | None = None
         record = records.get(pmid) if records is not None else None
-        if records is None:
+        if complete_article_id is not None:
+            event_status, article_id = "unchanged", complete_article_id
+        elif records is None:
             event_status, error_code = "failed", "NCBI_UNAVAILABLE"
         elif record is None:
             event_status = "not_found"
@@ -242,14 +326,13 @@ class PubmedImportService:
                 )
                 event_status, error_code = "failed", "PARSE_ERROR"
             else:
-                article, created = await self._articles.fill_only_upsert(
+                article, event_status = await self._articles.fill_only_upsert(
                     project_id=project_id,
                     payload=canonical.article_fields,
                     canonical_identity=canonical.canonical_identity,
                     fill_fields=PUBMED_FILL_FIELDS,
                 )
                 article_id = article.id
-                event_status = "inserted" if created else "updated"
 
         for index in range(repeats):
             await self._events.create_event(

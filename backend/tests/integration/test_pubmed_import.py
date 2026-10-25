@@ -12,6 +12,7 @@ import asyncio
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -30,7 +31,10 @@ from app.models.article import Article
 from app.models.article_author import ArticleSyncEvent, ArticleSyncRun
 from app.repositories.article_repository import ArticleSyncRunRepository
 from app.services import pubmed_import_service
-from app.services.pubmed_import_service import PubmedImportService
+from app.services.prisma_service import prisma_counts
+from app.services.pubmed_client import MAX_ATTEMPTS
+from app.services.pubmed_import_service import IMPORT_RUN_STALE_AFTER, PubmedImportService
+from app.services.screening_config_service import ScreeningConfigService
 from app.worker import queue_health
 from tests.integration.conftest import SEED
 from tests.integration.helpers.engine_setup import client_as
@@ -38,6 +42,7 @@ from tests.integration.helpers.shared_fixtures import (
     FIXTURE_XML,
     barrier_handler,
     fixture_client,
+    make_project,
     throwaway_project,
 )
 
@@ -175,7 +180,7 @@ async def test_run_import_writes_one_event_per_received_pmid(db_session: AsyncSe
     assert run.completed_at is not None
 
 
-async def test_reimport_updates_and_inserts_nothing(db_session: AsyncSession) -> None:
+async def test_reimport_fills_nothing_and_records_unchanged(db_session: AsyncSession) -> None:
     first_run = await _new_run(db_session)
     await _import(db_session, first_run, FOUND)
     articles_before = [await _articles_with_pmid(db_session, P, p) for p in FOUND]
@@ -186,8 +191,10 @@ async def test_reimport_updates_and_inserts_nothing(db_session: AsyncSession) ->
     assert articles_before == [1, 1, 1]
     assert [await _articles_with_pmid(db_session, P, p) for p in FOUND] == [1, 1, 1]
     run = await _run_row(db_session, second_run)
-    assert _counts(run) == (3, 0, 3, 0, 0)
-    assert _by_status(await _events(db_session, second_run)) == {"updated": 3}
+    assert _counts(run) == (3, 0, 0, 0, 0)
+    events = await _events(db_session, second_run)
+    assert _by_status(events) == {"unchanged": 3}
+    assert all(e.article_id is not None for e in events)
 
 
 async def test_resuming_a_running_run_duplicates_nothing(db_session: AsyncSession) -> None:
@@ -214,7 +221,7 @@ async def test_ncbi_failure_fails_its_batch_and_continues(db_session: AsyncSessi
 
     def handler(_request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        if calls["n"] == 1:
+        if calls["n"] <= MAX_ATTEMPTS:  # every attempt of the first batch
             return httpx.Response(500)
         return httpx.Response(200, content=FIXTURE_XML.read_bytes())
 
@@ -365,6 +372,182 @@ async def test_pubmed_match_keeps_the_existing_provenance(
     assert await _articles_with_pmid(db_session, P, "42908551") == 1
 
 
+def _failing_for(ids: set[str]) -> Any:
+    """503 for any batch holding one of ``ids``; the fixture XML otherwise."""
+    requested: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = request.url.params["id"].split(",")
+        requested.append(batch)
+        if ids & set(batch):
+            return httpx.Response(503)
+        return httpx.Response(200, content=FIXTURE_XML.read_bytes())
+
+    handler.requested = requested  # type: ignore[attr-defined]
+    return handler
+
+
+async def test_three_consecutive_failed_batches_fail_the_run(db_session: AsyncSession) -> None:
+    pmids = ["42908551", "42875467", "42706533", "49999999"]
+    handler = _failing_for(set(pmids))
+    run_id = await _new_run(db_session)
+
+    with capture_logs() as logs:
+        status = await _import(db_session, run_id, pmids, fixture_client(handler), batch_size=1)
+
+    assert status == "failed"
+    assert len(handler.requested) == 3 * MAX_ATTEMPTS  # the fourth batch is never sent
+    by_pmid = {e.event_payload["pmid"]: e for e in await _events(db_session, run_id)}
+    assert {p: (e.status, e.error_code) for p, e in by_pmid.items()} == {
+        "42908551": ("failed", "NCBI_UNAVAILABLE"),
+        "42875467": ("failed", "NCBI_UNAVAILABLE"),
+    }
+    run = await _run_row(db_session, run_id)
+    assert (run.status, run.failure_summary) == ("failed", {"error_code": "NCBI_UNAVAILABLE"})
+    assert run.completed_at is not None
+    [aborted] = [log for log in logs if log["event"] == "pubmed_import_ncbi_unavailable"]
+    assert aborted["exc_info"] is True
+    assert aborted["sync_run_id"] == str(run_id)
+
+
+async def test_a_success_between_failed_batches_resets_the_streak(
+    db_session: AsyncSession,
+) -> None:
+    # fail, fail, ok, fail, fail: never three in a row.
+    pmids = ["40000001", "40000002", "42908551", "40000003", "40000004"]
+    handler = _failing_for({"40000001", "40000002", "40000003", "40000004"})
+    run_id = await _new_run(db_session)
+
+    status = await _import(db_session, run_id, pmids, fixture_client(handler), batch_size=1)
+
+    assert status == "completed"
+    assert _by_status(await _events(db_session, run_id)) == {"failed": 4, "inserted": 1}
+    assert (await _run_row(db_session, run_id)).failure_summary is None
+
+
+async def _backdate(db: AsyncSession, run_id: UUID, by: timedelta) -> None:
+    await db.execute(
+        text("UPDATE public.article_sync_runs SET created_at = :at WHERE id = :id"),
+        {"at": datetime.now(UTC) - by, "id": str(run_id)},
+    )
+
+
+async def test_task_start_fails_a_stale_run_without_fetching(db_session: AsyncSession) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, content=FIXTURE_XML.read_bytes())
+
+    run_id = await _new_run(db_session)
+    await _backdate(db_session, run_id, IMPORT_RUN_STALE_AFTER + timedelta(minutes=1))
+
+    assert await _import(db_session, run_id, FOUND, fixture_client(handler)) == "failed"
+
+    assert calls == []
+    assert await _events(db_session, run_id) == []
+    run = await _run_row(db_session, run_id)
+    assert (run.status, run.failure_summary) == ("failed", {"error_code": "IMPORT_STALE"})
+
+
+@pytest.mark.parametrize("status", ["pending", "running"])
+async def test_poll_reports_a_stale_live_run_as_failed_without_writing(
+    db_session: AsyncSession, status: str
+) -> None:
+    stale = await _new_run(db_session, status=status)
+    fresh = await _new_run(db_session, status=status)
+    await _backdate(db_session, stale, IMPORT_RUN_STALE_AFTER + timedelta(minutes=1))
+    await _backdate(db_session, fresh, IMPORT_RUN_STALE_AFTER - timedelta(minutes=1))
+    service = PubmedImportService(db_session)
+
+    stale_read = await service.get_run(
+        project_id=P, requester_id=SEED.primary_profile, sync_run_id=stale
+    )
+    fresh_read = await service.get_run(
+        project_id=P, requester_id=SEED.primary_profile, sync_run_id=fresh
+    )
+
+    assert (stale_read.status, stale_read.error_code) == ("failed", "IMPORT_STALE")
+    assert (fresh_read.status, fresh_read.error_code) == (status, None)
+    assert (await _run_row(db_session, stale)).status == status
+
+
+async def test_poll_reports_outcome_counts_from_events(db_session: AsyncSession) -> None:
+    await _article(
+        db_session,
+        pmid="42706533",
+        abstract="A",
+        mesh_terms=["M"],
+        pmcid="PMC1",
+        keywords=["k"],
+        article_type="Letter",
+        language="eng",
+        volume="1",
+        issue="2",
+        pages="3",
+    )
+    handler = _failing_for({"40000001"})
+    run_id = await _new_run(db_session)
+    pmids = ["42908551", "49999999", "40000001", "42706533", "42908551"]
+
+    await _import(db_session, run_id, pmids, fixture_client(handler), batch_size=1)
+    read = await PubmedImportService(db_session).get_run(
+        project_id=P, requester_id=SEED.primary_profile, sync_run_id=run_id
+    )
+
+    assert (read.persisted, read.unchanged, read.skipped) == (1, 1, 1)
+    assert (read.not_found, read.fetch_failed, read.failed) == (1, 1, 2)
+    assert read.error_code is None
+
+
+def _complete_record(pmid: str) -> str:
+    """A PubmedArticle that fills every ``PUBMED_FILL_FIELDS`` field."""
+    return (
+        f"<PubmedArticle><MedlineCitation><PMID>{pmid}</PMID><Article>"
+        "<Journal><JournalIssue><Volume>9</Volume><Issue>2</Issue></JournalIssue></Journal>"
+        f"<ArticleTitle>Record {pmid}</ArticleTitle><Pagination><MedlinePgn>1-9</MedlinePgn>"
+        "</Pagination><Abstract><AbstractText>Text</AbstractText></Abstract>"
+        "<Language>eng</Language><PublicationTypeList><PublicationType>Journal Article"
+        "</PublicationType></PublicationTypeList></Article>"
+        "<MeshHeadingList><MeshHeading><DescriptorName>Humans</DescriptorName></MeshHeading>"
+        "</MeshHeadingList><KeywordList><Keyword>k</Keyword></KeywordList></MedlineCitation>"
+        f"<PubmedData><ArticleIdList><ArticleId IdType='pmc'>PMC{pmid}</ArticleId>"
+        "</ArticleIdList></PubmedData></PubmedArticle>"
+    )
+
+
+async def test_reimporting_complete_records_makes_no_ncbi_request(
+    db_session: AsyncSession,
+) -> None:
+    pmids = ["41000001", "41000002"]
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = request.url.params["id"].split(",")
+        requested.extend(batch)
+        body = "".join(_complete_record(p) for p in batch)
+        return httpx.Response(200, content=f"<PubmedArticleSet>{body}</PubmedArticleSet>")
+
+    project_id = await make_project(db_session)
+    first = await _new_run(db_session, project_id=project_id)
+    await _import(db_session, first, pmids, fixture_client(handler), project_id=project_id)
+    await ScreeningConfigService(db_session).enroll(project_id, SEED.primary_profile, None)
+    prisma_before = await prisma_counts(db_session, project_id)
+    assert requested == pmids
+
+    second = await _new_run(db_session, project_id=project_id)
+    status = await _import(
+        db_session, second, pmids, fixture_client(handler), project_id=project_id
+    )
+
+    assert status == "completed"
+    assert requested == pmids  # nothing new was asked of NCBI
+    events = await _events(db_session, second)
+    assert _by_status(events) == {"unchanged": 2}
+    assert all(e.article_id is not None for e in events)
+    assert await prisma_counts(db_session, project_id) == prisma_before
+
+
 # ---------------------------------------------------------------------------
 # Races (real commits on a throwaway project)
 # ---------------------------------------------------------------------------
@@ -397,7 +580,7 @@ async def test_concurrent_overlapping_imports_create_no_duplicate_article(
         async with session_factory() as s:
             assert [await _articles_with_pmid(s, pid, p) for p in pmids] == [1, 1]
             statuses = _by_status(await _events(s, first) + await _events(s, second))
-            assert statuses == {"inserted": 2, "updated": 2}
+            assert statuses == {"inserted": 2, "unchanged": 2}
 
 
 async def test_same_run_delivered_twice_at_once_writes_each_event_once(

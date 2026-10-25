@@ -196,8 +196,12 @@ async def test_poll_handler_returns_the_run(harness: _Harness) -> None:
         total_received=5,
         persisted=2,
         updated=0,
+        unchanged=1,
         skipped=1,
         failed=0,
+        not_found=0,
+        fetch_failed=0,
+        error_code=None,
         started_at=datetime(2026, 10, 23, tzinfo=UTC),
         completed_at=None,
     )

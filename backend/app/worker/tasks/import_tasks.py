@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.logging import get_logger
 from app.worker._runner import run_task
@@ -231,7 +232,7 @@ def sync_zotero_library_task(
         self.retry(exc=exc)
 
 
-@celery_app.task(bind=True, max_retries=0, time_limit=1800)
+@celery_app.task(bind=True, max_retries=0, soft_time_limit=1740, time_limit=1800)
 def import_pubmed_task(
     self: Task[Any, Any],
     project_id: str,
@@ -242,19 +243,28 @@ def import_pubmed_task(
     """Import PubMed records by PMID into the run the endpoint created.
 
     Never retried and never re-raised: a redelivery resumes from the run's
-    events, and any failure here fails the run instead.
+    events, and any failure here fails the run instead (``IMPORT_TIME_LIMIT``
+    at the soft time limit). Every efetch passes the deployment-wide Redis
+    gate, so concurrent imports share NCBI's 3 requests/s.
     """
 
     async def run() -> dict[str, str]:
+        from redis.asyncio import Redis
+
         from app.core.config import settings
-        from app.services.pubmed_client import PubMedClient
+        from app.schemas.pubmed_import import ImportRunErrorCode
+        from app.services.pubmed_client import PubMedClient, RedisIntervalGate
         from app.services.pubmed_import_service import PubmedImportService
         from app.worker._session import worker_session
 
+        redis = Redis.from_url(settings.REDIS_URL)
         async with worker_session() as session:
+            error_code: ImportRunErrorCode | None = None
             try:
                 # A worker without NCBI_EMAIL raises ValueError here, failing the run.
-                client = PubMedClient(email=settings.NCBI_EMAIL or "")
+                client = PubMedClient(
+                    email=settings.NCBI_EMAIL or "", gate=RedisIntervalGate(redis)
+                )
                 status = await PubmedImportService(session).run_import(
                     project_id=UUID(project_id),
                     sync_run_id=UUID(sync_run_id),
@@ -263,18 +273,28 @@ def import_pubmed_task(
                 )
                 await session.commit()
                 return {"sync_run_id": sync_run_id, "status": status or "missing"}
-            except Exception:
-                await session.rollback()
-                await PubmedImportService(session).mark_failed(
-                    project_id=UUID(project_id), sync_run_id=UUID(sync_run_id)
+            except SoftTimeLimitExceeded:
+                error_code = "IMPORT_TIME_LIMIT"
+                logger.warning(
+                    "pubmed_import.time_limit",
+                    sync_run_id=sync_run_id,
+                    trace_id=trace_id,
+                    task_id=self.request.id,
                 )
-                await session.commit()
+            except Exception:
                 logger.exception(
                     "pubmed_import.aborted",
                     sync_run_id=sync_run_id,
                     trace_id=trace_id,
                     task_id=self.request.id,
                 )
-                return {"sync_run_id": sync_run_id, "status": "failed"}
+            finally:
+                await redis.aclose()
+            await session.rollback()
+            await PubmedImportService(session).mark_failed(
+                project_id=UUID(project_id), sync_run_id=UUID(sync_run_id), error_code=error_code
+            )
+            await session.commit()
+            return {"sync_run_id": sync_run_id, "status": "failed"}
 
     return run_task(run)

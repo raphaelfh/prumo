@@ -135,9 +135,12 @@ PubMed CSV / pasted PMIDs
 - One `article_sync_runs` row per non-dry-run call (`source = 'pubmed'`;
   the column is free text, no CHECK to widen), with its counts, and one
   `article_sync_events` row per received PMID: `status` in
-  `inserted | updated | duplicate_in_request | not_found | failed`,
-  `article_id` when resolved, `event_payload = {pmid}`. PRISMA reads these
-  events (§8).
+  `inserted | updated | unchanged | duplicate_in_request | not_found |
+  failed`, `article_id` when resolved, `event_payload = {pmid}`. PRISMA
+  reads these events (§8). `unchanged` is a match the import had nothing to
+  fill on: a PMID whose article already has every fill field (§4.2) is
+  recorded `unchanged` without an NCBI call, so re-importing a file does no
+  work.
 - One path for every size: the task is the only writer.
 - Role: project membership, the same check the Zotero import makes (§13,
   decision 4).
@@ -151,7 +154,8 @@ PubMed CSV / pasted PMIDs
   `extract_year`. Fields: title, abstract (structured abstracts joined with
   their labels), authors (`Last, Initials`), journal, year/month/day,
   volume, issue, pages, doi, pmid, pmcid, mesh_terms, keywords,
-  article_type (first publication type), language;
+  article_type (first publication type other than "English Abstract"),
+  language;
   `ingestion_source = 'pubmed'`; the raw efetch XML fragment goes to
   `source_payload`.
 - `get_by_canonical_identity` gains `pmid` (today it matches
@@ -421,7 +425,8 @@ Counts cover enrolled articles only; import never enrolls (§9).
 
 - **Identified**, per source:
   - PubMed: distinct PMIDs with a resolved `pubmed` event (`status` in
-    `inserted | updated | duplicate_in_request`, `article_id` not NULL)
+    `inserted | updated | unchanged | duplicate_in_request`, `article_id`
+    not NULL)
     whose article is enrolled;
   - other sources: enrolled articles whose source is not `pubmed`, grouped
     by `lower(coalesce(ingestion_source, 'manual'))`. A PubMed import never

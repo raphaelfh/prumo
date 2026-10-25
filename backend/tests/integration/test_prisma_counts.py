@@ -103,6 +103,38 @@ async def test_pubmed_matching_a_ris_article_counts_one_duplicate(
     assert counts.screened == 1
 
 
+async def test_unchanged_pubmed_record_counts_like_a_resolved_one(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await make_project(db_session)
+    await make_screening_article(
+        db_session,
+        project_id,
+        pmid="42706533",
+        ingestion_source="RIS",
+        abstract="A",
+        mesh_terms=["M"],
+        pmcid="PMC1",
+        keywords=["k"],
+        article_type="Letter",
+        language="eng",
+        volume="1",
+        issue="2",
+        pages="3",
+    )
+    await _import(db_session, project_id, ["42706533"])  # complete: recorded unchanged
+    await _enroll_all(db_session, project_id)
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert _identified(counts) == [
+        {"source": "pubmed", "count": 1},
+        {"source": "ris", "count": 1},
+    ]
+    assert counts.duplicates_removed == 1
+    assert counts.not_retrieved == 0
+
+
 async def test_reimporting_the_same_file_changes_nothing(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     await _import(db_session, project_id, FOUND)

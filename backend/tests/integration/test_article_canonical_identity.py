@@ -118,14 +118,14 @@ async def test_fill_only_upsert_fills_blanks_and_keeps_provenance(
     }
     repo = ArticleRepository(db_session)
 
-    article, created = await repo.fill_only_upsert(
+    article, outcome = await repo.fill_only_upsert(
         project_id=P,
         payload=payload,
         canonical_identity={"pmid": "111", "doi": "10.1/abc", "url_landing": None},
         fill_fields=PUBMED_FILL_FIELDS,
     )
 
-    assert created is False
+    assert outcome == "updated"
     assert article.id == existing.id
     assert article.abstract == "A"
     assert article.mesh_terms == ["M"]
@@ -152,14 +152,14 @@ async def test_fill_only_upsert_inserts_on_no_match(db_session: AsyncSession) ->
         "source_lineage": "pubmed",
     }
 
-    article, created = await ArticleRepository(db_session).fill_only_upsert(
+    article, outcome = await ArticleRepository(db_session).fill_only_upsert(
         project_id=P,
         payload=payload,
         canonical_identity={"pmid": "555", "doi": "10.1/new", "url_landing": None},
         fill_fields=PUBMED_FILL_FIELDS,
     )
 
-    assert created is True
+    assert outcome == "inserted"
     for key, value in payload.items():
         assert getattr(article, key) == value
     assert article.project_id == P
@@ -189,3 +189,18 @@ def test_pubmed_fill_fields_are_the_spec_list() -> None:
         "issue",
         "pages",
     )
+
+
+async def test_fill_only_upsert_with_nothing_to_fill_is_unchanged(db_session: AsyncSession) -> None:
+    repo = ArticleRepository(db_session)
+    payload = {"title": "T", "abstract": "A", "pmid": "777", "ingestion_source": "pubmed"}
+    identity = {"pmid": "777", "doi": None, "url_landing": None}
+    first, _ = await repo.fill_only_upsert(
+        project_id=P, payload=payload, canonical_identity=identity, fill_fields=PUBMED_FILL_FIELDS
+    )
+
+    again, outcome = await repo.fill_only_upsert(
+        project_id=P, payload=payload, canonical_identity=identity, fill_fields=PUBMED_FILL_FIELDS
+    )
+
+    assert (again.id, outcome) == (first.id, "unchanged")

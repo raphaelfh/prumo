@@ -158,3 +158,23 @@ def test_collective_author_and_doi_from_article_id_list() -> None:
     assert p.article_fields["doi"] == "10.1/abc"
     assert p.canonical_identity["doi"] == "10.1/abc"
     assert p.article_fields["title"] == "Untitled"
+
+
+def _types(*names: str) -> ET.Element:
+    inner = "".join(f"<PublicationType>{n}</PublicationType>" for n in names)
+    return _inline(article_inner=f"<PublicationTypeList>{inner}</PublicationTypeList>")
+
+
+@pytest.mark.parametrize(
+    ("types", "expected"),
+    [
+        (("English Abstract", "Journal Article"), "Journal Article"),
+        (("Journal Article", "English Abstract"), "Journal Article"),
+        (("English Abstract",), None),
+        ((), None),
+    ],
+    ids=["english-abstract-first", "english-abstract-last", "only-english-abstract", "none"],
+)
+def test_article_type_skips_english_abstract(types: tuple[str, ...], expected: str | None) -> None:
+    f = normalize_pubmed_record(record=_types(*types)).article_fields
+    assert f["article_type"] == expected

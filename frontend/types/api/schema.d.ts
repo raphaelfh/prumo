@@ -5087,12 +5087,22 @@ export interface components {
         /**
          * ImportRunRead
          * @description One import run's status and counts.
+         *
+         *     ``failed`` is the stored total of ``not_found`` plus ``fetch_failed``
+         *     (NCBI unavailable or an unparseable record); ``unchanged`` matched an
+         *     article and filled nothing.
          */
         ImportRunRead: {
             /** Completed At */
             completed_at: string | null;
+            /** Error Code */
+            error_code: ("NCBI_UNAVAILABLE" | "IMPORT_TIME_LIMIT" | "IMPORT_STALE") | null;
             /** Failed */
             failed: number;
+            /** Fetch Failed */
+            fetch_failed: number;
+            /** Not Found */
+            not_found: number;
             /** Persisted */
             persisted: number;
             /** Skipped */
@@ -5119,6 +5129,8 @@ export interface components {
             sync_run_id: string;
             /** Total Received */
             total_received: number;
+            /** Unchanged */
+            unchanged: number;
             /** Updated */
             updated: number;
         };

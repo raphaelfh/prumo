@@ -33,7 +33,10 @@ const STARTED = {kind: 'started', status: 'pending', sync_run_id: 's1'};
 function run(overrides: Partial<ImportRun> = {}): ImportRun {
   return {
     completed_at: null,
+    error_code: null,
     failed: 0,
+    fetch_failed: 0,
+    not_found: 0,
     persisted: 0,
     skipped: 0,
     source: 'pubmed',
@@ -41,6 +44,7 @@ function run(overrides: Partial<ImportRun> = {}): ImportRun {
     status: 'running',
     sync_run_id: 's1',
     total_received: 4,
+    unchanged: 0,
     updated: 0,
     ...overrides,
   };

@@ -27,9 +27,10 @@ from app.services.screening_review_service import assignment_states
 
 PUBMED = "pubmed"
 _MANUAL = "manual"
-# Events that mean the PMID was found: a repeat inside one request still names a record.
-_IDENTIFIED_STATUSES = ("inserted", "updated", "duplicate_in_request")
-_FOUND_STATUSES = ("inserted", "updated")
+# Events that mean the PMID was found: a repeat inside one request still names a
+# record, and ``unchanged`` matched an article it had nothing to fill on.
+_IDENTIFIED_STATUSES = ("inserted", "updated", "unchanged", "duplicate_in_request")
+_FOUND_STATUSES = ("inserted", "updated", "unchanged")
 
 
 @dataclass(frozen=True)

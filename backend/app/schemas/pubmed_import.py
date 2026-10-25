@@ -9,6 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 MAX_PMIDS = 10_000
 
 ImportRunStatus = Literal["pending", "running", "completed", "failed"]
+# Why a run failed, when known: NCBI kept failing, the task hit its time
+# limit, or the run stayed live past the stale cutoff.
+ImportRunErrorCode = Literal["NCBI_UNAVAILABLE", "IMPORT_TIME_LIMIT", "IMPORT_STALE"]
 
 
 class PubmedImportRequest(BaseModel):
@@ -45,7 +48,12 @@ PubmedImportResult = Annotated[PubmedDryRunRead | PubmedImportStarted, Field(dis
 
 
 class ImportRunRead(BaseModel):
-    """One import run's status and counts."""
+    """One import run's status and counts.
+
+    ``failed`` is the stored total of ``not_found`` plus ``fetch_failed``
+    (NCBI unavailable or an unparseable record); ``unchanged`` matched an
+    article and filled nothing.
+    """
 
     sync_run_id: UUID
     source: Literal["pubmed", "zotero"]
@@ -53,7 +61,11 @@ class ImportRunRead(BaseModel):
     total_received: int
     persisted: int
     updated: int
+    unchanged: int
     skipped: int
     failed: int
+    not_found: int
+    fetch_failed: int
+    error_code: ImportRunErrorCode | None
     started_at: datetime
     completed_at: datetime | None

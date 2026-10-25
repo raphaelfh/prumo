@@ -6,7 +6,7 @@ Article and file persistence layer.
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, case, func, select
@@ -29,6 +29,9 @@ def doi_match_key(
     return func.regexp_replace(
         func.lower(func.btrim(column)), r"^(https?://(dx\.)?doi\.org/|doi:\s*)", ""
     )
+
+
+FillOutcome = Literal["inserted", "updated", "unchanged"]
 
 
 def _is_blank(value: Any) -> bool:
@@ -156,6 +159,31 @@ class ArticleRepository(BaseRepository[Article]):
         )
         return {pmid for pmid in result.scalars().all() if pmid is not None}
 
+    async def complete_pmid_matches(
+        self, project_id: UUID, pmids: Sequence[str], fields: Sequence[str]
+    ) -> dict[str, UUID]:
+        """``{pmid: article_id}`` for the PMIDs whose match has every ``fields`` filled.
+
+        The match is the article a PMID lookup in ``get_by_canonical_identity``
+        returns (the project's oldest with that PMID), so a fill-only upsert
+        of any of these PMIDs would write nothing.
+        """
+        if not pmids:
+            return {}
+        result = await self.db.execute(
+            select(Article)
+            .where(Article.project_id == project_id)
+            .where(Article.pmid.in_(list(pmids)))
+            .order_by(Article.pmid, Article.created_at.asc(), Article.id.asc())
+            .distinct(Article.pmid)
+        )
+        return {
+            article.pmid: article.id
+            for article in result.scalars().all()
+            if article.pmid is not None
+            and not any(_is_blank(getattr(article, field)) for field in fields)
+        }
+
     async def upsert_by_canonical_identity(
         self,
         *,
@@ -192,11 +220,12 @@ class ArticleRepository(BaseRepository[Article]):
         payload: dict[str, Any],
         canonical_identity: dict[str, str | None],
         fill_fields: Sequence[str],
-    ) -> tuple[Article, bool]:
+    ) -> tuple[Article, FillOutcome]:
         """Insert, or fill only the blank ``fill_fields`` of the matched article.
 
         A match keeps every other column (title, provenance, Zotero keys,
-        ``last_synced_at``) exactly as the first source wrote it.
+        ``last_synced_at``) exactly as the first source wrote it; it is
+        ``unchanged`` when no field was blank or the payload had nothing for it.
         """
         existing = await self.get_by_canonical_identity(
             project_id,
@@ -205,13 +234,15 @@ class ArticleRepository(BaseRepository[Article]):
             url_landing=canonical_identity.get("url_landing"),
         )
         if existing:
+            filled = False
             for field in fill_fields:
                 incoming = payload.get(field)
                 if _is_blank(incoming) or not _is_blank(getattr(existing, field)):
                     continue
                 setattr(existing, field, incoming)
+                filled = True
             await self.db.flush()
-            return existing, False
+            return existing, "updated" if filled else "unchanged"
 
         article = Article(
             project_id=project_id,
@@ -219,7 +250,7 @@ class ArticleRepository(BaseRepository[Article]):
             **payload,
         )
         created = await self.create(article)
-        return created, True
+        return created, "inserted"
 
     async def mark_removed_at_source(self, article: Article) -> Article:
         article.sync_state = "removed_at_source"
@@ -306,7 +337,12 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         return (await self.db.execute(query)).scalar_one_or_none()
 
     async def update_counts(
-        self, run: ArticleSyncRun, counts: dict[str, int], status: str
+        self,
+        run: ArticleSyncRun,
+        counts: dict[str, int],
+        status: str,
+        *,
+        failure_summary: dict[str, Any] | None = None,
     ) -> ArticleSyncRun:
         run.total_received = counts.get("total_received", run.total_received)
         run.persisted = counts.get("persisted", run.persisted)
@@ -316,6 +352,8 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         run.removed_at_source = counts.get("removed_at_source", run.removed_at_source)
         run.reactivated = counts.get("reactivated", run.reactivated)
         run.status = status
+        if failure_summary is not None:
+            run.failure_summary = failure_summary
         if status in {"completed", "failed", "cancelled"}:
             run.completed_at = datetime.now(UTC)
         await self.db.flush()

@@ -264,7 +264,11 @@ class ScreeningReviewService:
         return await self._read(ref.project_id, assignment_id, reviewer_id, reviewer_count)
 
     async def conflicts(self, project_id: UUID, viewer_id: UUID) -> ScreeningConflictsRead:
-        """Unruled conflicts in queue order, each with every reviewer's current decision."""
+        """Unruled conflicts in queue order, each with every reviewer's current decision.
+
+        Records the caller reviewed are excluded: a reviewer never arbitrates
+        their own record.
+        """
         reviewer_count = await self._reviewer_count(project_id)
         roles = await screening_roles(self.db, project_id, viewer_id)
         snapshots = await assignment_states(
@@ -379,8 +383,8 @@ class ScreeningReviewService:
             raise AssignmentNotFoundError
         roles = await screening_roles(self.db, project_id, viewer_id)
         state = snapshot.state
-        seated = snapshot.seats(viewer_id)
         mine = next((d for d in snapshot.decisions if d.reviewer_id == viewer_id), None)
+        seated = mine is not None  # the seat rule: a decision on this record
         peers = (
             [d for d in snapshot.decisions if d.reviewer_id != viewer_id]
             if reveals_peers(state, seated=seated, is_arbitrator=roles.can_arbitrate)

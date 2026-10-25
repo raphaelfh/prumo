@@ -7079,7 +7079,7 @@
         "type": "object"
       },
       "ImportRunRead": {
-        "description": "One import run's status and counts.",
+        "description": "One import run's status and counts.\n\n``failed`` is the stored total of ``not_found`` plus ``fetch_failed``\n(NCBI unavailable or an unparseable record); ``unchanged`` matched an\narticle and filled nothing.",
         "properties": {
           "completed_at": {
             "anyOf": [
@@ -7093,8 +7093,32 @@
             ],
             "title": "Completed At"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NCBI_UNAVAILABLE",
+                  "IMPORT_TIME_LIMIT",
+                  "IMPORT_STALE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "failed": {
             "title": "Failed",
+            "type": "integer"
+          },
+          "fetch_failed": {
+            "title": "Fetch Failed",
+            "type": "integer"
+          },
+          "not_found": {
+            "title": "Not Found",
             "type": "integer"
           },
           "persisted": {
@@ -7137,6 +7161,10 @@
             "title": "Total Received",
             "type": "integer"
           },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
           "updated": {
             "title": "Updated",
             "type": "integer"
@@ -7149,8 +7177,12 @@
           "total_received",
           "persisted",
           "updated",
+          "unchanged",
           "skipped",
           "failed",
+          "not_found",
+          "fetch_failed",
+          "error_code",
           "started_at",
           "completed_at"
         ],

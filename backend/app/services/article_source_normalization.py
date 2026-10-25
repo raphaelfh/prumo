@@ -175,6 +175,16 @@ def _pubmed_authors(article: ET.Element) -> list[str] | None:
     return authors or None
 
 
+# A translation marker, not a study design: never the article's type.
+_NOT_AN_ARTICLE_TYPE = "English Abstract"
+
+
+def _pubmed_article_type(article: ET.Element) -> str | None:
+    """The first ``PublicationType`` that names a type; None when there is none."""
+    types = _xml_texts(article, "PublicationTypeList/PublicationType") or []
+    return next((t for t in types if t != _NOT_AN_ARTICLE_TYPE), None)
+
+
 # Fields a PubMed fetch may fill on an article another source created, only
 # where blank. ``authors`` is deliberately absent (spec-gate #16).
 PUBMED_FILL_FIELDS = (
@@ -234,7 +244,7 @@ def normalize_pubmed_record(*, record: ET.Element) -> CanonicalArticlePayload:
         "pmcid": pmcid,
         "mesh_terms": _xml_texts(citation, "MeshHeadingList/MeshHeading/DescriptorName"),
         "keywords": _xml_texts(citation, "KeywordList/Keyword"),
-        "article_type": _xml_text(article, "PublicationTypeList/PublicationType"),
+        "article_type": _pubmed_article_type(article),
         "language": _xml_text(article, "Language"),
         "ingestion_source": "pubmed",
         "source_lineage": "pubmed",
