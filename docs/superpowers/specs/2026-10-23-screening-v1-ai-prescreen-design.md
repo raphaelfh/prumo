@@ -1,6 +1,6 @@
 ---
 status: approved
-last_reviewed: 2026-10-23
+last_reviewed: 2026-10-25
 owner: '@raphaelfh'
 ---
 
@@ -81,7 +81,8 @@ duplicate that a later Zotero or RIS import creates for a PubMed article.
   recovered.
 - A reviewer able to read a peer's decision, or an AI suggestion while AI is
   hidden, by any path (API or PostgREST) before the assignment has an
-  outcome. Arbitrators see the conflicting decisions they resolve.
+  outcome. Arbitrators see the conflicting decisions they resolve, never on
+  a record they reviewed themselves.
 - A second write path for articles, or an import that rewrites another
   source's provenance.
 - Stored state that can be derived: outcomes, run status and PRISMA counts
@@ -101,7 +102,7 @@ duplicate that a later Zotero or RIS import creates for a PubMed article.
 | DOI + fuzzy dedup with a review panel, `rapidfuzz` | Exact PMID / normalized DOI only | 1,976/1,976 records carry a PMID and PubMed is the only source. Fuzzy matching lands with the second source, on `pg_trgm` (`idx_articles_trgm_title` exists). |
 | `articles.screening_status` + triggers | Not in v1 | Nothing reads it before extraction gating; it duplicates the outcomes. |
 | Member-read RLS policies | Backend-only tables (RLS on, `REVOKE ALL FROM anon, authenticated`) | Member-read would reopen the blind-review leak closed by `0025_reviewer_scoped_select_rls`. Every read goes through the API, which applies blind/reveal. |
-| One decision row per reviewer, `version` bumps; a stored outcome | INSERT-only decisions and arbitrations; the current decision is the reviewer's latest row; the outcome is derived on read | Constitution §IX: human selections are append-only and switching never rewrites history. Deriving the outcome removes the supersede bookkeeping and the publish race (§7). |
+| One decision row per reviewer, `version` bumps; a stored outcome | INSERT-only decisions and arbitrations; a reviewer's decision is final (§13.5), a re-ruling is a new row; the outcome is derived on read | Constitution §IX: human selections are append-only and a re-ruling never rewrites history. Deriving the outcome removes the supersede bookkeeping and the publish race (§7). |
 | AI in Phase β | AI in v1, as its own slice after the human-only one | The first dataset has ~2,000 records; the ask is a pre-screen with human review. |
 | PubMed query builder | PMID list | The user already has the export; `esearch` can feed the same path later. |
 
@@ -198,7 +199,7 @@ screening_assignments        an article enrolled in screening
   UNIQUE (project_id, article_id, phase)
   queue order: ORDER BY enrolled_at, md5(id::text)   (§6.3)
 
-screening_decisions          INSERT-only; one row per revision
+screening_decisions          INSERT-only; one row per reviewer (final, §7)
   id, assignment_id → screening_assignments ON DELETE CASCADE,
   reviewer_id, decision ('include'|'exclude'|'maybe'),
   exclusion_reason (one of the protocol's exclusion strings, snapshotted),
@@ -366,14 +367,18 @@ wide, which is why the report always shows the count it rests on.
 - `GET .../queue` returns, in queue order with no sort parameter, up to 20
   assignments awaiting the caller: no current decision by the caller, no
   ruling, and fewer than `reviewer_count` distinct reviewers. Awaiting peer
-  = the caller has decided and fewer than `reviewer_count` reviewers have. A
-  reviewer changes an earlier decision from `GET /screening/assignments/{aid}`,
-  not from the queue.
+  = the caller has decided and fewer than `reviewer_count` reviewers have.
+- **A decision is final.** A reviewer who has a decision on an assignment
+  holds a seat on it; a second decision by that reviewer answers 409
+  `SCREENING_DECISION_FINAL` in every state (pending, conflict, decided,
+  arbitrated), so the refusal says nothing about the peers. Only an
+  arbitrator reopens a record, and a seated reviewer is never that record's
+  arbitrator (§13.5).
 - **Outcome, derived on read** from the assignment's current decisions and
   ruling:
-  - a ruling exists → the latest ruling (`arbitrated`). It stands: a
-    reviewer's later decision is recorded but does not reopen it; only an
-    arbitrator rules again (the arbitrator-only reopen of ADR 0017);
+  - a ruling exists → the latest ruling (`arbitrated`). It stands:
+    reviewers cannot post again, and only an unseated arbitrator rules
+    again (the arbitrator-only reopen of ADR 0017);
   - else `reviewer_count = 1` and a current decision exists → that decision
     (`solo`);
   - else all `reviewer_count` current decisions exist and have the same
@@ -382,15 +387,17 @@ wide, which is why the report always shows the count it rests on.
   - else all exist and disagree → in conflict, on the conflicts list;
   - else → pending.
 
-  Changing a decision is a new row; the outcome follows from the rows, so
-  there is nothing to supersede.
+  A re-ruling is a new row; the outcome follows from the rows, so there is
+  nothing to supersede.
 - **Writes are serialized per assignment.** The decision and arbitration
   routes open with `SELECT ... FOR NO KEY UPDATE` on the
   `screening_assignments` row before reading current decisions (it does not
   block the KEY SHARE an FK insert takes). Two reviewers deciding at the
   same moment therefore see each other's row, and the outcome is
-  consistent. A new reviewer is refused with 409 once the assignment has
-  `reviewer_count` distinct reviewers. An arbitration is accepted only when
+  consistent. A seated reviewer's second decision is refused with 409 under
+  that lock, and a new reviewer once the assignment has `reviewer_count`
+  distinct reviewers. An arbitration by a seated caller answers 403
+  `SCREENING_SELF_ARBITRATION`; otherwise it is accepted only when
   the derived state is in conflict or arbitrated (else 409); it sends the
   ids of the current decisions it ruled on and gets 409 if they changed;
   `selected_decision_id` must be one of them, bound through
@@ -401,8 +408,10 @@ wide, which is why the report always shows the count it rests on.
   `SELECT ... FOR SHARE` on the `projects` row, so it serializes with the
   `PUT` (which `update_settings_key` row-locks).
 - Blind, always: the read path returns other reviewers' current decisions
-  only once the assignment has an outcome, and to arbitrators on conflicts
-  (the reveal idea of ADR 0012, applied in the screening read service).
+  only once the assignment has an outcome, and to unseated arbitrators on
+  conflicts (the reveal idea of ADR 0012, applied in the screening read
+  service). To a seated arbitrator their own conflicted record reads as
+  `awaiting_others`, as to any reviewer, and stays off their conflicts list.
 
 ## 8. PRISMA counts (slice A)
 
@@ -454,8 +463,8 @@ All under `/api/v1`, `ApiResponse` envelope.
 | `GET /projects/{id}/screening/queue` | `ensure_project_reviewer` | project from path |
 | `GET /screening/assignments/{aid}` | member of the assignment's project | new by-id guard `api/deps/scope.load_assignment_for_member` (resolves the row, then checks membership on its project, as `load_run_for_member`) |
 | `POST /screening/assignments/{aid}/decisions` | `ensure_project_reviewer` on the assignment's project | `load_assignment_for_member`; `ai_suggestion_id` checked against the current suggestion, `ai_visible_at_decision` derived (§5) |
-| `GET /projects/{id}/screening/conflicts` | `ensure_project_arbitrator` | project from path |
-| `POST /screening/assignments/{aid}/arbitration` | `ensure_project_arbitrator` on the assignment's project | `load_assignment_for_member`; the ruled-on decision ids through `screening_review_service.owned_decisions` |
+| `GET /projects/{id}/screening/conflicts` | `ensure_project_arbitrator` | project from path; records the caller reviewed are excluded |
+| `POST /screening/assignments/{aid}/arbitration` | `ensure_project_arbitrator` on the assignment's project | `load_assignment_for_member`; the ruled-on decision ids through `screening_review_service.owned_decisions`; a caller with a decision on the record gets 403 |
 | `POST /projects/{id}/screening/ai-prescreen` | `ensure_project_manager`, then `assert_engine_ready` | assignment selection bound by project in the WHERE clause |
 | `GET /projects/{id}/screening/ai-run` · `POST /projects/{id}/screening/ai-run/cancel` | member · manager | project from path; the active run, else the latest, with derived progress; cancel answers 409 when none is active |
 | `GET /projects/{id}/screening/calibration` | `ensure_project_member` | project from path |
@@ -508,8 +517,10 @@ introduces them, and slice A adds `assignment_id` to `SCOPE_COLUMNS` in
     same assignment concurrently still yield a consensus outcome; a reviewer
     beyond `reviewer_count` gets 409; an arbitration on stale decision ids,
     or on an assignment not in conflict, gets 409; a forged
-    `selected_decision_id` from another assignment is refused; a reviewer
-    change after a ruling leaves the ruling in force; a `reviewer_count`
+    `selected_decision_id` from another assignment is refused; a reviewer's
+    second decision gets 409 in every state (including after a ruling, and
+    two at once write one row); a seated arbitrator sees their conflict as
+    `awaiting_others`, does not list it and gets 403 on ruling it; a `reviewer_count`
     change after the first decision gets 409; blind masking in the read
     path; reviewer vs viewer on the decision route; enroll is idempotent;
   - RLS: `has_table_privilege` is false for `anon` and `authenticated` ×
@@ -560,6 +571,18 @@ Decided by the maintainer on 2026-10-23, after the review of revision 2:
    With PRISMA derived from resolved events and the sync tables closed to
    client writes, a manager-only import protects nothing the counts depend
    on.
+
+Decided by the maintainer on 2026-10-25, after the review of #1053:
+
+5. **A decision is final; no self-arbitration.** In independent dual
+   screening a vote cast after a disagreement is a resolution, not a review,
+   so it belongs to the arbitrator. A reviewer's submitted decision is final
+   (409 on a second one, in every state); only an arbitrator reopens a
+   record; and a reviewer with a decision on a record is never its
+   arbitrator: they see it as `awaiting_others`, it is off their conflicts
+   list, and a ruling by them is 403. Refusing a change only "once all have
+   decided" would itself tell the reviewer that the peer had voted, so the
+   refusal does not depend on the peers' state.
 
 ## 14. References
 

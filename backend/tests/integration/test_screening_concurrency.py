@@ -15,16 +15,15 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.project import Project
-from app.models.screening import ScreeningArbitration, ScreeningDecision
+from app.models.screening import ScreeningDecision
 from app.repositories.screening_repository import ScreeningRepository
-from app.schemas.screening import ScreeningArbitrationCreate, ScreeningDecisionCreate
+from app.schemas.screening import ScreeningDecisionCreate
 from app.services.screening_config_service import ScreeningConfigService, reviewer_count_of
 from app.services.screening_errors import ScreeningStateError
 from app.services.screening_outcome import Outcome
 from app.services.screening_review_service import ScreeningReviewService, assignment_states
 from tests.integration.conftest import SEED
 from tests.integration.helpers.screening_fixtures import (
-    add_decision,
     add_member,
     enroll_articles,
     make_screening_article,
@@ -146,56 +145,22 @@ async def test_reviewer_count_change_racing_the_first_decision_is_frozen(
         assert await _decision_rows(session_factory, assignment) == 1
 
 
-async def test_arbitration_racing_a_decision_change_is_stale(session_factory: Factory) -> None:
-    async with _screening(session_factory, reviewers=2) as (project_id, (a, b), assignment):
-        async with session_factory() as s:
-            d_a = await add_decision(s, assignment, a, "include")
-            d_b = await add_decision(s, assignment, b, "exclude")
-            await s.commit()
-        decided, ruled = asyncio.Event(), asyncio.Event()
-        recorded: list[str] = []
+async def test_one_reviewer_posting_twice_at_once_writes_one_decision(
+    session_factory: Factory,
+) -> None:
+    """The finality check runs under the assignment lock: the second post sees the first."""
+    async with _screening(session_factory, reviewers=2) as (_, (a, _), assignment):
+        results = await asyncio.gather(
+            _decide(session_factory, assignment, a),
+            _decide(session_factory, assignment, a),
+            return_exceptions=True,
+        )
 
-        async def change() -> None:
-            async with session_factory() as s1:
-                await ScreeningReviewService(s1).decide(
-                    assignment, a, ScreeningDecisionCreate(decision="maybe")
-                )
-                decided.set()
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(ruled.wait(), timeout=1)
-                await s1.commit()
-
-        async def rule() -> None:
-            await decided.wait()
-            body = ScreeningArbitrationCreate(
-                ruled_on_decision_ids=[d_a, d_b], selected_decision_id=d_b
-            )
-            async with session_factory() as s2:
-                try:
-                    await ScreeningReviewService(s2).arbitrate(assignment, MANAGER, body)
-                    await s2.commit()
-                except ScreeningStateError as exc:
-                    recorded.append(exc.code)
-                finally:
-                    ruled.set()
-
-        await asyncio.gather(change(), rule())
-
-        assert recorded == ["SCREENING_STALE_DECISIONS"]
-        async with session_factory() as s:
-            rulings = (
-                await s.execute(
-                    select(func.count())
-                    .select_from(ScreeningArbitration)
-                    .where(ScreeningArbitration.assignment_id == assignment)
-                )
-            ).scalar_one()
-            states = await assignment_states(
-                s, project_id=project_id, reviewer_count=2, assignment_ids=[assignment]
-            )
-        assert rulings == 0
-        mine = next(d for d in states[assignment].decisions if d.reviewer_id == a)
-        assert mine.decision == "maybe"
+        errors = [r for r in results if isinstance(r, BaseException)]
+        assert len(errors) == 1
+        assert isinstance(errors[0], ScreeningStateError)
+        assert errors[0].code == "SCREENING_DECISION_FINAL"
+        assert await _decision_rows(session_factory, assignment) == 1
 
 
 async def _current_decision_of(factory: Factory, project: UUID, assignment: UUID, who: UUID) -> str:

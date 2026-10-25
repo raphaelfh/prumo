@@ -43,7 +43,7 @@ from app.schemas.screening import (
 from app.services.profile_names import profile_names
 from app.services.project_ai_context import load_exclusion_reasons
 from app.services.screening_config_service import reviewer_count_of, screening_roles
-from app.services.screening_errors import ScreeningStateError
+from app.services.screening_errors import ScreeningSelfArbitrationError, ScreeningStateError
 from app.services.screening_outcome import (
     AssignmentState,
     CurrentDecision,
@@ -92,6 +92,10 @@ class AssignmentSnapshot:
     decisions: tuple[CurrentDecision, ...]
     ruling: CurrentRuling | None
     state: AssignmentState
+
+    def seats(self, reviewer_id: UUID) -> bool:
+        """THE seat rule: ``reviewer_id`` has a decision on this record."""
+        return any(d.reviewer_id == reviewer_id for d in self.decisions)
 
 
 _UNCONFIGURED = AssignmentState("pending", None)
@@ -201,8 +205,7 @@ class ScreeningReviewService:
         awaiting_others = sum(
             1
             for snapshot in snapshots.values()
-            if snapshot.state.outcome is None
-            and any(d.reviewer_id == reviewer_id for d in snapshot.decisions)
+            if snapshot.state.outcome is None and snapshot.seats(reviewer_id)
         )
         return ScreeningQueueRead(
             items=[
@@ -247,8 +250,11 @@ class ScreeningReviewService:
                 ApiErrorCode.SCREENING_UNKNOWN_EXCLUSION_REASON,
                 "The protocol's exclusion reasons changed. Reload and pick again.",
             )
-        reviewers = {d.reviewer_id for d in snapshot.decisions}
-        if reviewer_id not in reviewers and len(reviewers) >= reviewer_count:
+        if snapshot.seats(reviewer_id):
+            raise ScreeningStateError(
+                ApiErrorCode.SCREENING_DECISION_FINAL, "You already decided on this record."
+            )
+        if len(snapshot.decisions) >= reviewer_count:
             raise ScreeningStateError(
                 ApiErrorCode.SCREENING_REVIEWER_CAP, "This record already has all its reviewers."
             )
@@ -268,7 +274,11 @@ class ScreeningReviewService:
             assignment_id: snapshot
             for assignment_id, snapshot in snapshots.items()
             if snapshot.state.phase == "conflict"
-            and reveals_peers(snapshot.state, is_arbitrator=roles.can_arbitrate)
+            and reveals_peers(
+                snapshot.state,
+                seated=snapshot.seats(viewer_id),
+                is_arbitrator=roles.can_arbitrate,
+            )
         }
         items: list[ScreeningConflictItem] = []
         if in_conflict:
@@ -293,7 +303,10 @@ class ScreeningReviewService:
     async def arbitrate(
         self, assignment_id: UUID, arbitrator_id: UUID, body: ScreeningArbitrationCreate
     ) -> ScreeningAssignmentRead:
-        """Append a ruling on exactly the current decisions; a re-ruling is a new row."""
+        """Append a ruling on exactly the current decisions; a re-ruling is a new row.
+
+        Never by a seated arbitrator: a reviewer does not resolve their own record.
+        """
         ref = await get_assignment_ref(self.db, assignment_id)
         reviewer_count = reviewer_count_of(await self.projects.settings_for_share(ref.project_id))
         if reviewer_count is None:
@@ -312,6 +325,8 @@ class ScreeningReviewService:
         ruled_on = await owned_decisions(
             self.db, assignment_id=assignment_id, decision_ids=body.ruled_on_decision_ids
         )
+        if snapshot.seats(arbitrator_id):
+            raise ScreeningSelfArbitrationError
         outcome = snapshot.state.outcome
         if snapshot.state.phase != "conflict" and (outcome is None or outcome.kind != "arbitrated"):
             raise ScreeningStateError(
@@ -364,10 +379,11 @@ class ScreeningReviewService:
             raise AssignmentNotFoundError
         roles = await screening_roles(self.db, project_id, viewer_id)
         state = snapshot.state
+        seated = snapshot.seats(viewer_id)
         mine = next((d for d in snapshot.decisions if d.reviewer_id == viewer_id), None)
         peers = (
             [d for d in snapshot.decisions if d.reviewer_id != viewer_id]
-            if reveals_peers(state, is_arbitrator=roles.can_arbitrate)
+            if reveals_peers(state, seated=seated, is_arbitrator=roles.can_arbitrate)
             else []
         )
         names = await profile_names(self.db, {d.reviewer_id for d in peers}) if peers else {}
@@ -378,8 +394,7 @@ class ScreeningReviewService:
             article=ScreeningArticle.model_validate(articles[0][1], from_attributes=True),
             status=caller_status(
                 state,
-                snapshot.decisions,
-                viewer_id,
+                seated=seated,
                 is_arbitrator=roles.can_arbitrate,
                 can_review=roles.can_review,
             ),

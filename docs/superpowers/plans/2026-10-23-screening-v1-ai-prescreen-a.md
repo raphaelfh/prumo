@@ -154,7 +154,7 @@ cd "$WT/backend" && uv run alembic upgrade head && uv run python -m app.seed
 **Interfaces:**
 - Produces (`backend/app/models/screening.py`): `SCREENING_PHASE = "title_abstract"` (consumed by Task 5's enroll). Define no `SCREENING_DECISIONS` tuple or any other constant nothing reads: the CHECK text carries the three decision values and Task 6's `Literal` alias names them (an unread constant is dead code; vulture is shrink-only). ORM classes on `Base, UUIDMixin` (as `backend/app/models/ai_usage_ledger.py:21`):
   - `ScreeningAssignment` (`screening_assignments`): `project_id: UUID`, `article_id: UUID`, `phase: str` (default `SCREENING_PHASE`), `enrolled_at: datetime` (server default `now()`), `enrolled_by: UUID | None`.
-  - `ScreeningDecision` (`screening_decisions`): `assignment_id: UUID`, `reviewer_id: UUID`, `decision: str`, `exclusion_reason: str | None`, `rationale: str | None`, `created_at: datetime` (server default `now()`).
+  - `ScreeningDecision` (`screening_decisions`): `assignment_id: UUID`, `reviewer_id: UUID`, `decision: str`, `exclusion_reason: str | None`, `rationale: str | None`, `created_at: datetime` (server default `clock_timestamp()`, fix R1).
   - `ScreeningArbitration` (`screening_arbitrations`): `assignment_id: UUID`, `decision: str`, `exclusion_reason: str | None`, `selected_decision_id: UUID | None`, `rationale: str | None`, `decided_by: UUID`, `created_at: datetime`.
 - Later tasks rely on these exact names. The ORM keeps `UUIDMixin`'s Python default `uuid4` (`backend/app/models/base.py:202-206`) and the migration adds the DB default `gen_random_uuid()` (as `0091_ai_usage_ledger.py:50`). SQLAlchemy renders that Python default ONCE for every row of an `INSERT … SELECT`, so Task 5's enroll names `id` and selects `gen_random_uuid()` per row — never rely on either default there.
 
@@ -177,7 +177,7 @@ cd "$WT/backend" && uv run alembic upgrade head && uv run python -m app.seed
 | | `decision` | text NOT NULL, CHECK `decision`: `decision IN ('include', 'exclude', 'maybe')` |
 | | `exclusion_reason` | text NULL, CHECK `reason_on_exclude`: `exclusion_reason IS NULL OR decision = 'exclude'` |
 | | `rationale` | text NULL |
-| | `created_at` | timestamptz NOT NULL default `now()` |
+| | `created_at` | timestamptz NOT NULL default `clock_timestamp()` (fix R1: a late committer must read as later) |
 | | unique | `uq_screening_decisions_assignment_id_id` (`assignment_id`, `id`) — target of the arbitrations' composite FK (as `uq_extraction_reviewer_decisions_run_id`, `backend/app/models/extraction_workflow.py:210-214`) |
 | | index | `ix_screening_decisions_current` (`assignment_id`, `reviewer_id`, `created_at DESC`, `id DESC`) |
 | | index | `ix_screening_decisions_reviewer_id` (`reviewer_id`) — profile-delete RESTRICT check |

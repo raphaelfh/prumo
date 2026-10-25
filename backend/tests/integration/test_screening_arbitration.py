@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import pytest
 from httpx import Response
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +67,10 @@ async def _rule(
     body = {"ruled_on_decision_ids": [str(i) for i in ruled_on]}
     body.update({k: str(v) if isinstance(v, UUID) else v for k, v in fields.items()})
     return await _request(db, user, "POST", _arbitration_path(assignment_id), body)
+
+
+def _assignment_path(assignment_id: UUID) -> str:
+    return f"/api/v1/screening/assignments/{assignment_id}"
 
 
 def _error_code(response: Response) -> str:
@@ -218,26 +223,16 @@ async def test_rule_by_override(db_session: AsyncSession) -> None:
     assert (ruling.selected_decision_id, ruling.decision, ruling.rationale) == (None, "maybe", "R")
 
 
-async def test_stale_decision_ids_are_409(db_session: AsyncSession) -> None:
-    project_id, a, b, (a1,) = await _project(db_session)
+async def test_ruling_on_part_of_the_decisions_is_409(db_session: AsyncSession) -> None:
+    _, a, b, (a1,) = await _project(db_session)
     d_a, d_b = await _conflict(db_session, a1, a, b)
-    listed = (await _conflicts(db_session, MANAGER, project_id)).json()["data"]["items"]
-    assert {d["id"] for d in listed[0]["decisions"]} == {str(d_a), str(d_b)}
-    changed = await _request(
-        db_session,
-        a,
-        "POST",
-        f"/api/v1/screening/assignments/{a1}/decisions",
-        {"decision": "maybe"},
-    )
-    d_a2 = UUID(changed.json()["data"]["my_decision"]["id"])
 
-    stale = await _rule(db_session, MANAGER, a1, [d_a, d_b], selected_decision_id=d_b)
+    stale = await _rule(db_session, MANAGER, a1, [d_b], selected_decision_id=d_b)
     assert stale.status_code == 409
     assert _error_code(stale) == "SCREENING_STALE_DECISIONS"
     assert await _rulings(db_session, a1) == 0
 
-    fresh = await _rule(db_session, MANAGER, a1, [d_a2, d_b], selected_decision_id=d_b)
+    fresh = await _rule(db_session, MANAGER, a1, [d_a, d_b], selected_decision_id=d_b)
     assert fresh.status_code == 200, fresh.text
 
 
@@ -318,14 +313,51 @@ async def test_reviewer_cannot_arbitrate(db_session: AsyncSession) -> None:
     assert await _rulings(db_session, a1) == 0
 
 
-async def test_arbitrator_may_rule_a_conflict_they_reviewed(db_session: AsyncSession) -> None:
-    _, _, b, (a1,) = await _project(db_session)
+@pytest.mark.parametrize("seat_role", ["manager", "consensus"])
+async def test_a_seated_arbitrator_cannot_see_or_rule_their_own_conflict(
+    db_session: AsyncSession, seat_role: str
+) -> None:
+    project_id, _, b, (a1,) = await _project(db_session)
+    consensus = await add_member(db_session, project_id, "consensus")
+    seated, unseated = (MANAGER, consensus) if seat_role == "manager" else (consensus, MANAGER)
+    d_s, d_b = await _conflict(db_session, a1, seated, b)
+
+    view = (await _request(db_session, seated, "GET", _assignment_path(a1))).json()["data"]
+    assert (view["status"], view["peer_decisions"], view["outcome"]) == (
+        "awaiting_others",
+        [],
+        None,
+    )
+    assert view["my_decision"]["id"] == str(d_s)
+    listed = (await _conflicts(db_session, seated, project_id)).json()["data"]["items"]
+    assert listed == []
+    refused = await _rule(db_session, seated, a1, [d_s, d_b], selected_decision_id=d_s)
+    assert refused.status_code == 403
+    assert _error_code(refused) == "SCREENING_SELF_ARBITRATION"
+    assert await _rulings(db_session, a1) == 0
+
+    listed = (await _conflicts(db_session, unseated, project_id)).json()["data"]["items"]
+    assert [item["assignment_id"] for item in listed] == [str(a1)]
+    ruled = await _rule(db_session, unseated, a1, [d_s, d_b], selected_decision_id=d_b)
+    assert ruled.status_code == 200, ruled.text
+    after = (await _request(db_session, seated, "GET", _assignment_path(a1))).json()["data"]
+    assert after["status"] == "decided"
+    assert [p["id"] for p in after["peer_decisions"]] == [str(d_b)]
+
+
+async def test_a_seated_arbitrator_cannot_re_rule_their_own_record(
+    db_session: AsyncSession,
+) -> None:
+    project_id, _, b, (a1,) = await _project(db_session)
+    consensus = await add_member(db_session, project_id, "consensus")
     d_m, d_b = await _conflict(db_session, a1, MANAGER, b)
+    await add_ruling(db_session, a1, consensus, "exclude", reason="Not ML", created_at=JAN_3)
 
-    response = await _rule(db_session, MANAGER, a1, [d_m, d_b], selected_decision_id=d_m)
+    refused = await _rule(db_session, MANAGER, a1, [d_m, d_b], decision="include")
 
-    assert response.status_code == 200, response.text
-    assert response.json()["data"]["outcome"]["decision"] == "include"
+    assert refused.status_code == 403
+    assert _error_code(refused) == "SCREENING_SELF_ARBITRATION"
+    assert await _rulings(db_session, a1) == 1
 
 
 async def test_override_reason_must_be_in_the_protocol(db_session: AsyncSession) -> None:

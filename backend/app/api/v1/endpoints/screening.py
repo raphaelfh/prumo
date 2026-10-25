@@ -154,8 +154,8 @@ async def get_screening_assignment(
         404: {"description": "Assignment not found, or its article left the project"},
         409: {
             "description": (
-                "Screening not set up, the record has all its reviewers, "
-                "or the exclusion reason is not in the protocol"
+                "Screening not set up, the caller already decided (a decision is final), "
+                "the record has all its reviewers, or the exclusion reason is not in the protocol"
             )
         },
     },
@@ -199,7 +199,12 @@ async def get_screening_conflicts(
 @router.post(
     "/screening/assignments/{assignment_id}/arbitration",
     responses={
-        403: {"description": "Manager or consensus role required in the assignment's project"},
+        403: {
+            "description": (
+                "Manager or consensus role required in the assignment's project, "
+                "or the caller reviewed this record (no self-arbitration)"
+            )
+        },
         404: {
             "description": (
                 "Assignment not found, its article left the project, "

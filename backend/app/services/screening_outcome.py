@@ -71,9 +71,9 @@ def derive_state(
     decisions: Sequence[CurrentDecision],
     ruling: CurrentRuling | None,
 ) -> AssignmentState:
-    """The assignment's phase and outcome; ``decisions`` holds each reviewer's CURRENT one.
+    """The assignment's phase and outcome; ``decisions`` holds each reviewer's decision.
 
-    The latest ruling stands even when a reviewer changes their decision later.
+    A reviewer's decision is final, so the latest ruling is the last word.
     """
     if ruling is not None:
         return AssignmentState(
@@ -93,25 +93,24 @@ def derive_state(
 
 def caller_status(
     state: AssignmentState,
-    decisions: Sequence[CurrentDecision],
-    caller_id: UUID,
     *,
+    seated: bool,
     is_arbitrator: bool,
     can_review: bool,
 ) -> ScreeningCallerStatus:
-    """What the assignment asks of the caller.
+    """What the assignment asks of the caller; ``seated`` = the caller has a decision on it.
 
-    A conflict reads as ``awaiting_others`` to anyone but an arbitrator, so a
-    reviewer never learns that a peer disagreed; a viewer is never asked to act.
+    A conflict reads as ``awaiting_others`` to anyone but an unseated arbitrator,
+    so a reviewer never learns that a peer disagreed and a seated arbitrator is
+    never asked to resolve their own record; a viewer is never asked to act.
     """
     if state.outcome is not None:
         return "decided"
     if state.phase == "conflict":
-        return "conflict" if is_arbitrator else "awaiting_others"
-    has_decided = any(d.reviewer_id == caller_id for d in decisions)
-    return "awaiting_me" if can_review and not has_decided else "awaiting_others"
+        return "conflict" if is_arbitrator and not seated else "awaiting_others"
+    return "awaiting_me" if can_review and not seated else "awaiting_others"
 
 
-def reveals_peers(state: AssignmentState, *, is_arbitrator: bool) -> bool:
-    """THE blind-review rule: peers show once there is an outcome, or to an arbitrator in conflict."""
-    return state.outcome is not None or (state.phase == "conflict" and is_arbitrator)
+def reveals_peers(state: AssignmentState, *, seated: bool, is_arbitrator: bool) -> bool:
+    """THE blind-review rule: peers show once there is an outcome, or to an unseated arbitrator in conflict."""
+    return state.outcome is not None or (state.phase == "conflict" and is_arbitrator and not seated)

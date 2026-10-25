@@ -12573,7 +12573,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_ScreeningAssignmentRead_"];
                 };
             };
-            /** @description Manager or consensus role required in the assignment's project */
+            /** @description Manager or consensus role required in the assignment's project, or the caller reviewed this record (no self-arbitration) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -12643,7 +12643,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the record has all its reviewers, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the caller already decided (a decision is final), the record has all its reviewers, or the exclusion reason is not in the protocol */
             409: {
                 headers: {
                     [name: string]: unknown;

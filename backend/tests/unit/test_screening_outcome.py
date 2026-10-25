@@ -117,27 +117,59 @@ _DECIDED = AssignmentState("decided", Outcome("consensus", "include", None, Fals
 
 
 def test_caller_status() -> None:
-    mine = [_d(A, "include")]
-
-    assert caller_status(_PENDING, mine, A, is_arbitrator=False, can_review=True) == (
+    assert caller_status(_PENDING, seated=True, is_arbitrator=False, can_review=True) == (
         "awaiting_others"
     )
-    assert caller_status(_PENDING, mine, B, is_arbitrator=False, can_review=True) == "awaiting_me"
-    assert caller_status(_PENDING, mine, C, is_arbitrator=False, can_review=False) == (
+    assert caller_status(_PENDING, seated=False, is_arbitrator=False, can_review=True) == (
+        "awaiting_me"
+    )
+    assert caller_status(_PENDING, seated=False, is_arbitrator=False, can_review=False) == (
         "awaiting_others"
     )
-    both = [_d(A, "include"), _d(B, "exclude")]
-    assert caller_status(_CONFLICT, both, C, is_arbitrator=True, can_review=True) == "conflict"
-    assert caller_status(_CONFLICT, both, A, is_arbitrator=False, can_review=True) == (
+    assert caller_status(_CONFLICT, seated=False, is_arbitrator=True, can_review=True) == (
+        "conflict"
+    )
+    assert caller_status(_CONFLICT, seated=True, is_arbitrator=False, can_review=True) == (
         "awaiting_others"
     )
-    assert caller_status(_DECIDED, both, A, is_arbitrator=False, can_review=True) == "decided"
+    assert caller_status(_DECIDED, seated=True, is_arbitrator=False, can_review=True) == "decided"
 
 
-def test_reveals_peers() -> None:
-    assert reveals_peers(_CONFLICT, is_arbitrator=True) is True
-    assert reveals_peers(_CONFLICT, is_arbitrator=False) is False
-    assert reveals_peers(_PENDING, is_arbitrator=True) is False
-    assert reveals_peers(_PENDING, is_arbitrator=False) is False
-    assert reveals_peers(_DECIDED, is_arbitrator=True) is True
-    assert reveals_peers(_DECIDED, is_arbitrator=False) is True
+def test_a_seated_arbitrator_sees_their_own_conflict_as_awaiting_others() -> None:
+    assert caller_status(_CONFLICT, seated=True, is_arbitrator=True, can_review=True) == (
+        "awaiting_others"
+    )
+    assert caller_status(_DECIDED, seated=True, is_arbitrator=True, can_review=True) == "decided"
+
+
+@pytest.mark.parametrize(
+    ("state", "seated", "is_arbitrator", "revealed"),
+    [
+        (_CONFLICT, False, True, True),
+        (_CONFLICT, False, False, False),
+        (_CONFLICT, True, True, False),
+        (_CONFLICT, True, False, False),
+        (_PENDING, False, True, False),
+        (_PENDING, True, True, False),
+        (_PENDING, False, False, False),
+        (_DECIDED, False, True, True),
+        (_DECIDED, True, True, True),
+        (_DECIDED, True, False, True),
+    ],
+    ids=[
+        "conflict-arbitrator",
+        "conflict-reviewer",
+        "conflict-seated-arbitrator",
+        "conflict-seated-reviewer",
+        "pending-arbitrator",
+        "pending-seated-arbitrator",
+        "pending-reviewer",
+        "decided-arbitrator",
+        "decided-seated-arbitrator",
+        "decided-seated-reviewer",
+    ],
+)
+def test_reveals_peers(
+    state: AssignmentState, seated: bool, is_arbitrator: bool, revealed: bool
+) -> None:
+    assert reveals_peers(state, seated=seated, is_arbitrator=is_arbitrator) is revealed

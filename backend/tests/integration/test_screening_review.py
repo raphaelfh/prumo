@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import pytest
 from httpx import Response
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -187,39 +188,62 @@ async def test_reviewer_beyond_cap_is_409(db_session: AsyncSession) -> None:
     refused = await _decide(db_session, c, assignment, "include")
     assert refused.status_code == 409
     assert _error_code(refused) == "SCREENING_REVIEWER_CAP"
+    assert await _rows_of(db_session, assignment, c) == []
 
-    changed = await _decide(db_session, a, assignment, "maybe")
-    assert changed.status_code == 200
-    assert changed.json()["data"]["my_decision"]["decision"] == "maybe"
-    rows = (
-        await db_session.execute(
-            select(func.count())
-            .select_from(ScreeningDecision)
-            .where(
-                ScreeningDecision.assignment_id == assignment, ScreeningDecision.reviewer_id == a
-            )
+
+async def _rows_of(db: AsyncSession, assignment: UUID, reviewer: UUID) -> list[tuple[Any, ...]]:
+    """Every decision row ``reviewer`` holds on ``assignment``, oldest first."""
+    rows = await db.execute(
+        select(
+            ScreeningDecision.id,
+            ScreeningDecision.decision,
+            ScreeningDecision.exclusion_reason,
+            ScreeningDecision.created_at,
         )
-    ).scalar_one()
-    assert rows == 2
+        .where(
+            ScreeningDecision.assignment_id == assignment, ScreeningDecision.reviewer_id == reviewer
+        )
+        .order_by(ScreeningDecision.created_at)
+    )
+    return [tuple(row) for row in rows]
 
 
-async def test_reviewer_change_after_a_ruling_leaves_it_in_force(db_session: AsyncSession) -> None:
+@pytest.mark.parametrize("phase", ["pending", "conflict", "consensus", "arbitrated"])
+async def test_a_reviewers_decision_is_final(db_session: AsyncSession, phase: str) -> None:
+    """A second post by the same reviewer is 409 FINAL in every phase; nothing is written."""
     _, (a, b), _, (assignment,) = await _project(db_session, rc=2, reviewers=2)
     await add_decision(db_session, assignment, a, "include", created_at=JAN_1)
-    await add_decision(db_session, assignment, b, "exclude", reason="Not ML", created_at=JAN_1)
-    await add_ruling(db_session, assignment, MANAGER, "exclude", reason="Not ML", created_at=JAN_2)
+    if phase != "pending":
+        peer = "include" if phase == "consensus" else "exclude"
+        await add_decision(db_session, assignment, b, peer, created_at=JAN_1)
+    if phase == "arbitrated":
+        await add_ruling(db_session, assignment, MANAGER, "exclude", created_at=JAN_2)
+    before = await _rows_of(db_session, assignment, a)
+    assert len(before) == 1
 
-    response = await _decide(db_session, a, assignment, "exclude", "Wrong population")
+    refused = await _decide(db_session, a, assignment, "exclude", "Wrong population")
 
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["my_decision"]["exclusion_reason"] == "Wrong population"
-    assert data["outcome"] == {
-        "kind": "arbitrated",
-        "decision": "exclude",
-        "exclusion_reason": "Not ML",
-        "reasons_differ": False,
-    }
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_DECISION_FINAL"
+    assert await _rows_of(db_session, assignment, a) == before
+
+
+async def test_a_reviewer_cannot_flip_a_conflict_to_consensus(db_session: AsyncSession) -> None:
+    """The review's probe: A posting again after B disagreed is refused; the conflict stands."""
+    project_id, (a, b), _, (assignment,) = await _project(db_session, rc=2, reviewers=2)
+    assert (await _decide(db_session, a, assignment, "include")).status_code == 200
+    assert (await _decide(db_session, b, assignment, "exclude", "Not ML")).status_code == 200
+
+    refused = await _decide(db_session, a, assignment, "exclude", "Not ML")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_DECISION_FINAL"
+    manager_view = (await _get(db_session, MANAGER, _assignment_path(assignment))).json()["data"]
+    assert (manager_view["status"], manager_view["outcome"]) == ("conflict", None)
+    conflicts = await _get(
+        db_session, MANAGER, f"/api/v1/projects/{project_id}/screening/conflicts"
+    )
+    assert [i["assignment_id"] for i in conflicts.json()["data"]["items"]] == [str(assignment)]
 
 
 async def test_viewer_reads_but_cannot_decide(db_session: AsyncSession) -> None:
