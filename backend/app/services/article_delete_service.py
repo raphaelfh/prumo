@@ -54,10 +54,13 @@ async def delete_project_articles(
         ).scalars()
     )
     result = await db.execute(
-        delete(Article).where(Article.id.in_(ids), Article.project_id == project_id)
+        delete(Article)
+        .where(Article.id.in_(ids), Article.project_id == project_id)
+        .returning(Article.id)
     )
+    deleted = len(result.scalars().all())
     await db.flush()
-    return DeletedArticles(deleted=result.rowcount, storage_keys=storage_keys)
+    return DeletedArticles(deleted=deleted, storage_keys=storage_keys)
 
 
 async def remove_article_objects(storage: StorageAdapter, keys: list[str]) -> int:
