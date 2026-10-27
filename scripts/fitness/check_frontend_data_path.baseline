@@ -7,14 +7,13 @@ frontend/hooks/extraction/helpers/getModelChildSections.ts|extraction_instances:
 frontend/hooks/extraction/helpers/queryEntityTypes.ts|extraction_entity_types:2
 frontend/hooks/extraction/useTemplateEntityTypes.ts|extraction_entity_types:1
 frontend/lib/supabase/baseRepository.ts|<dynamic>:1
-frontend/services/articlesService.ts|article_files:7
-frontend/services/articlesService.ts|articles:6
+frontend/services/articlesService.ts|article_files:5
+frontend/services/articlesService.ts|articles:4
 frontend/services/extractionFieldService.ts|project_members:1
 frontend/services/profileService.ts|profiles:2
 frontend/services/projectSettingsService.ts|profiles:1
 frontend/services/projectSettingsService.ts|project_members:5
 frontend/services/projectSettingsService.ts|projects:2
-frontend/services/projectsService.ts|articles:1
 frontend/services/projectsService.ts|projects:2
 frontend/services/qaTemplateService.ts|extraction_entity_types:1
 frontend/services/qaTemplateService.ts|project_extraction_templates:1
