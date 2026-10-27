@@ -73,6 +73,7 @@ vi.mock('@/services/extractionExportService', () => ({
 import {AuthProvider} from '@/contexts/AuthContext';
 import {ProtectedRoute} from '@/components/ProtectedRoute';
 import {NotificationCenter} from '@/components/navigation/NotificationCenter';
+import {usePubmedImportRuns} from '@/stores/pubmedImportRuns';
 import {useSectionExtractionJobs} from '@/stores/sectionExtractionJobs';
 import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import {createZoteroImportJob} from '@/types/background-jobs';
@@ -173,7 +174,22 @@ describe('background jobs are scoped to one identity', () => {
     expect(useSectionExtractionJobs.getState().records).toEqual({});
     expect(useSectionExtractionJobs.getState().ownerId).toBe('account-b');
   });
+  it('drops the tracked PubMed import on sign-out and account change, but keeps token refresh', async () => {
+    await boot();
+    await signInAs('account-a');
+    act(() => usePubmedImportRuns.getState().track('project', 'run-a'));
+    await emit('TOKEN_REFRESHED', sessionFor('account-a'));
+    expect(usePubmedImportRuns.getState().runs.project?.runId).toBe('run-a');
+    await emit('SIGNED_OUT', null);
+    expect(usePubmedImportRuns.getState().runs).toEqual({});
+    await signInAs('account-a');
+    act(() => usePubmedImportRuns.getState().track('project', 'run-a2'));
+    await emit('SIGNED_IN', sessionFor('account-b'));
+    expect(usePubmedImportRuns.getState().runs).toEqual({});
+    expect(usePubmedImportRuns.getState().ownerId).toBe('account-b');
+  });
   beforeEach(() => {
+    usePubmedImportRuns.setState({ownerId: null, runs: {}});
     useSectionExtractionJobs.setState({ownerId: null, records: {}});
     hoisted.authCallback = null;
     hoisted.storedSession = null;

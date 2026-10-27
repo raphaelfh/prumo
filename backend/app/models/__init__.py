@@ -62,6 +62,7 @@ from app.models.llm_connection import LlmConnection, UserProjectEngine
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest, McpOAuthToken
 from app.models.personal_access_token import PersonalAccessToken
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
+from app.models.screening import ScreeningArbitration, ScreeningAssignment, ScreeningDecision
 
 # Modelos sem dependencias (ou with dependencias minimas)
 from app.models.user import Profile
@@ -114,6 +115,9 @@ __all__ = [
     "UUIDMixin",
     "AgentAction",
     "AiUsageLedger",
+    "ScreeningArbitration",
+    "ScreeningAssignment",
+    "ScreeningDecision",
     # User
     "Profile",
     # Project

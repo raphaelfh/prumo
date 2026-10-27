@@ -41,6 +41,18 @@ class ProjectRepository(BaseRepository[Project]):
             )
         ).scalar_one_or_none()
 
+    async def settings_for_share(self, project_id: UUID) -> dict[str, Any] | None:
+        """``projects.settings`` under ``FOR SHARE``, held to the end of the transaction.
+
+        A writer that must not run under a concurrent settings change (a
+        screening decision) reads here: ``lock_for_update`` waits for it.
+        """
+        return (
+            await self.db.execute(
+                select(Project.settings).where(Project.id == project_id).with_for_update(read=True)
+            )
+        ).scalar_one_or_none()
+
     async def update_settings_key(
         self, project_id: UUID, key: str, update: Callable[[Any], Any]
     ) -> Project | None:

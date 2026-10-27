@@ -25,11 +25,14 @@ from app.api.v1.endpoints import (
     oauth_consent,
     parser_settings,
     personal_access_tokens,
+    prisma,
     project_archive,
     project_connections,
     project_delete,
     project_details,
     project_templates,
+    pubmed_import,
+    screening,
     section_extraction,
     template_catalogue,
     template_structure,
@@ -42,6 +45,9 @@ api_router = APIRouter()
 # Registrar routers of the endpoints
 # Full paths (/templates/global, /projects/{id}/templates), so no prefix.
 api_router.include_router(template_catalogue.router, tags=["template-catalogue"])
+api_router.include_router(pubmed_import.router, tags=["imports"])
+api_router.include_router(screening.router, tags=["screening"])
+api_router.include_router(prisma.router, tags=["prisma"])
 
 api_router.include_router(
     zotero_import.router,

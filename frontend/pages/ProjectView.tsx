@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import {useParams, useSearchParams} from "react-router";
 import {loadProjectById, loadProjectArticles} from "@/services/projectsService";
-import {FileBarChart, LayoutDashboard, ListChecks} from "lucide-react";
+import {LayoutDashboard} from "lucide-react";
 import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
 import {toast} from "sonner";
 import {ArticlesList} from "@/components/articles/ArticlesList";
@@ -9,6 +9,9 @@ import {ArticlesSplitShell} from "@/components/articles/ArticlesSplitShell";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
 import {QualityAssessmentInterface} from "@/components/quality/QualityAssessmentInterface";
+import {ScreeningTab} from "@/components/screening/ScreeningTab";
+import {useImportRunTracker} from "@/hooks/screening/usePubmedImport";
+import {PrismaCountsPanel} from "@/components/prisma/PrismaCountsPanel";
 import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
@@ -160,6 +163,11 @@ export default function ProjectView() {
     setArticles(result.data);
   };
 
+  // A PubMed import outlives the Screening tab: its run is polled here, for
+  // the whole project view, and its end (completed or failed; partial imports
+  // are kept) reloads the article list.
+  useImportRunTracker(projectId || '', () => void loadArticles());
+
   useEffect(() => {
     if (!projectId) return;
     // New project selected: bump the generation so any in-flight load for the
@@ -248,10 +256,10 @@ export default function ProjectView() {
         return <ComingSoonPanel title={t('layout', 'navOverview')} icon={LayoutDashboard} />;
 
       case 'screening':
-        return <ComingSoonPanel title={t('layout', 'navScreening')} icon={ListChecks} />;
+        return <ScreeningTab projectId={projectId || ''} />;
 
       case 'prisma':
-        return <ComingSoonPanel title={t('layout', 'navPrismaReport')} icon={FileBarChart} />;
+        return <PrismaCountsPanel projectId={projectId || ''} />;
 
       default:
         return null;

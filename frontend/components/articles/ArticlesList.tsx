@@ -50,7 +50,7 @@ import {ArticlesListDialogs} from "./ArticlesListDialogs";
 import {ArticlesExportDialog} from "./ArticlesExportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import type {Article} from "@/types/article";
-import {ARTICLES_DATA_COLUMN_DEFS, formatArticleListCell} from "@/lib/articlesListDisplay";
+import {ARTICLES_DATA_COLUMN_DEFS, formatArticleListCell, matchesSourceFilter} from "@/lib/articlesListDisplay";
 
 interface ArticlesListProps {
   articles: Article[];
@@ -105,6 +105,7 @@ const ARTICLES_FILTER_FIELDS: FilterFieldConfig[] = [
             {value: 'ZOTERO', label: 'Zotero'},
             {value: 'MANUAL', label: 'Manual'},
             {value: 'RIS', label: 'RIS'},
+            {value: 'PUBMED', label: t('articles', 'listSourcePubmed')},
         ]
     },
     {
@@ -593,8 +594,7 @@ export function ArticlesList({
 
         const sourceFilter = filterValues.ingestion_source as string[] | undefined;
         if (sourceFilter?.length) {
-            const sourceValue = (article.ingestion_source ?? "MANUAL").toUpperCase();
-            if (!sourceFilter.includes(sourceValue)) return false;
+            if (!matchesSourceFilter(article.ingestion_source, sourceFilter)) return false;
         }
 
         const syncStateFilter = filterValues.sync_state as string[] | undefined;

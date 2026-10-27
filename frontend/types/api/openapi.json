@@ -509,6 +509,69 @@
         "title": "ApiResponse[AiPolicyRead]",
         "type": "object"
       },
+      "ApiResponse_Annotated_Union_PubmedDryRunRead__PubmedImportStarted___FieldInfo_annotation_NoneType__required_True__discriminator__kind____": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "dry_run": "#/components/schemas/PubmedDryRunRead",
+                    "started": "#/components/schemas/PubmedImportStarted"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PubmedDryRunRead"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PubmedImportStarted"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[Annotated[Union[PubmedDryRunRead, PubmedImportStarted], FieldInfo(annotation=NoneType, required=True, discriminator='kind')]]",
+        "type": "object"
+      },
       "ApiResponse_ApproveFinalizeResponse_": {
         "properties": {
           "data": {
@@ -1277,6 +1340,54 @@
         "title": "ApiResponse[HitlConfigRead]",
         "type": "object"
       },
+      "ApiResponse_ImportRunRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportRunRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ImportRunRead]",
+        "type": "object"
+      },
       "ApiResponse_LlmConnectionDeleteResult_": {
         "properties": {
           "data": {
@@ -1943,6 +2054,54 @@
         "title": "ApiResponse[PortableTemplate]",
         "type": "object"
       },
+      "ApiResponse_PrismaCountsRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrismaCountsRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[PrismaCountsRead]",
+        "type": "object"
+      },
       "ApiResponse_ProjectAiContextRead_": {
         "properties": {
           "data": {
@@ -2565,6 +2724,246 @@
           "ok"
         ],
         "title": "ApiResponse[RunViewResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ScreeningAssignmentRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningAssignmentRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ScreeningAssignmentRead]",
+        "type": "object"
+      },
+      "ApiResponse_ScreeningConfigRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningConfigRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ScreeningConfigRead]",
+        "type": "object"
+      },
+      "ApiResponse_ScreeningConflictsRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningConflictsRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ScreeningConflictsRead]",
+        "type": "object"
+      },
+      "ApiResponse_ScreeningEnrollResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningEnrollResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ScreeningEnrollResult]",
+        "type": "object"
+      },
+      "ApiResponse_ScreeningQueueRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningQueueRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ScreeningQueueRead]",
         "type": "object"
       },
       "ApiResponse_SectionDeleteResponse_": {
@@ -6679,6 +7078,117 @@
         "title": "HitlConfigRead",
         "type": "object"
       },
+      "ImportRunRead": {
+        "description": "One import run's status and counts.\n\n``failed`` is the stored total of ``not_found`` plus ``fetch_failed``\n(NCBI unavailable or an unparseable record); ``unchanged`` matched an\narticle and filled nothing.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NCBI_UNAVAILABLE",
+                  "IMPORT_TIME_LIMIT",
+                  "IMPORT_STALE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "fetch_failed": {
+            "title": "Fetch Failed",
+            "type": "integer"
+          },
+          "not_found": {
+            "title": "Not Found",
+            "type": "integer"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "pubmed",
+              "zotero"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "sync_run_id": {
+            "format": "uuid",
+            "title": "Sync Run Id",
+            "type": "string"
+          },
+          "total_received": {
+            "title": "Total Received",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sync_run_id",
+          "source",
+          "status",
+          "total_received",
+          "persisted",
+          "updated",
+          "unchanged",
+          "skipped",
+          "failed",
+          "not_found",
+          "fetch_failed",
+          "error_code",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "ImportRunRead",
+        "type": "object"
+      },
       "InstanceIdentityUpdateRequest": {
         "additionalProperties": false,
         "description": "Rename and/or re-key one extraction instance (the run form's rename\ndialog). ``entity_key`` is the identity an AI re-run matches against; the\nserver normalizes it and appends the change to ``entity_key_history``.\nAt least one of ``label`` / ``entity_key`` must be present, and neither\nmay be blank \u2014 a smuggled ``{\"label\": \"\"}`` must never blank a column.",
@@ -7748,6 +8258,79 @@
         "title": "ParserSettingsRead",
         "type": "object"
       },
+      "PeerDecisionRead": {
+        "description": "Another reviewer's current decision, shown only once the review is unblinded.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "include",
+              "exclude",
+              "maybe"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "reviewer_id": {
+            "format": "uuid",
+            "title": "Reviewer Id",
+            "type": "string"
+          },
+          "reviewer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Name"
+          }
+        },
+        "required": [
+          "id",
+          "decision",
+          "exclusion_reason",
+          "rationale",
+          "created_at",
+          "reviewer_id",
+          "reviewer_name"
+        ],
+        "title": "PeerDecisionRead",
+        "type": "object"
+      },
       "PersonalAccessTokenCreateRequest": {
         "additionalProperties": false,
         "description": "Body of ``POST /api/v1/me/tokens``.",
@@ -8429,6 +9012,111 @@
           "sections"
         ],
         "title": "PortableTemplate",
+        "type": "object"
+      },
+      "PrismaCountsRead": {
+        "properties": {
+          "duplicates_removed": {
+            "title": "Duplicates Removed",
+            "type": "integer"
+          },
+          "excluded": {
+            "title": "Excluded",
+            "type": "integer"
+          },
+          "excluded_by_reason": {
+            "items": {
+              "$ref": "#/components/schemas/PrismaReasonCount"
+            },
+            "title": "Excluded By Reason",
+            "type": "array"
+          },
+          "excluded_reasons_differ": {
+            "title": "Excluded Reasons Differ",
+            "type": "integer"
+          },
+          "excluded_without_reason": {
+            "title": "Excluded Without Reason",
+            "type": "integer"
+          },
+          "identified": {
+            "items": {
+              "$ref": "#/components/schemas/PrismaSourceCount"
+            },
+            "title": "Identified",
+            "type": "array"
+          },
+          "identified_total": {
+            "title": "Identified Total",
+            "type": "integer"
+          },
+          "imported_not_enrolled": {
+            "title": "Imported Not Enrolled",
+            "type": "integer"
+          },
+          "not_retrieved": {
+            "title": "Not Retrieved",
+            "type": "integer"
+          },
+          "screened": {
+            "title": "Screened",
+            "type": "integer"
+          },
+          "sought_for_retrieval": {
+            "title": "Sought For Retrieval",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "identified",
+          "identified_total",
+          "duplicates_removed",
+          "not_retrieved",
+          "imported_not_enrolled",
+          "screened",
+          "excluded",
+          "excluded_by_reason",
+          "excluded_reasons_differ",
+          "excluded_without_reason",
+          "sought_for_retrieval"
+        ],
+        "title": "PrismaCountsRead",
+        "type": "object"
+      },
+      "PrismaReasonCount": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "count"
+        ],
+        "title": "PrismaReasonCount",
+        "type": "object"
+      },
+      "PrismaSourceCount": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "count"
+        ],
+        "title": "PrismaSourceCount",
         "type": "object"
       },
       "ProjectAiContextRead": {
@@ -9487,6 +10175,99 @@
           "version"
         ],
         "title": "PublishedStateResponse",
+        "type": "object"
+      },
+      "PubmedDryRunRead": {
+        "description": "What an import of these PMIDs would do; nothing was written.",
+        "properties": {
+          "already_in_project": {
+            "title": "Already In Project",
+            "type": "integer"
+          },
+          "distinct": {
+            "title": "Distinct",
+            "type": "integer"
+          },
+          "duplicate_in_request": {
+            "title": "Duplicate In Request",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "dry_run",
+            "title": "Kind",
+            "type": "string"
+          },
+          "new": {
+            "title": "New",
+            "type": "integer"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "received",
+          "distinct",
+          "duplicate_in_request",
+          "already_in_project",
+          "new"
+        ],
+        "title": "PubmedDryRunRead",
+        "type": "object"
+      },
+      "PubmedImportRequest": {
+        "additionalProperties": false,
+        "description": "PMIDs to import into the project; ``dry_run`` only counts them.",
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "pmids": {
+            "items": {
+              "pattern": "^[0-9]{1,10}$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Pmids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pmids"
+        ],
+        "title": "PubmedImportRequest",
+        "type": "object"
+      },
+      "PubmedImportStarted": {
+        "description": "The import was queued; poll its run for progress.",
+        "properties": {
+          "kind": {
+            "const": "started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "const": "pending",
+            "title": "Status",
+            "type": "string"
+          },
+          "sync_run_id": {
+            "format": "uuid",
+            "title": "Sync Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "sync_run_id",
+          "status"
+        ],
+        "title": "PubmedImportStarted",
         "type": "object"
       },
       "RepublishTemplateVersionRequest": {
@@ -10591,6 +11372,612 @@
           "integration_id"
         ],
         "title": "SaveCredentialsResponse",
+        "type": "object"
+      },
+      "ScreeningArbitrationCreate": {
+        "additionalProperties": false,
+        "description": "A ruling on the decisions the arbitrator saw: select one of them, or override.\n\nA new ruling is always a new row; the latest one stands.",
+        "properties": {
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "ruled_on_decision_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Ruled On Decision Ids",
+            "type": "array"
+          },
+          "selected_decision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Decision Id"
+          }
+        },
+        "required": [
+          "ruled_on_decision_ids"
+        ],
+        "title": "ScreeningArbitrationCreate",
+        "type": "object"
+      },
+      "ScreeningArticle": {
+        "description": "The bibliographic record a reviewer screens.",
+        "properties": {
+          "abstract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abstract"
+          },
+          "authors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authors"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "journal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Title"
+          },
+          "pmid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pmid"
+          },
+          "publication_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Year"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "abstract",
+          "authors",
+          "journal_title",
+          "publication_year",
+          "pmid",
+          "doi"
+        ],
+        "title": "ScreeningArticle",
+        "type": "object"
+      },
+      "ScreeningAssignmentRead": {
+        "description": "One record as the caller may see it: peers stay hidden until there is an outcome.",
+        "properties": {
+          "article": {
+            "$ref": "#/components/schemas/ScreeningArticle"
+          },
+          "exclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion Reasons",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "my_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningDecisionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningOutcomeRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "peer_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PeerDecisionRead"
+            },
+            "title": "Peer Decisions",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "awaiting_me",
+              "awaiting_others",
+              "conflict",
+              "decided"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "article",
+          "status",
+          "my_decision",
+          "outcome",
+          "peer_decisions",
+          "exclusion_reasons"
+        ],
+        "title": "ScreeningAssignmentRead",
+        "type": "object"
+      },
+      "ScreeningConfigRead": {
+        "description": "Screening setup of a project plus the caller's roles in it.",
+        "properties": {
+          "can_arbitrate": {
+            "title": "Can Arbitrate",
+            "type": "boolean"
+          },
+          "can_manage": {
+            "title": "Can Manage",
+            "type": "boolean"
+          },
+          "can_review": {
+            "title": "Can Review",
+            "type": "boolean"
+          },
+          "enrolled": {
+            "title": "Enrolled",
+            "type": "integer"
+          },
+          "not_enrolled": {
+            "title": "Not Enrolled",
+            "type": "integer"
+          },
+          "reviewer_capable": {
+            "title": "Reviewer Capable",
+            "type": "integer"
+          },
+          "reviewer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Count"
+          },
+          "reviewer_count_locked": {
+            "title": "Reviewer Count Locked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reviewer_count",
+          "reviewer_count_locked",
+          "reviewer_capable",
+          "enrolled",
+          "not_enrolled",
+          "can_manage",
+          "can_review",
+          "can_arbitrate"
+        ],
+        "title": "ScreeningConfigRead",
+        "type": "object"
+      },
+      "ScreeningConfigUpdate": {
+        "additionalProperties": false,
+        "description": "Reviewers per record (1 to 3).",
+        "properties": {
+          "reviewer_count": {
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Reviewer Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reviewer_count"
+        ],
+        "title": "ScreeningConfigUpdate",
+        "type": "object"
+      },
+      "ScreeningConflictItem": {
+        "description": "One unruled conflict with every reviewer's current decision.",
+        "properties": {
+          "article": {
+            "$ref": "#/components/schemas/ScreeningArticle"
+          },
+          "assignment_id": {
+            "format": "uuid",
+            "title": "Assignment Id",
+            "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PeerDecisionRead"
+            },
+            "title": "Decisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "article",
+          "decisions"
+        ],
+        "title": "ScreeningConflictItem",
+        "type": "object"
+      },
+      "ScreeningConflictsRead": {
+        "description": "The project's unruled conflicts, and the protocol reasons an override may cite.",
+        "properties": {
+          "exclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion Reasons",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScreeningConflictItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "exclusion_reasons"
+        ],
+        "title": "ScreeningConflictsRead",
+        "type": "object"
+      },
+      "ScreeningDecisionCreate": {
+        "additionalProperties": false,
+        "description": "One reviewer decision; an exclusion reason only on ``exclude``.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "include",
+              "exclude",
+              "maybe"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "ScreeningDecisionCreate",
+        "type": "object"
+      },
+      "ScreeningDecisionRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "include",
+              "exclude",
+              "maybe"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          }
+        },
+        "required": [
+          "id",
+          "decision",
+          "exclusion_reason",
+          "rationale",
+          "created_at"
+        ],
+        "title": "ScreeningDecisionRead",
+        "type": "object"
+      },
+      "ScreeningEnrollRequest": {
+        "additionalProperties": false,
+        "description": "Articles to enroll; omit ``article_ids`` to enroll every article of the project.",
+        "properties": {
+          "article_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Ids"
+          }
+        },
+        "title": "ScreeningEnrollRequest",
+        "type": "object"
+      },
+      "ScreeningEnrollResult": {
+        "properties": {
+          "already_enrolled": {
+            "title": "Already Enrolled",
+            "type": "integer"
+          },
+          "enrolled": {
+            "title": "Enrolled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enrolled",
+          "already_enrolled"
+        ],
+        "title": "ScreeningEnrollResult",
+        "type": "object"
+      },
+      "ScreeningOutcomeRead": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "include",
+              "exclude",
+              "maybe"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
+          "kind": {
+            "enum": [
+              "solo",
+              "consensus",
+              "arbitrated"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reasons_differ": {
+            "title": "Reasons Differ",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "decision",
+          "exclusion_reason",
+          "reasons_differ"
+        ],
+        "title": "ScreeningOutcomeRead",
+        "type": "object"
+      },
+      "ScreeningQueueItem": {
+        "properties": {
+          "article": {
+            "$ref": "#/components/schemas/ScreeningArticle"
+          },
+          "assignment_id": {
+            "format": "uuid",
+            "title": "Assignment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "article"
+        ],
+        "title": "ScreeningQueueItem",
+        "type": "object"
+      },
+      "ScreeningQueueRead": {
+        "description": "The caller's next records to screen, with the counts around them.",
+        "properties": {
+          "awaiting_me": {
+            "title": "Awaiting Me",
+            "type": "integer"
+          },
+          "awaiting_others": {
+            "title": "Awaiting Others",
+            "type": "integer"
+          },
+          "exclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion Reasons",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScreeningQueueItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "awaiting_me",
+          "awaiting_others",
+          "exclusion_reasons"
+        ],
+        "title": "ScreeningQueueRead",
         "type": "object"
       },
       "SectionCreateRequest": {
@@ -16403,6 +17790,131 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/imports/pubmed": {
+      "post": {
+        "operationId": "import_pubmed_api_v1_projects__project_id__imports_pubmed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PubmedImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dry run: counts only, nothing written"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Annotated_Union_PubmedDryRunRead__PubmedImportStarted___FieldInfo_annotation_NoneType__required_True__discriminator__kind____"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Task queue unavailable or NCBI_EMAIL unset"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Import Pubmed",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/imports/{sync_run_id}": {
+      "get": {
+        "operationId": "get_import_run_api_v1_projects__project_id__imports__sync_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sync_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Sync Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ImportRunRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No import run of the caller in this project"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Import Run",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/llm-engine": {
       "get": {
         "description": "Resolved engine + catalogue + the caller's per-provider availability.",
@@ -16728,6 +18240,337 @@
         "summary": "Set Parser Settings",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/prisma": {
+      "get": {
+        "operationId": "get_prisma_counts_api_v1_projects__project_id__prisma_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PrismaCountsRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Prisma Counts",
+        "tags": [
+          "prisma"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/screening/config": {
+      "get": {
+        "operationId": "get_screening_config_api_v1_projects__project_id__screening_config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Screening Config",
+        "tags": [
+          "screening"
+        ]
+      },
+      "put": {
+        "operationId": "put_screening_config_api_v1_projects__project_id__screening_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "409": {
+            "description": "Config frozen by a decision, or fewer reviewers than requested"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Put Screening Config",
+        "tags": [
+          "screening"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/screening/conflicts": {
+      "get": {
+        "operationId": "get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningConflictsRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Manager or consensus role required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Screening Conflicts",
+        "tags": [
+          "screening"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/screening/enroll": {
+      "post": {
+        "operationId": "enroll_screening_api_v1_projects__project_id__screening_enroll_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ScreeningEnrollRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningEnrollResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "An article is not in this project"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Enroll Screening",
+        "tags": [
+          "screening"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/screening/queue": {
+      "get": {
+        "operationId": "get_screening_queue_api_v1_projects__project_id__screening_queue_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningQueueRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Reviewer role required"
+          },
+          "409": {
+            "description": "Screening is not set up for this project"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Screening Queue",
+        "tags": [
+          "screening"
         ]
       }
     },
@@ -19232,6 +21075,194 @@
         "summary": "Get Run View",
         "tags": [
           "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/screening/assignments/{assignment_id}": {
+      "get": {
+        "operationId": "get_screening_assignment_api_v1_screening_assignments__assignment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningAssignmentRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not a member of the assignment's project"
+          },
+          "404": {
+            "description": "Assignment not found, or its article left the project"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Screening Assignment",
+        "tags": [
+          "screening"
+        ]
+      }
+    },
+    "/api/v1/screening/assignments/{assignment_id}/arbitration": {
+      "post": {
+        "operationId": "post_screening_arbitration_api_v1_screening_assignments__assignment_id__arbitration_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningArbitrationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningAssignmentRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Manager or consensus role required in the assignment's project, or the caller reviewed this record (no self-arbitration)"
+          },
+          "404": {
+            "description": "Assignment not found, its article left the project, or a decision is not in this assignment"
+          },
+          "409": {
+            "description": "Screening not set up, the record is not in conflict, the decisions changed since it was opened, or the exclusion reason is not in the protocol"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Post Screening Arbitration",
+        "tags": [
+          "screening"
+        ]
+      }
+    },
+    "/api/v1/screening/assignments/{assignment_id}/decisions": {
+      "post": {
+        "operationId": "post_screening_decision_api_v1_screening_assignments__assignment_id__decisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningDecisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningAssignmentRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Reviewer role required in the assignment's project"
+          },
+          "404": {
+            "description": "Assignment not found, or its article left the project"
+          },
+          "409": {
+            "description": "Screening not set up, the caller already decided (a decision is final), the record has all its reviewers, or the exclusion reason is not in the protocol"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Post Screening Decision",
+        "tags": [
+          "screening"
         ]
       }
     },

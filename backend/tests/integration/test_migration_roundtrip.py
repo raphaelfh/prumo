@@ -1332,7 +1332,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0093_batch_agent_origin"
+    expected_head = "0094_screening_v1"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2771,3 +2771,134 @@ async def test_migration_0093_batch_agent_origin_roundtrip(
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert await schema() == at_head
+
+
+# --- 0094: screening tables + sync-table write revoke --------------------------
+_SCREENING_TABLES = ("screening_assignments", "screening_decisions", "screening_arbitrations")
+_SYNC_TABLES = ("article_sync_runs", "article_sync_events")
+
+
+class _ScreeningPosture(NamedTuple):
+    rls: dict[str, bool | None]
+    policies: dict[str, set[str]]
+    triggers: set[tuple[str, str]]
+    selected_fk: tuple[bool, bool] | None
+    authenticated_select: dict[str, bool | None]
+    sync_writes: dict[tuple[str, str, str], bool]
+
+
+@pytest.mark.asyncio
+async def test_migration_0094_screening_v1_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """The three deny-all screening tables, their append-only triggers and
+    the deferred composite FK exist at head, go with the downgrade to 0093
+    (which hands ``authenticated`` its sync-table writes back, never anon)
+    and come back with the re-upgrade, REVOKEs included."""
+    session = migration_session
+
+    async def posture() -> _ScreeningPosture:
+        rls: dict[str, bool | None] = {}
+        policies: dict[str, set[str]] = {}
+        authenticated_select: dict[str, bool | None] = {}
+        for table in _SCREENING_TABLES:
+            rls[table] = (
+                await session.execute(
+                    text("SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(:t)"),
+                    {"t": f"public.{table}"},
+                )
+            ).scalar_one_or_none()
+            policies[table] = set(
+                (
+                    await session.execute(
+                        text(
+                            "SELECT policyname FROM pg_policies "
+                            "WHERE schemaname = 'public' AND tablename = :t"
+                        ),
+                        {"t": table},
+                    )
+                ).scalars()
+            )
+            authenticated_select[table] = (
+                await session.execute(
+                    text(
+                        "SELECT CASE WHEN to_regclass(:t) IS NOT NULL "
+                        "THEN has_table_privilege('authenticated', :t, 'SELECT') END"
+                    ),
+                    {"t": f"public.{table}"},
+                )
+            ).scalar_one()
+        triggers = {
+            (row[0], row[1])
+            for row in (
+                await session.execute(
+                    text(
+                        "SELECT tgrelid::regclass::text, tgname FROM pg_trigger "
+                        "WHERE NOT tgisinternal AND tgrelid IN "
+                        "(to_regclass('public.screening_decisions'), "
+                        "to_regclass('public.screening_arbitrations'))"
+                    )
+                )
+            ).all()
+        }
+        fk = (
+            await session.execute(
+                text(
+                    "SELECT condeferrable, condeferred FROM pg_constraint "
+                    "WHERE conname = 'fk_screening_arbitrations_selected_decision_match'"
+                )
+            )
+        ).one_or_none()
+        sync_writes = {
+            (role, table, privilege): (
+                await session.execute(
+                    text("SELECT has_table_privilege(:r, :t, :p)"),
+                    {"r": role, "t": f"public.{table}", "p": privilege},
+                )
+            ).scalar_one()
+            for role in ("anon", "authenticated")
+            for table in _SYNC_TABLES
+            for privilege in ("INSERT", "UPDATE", "DELETE")
+        }
+        await session.rollback()
+        return _ScreeningPosture(
+            rls=rls,
+            policies=policies,
+            triggers=triggers,
+            selected_fk=None if fk is None else (fk[0], fk[1]),
+            authenticated_select=authenticated_select,
+            sync_writes=sync_writes,
+        )
+
+    no_sync_writes = {
+        (role, table, privilege): False
+        for role in ("anon", "authenticated")
+        for table in _SYNC_TABLES
+        for privilege in ("INSERT", "UPDATE", "DELETE")
+    }
+    at_head = _ScreeningPosture(
+        rls=dict.fromkeys(_SCREENING_TABLES, True),
+        policies={table: {"deny_all"} for table in _SCREENING_TABLES},
+        triggers={
+            ("screening_decisions", "refuse_append_only_change"),
+            ("screening_arbitrations", "refuse_append_only_change"),
+        },
+        selected_fk=(True, True),
+        authenticated_select=dict.fromkeys(_SCREENING_TABLES, False),
+        sync_writes=no_sync_writes,
+    )
+    at_0093 = _ScreeningPosture(
+        rls=dict.fromkeys(_SCREENING_TABLES),
+        policies={table: set() for table in _SCREENING_TABLES},
+        triggers=set(),
+        selected_fk=None,
+        authenticated_select=dict.fromkeys(_SCREENING_TABLES),
+        sync_writes={key: key[0] == "authenticated" for key in no_sync_writes},
+    )
+    assert await posture() == at_head
+    try:
+        _run_alembic("downgrade", "0093_batch_agent_origin", database_url=migration_db_url)
+        assert await posture() == at_0093
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == at_head

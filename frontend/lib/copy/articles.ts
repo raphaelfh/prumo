@@ -272,6 +272,7 @@ export const articles = {
     listAfterYear: 'After {{year}}',
     listHasPdf: 'Has PDF',
     listNoPdf: 'No PDF',
+    listSourcePubmed: 'PubMed',
     listAddFilter: 'Add filter…',
     listSelectFilterAbove: 'Select a filter above.',
     listDisplayOptions: 'Display options',

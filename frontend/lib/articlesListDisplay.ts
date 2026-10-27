@@ -130,3 +130,8 @@ export function formatArticleListCell(article: Article, columnId: string): strin
             return '\u2013';
     }
 }
+
+/** The articles list's Source filter: a missing source counts as manual, case-insensitively. */
+export function matchesSourceFilter(source: string | null | undefined, selected: readonly string[]): boolean {
+    return selected.includes((source ?? 'MANUAL').toUpperCase());
+}

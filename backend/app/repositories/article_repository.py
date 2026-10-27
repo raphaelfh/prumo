@@ -4,17 +4,44 @@ Article Repository.
 Article and file persistence layer.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.models.article import Article, ArticleFile
 from app.models.article_author import ArticleSyncEvent, ArticleSyncRun
 from app.repositories.base import BaseRepository
+
+
+def doi_match_key(
+    column: ColumnElement[str | None] | InstrumentedAttribute[str | None],
+) -> ColumnElement[str]:
+    """Lower-cased, trimmed DOI with any ``doi.org`` URL or ``doi:`` prefix removed.
+
+    The right-hand side of the comparison is ``normalize_doi`` output; stored values
+    from other sources may still carry a prefix or stray case/whitespace.
+    """
+    return func.regexp_replace(
+        func.lower(func.btrim(column)), r"^(https?://(dx\.)?doi\.org/|doi:\s*)", ""
+    )
+
+
+FillOutcome = Literal["inserted", "updated", "unchanged"]
+
+
+def _is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, list):
+        return not value
+    return False
 
 
 class ArticleRepository(BaseRepository[Article]):
@@ -93,28 +120,69 @@ class ArticleRepository(BaseRepository[Article]):
         project_id: UUID,
         *,
         zotero_item_key: str | None = None,
+        pmid: str | None = None,
         doi: str | None = None,
         url_landing: str | None = None,
     ) -> Article | None:
+        """Oldest article in the project matching the key; PMID, then DOI, then URL."""
         if zotero_item_key:
             return await self.get_by_zotero_item_key(project_id, zotero_item_key)
 
-        clauses = []
-        if doi:
-            clauses.append(Article.doi == doi)
-        if url_landing:
-            clauses.append(Article.url_landing == url_landing)
-        if not clauses:
-            return None
+        predicates = (
+            (pmid, Article.pmid == pmid),
+            (doi, doi_match_key(Article.doi) == doi),
+            (url_landing, Article.url_landing == url_landing),
+        )
+        for value, predicate in predicates:
+            if not value:
+                continue
+            result = await self.db.execute(
+                select(Article)
+                .where(Article.project_id == project_id)
+                .where(predicate)
+                .order_by(Article.created_at.asc(), Article.id.asc())
+                .limit(1)
+            )
+            found = result.scalar_one_or_none()
+            if found is not None:
+                return found
+        return None
 
+    async def existing_pmids(self, project_id: UUID, pmids: Sequence[str]) -> set[str]:
+        """The subset of ``pmids`` already stored on an article of the project."""
+        if not pmids:
+            return set()
+        result = await self.db.execute(
+            select(Article.pmid)
+            .where(Article.project_id == project_id)
+            .where(Article.pmid.in_(pmids))
+        )
+        return {pmid for pmid in result.scalars().all() if pmid is not None}
+
+    async def complete_pmid_matches(
+        self, project_id: UUID, pmids: Sequence[str], fields: Sequence[str]
+    ) -> dict[str, UUID]:
+        """``{pmid: article_id}`` for the PMIDs whose match has every ``fields`` filled.
+
+        The match is the article a PMID lookup in ``get_by_canonical_identity``
+        returns (the project's oldest with that PMID), so a fill-only upsert
+        of any of these PMIDs would write nothing.
+        """
+        if not pmids:
+            return {}
         result = await self.db.execute(
             select(Article)
             .where(Article.project_id == project_id)
-            .where(clauses[0] if len(clauses) == 1 else clauses[0] | clauses[1])
-            .order_by(Article.updated_at.desc())
-            .limit(1)
+            .where(Article.pmid.in_(list(pmids)))
+            .order_by(Article.pmid, Article.created_at.asc(), Article.id.asc())
+            .distinct(Article.pmid)
         )
-        return result.scalar_one_or_none()
+        return {
+            article.pmid: article.id
+            for article in result.scalars().all()
+            if article.pmid is not None
+            and not any(_is_blank(getattr(article, field)) for field in fields)
+        }
 
     async def upsert_by_canonical_identity(
         self,
@@ -144,6 +212,45 @@ class ArticleRepository(BaseRepository[Article]):
         )
         created = await self.create(article)
         return created, True
+
+    async def fill_only_upsert(
+        self,
+        *,
+        project_id: UUID,
+        payload: dict[str, Any],
+        canonical_identity: dict[str, str | None],
+        fill_fields: Sequence[str],
+    ) -> tuple[Article, FillOutcome]:
+        """Insert, or fill only the blank ``fill_fields`` of the matched article.
+
+        A match keeps every other column (title, provenance, Zotero keys,
+        ``last_synced_at``) exactly as the first source wrote it; it is
+        ``unchanged`` when no field was blank or the payload had nothing for it.
+        """
+        existing = await self.get_by_canonical_identity(
+            project_id,
+            pmid=canonical_identity.get("pmid"),
+            doi=canonical_identity.get("doi"),
+            url_landing=canonical_identity.get("url_landing"),
+        )
+        if existing:
+            filled = False
+            for field in fill_fields:
+                incoming = payload.get(field)
+                if _is_blank(incoming) or not _is_blank(getattr(existing, field)):
+                    continue
+                setattr(existing, field, incoming)
+                filled = True
+            await self.db.flush()
+            return existing, "updated" if filled else "unchanged"
+
+        article = Article(
+            project_id=project_id,
+            last_synced_at=datetime.now(UTC),
+            **payload,
+        )
+        created = await self.create(article)
+        return created, "inserted"
 
     async def mark_removed_at_source(self, article: Article) -> Article:
         article.sync_state = "removed_at_source"
@@ -206,8 +313,36 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         )
         return result.scalar_one_or_none()
 
+    async def run_in_project(
+        self,
+        sync_run_id: UUID,
+        *,
+        project_id: UUID,
+        requested_by: UUID | None = None,
+        for_update: bool = False,
+    ) -> ArticleSyncRun | None:
+        """The run, only when it belongs to ``project_id``; the one run-in-project guard.
+
+        Missing and foreign runs both answer ``None``. ``requested_by``
+        narrows it to the requester's own runs; ``for_update`` row-locks it
+        and refreshes any stale identity-map copy.
+        """
+        query = select(ArticleSyncRun).where(
+            ArticleSyncRun.id == sync_run_id, ArticleSyncRun.project_id == project_id
+        )
+        if requested_by is not None:
+            query = query.where(ArticleSyncRun.requested_by_user_id == requested_by)
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return (await self.db.execute(query)).scalar_one_or_none()
+
     async def update_counts(
-        self, run: ArticleSyncRun, counts: dict[str, int], status: str
+        self,
+        run: ArticleSyncRun,
+        counts: dict[str, int],
+        status: str,
+        *,
+        failure_summary: dict[str, Any] | None = None,
     ) -> ArticleSyncRun:
         run.total_received = counts.get("total_received", run.total_received)
         run.persisted = counts.get("persisted", run.persisted)
@@ -217,6 +352,8 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         run.removed_at_source = counts.get("removed_at_source", run.removed_at_source)
         run.reactivated = counts.get("reactivated", run.reactivated)
         run.status = status
+        if failure_summary is not None:
+            run.failure_summary = failure_summary
         if status in {"completed", "failed", "cancelled"}:
             run.completed_at = datetime.now(UTC)
         await self.db.flush()
@@ -254,6 +391,28 @@ class ArticleSyncEventRepository(BaseRepository[ArticleSyncEvent]):
             processed_at=datetime.now(UTC),
         )
         return await self.create(event)
+
+    async def pmids_with_events(self, sync_run_id: UUID, pmids: Sequence[str]) -> set[str]:
+        """The subset of ``pmids`` that already has an event in the run."""
+        if not pmids:
+            return set()
+        pmid = ArticleSyncEvent.event_payload["pmid"].astext
+        result = await self.db.execute(
+            select(pmid)
+            .where(ArticleSyncEvent.sync_run_id == sync_run_id)
+            .where(pmid.in_(list(pmids)))
+            .distinct()
+        )
+        return set(result.scalars().all())
+
+    async def status_counts(self, sync_run_id: UUID) -> dict[str, int]:
+        """Event count per status in the run."""
+        result = await self.db.execute(
+            select(ArticleSyncEvent.status, func.count())
+            .where(ArticleSyncEvent.sync_run_id == sync_run_id)
+            .group_by(ArticleSyncEvent.status)
+        )
+        return {status: int(count) for status, count in result.all()}
 
     async def list_run_events(
         self,

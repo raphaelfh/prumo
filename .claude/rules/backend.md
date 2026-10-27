@@ -74,6 +74,16 @@ guard that drifted or was never made.
   second client id to compare. It answers 404 missing / 403 non-member:
   the one accepted existence signal, because run ids are random uuid4
   (`assert_kickoff_scope` docstring).
+- **An assignment by id** → `api/deps/scope.load_assignment_for_member`.
+  Same shape as `load_run_for_member`: it resolves the screening
+  assignment, then checks membership on the assignment's own project
+  (404 missing / 403 non-member) and returns `ScreeningAssignmentRef`, not
+  the ORM row. Decision and arbitration routes then run
+  `ensure_project_reviewer` / `ensure_project_arbitrator` on
+  `ref.project_id`. Assignment state and articles are read only through
+  `screening_review_service.assignment_states` and
+  `screening_repository.live_assignments`, whose article join also matches
+  `articles.project_id`.
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
@@ -88,7 +98,8 @@ guard that drifted or was never made.
   in its owner), `llm_connection_service.owned_project_connection` (a
   project-scope connection in its project), `pat_service.owned_token` (a
   personal access token or OAuth connection in its owner; `kind` is part
-  of the predicate). Need a new pair? Add
+  of the predicate), `screening_review_service.owned_decisions` (screening
+  decisions in their assignment). Need a new pair? Add
   ONE guard and import it — never copy a sibling. This list is load-bearing:
   the CI gate matches WHERE-clause shapes, so it cannot see a
   `db.get`-then-compare copy — the enumeration is what prevents copy #3.
