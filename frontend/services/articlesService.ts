@@ -391,7 +391,10 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
 // Project-wide article lists (worklist, dashboard stats, HITL)
 // ---------------------------------------------------------------------------
 
-/** PostgREST default max-rows. A short page is the last one. */
+/**
+ * PostgREST hosted default max-rows. A short page is the last one; a project
+ * cap below this would truncate at the cap again.
+ */
 const ARTICLES_PAGE = 1000;
 
 /**
@@ -404,12 +407,17 @@ const ARTICLES_PAGE = 1000;
  * `id` breaks ties on `created_at`: seeded or bulk-imported articles share a
  * timestamp, and equal keys have no stable order across requests, so a row
  * could repeat on one page and vanish from the next.
+ *
+ * Rows are deduped by id: a concurrent insert shifts later rows down one
+ * offset, repeating a row at each page boundary. The helper owns the dedupe so
+ * every caller gets the fix, not only the project view.
  */
-async function selectAllProjectArticles<T>(
+export async function selectAllProjectArticles<T extends {id: string}>(
   projectId: string,
   columns: string,
 ): Promise<T[]> {
   const rows: T[] = [];
+  const seen = new Set<string>();
   for (let from = 0; ; from += ARTICLES_PAGE) {
     const {data, error} = await supabase
       .from('articles')
@@ -421,8 +429,12 @@ async function selectAllProjectArticles<T>(
 
     if (error) throw error;
 
-    const page = (data ?? []) as T[];
-    rows.push(...page);
+    const page = (data ?? []) as unknown as T[];
+    for (const row of page) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
     if (page.length < ARTICLES_PAGE) return rows;
   }
 }

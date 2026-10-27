@@ -10,6 +10,7 @@
  */
 import {supabase} from '@/integrations/supabase/client';
 import {apiClient} from '@/integrations/api/client';
+import {selectAllProjectArticles} from '@/services/articlesService';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {MemberRole, ProjectListItem} from '@/types/project';
 import type {Article} from '@/types/article';
@@ -101,20 +102,19 @@ const PROJECT_ARTICLES_SELECT = [
 /**
  * Load all articles for a project (list projection — no large text blobs).
  *
+ * Delegates to the shared pager: one loop over `articles` for the worklist,
+ * the QA/extraction dashboards and the HITL table keeps their ordering, cap
+ * handling and boundary dedupe from drifting apart (#1054).
+ *
  * NOTE: errors are logged by the caller; no toast.
  */
 export function loadProjectArticles(
   projectId: string,
 ): Promise<ErrorResult<Article[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('articles')
-      .select(PROJECT_ARTICLES_SELECT)
-      .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
-    if (error) throw error;
-    return (data as unknown as Article[]) ?? [];
-  }, 'projectsService.loadProjectArticles');
+  return toResult(
+    () => selectAllProjectArticles<Article>(projectId, PROJECT_ARTICLES_SELECT),
+    'projectsService.loadProjectArticles',
+  );
 }
 
 // ---------------------------------------------------------------------------
