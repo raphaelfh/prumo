@@ -5,6 +5,7 @@ Implements StorageAdapter for Supabase Storage.
 Manages PDFs and other article files.
 """
 
+import asyncio
 from collections.abc import Sequence
 
 from supabase import Client
@@ -12,6 +13,8 @@ from supabase import Client
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage.base import StorageAdapter, StorageError
 
+# Supabase limits `remove` to 1000 objects per call:
+# https://supabase.com/docs/guides/storage/management/delete-objects
 _REMOVE_CHUNK = 1000
 
 
@@ -163,7 +166,8 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
         for start in range(0, len(paths), _REMOVE_CHUNK):
             chunk = list(paths[start : start + _REMOVE_CHUNK])
             try:
-                self.client.storage.from_(bucket).remove(chunk)
+                # The supabase client is synchronous: keep it off the event loop.
+                await asyncio.to_thread(self.client.storage.from_(bucket).remove, chunk)
             except Exception as e:
                 self.logger.warning(
                     "storage_delete_many_error",

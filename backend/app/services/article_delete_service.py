@@ -25,6 +25,7 @@ from app.services.article_read_service import owned_articles
 logger = get_logger(__name__)
 
 _BUCKET = "articles"
+_LOG_KEYS_PER_EVENT = 1000
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,10 @@ async def delete_project_articles(
 async def remove_article_objects(storage: StorageAdapter, keys: list[str]) -> int:
     """Remove the objects from the ``articles`` bucket; return how many failed."""
     failed = await storage.delete_many(_BUCKET, keys)
-    if failed:
-        logger.warning("article_delete_storage_orphans", bucket=_BUCKET, keys=failed)
+    for start in range(0, len(failed), _LOG_KEYS_PER_EVENT):
+        logger.warning(
+            "article_delete_storage_orphans",
+            bucket=_BUCKET,
+            keys=failed[start : start + _LOG_KEYS_PER_EVENT],
+        )
     return len(failed)

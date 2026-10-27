@@ -17,6 +17,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import capture_logs
 
 from app.core.deps import get_supabase
 from app.main import app
@@ -32,9 +33,16 @@ _URL = "/api/v1/projects/{pid}/articles/delete"
 
 
 @pytest.fixture
-def supabase() -> Iterator[MagicMock]:
-    """A test-local Supabase client. Request it AFTER the client fixtures: each of
-    them installs its own ``get_supabase`` override, and the last one set wins."""
+def supabase(request: pytest.FixtureRequest) -> Iterator[MagicMock]:
+    """A test-local Supabase client, installed AFTER the client fixtures.
+
+    Each ``client_as_*`` fixture installs its own ``get_supabase`` override and
+    the last one set wins, so resolve the ones this test requested first: the
+    override below then applies whatever the argument order.
+    """
+    for name in request.fixturenames:
+        if name.startswith("client_as_"):
+            request.getfixturevalue(name)
     mock = MagicMock()
     app.dependency_overrides[get_supabase] = lambda: mock
     yield mock
@@ -124,6 +132,36 @@ async def test_manager_deletes_rows_then_storage(
     _remove(supabase).assert_called_once_with([key])
 
 
+async def test_rows_are_committed_before_storage_is_touched(
+    db_session: AsyncSession,
+    client_as_manager: AsyncClient,
+    supabase: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The point of the endpoint: a storage call before the commit would orphan
+    nothing on failure but could leave rows pointing at deleted PDFs. The test
+    session is one outer transaction (a second connection cannot see the commit),
+    so spy on ``commit`` and ``remove`` and assert their order."""
+    key = f"{SEED.primary_project}/order-{uuid4()}.pdf"
+    article_id = await _insert_article(db_session, storage_key=key)
+    calls: list[str] = []
+    real_commit = db_session.commit
+
+    async def spy_commit() -> None:
+        calls.append("commit")
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", spy_commit)
+    _remove(supabase).side_effect = lambda _keys: calls.append("remove")
+
+    res = await client_as_manager.post(
+        _URL.format(pid=SEED.primary_project), json=_body(article_id)
+    )
+
+    assert res.status_code == 200, res.text
+    assert calls == ["commit", "remove"]
+
+
 async def test_foreign_id_refuses_whole_batch(
     db_session: AsyncSession, client_as_manager: AsyncClient, supabase: MagicMock
 ) -> None:
@@ -148,12 +186,15 @@ async def test_storage_failure_still_succeeds(
     article_id = await _insert_article(db_session, storage_key=key)
     _remove(supabase).side_effect = RuntimeError("storage down")
 
-    res = await client_as_manager.post(
-        _URL.format(pid=SEED.primary_project), json=_body(article_id)
-    )
+    with capture_logs() as logs:
+        res = await client_as_manager.post(
+            _URL.format(pid=SEED.primary_project), json=_body(article_id)
+        )
 
     assert res.status_code == 200, res.text
     assert res.json()["data"] == {"deleted": 1, "storage_failures": 1}
+    orphans = [e for e in logs if e["event"] == "article_delete_storage_orphans"]
+    assert [e["keys"] for e in orphans] == [[key]]
     assert await _count(db_session, "articles", "id", article_id) == 0
     _remove(supabase).assert_called_once_with([key])
 
