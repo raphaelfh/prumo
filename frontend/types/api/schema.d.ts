@@ -786,6 +786,26 @@ export interface paths {
         patch: operations["set_archived_api_v1_projects__project_id__archive_patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/articles/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Articles
+         * @description Delete the selected articles, then their PDFs; a storage failure is only counted.
+         */
+        post: operations["delete_articles_api_v1_projects__project_id__articles_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/connections": {
         parameters: {
             query?: never;
@@ -2453,6 +2473,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ArticleDeleteRead] */
+        ApiResponse_ArticleDeleteRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ArticleDeleteRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ArticleFileResponse] */
         ApiResponse_ArticleFileResponse_: {
             /** @description Dados da resposta */
@@ -3829,6 +3866,24 @@ export interface components {
             fileName?: string | null;
         };
         /**
+         * ArticleDeleteRead
+         * @description How many articles were deleted, and how many PDFs storage failed to remove.
+         */
+        ArticleDeleteRead: {
+            /** Deleted */
+            deleted: number;
+            /** Storage Failures */
+            storage_failures: number;
+        };
+        /**
+         * ArticleDeleteRequest
+         * @description Which articles to delete: the whole selection is deleted or none of it is.
+         */
+        ArticleDeleteRequest: {
+            /** Selection */
+            selection: components["schemas"]["ArticleIdsSelection"];
+        };
+        /**
          * ArticleFileListItem
          * @description Item de lista de files de um article (document switcher).
          */
@@ -3915,6 +3970,19 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+        };
+        /**
+         * ArticleIdsSelection
+         * @description An explicit list of article ids, all of which must belong to the project.
+         */
+        ArticleIdsSelection: {
+            /** Ids */
+            ids: string[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "ids";
         };
         /** ArticleProgressInstanceRead */
         ArticleProgressInstanceRead: {
@@ -10099,6 +10167,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ProjectArchiveRead_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_articles_api_v1_projects__project_id__articles_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArticleDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ArticleDeleteRead_"];
+                };
+            };
+            /** @description A member who is not a project manager */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a member of the project, no such project, or an article that is not in the project (nothing is deleted) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

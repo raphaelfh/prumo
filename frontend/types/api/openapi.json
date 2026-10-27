@@ -668,6 +668,54 @@
         "title": "ApiResponse[ArticleContentMarkdownResponse]",
         "type": "object"
       },
+      "ApiResponse_ArticleDeleteRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArticleDeleteRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ArticleDeleteRead]",
+        "type": "object"
+      },
       "ApiResponse_ArticleFileResponse_": {
         "properties": {
           "data": {
@@ -4483,6 +4531,50 @@
         "title": "ArticleContentMarkdownResponse",
         "type": "object"
       },
+      "ArticleDeleteRead": {
+        "description": "How many articles were deleted, and how many PDFs storage failed to remove.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "storage_failures": {
+            "title": "Storage Failures",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted",
+          "storage_failures"
+        ],
+        "title": "ArticleDeleteRead",
+        "type": "object"
+      },
+      "ArticleDeleteRequest": {
+        "additionalProperties": false,
+        "description": "Which articles to delete: the whole selection is deleted or none of it is.",
+        "properties": {
+          "selection": {
+            "discriminator": {
+              "mapping": {
+                "ids": "#/components/schemas/ArticleIdsSelection"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ArticleIdsSelection"
+              }
+            ],
+            "title": "Selection"
+          }
+        },
+        "required": [
+          "selection"
+        ],
+        "title": "ArticleDeleteRequest",
+        "type": "object"
+      },
       "ArticleFileListItem": {
         "description": "Item de lista de files de um article (document switcher).",
         "properties": {
@@ -4664,6 +4756,33 @@
           "updatedAt"
         ],
         "title": "ArticleFileResponse",
+        "type": "object"
+      },
+      "ArticleIdsSelection": {
+        "additionalProperties": false,
+        "description": "An explicit list of article ids, all of which must belong to the project.",
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          },
+          "mode": {
+            "const": "ids",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "ids"
+        ],
+        "title": "ArticleIdsSelection",
         "type": "object"
       },
       "ArticleProgressInstanceRead": {
@@ -16994,6 +17113,71 @@
         "summary": "Set Archived",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/articles/delete": {
+      "post": {
+        "description": "Delete the selected articles, then their PDFs; a storage failure is only counted.",
+        "operationId": "delete_articles_api_v1_projects__project_id__articles_delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArticleDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArticleDeleteRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "A member who is not a project manager"
+          },
+          "404": {
+            "description": "Not a member of the project, no such project, or an article that is not in the project (nothing is deleted)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Articles",
+        "tags": [
+          "articles"
         ]
       }
     },
