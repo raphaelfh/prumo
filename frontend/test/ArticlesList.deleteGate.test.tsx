@@ -51,12 +51,11 @@ function asRole(isManager: boolean, loading = false) {
     });
 }
 
-function renderList() {
-    const onArticlesChange = vi.fn();
-    render(
+function listElement(list: Article[], onArticlesChange: () => void) {
+    return (
         <MemoryRouter>
             <ArticlesList
-                articles={articles}
+                articles={list}
                 onArticleClick={vi.fn()}
                 projectId="p1"
                 onOpenZoteroDialog={vi.fn()}
@@ -64,9 +63,17 @@ function renderList() {
                 onOpenAddArticle={vi.fn()}
                 onArticlesChange={onArticlesChange}
             />
-        </MemoryRouter>,
+        </MemoryRouter>
     );
-    return {onArticlesChange};
+}
+
+function renderList() {
+    const onArticlesChange = vi.fn();
+    const {rerender} = render(listElement(articles, onArticlesChange));
+    return {
+        onArticlesChange,
+        showOnly: (list: Article[]) => rerender(listElement(list, onArticlesChange)),
+    };
 }
 
 async function openRowMenu(user: ReturnType<typeof userEvent.setup>) {
@@ -159,5 +166,45 @@ describe("ArticlesList delete gate", () => {
         await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
         expect(onArticlesChange).not.toHaveBeenCalled();
         expect(screen.getByText(/1 selected/)).toBeTruthy();
+    });
+
+    it("drops an article deleted from its row menu from the selection before a bulk delete", async () => {
+        asRole(true);
+        vi.mocked(deleteArticles).mockResolvedValue({ok: true, data: {deleted: 1, storage_failures: 0}});
+        const user = userEvent.setup();
+        renderList();
+
+        await user.click(screen.getByRole("checkbox", {name: /First/}));
+        await user.click(screen.getByRole("checkbox", {name: /Second/}));
+        await openRowMenu(user);
+        await user.click(await screen.findByRole("menuitem", {name: "Delete"}));
+        const rowDialog = await screen.findByRole("alertdialog");
+        await user.click(within(rowDialog).getByRole("button", {name: "Delete"}));
+        await vi.waitFor(() => expect(screen.getByText(/1 selected/)).toBeTruthy());
+        expect(deleteArticles).toHaveBeenLastCalledWith("p1", {mode: "ids", ids: ["a1"]});
+
+        await user.click(screen.getByRole("button", {name: "Delete"}));
+        const bulkDialog = await screen.findByRole("alertdialog");
+        await user.click(within(bulkDialog).getByRole("button", {name: /Delete 1 article/}));
+
+        await vi.waitFor(() => expect(deleteArticles).toHaveBeenCalledTimes(2));
+        expect(deleteArticles).toHaveBeenLastCalledWith("p1", {mode: "ids", ids: ["a2"]});
+    });
+
+    it("sends only the selected articles still in the list when the list shrinks", async () => {
+        asRole(true);
+        vi.mocked(deleteArticles).mockResolvedValue({ok: true, data: {deleted: 1, storage_failures: 0}});
+        const user = userEvent.setup();
+        const {showOnly} = renderList();
+
+        await user.click(screen.getByRole("checkbox", {name: /First/}));
+        await user.click(screen.getByRole("checkbox", {name: /Second/}));
+        showOnly([articles[1]]);
+        await user.click(screen.getByRole("button", {name: "Delete"}));
+        const dialog = await screen.findByRole("alertdialog");
+        await user.click(within(dialog).getByRole("button", {name: /Delete 1 article/}));
+
+        await vi.waitFor(() => expect(deleteArticles).toHaveBeenCalledTimes(1));
+        expect(deleteArticles).toHaveBeenCalledWith("p1", {mode: "ids", ids: ["a2"]});
     });
 });

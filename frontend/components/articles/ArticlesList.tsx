@@ -493,16 +493,25 @@ export function ArticlesList({
     }
 
       toast.success(t('articles', 'listArticleDeletedSuccess'));
+    setSelectedArticles(prev => {
+      const next = new Set(prev);
+      next.delete(articleId);
+      return next;
+    });
     onArticlesChange();
   };
 
+  // The selection can outlive its rows (deleted from a row menu, removed by a refetch);
+  // the server refuses a batch with an unknown id, so bulk delete sends only ids still listed.
+  const listedIds = new Set(articles.map(a => a.id));
+  const bulkDeleteIds = Array.from(selectedArticles).filter(id => listedIds.has(id));
+
   // Delete multiple articles
   const handleBulkDelete = async () => {
-    if (selectedArticles.size === 0) return;
+    if (bulkDeleteIds.length === 0) return;
 
     setDeleting(true);
-    const articleIds = Array.from(selectedArticles);
-    const result = await deleteArticles(projectId, {mode: 'ids', ids: articleIds});
+    const result = await deleteArticles(projectId, {mode: 'ids', ids: bulkDeleteIds});
     setDeleting(false);
     setBulkDeleteDialogOpen(false);
 
@@ -1281,7 +1290,7 @@ export function ArticlesList({
         bulkOpen={bulkDeleteDialogOpen}
         onBulkOpenChange={setBulkDeleteDialogOpen}
         onConfirmBulkDelete={handleBulkDelete}
-        bulkCount={selectedArticles.size}
+        bulkCount={bulkDeleteIds.length}
         deleting={deleting}
       />
 
