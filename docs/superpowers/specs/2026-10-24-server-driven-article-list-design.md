@@ -425,9 +425,10 @@ browser), check the counter and that the oldest record is reachable by search.
 
 Order, each a PR into `dev`:
 
-0. **Stopgap (ruled 2026-10-25):** #1055 merges as written (its own loop in
-   `loadProjectArticles`, `Refs #1054` so the issue stays open). PR 3 deletes
-   it with `loadProjectArticles`.
+0. **Stopgap (ruled 2026-10-25):** #1055 merges (`Refs #1054`, so the issue
+   stays open). Its final commit routes `loadProjectArticles` through the
+   now-exported `selectAllProjectArticles`, which owns the boundary dedupe.
+   PR 3 deletes `loadProjectArticles`; PR 4 deletes the helper.
 1. **Delete safety (small, ship first):** the delete endpoint (6.4) +
    frontend routed through it + role-gated controls. Stops the PDF loss now,
    independent of the list work.

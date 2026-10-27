@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-24-server-driven-article-list-design.md` (§2 last delete row, §6.4, §7.2 "Delete controls", §10 step 1)
 
-**Worktree:** `/Users/raphaelfedericcihaddad/PycharmProjects/prumo/.claude/worktrees/server-article-list`. Cut a fresh branch `fix/article-delete-safety` from `origin/dev` for this PR. Every command uses `git -C "$WT"`.
+**Worktree:** `/Users/raphaelfedericcihaddad/PycharmProjects/prumo/.claude/worktrees/server-article-list`. Work on this branch (`claude/confident-brahmagupta-tm8ef4`): PR 1 carries the spec and this plan into `dev`. Before Task 1, wait for #1055 to merge, then sync `dev` in with a merge (no rebase). Every command uses `git -C "$WT"`.
 
 ## Global Constraints
 
