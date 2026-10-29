@@ -167,7 +167,7 @@ class ExtractionTemplateGlobal(BaseModel):
     )
 
     is_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
+    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default=dict, nullable=False)
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Stable appraisal-instrument code (0087); ``custom`` = no fixed instrument.
@@ -232,7 +232,7 @@ class ProjectExtractionTemplate(BaseModel):
         server_default=TemplateKind.EXTRACTION.value,
     )
 
-    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
+    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default=dict, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -413,7 +413,7 @@ class ExtractionField(BaseModel):
 
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     validation_schema: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, default={}, nullable=True
+        JSONB, default=dict, nullable=True
     )
     allowed_values: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     unit: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -537,7 +537,7 @@ class ExtractionEvidence(BaseModel):
     )
 
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default={}, nullable=True)
+    position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict, nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     attribution_label: Mapped[str | None] = mapped_column(Text, nullable=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -655,8 +655,8 @@ class ExtractionRun(Base, UUIDMixin):
         nullable=False,
     )
 
-    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=False)
-    results: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    results: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     started_at: Mapped[datetime | None] = mapped_column(
