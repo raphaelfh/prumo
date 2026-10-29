@@ -343,42 +343,6 @@ export function fetchArticlePdfSignedUrl(articleId: string): Promise<ErrorResult
 }
 
 // ---------------------------------------------------------------------------
-// ArticlesList: delete a single article with its files
-// ---------------------------------------------------------------------------
-
-/**
- * Deletes an article row and all associated storage objects.
- * Storage deletion is best-effort (non-fatal warning on partial failure).
- */
-export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
-  return toResult(async () => {
-    const {data: files, error: filesError} = await supabase
-      .from('article_files')
-      .select('storage_key')
-      .eq('article_id', articleId);
-
-    if (filesError) throw filesError;
-
-    if (files && files.length > 0) {
-      const filePaths = (files as {storage_key: string}[]).map(f => f.storage_key);
-      const {error: storageError} = await supabase.storage
-        .from('articles')
-        .remove(filePaths);
-      if (storageError) {
-        console.warn('articlesService.deleteArticle: storage removal warning:', storageError);
-      }
-    }
-
-    const {error: deleteError} = await supabase
-      .from('articles')
-      .delete()
-      .eq('id', articleId);
-
-    if (deleteError) throw deleteError;
-  }, 'articlesService.deleteArticle');
-}
-
-// ---------------------------------------------------------------------------
 // ArticleDetailDialog: trigger a re-parse for a stuck article file
 // ---------------------------------------------------------------------------
 
@@ -391,7 +355,10 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
 // Project-wide article lists (worklist, dashboard stats, HITL)
 // ---------------------------------------------------------------------------
 
-/** PostgREST default max-rows. A short page is the last one. */
+/**
+ * PostgREST hosted default max-rows. A short page is the last one; a project
+ * cap below this would truncate at the cap again.
+ */
 const ARTICLES_PAGE = 1000;
 
 /**
@@ -404,12 +371,17 @@ const ARTICLES_PAGE = 1000;
  * `id` breaks ties on `created_at`: seeded or bulk-imported articles share a
  * timestamp, and equal keys have no stable order across requests, so a row
  * could repeat on one page and vanish from the next.
+ *
+ * Rows are deduped by id: a concurrent insert shifts later rows down one
+ * offset, repeating a row at each page boundary. The helper owns the dedupe so
+ * every caller gets the fix, not only the project view.
  */
-async function selectAllProjectArticles<T>(
+export async function selectAllProjectArticles<T extends {id: string}>(
   projectId: string,
   columns: string,
 ): Promise<T[]> {
   const rows: T[] = [];
+  const seen = new Set<string>();
   for (let from = 0; ; from += ARTICLES_PAGE) {
     const {data, error} = await supabase
       .from('articles')
@@ -421,8 +393,12 @@ async function selectAllProjectArticles<T>(
 
     if (error) throw error;
 
-    const page = (data ?? []) as T[];
-    rows.push(...page);
+    const page = (data ?? []) as unknown as T[];
+    for (const row of page) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
     if (page.length < ARTICLES_PAGE) return rows;
   }
 }
@@ -453,42 +429,6 @@ export function loadExtractionTableArticles(
       ),
     'articlesService.loadExtractionTableArticles',
   );
-}
-
-// ---------------------------------------------------------------------------
-// ArticlesList: bulk delete articles with their files
-// ---------------------------------------------------------------------------
-
-/**
- * Deletes multiple article rows and all associated storage objects.
- * Storage deletion is best-effort (non-fatal warning on partial failure).
- */
-export function bulkDeleteArticles(articleIds: string[]): Promise<ErrorResult<void>> {
-  return toResult(async () => {
-    const {data: files, error: filesError} = await supabase
-      .from('article_files')
-      .select('storage_key')
-      .in('article_id', articleIds);
-
-    if (filesError) throw filesError;
-
-    if (files && files.length > 0) {
-      const filePaths = (files as {storage_key: string}[]).map(f => f.storage_key);
-      const {error: storageError} = await supabase.storage
-        .from('articles')
-        .remove(filePaths);
-      if (storageError) {
-        console.warn('articlesService.bulkDeleteArticles: storage removal warning:', storageError);
-      }
-    }
-
-    const {error: deleteError} = await supabase
-      .from('articles')
-      .delete()
-      .in('id', articleIds);
-
-    if (deleteError) throw deleteError;
-  }, 'articlesService.bulkDeleteArticles');
 }
 
 // ---------------------------------------------------------------------------

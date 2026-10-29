@@ -194,6 +194,28 @@ def _protocol_lines(eligibility: Any, study_design: Any) -> list[str]:
     return lines
 
 
+def protocol_exclusion_reasons(picots: Any, eligibility: Any) -> list[str]:
+    """The protocol's exclusion reasons a screening reviewer may cite.
+
+    Every PICOTS slot's exclusions in slot order, then the eligibility
+    exclusions; first occurrence kept. Independent of the ``ai_context``
+    switch: that governs AI prompts, these are the protocol's reasons for humans.
+    """
+    reasons: list[str] = []
+    if isinstance(picots, Mapping):
+        for key in _SLOT_KEYS:
+            reader = _timing_texts if key == "timing" else _texts
+            reasons.extend(reader(picots.get(key))[2])
+    if isinstance(eligibility, Mapping):
+        reasons.extend(_string_list(eligibility.get("exclusion")))
+    return list(dict.fromkeys(reasons))
+
+
+async def load_exclusion_reasons(db: AsyncSession, project_id: UUID) -> list[str]:
+    project = await _load(db, project_id)
+    return protocol_exclusion_reasons(project.picots_config_ai_review, project.eligibility_criteria)
+
+
 def render_review_question(
     picots: Any, review_type: str | None, eligibility: Any, study_design: Any
 ) -> str | None:

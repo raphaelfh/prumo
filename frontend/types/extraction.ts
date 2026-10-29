@@ -134,7 +134,7 @@ export const ExtractionFieldSchema = z.object({
     .nullable(),
   
   field_type: z.enum(['text', 'number', 'date', 'select', 'multiselect', 'boolean'], {
-      errorMap: () => ({message: 'Invalid field type'}),
+      error: 'Invalid field type',
   }),
   
   is_required: z.boolean().default(false),
@@ -174,7 +174,7 @@ export const ExtractionFieldSchema = z.object({
     ),
 
   // "Other (specify)" support
-  allow_other: z.boolean().default(false).optional(),
+  allow_other: z.boolean().optional(),
   // No default: a .default() wrapped in .optional() never fires (dead
   // code, removed at B-7) — the runtime fallback is the English copy key.
   other_label: z.string()
@@ -186,20 +186,21 @@ export const ExtractionFieldSchema = z.object({
     .optional()
     .nullable(),
 
-  // ADR-0016 per-field disposition flags. `allows_no_information` defaults
-  // TRUE, unlike its two siblings: it was universal before migration 0062,
-  // so an absent key means the marker was available.
-  allows_not_applicable: z.boolean().default(false).optional(),
-  allows_not_evaluated: z.boolean().default(false).optional(),
-  allows_no_information: z.boolean().default(true).optional(),
+  // ADR-0016 per-field disposition flags. Optional with no schema default:
+  // writers set an explicit boolean and the DB column's server_default
+  // backfills. An absent `allows_no_information` means the marker was
+  // available, unlike its two siblings (it was universal before 0062).
+  allows_not_applicable: z.boolean().optional(),
+  allows_not_evaluated: z.boolean().optional(),
+  allows_no_information: z.boolean().optional(),
 
   // 0059: this field's value identifies an instance of a repeating
   // section. At most one per section — the API refuses a second with a
   // 409, so the UI offers it as a single choice rather than a checkbox
   // per field.
-  is_entity_key: z.boolean().default(false).optional(),
+  is_entity_key: z.boolean().optional(),
 
-  validation_schema: z.record(z.any())
+  validation_schema: z.record(z.string(), z.any())
     .optional()
     .nullable(),
   

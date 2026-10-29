@@ -45,7 +45,7 @@ const buildCustomTemplateSchema = () => z.object({
     .optional()
     .nullable(),
   framework: z.enum(['CUSTOM', 'CHARMS', 'PICOS'], {
-      errorMap: () => ({message: t('extraction', 'createValidationFramework')})
+      error: t('extraction', 'createValidationFramework'),
   })
 });
 

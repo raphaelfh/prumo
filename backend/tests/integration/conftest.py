@@ -508,6 +508,18 @@ async def seeded_integration_db() -> AsyncGenerator[IntegrationSeedIds, None]:
     yield SEED
 
 
+@pytest_asyncio.fixture
+async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """Real-commit sessions on one engine, for tests that race transactions.
+
+    Every session it opens commits for real: a test using it cleans up what
+    it writes (``throwaway_project`` in ``helpers/shared_fixtures.py``).
+    """
+    engine = create_async_engine(settings.async_database_url, echo=False, pool_pre_ping=True)
+    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await engine.dispose()
+
+
 # =================== SHARED B-4 / CLONE TEST HELPERS ===================
 # The clone-based fixtures and the config draft marker are the pivot of
 # the template-config suites; one home stops per-file copies drifting.

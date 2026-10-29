@@ -454,7 +454,7 @@ export function TemplateConfigGridPanel({
    */
   const validateKeyCommit = (field: GridField, value: string): string | null => {
     const parsed = ExtractionFieldSchema.shape.name.safeParse(value);
-    if (!parsed.success) return parsed.error.errors[0].message;
+    if (!parsed.success) return parsed.error.issues[0].message;
     const siblings = entityTypes.find((et) => et.id === field.entityTypeId)?.fields ?? [];
     const taken = new Set([
       ...siblings.filter((f) => f.id !== field.id).map((f) => f.name),

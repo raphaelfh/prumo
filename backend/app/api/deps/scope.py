@@ -10,6 +10,9 @@ second copy is how two endpoints come to disagree:
 ``load_run_for_member`` — resolve a run or refuse (404 missing, 403
 non-member). Used by the ten run-scoped endpoints and by the kickoff gate.
 
+``load_assignment_for_member`` — the same shape for a screening assignment:
+resolve it (404), then membership on its own project (403).
+
 ``assert_kickoff_scope`` — the (project, article, template, run) coordinate
 an AI kickoff posts, bound before any work is queued; each branch ends in
 ``assert_ai_kickoff``.
@@ -28,12 +31,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps.security import ensure_project_member, ensure_project_reviewer
 from app.schemas.extraction_run import RunSummaryResponse
 from app.schemas.llm_target import LlmTarget
+from app.schemas.screening import ScreeningAssignmentRef
 from app.services import engine_credentials
 from app.services.extraction_run_read_service import RunNotFoundError, get_run_or_raise
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
 )
+from app.services.screening_review_service import AssignmentNotFoundError, get_assignment_ref
 
 
 async def load_run_for_member(db: AsyncSession, run_id: UUID, user_sub: UUID) -> RunSummaryResponse:
@@ -52,6 +57,25 @@ async def load_run_for_member(db: AsyncSession, run_id: UUID, user_sub: UUID) ->
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     await ensure_project_member(db, run.project_id, user_sub)
     return run
+
+
+async def load_assignment_for_member(
+    db: AsyncSession, assignment_id: UUID, user_sub: UUID
+) -> ScreeningAssignmentRef:
+    """Load a screening assignment by id, 404 when missing, 403 when the caller is not a member.
+
+    THE assignment-resolution composition, shaped like ``load_run_for_member``:
+    membership is checked on the assignment's own project, so there is no
+    second client id to compare. Routes then check the role on ``ref.project_id``.
+    """
+    try:
+        ref = await get_assignment_ref(db, assignment_id)
+    except AssignmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Screening assignment not found"
+        ) from exc
+    await ensure_project_member(db, ref.project_id, user_sub)
+    return ref
 
 
 async def assert_ai_kickoff(

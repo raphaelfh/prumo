@@ -20,7 +20,7 @@ from typing import Any, Literal
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from app.core.config import Settings, settings
+from app.core.config import settings
 
 TOKEN_VERSION = "aip1"
 TOKEN_TTL = timedelta(minutes=30)
@@ -34,12 +34,6 @@ class PlanTokenError(Exception):
     def __init__(self, reason: Literal["invalid", "expired"]) -> None:
         super().__init__(reason)
         self.reason = reason
-
-
-def minting_allowed() -> bool:
-    """False while ``ENCRYPTION_KEY`` is still the placeholder outside local dev."""
-    placeholder = Settings.model_fields["ENCRYPTION_KEY"].default == settings.ENCRYPTION_KEY
-    return not placeholder or settings.supabase_env == "local"
 
 
 def _key() -> bytes:
@@ -72,11 +66,9 @@ def verify(token: str, *, now: datetime) -> tuple[dict[str, Any], str]:
     """``(claims, plan_digest)`` of an untampered, unexpired token.
 
     The MAC is compared in constant time before the payload is parsed, so an
-    edited token reveals nothing about the claims it would carry. Nothing
-    verifies while ``minting_allowed()`` is false: the placeholder key is
-    public, so a token under it proves nothing."""
-    if not minting_allowed():
-        raise PlanTokenError("invalid")
+    edited token reveals nothing about the claims it would carry. The
+    placeholder key never signs anything: the web service and the worker
+    refuse to boot with it outside local dev (``check_encryption_key``)."""
     parts = token.split(".")
     if len(parts) != 3 or parts[0] != TOKEN_VERSION:
         raise PlanTokenError("invalid")

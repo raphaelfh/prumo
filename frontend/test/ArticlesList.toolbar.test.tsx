@@ -24,12 +24,15 @@ vi.mock("@/integrations/supabase/client", () => ({supabase: {}}));
 vi.mock("@/services/articlesService", () => ({
     fetchArticleIdsWithMainFile: vi.fn(async () => ({ok: true, data: [] as string[]})),
     fetchArticlePdfSignedUrl: vi.fn(),
-    deleteArticle: vi.fn(),
-    bulkDeleteArticles: vi.fn(),
 }));
 
 vi.mock("@/hooks/useZoteroIntegration", () => ({
     useZoteroIntegration: () => ({isConfigured: true}),
+}));
+
+// The real hook reads project_members through Supabase.
+vi.mock("@/hooks/useProjectMemberRole", () => ({
+    useProjectMemberRole: () => ({role: "reviewer", isManager: false, loading: false}),
 }));
 
 vi.mock("@/components/articles/ArticlesExportDialog", () => ({

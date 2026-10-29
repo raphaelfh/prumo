@@ -265,6 +265,11 @@ class Settings(BaseSettings):
     # not convention (net_guard._private_ranges_allowed).
     ALLOW_PRIVATE_LLM_ENDPOINTS: bool = False
 
+    # =================== NCBI (PubMed E-utilities) ===================
+    # Sent as `email` with `tool=prumo` on every E-utilities call; a non-dry-run
+    # PubMed import refuses while unset.
+    NCBI_EMAIL: str | None = None
+
     # =================== FEEDBACK / LINEAR ===================
     LINEAR_API_KEY: str | None = None
     LINEAR_TEAM_ID: str | None = None
@@ -283,6 +288,12 @@ class Settings(BaseSettings):
         """Return o ambiente do Supabase (local | production)."""
         value = (self.SUPABASE_ENV or "").strip().lower()
         return "local" if value == "local" else "production"
+
+    @property
+    def encryption_key_is_placeholder(self) -> bool:
+        """True while ``ENCRYPTION_KEY`` is blank or the published default."""
+        key = self.ENCRYPTION_KEY.strip()
+        return not key or key == type(self).model_fields["ENCRYPTION_KEY"].default
 
 
 @lru_cache

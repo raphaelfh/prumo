@@ -158,3 +158,25 @@ def test_baseline_grandfathers_a_known_pair(tmp_path: Path) -> None:
     proc = _run(tmp_path, baseline=str(baseline))
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+_DECISION_GUARD = """from sqlalchemy import select
+from app.models.screening import ScreeningDecision
+
+
+async def {name}(db, decision_id, assignment_id):
+    return (await db.execute(select(ScreeningDecision).where(
+        ScreeningDecision.id == decision_id, ScreeningDecision.assignment_id == assignment_id,
+    ))).scalar_one_or_none()
+"""
+
+
+def test_fires_on_a_second_decision_in_assignment_predicate(tmp_path: Path) -> None:
+    """``assignment_id`` scopes a screening decision: a second copy of the guard fires."""
+    _plant(tmp_path, "services/a_service.py", _DECISION_GUARD.format(name="owned_a"))
+    _plant(tmp_path, "services/b_service.py", _DECISION_GUARD.format(name="owned_b"))
+
+    proc = _run(tmp_path)
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "ScreeningDecision{assignment_id,id}" in proc.stdout

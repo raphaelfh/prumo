@@ -6,6 +6,7 @@ Permite trocar implementacao (Supabase, S3, local) sem afetar services.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 
 class StorageAdapter(ABC):
@@ -74,6 +75,29 @@ class StorageAdapter(ABC):
             True if removed, False if it did not exist.
         """
         pass
+
+    async def delete_many(self, bucket: str, paths: Sequence[str]) -> list[str]:
+        """
+        Remove several files; never raises for a per-file failure.
+
+        Default loops over `delete`. Adapters with a bulk API override it.
+
+        Args:
+            bucket: Bucket name.
+            paths: File paths to remove.
+
+        Returns:
+            Paths that could not be removed (empty = all removed).
+        """
+        failed: list[str] = []
+        for path in paths:
+            try:
+                removed = await self.delete(bucket, path)
+            except Exception:
+                removed = False
+            if not removed:
+                failed.append(path)
+        return failed
 
     @abstractmethod
     async def exists(self, bucket: str, path: str) -> bool:

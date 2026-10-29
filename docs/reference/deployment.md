@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-14
+last_reviewed: 2026-10-23
 owner: '@raphaelfh'
 ---
 
@@ -75,13 +75,13 @@ prevents this in CI, but the log event is the runtime safety net.
 
 ## Environment variables
 
-There is no tracked env template — env files match `.gitignore` line 21 (`.env.*`). Two hosts, two requirement sets: the **Railway (backend)** tables immediately below, and the **Vercel (frontend)** subsection further down (the `VITE_` prefix rule makes them genuinely different). These tables are the canonical reference; paste the values into the Railway dashboard or use the Railway CLI to set them.
+The tracked templates are `backend/.env.example` and the root `.env.example`; real env files match `.gitignore` line 21 (`.env.*`). Two hosts, two requirement sets: the **Railway (backend)** tables immediately below, and the **Vercel (frontend)** subsection further down (the `VITE_` prefix rule makes them genuinely different). These tables are the canonical reference; paste the values into the Railway dashboard or use the Railway CLI to set them.
 
 ### Shared across all services
 
 | Key | Source |
 | --- | --- |
-| `ENCRYPTION_KEY` | rotated by hand; MUST be the same value across web + worker (Zotero credentials are cross-process) |
+| `ENCRYPTION_KEY` | set once, never rotate (encrypted Zotero and LLM-connection keys would become unreadable); MUST be the same value across web + worker (Zotero credentials are cross-process). Both refuse to boot while it is blank or the `.env.example` placeholder, unless `SUPABASE_ENV=local` (`app/core/security.py::check_encryption_key`) |
 | `SUPABASE_URL` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings |
 | `DATABASE_URL` | Supabase Session pooler (used for app traffic; see [Reaching prod Postgres](#reaching-prod-postgres)) |
@@ -119,7 +119,9 @@ pass it inline (`DATABASE_URL=... uv run ...`), never by editing
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
 | `web` | `RATE_LIMIT_STORAGE_URI` | `${{Redis.REDIS_URL}}` (reference variable). Unset falls back to `memory://`, which is per process: limits then reset on restart and are not shared across instances. |
 | `web` | `TRUSTED_CLIENT_IP_HEADER` | `X-Real-IP` in production. The request header every per-IP rate-limit key reads (OAuth `/register` and `/token`, unauthenticated `/mcp`, anonymous REST). Unset keys on the TCP peer, which behind Railway's edge is the proxy: every caller then shares one bucket. Trust assumption: Railway's edge overwrites a caller-supplied `X-Real-IP` (its http logs record the real `srcIp` for a request that spoofed the header), and `web` has no TCP proxy or other public path that bypasses the edge. A value that is not one IP literal falls back to the peer. Never set it on a service reachable without the edge. |
+| `web` | `NCBI_EMAIL` | Optional. Contact email sent to NCBI E-utilities with `tool=prumo` on PubMed imports (NCBI asks for one). Unset, a non-dry-run PubMed import is refused with 503 `NCBI_EMAIL_NOT_CONFIGURED`; dry runs need none. |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
+| `worker` | `NCBI_EMAIL` | Optional. Same value as `web`: the worker's efetch calls send it with `tool=prumo`. |
 
 ### Feedback / Linear
 

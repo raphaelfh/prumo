@@ -60,6 +60,7 @@ SCOPE_COLUMNS = {
     "created_by",
     "run_id",
     "instance_id",
+    "assignment_id",
 }
 
 #: Raw membership SQL belongs NOWHERE. The role predicates live in SQL

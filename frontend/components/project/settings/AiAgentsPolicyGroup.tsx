@@ -27,7 +27,7 @@ const AGENT_RUNS_COPY = {
 const AGENT_RUNS = ['off', 'managers', 'reviewers'] as const;
 
 const wholeNumber = (max: number, message: string) =>
-  z.number({invalid_type_error: message}).int(message).min(1, message).max(max, message);
+  z.number({error: message}).int(message).min(1, message).max(max, message);
 
 const policySchema = z.object({
   agent_runs: z.enum(AGENT_RUNS),

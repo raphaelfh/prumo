@@ -26,6 +26,7 @@ import {
   fetchProjectArticles,
   insertArticle,
   loadExtractionTableArticles,
+  selectAllProjectArticles,
   uploadArticleFile,
 } from '@/services/articlesService';
 
@@ -237,5 +238,31 @@ describe('articlesService — project article lists', () => {
     const {order} = mockArticleRows(3);
     await load('proj-1');
     expect(order.mock.calls).toEqual([['created_at', {ascending: false}], ['id']]);
+  });
+
+  it('dedupes a row repeated at a page boundary by a concurrent insert', async () => {
+    // An insert while page 2 is read shifts every later row down one offset,
+    // so the last row of page 1 comes back as the first row of page 2. The
+    // helper, not each caller, owns the dedupe.
+    const firstPage = Array.from({length: 1000}, (_, i) => ({id: `art-${i}`}));
+    const secondPage = [
+      firstPage[999],
+      ...Array.from({length: 1000}, (_, i) => ({id: `art-${1000 + i}`})),
+    ];
+    const pages = [firstPage, secondPage];
+
+    const chain: Record<string, unknown> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.order = vi.fn(() => chain);
+    chain.range = vi.fn(() => chain);
+    chain.then = (resolve: (v: {data: unknown; error: null}) => unknown) =>
+      Promise.resolve(resolve({data: pages.shift() ?? [], error: null}));
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
+
+    const rows = await selectAllProjectArticles<{id: string}>('proj-1', 'id');
+
+    expect(rows).toHaveLength(2000);
+    expect(new Set(rows.map(row => row.id)).size).toBe(2000);
   });
 });

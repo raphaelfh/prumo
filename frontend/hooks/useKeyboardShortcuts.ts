@@ -42,11 +42,17 @@ function isTypingTarget(e: KeyboardEvent): boolean {
   ));
 }
 
-/** A confirm is a dialog too: Radix AlertDialog renders `role="alertdialog"`. */
-export function isDialogOpen(): boolean {
-  return !!document.querySelector(
-    'dialog[open], :is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]):not([hidden]):not([data-state="closed"])',
-  );
+const OPEN_OVERLAY_SELECTOR =
+  'dialog[open], :is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-modal="true"]):not([hidden]):not([data-state="closed"])';
+
+/**
+ * A confirm is a dialog too: Radix AlertDialog renders `role="alertdialog"`.
+ * `own`: an element inside the caller's own overlay; an overlay holding it
+ * does not count.
+ */
+export function isDialogOpen(own?: Element | null): boolean {
+  if (!own) return !!document.querySelector(OPEN_OVERLAY_SELECTOR);
+  return Array.from(document.querySelectorAll(OPEN_OVERLAY_SELECTOR)).some((overlay) => !overlay.contains(own));
 }
 
 export function useKeyboardShortcuts({
