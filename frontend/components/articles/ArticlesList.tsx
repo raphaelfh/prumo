@@ -19,11 +19,11 @@ import {Separator} from "@/components/ui/separator";
 import {IconButton} from "@/components/patterns/IconButton";
 import {toast} from "sonner";
 import {
-    deleteArticle,
-    bulkDeleteArticles,
     fetchArticleIdsWithMainFile,
     fetchArticlePdfSignedUrl,
 } from "@/services/articlesService";
+import {deleteArticles} from "@/services/articleListService";
+import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
 import {t} from "@/lib/copy";
 import {doiUrl} from "@/lib/doi";
 import {TABLE_CELL_CLASS} from "@/lib/table-constants";
@@ -273,6 +273,8 @@ export function ArticlesList({
                                  onOpenAddArticle,
                              }: ArticlesListProps) {
     const isNarrow = useIsNarrow();
+    // Deleting is manager-only on the server; reviewers get no Delete control.
+    const {isManager} = useProjectMemberRole(projectId);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -480,7 +482,7 @@ export function ArticlesList({
   // Delete single article
   const handleDeleteArticle = async (articleId: string) => {
     setDeleting(true);
-    const result = await deleteArticle(articleId);
+    const result = await deleteArticles(projectId, {mode: 'ids', ids: [articleId]});
     setDeleting(false);
     setDeleteDialogOpen(false);
     setArticleToDelete(null);
@@ -491,16 +493,25 @@ export function ArticlesList({
     }
 
       toast.success(t('articles', 'listArticleDeletedSuccess'));
+    setSelectedArticles(prev => {
+      const next = new Set(prev);
+      next.delete(articleId);
+      return next;
+    });
     onArticlesChange();
   };
 
+  // The selection can outlive its rows (deleted from a row menu, removed by a refetch);
+  // the server refuses a batch with an unknown id, so bulk delete sends only ids still listed.
+  const listedIds = new Set(articles.map(a => a.id));
+  const bulkDeleteIds = Array.from(selectedArticles).filter(id => listedIds.has(id));
+
   // Delete multiple articles
   const handleBulkDelete = async () => {
-    if (selectedArticles.size === 0) return;
+    if (bulkDeleteIds.length === 0) return;
 
     setDeleting(true);
-    const articleIds = Array.from(selectedArticles);
-    const result = await bulkDeleteArticles(articleIds);
+    const result = await deleteArticles(projectId, {mode: 'ids', ids: bulkDeleteIds});
     setDeleting(false);
     setBulkDeleteDialogOpen(false);
 
@@ -509,7 +520,7 @@ export function ArticlesList({
       return;
     }
 
-      toast.success(`${articleIds.length} article(s) deleted successfully!`);
+      toast.success(t('articles', 'listArticlesDeletedSuccess').replace('{{n}}', String(result.data.deleted)));
     setSelectedArticles(new Set());
     onArticlesChange();
   };
@@ -1032,17 +1043,21 @@ export function ArticlesList({
                                                   <Upload className="mr-2 h-3.5 w-3.5"/>
                                                   Attach file
                                               </DropdownMenuItem>
-                                              <DropdownMenuSeparator/>
-                                              <DropdownMenuItem
-                                                  onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      openDeleteDialog(article.id);
-                                                  }}
-                                                  className="text-xs text-destructive focus:text-destructive"
-                                              >
-                                                  <Trash2 className="mr-2 h-3.5 w-3.5"/>
-                                                  Delete
-                                              </DropdownMenuItem>
+                                              {isManager && (
+                                                  <>
+                                                      <DropdownMenuSeparator/>
+                                                      <DropdownMenuItem
+                                                          onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              openDeleteDialog(article.id);
+                                                          }}
+                                                          className="text-xs text-destructive focus:text-destructive"
+                                                      >
+                                                          <Trash2 className="mr-2 h-3.5 w-3.5"/>
+                                                          Delete
+                                                      </DropdownMenuItem>
+                                                  </>
+                                              )}
                                           </DropdownMenuContent>
                                       </DropdownMenu>
                                   </TableCell>
@@ -1096,13 +1111,17 @@ export function ArticlesList({
                                 }} className="text-xs">
                                     <Upload className="mr-2 h-3.5 w-3.5"/> Attach file
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator/>
-                                <DropdownMenuItem onClick={(e) => {
-                                    e.stopPropagation();
-                                    openDeleteDialog(article.id);
-                                }} className="text-xs text-destructive focus:text-destructive">
-                                    <Trash2 className="mr-2 h-3.5 w-3.5"/> Delete
-                                </DropdownMenuItem>
+                                {isManager && (
+                                    <>
+                                        <DropdownMenuSeparator/>
+                                        <DropdownMenuItem onClick={(e) => {
+                                            e.stopPropagation();
+                                            openDeleteDialog(article.id);
+                                        }} className="text-xs text-destructive focus:text-destructive">
+                                            <Trash2 className="mr-2 h-3.5 w-3.5"/> Delete
+                                        </DropdownMenuItem>
+                                    </>
+                                )}
                             </DropdownMenuContent>
                         </DropdownMenu>
                     }
@@ -1215,16 +1234,18 @@ export function ArticlesList({
                                     <span className="text-[11px] font-medium text-foreground tabular-nums">
                                         {t('articles', 'listSelectedCount').replace('{{n}}', String(selectedArticles.size))}
                                     </span>
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => setBulkDeleteDialogOpen(true)}
-                                        disabled={deleting}
-                                        className="h-6 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
-                                    >
-                                        <Trash2 className="mr-1 h-3 w-3"/>
-                                        {t('articles', 'listDelete')}
-                                    </Button>
+                                    {isManager && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => setBulkDeleteDialogOpen(true)}
+                                            disabled={deleting}
+                                            className="h-6 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        >
+                                            <Trash2 className="mr-1 h-3 w-3"/>
+                                            {t('articles', 'listDelete')}
+                                        </Button>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1269,7 +1290,7 @@ export function ArticlesList({
         bulkOpen={bulkDeleteDialogOpen}
         onBulkOpenChange={setBulkDeleteDialogOpen}
         onConfirmBulkDelete={handleBulkDelete}
-        bulkCount={selectedArticles.size}
+        bulkCount={bulkDeleteIds.length}
         deleting={deleting}
       />
 

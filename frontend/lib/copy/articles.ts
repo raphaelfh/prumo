@@ -240,6 +240,7 @@ export const articles = {
     listDelete: 'Delete',
     listDeleteCount: 'Delete {{n}} article(s)',
     listArticleDeletedSuccess: 'Article deleted successfully!',
+    listArticlesDeletedSuccess: '{{n}} article(s) deleted successfully!',
     listErrorDeletingArticle: 'Error deleting article',
     listErrorDeletingArticles: 'Error deleting article(s)',
     listPdfNotFound: 'PDF file not found',
