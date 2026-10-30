@@ -104,7 +104,7 @@ class Article(BaseModel):
 
     # Metadata adicionais
     study_design: Mapped[str | None] = mapped_column(String, nullable=True)
-    registration: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
+    registration: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=True)
     funding: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=True)
     conflicts_of_interest: Mapped[str | None] = mapped_column(Text, nullable=True)
     data_availability: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -112,7 +112,7 @@ class Article(BaseModel):
     # Controle de versao and ingestao
     hash_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
     ingestion_source: Mapped[str | None] = mapped_column(String, nullable=True)
-    source_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
+    source_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=True)
     row_version: Mapped[int] = mapped_column(BigInteger, default=1, nullable=False)
 
     # Campos Zotero
