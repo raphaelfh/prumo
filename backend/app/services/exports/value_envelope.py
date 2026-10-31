@@ -15,15 +15,14 @@ returns a raw ``list`` — every envelope shape collapses to a scalar or
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from app.models.extraction import ExtractionFieldType
+from app.services.exports.values import peel_envelope
 from app.services.value_contract import is_envelope
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
     strip_verification,
-    value_absent_reason,
 )
 
 # An openpyxl-writable scalar. NEVER a dict, NEVER a list.
@@ -41,39 +40,6 @@ class _FieldLike(Protocol):
 
     type: ExtractionFieldType
     unit: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class PeeledValue:
-    """A stored value envelope with every wrap removed: the inner payload,
-    the envelope's unit (if any) and its coded absent reason (if a marker)."""
-
-    value: Any
-    unit: str | None
-    absent_reason: str | None
-
-
-def peel_envelope(raw: Any) -> PeeledValue:
-    """The one envelope peel shared by the export resolver and the MCP renderer.
-
-    Strips the ``verification`` annotation, then unwraps ``{"value": ...}``
-    envelopes (legacy rows may be double-wrapped) while each level's keys stay
-    within ``ENVELOPE_KEYS``. The outermost non-empty ``unit`` wins, as the
-    write-time contract merges a double wrap. A closed-vocabulary marker at any
-    level ends the peel with ``value=None``; an out-of-vocabulary reason is not
-    a marker and peels like any other sibling.
-    """
-    unit: str | None = None
-    while True:
-        raw = strip_verification(raw)
-        reason = value_absent_reason(raw)
-        if reason is not None:
-            return PeeledValue(value=None, unit=None, absent_reason=reason)
-        if not is_envelope(raw):
-            return PeeledValue(value=raw, unit=unit, absent_reason=None)
-        if unit is None and isinstance(raw.get("unit"), str) and raw["unit"]:
-            unit = raw["unit"]
-        raw = raw["value"]
 
 
 def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScalar:
