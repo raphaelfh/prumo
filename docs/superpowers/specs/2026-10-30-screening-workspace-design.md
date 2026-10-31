@@ -121,8 +121,9 @@ param `screeningTab`, rendered by
   `?article=`.
 - **"Import from PubMed"** (today in `ScreeningHeader.tsx:95-99`, every member,
   rendered above `NothingEnrolled`, `ScreeningTab.tsx:105-108`) moves to the
-  Title/abstract toolbar, every member. The toolbar always renders, whatever
-  the state below it. "Enroll all" (`EnrollAllButton`) moves to the same
+  Title/abstract toolbar, every member except a viewer (read-only, §4.6). The
+  toolbar always renders, whatever the state below it, including "not set
+  up". "Enroll all" (`EnrollAllButton`) moves to the same
   toolbar (manager). **"Nothing enrolled" is not an empty state**: the list
   shows every article as a Not enrolled row (the §5 anti-join) with an "Enroll
   all" call to action above it (manager; members see "A manager enrolls
@@ -194,8 +195,9 @@ Built from `frontend/components/shared/list/*`, not from `ArticlesList.tsx`.
 - **Status views**: a segmented control with counts (same visual as
   `SectionViewSwitcher`), URL `?status=`. A view with 0 stays visible but
   muted, except Conflict and Not enrolled, which hide at 0.
-- **Default view by role**: reviewer → To screen; arbitrator who is not a
-  reviewer → Conflict when > 0, else All; manager or viewer → All.
+- **Default view by role**: reviewer → To screen; consensus (an arbitrator;
+  every arbitrator also reviews in this tree) → Conflict when > 0, else To
+  screen; manager or viewer → All.
 - **Search** `ListToolbarSearch` (`⌘F`). **Filter** `FilterButtonWithPopover`
   (`F`): Title, Authors, Journal (text); Year (range); My decision; Exclusion
   reason; Source; PDF (FT). `ActiveFilterChips` below the toolbar.
@@ -212,7 +214,7 @@ Built from `frontend/components/shared/list/*`, not from `ArticlesList.tsx`.
   same payload: "X of N decided · you: M left · K to full text →". The link
   switches to the Full text sub-view. S1 renders only "X of N decided · you:
   M left"; S3 adds the "K to full text →" segment.
-- **Toolbar actions**: "Import from PubMed" (every member, §4); "Enroll N new"
+- **Toolbar actions**: "Import from PubMed" (every member but a viewer, §4); "Enroll N new"
   (manager, TA); "Send N to full text" (manager, FT; §7.2; S3); "▶ Start
   screening" (primary; only when "you: M left" > 0; selects the first To
   screen row in queue order and maximizes).
@@ -251,8 +253,11 @@ seat, so it leaks no peer decision to anyone who must still decide.
 ### 4.4 Side panel content
 
 - **To screen**: `RecordBody` + `DecisionButtons` pinned at the bottom (reused).
-  After a decision the row stays with its new chip, the cursor moves to the
-  next To screen row **in queue order**, the live-region announcement is kept,
+  After a decision the row stays with its new chip in the current view, even
+  when its new status no longer matches it (session-sticky decided ids),
+  until the user changes the view, search or a filter, or reloads; the cursor
+  moves to the next To screen row **in queue order**, the live-region
+  announcement is kept,
   and the next two `GET /screening/assignments/{id}` are prefetched.
 - **Waiting / In review / decided**: the `AssignmentView` body, read-only,
   showing exactly what the server returns. Its back button is removed.
@@ -322,7 +327,10 @@ Every sub-view, list level:
 - Empty filter result ("No records match" + clear filters).
 - A status view with 0: the view stays visible and muted and its list shows
   "No records in this view"; Conflict and Not enrolled hide at 0 (§4.2).
-- Viewer (read-only: no decision buttons, no toolbar writes).
+- Viewer (read-only: no decision buttons, no toolbar writes — no "Import
+  from PubMed" either).
+- Not set up: the toolbar (import for non-viewers) still renders above the
+  notice.
 - Non-manager on a managerOnly sub-view (redirect, §4), only after the config
   read (`can_manage`) has loaded; while it loads, the loading state, no
   redirect and no first-run landing on Settings.
@@ -981,13 +989,13 @@ as one PR.
 | S1 (S1a) | `protocol_inclusion_criteria` | unit beside the `protocol_exclusion_reasons` tests |
 | S1 (S1a) | Config carries exclusion reasons | schema contract test: `ScreeningConfigRead` has `exclusion_reasons: list[str]`; integration: equals `protocol_exclusion_reasons` for the project's protocol |
 | S1 (S1a) | Not-enrolled rows and counts | integration: anti-join rows; status-view counts match Vitest fixture |
-| S1 (S1b) | Toolbar and import move | Vitest: toolbar with "Import from PubMed" renders for every member in every state, including nothing enrolled; nothing enrolled = Not enrolled rows + "Enroll all" (manager) / member copy; 0 articles = empty state; manager with no config lands on Settings |
+| S1 (S1b) | Toolbar and import move | Vitest: toolbar with "Import from PubMed" renders for every member except a viewer in every state, including nothing enrolled and not set up; a viewer sees no toolbar write; nothing enrolled = Not enrolled rows + "Enroll all" (manager) / member copy; 0 articles = empty state; manager with no config lands on Settings |
 | S1 (S1b) | Status views | Vitest: a view with 0 is muted and lists "No records in this view"; Conflict and Not enrolled hidden at 0 |
 | S1 (S1b) | List toolbar and columns | Vitest: search, each filter, each sort (Queue order default); Mine column hidden for non-reviewers; progress strip "X of N decided · you: M left" (no FT segment in S1); "Start screening" only when M > 0, selects the first To screen in queue order and maximizes through the shell's controlled `maximized` prop |
 | S1 (S1b) | Bulk actions | Vitest: Enroll selected posts the ids (manager only); Export selected CSV has the §5 row fields and no abstract |
 | S1 (S1c) | Not enrolled panel | Vitest: manager "Enroll" posts that id; others see metadata only |
 | S1 (S1b) | `?assignment=` removed | Vitest: the param is stripped (replace) and nothing opens |
-| S1 (S1d) | Keyboard | Vitest: keys inert in a text field and under a dialog; auto-advance picks the next To screen in queue order; the next two assignments prefetched; `x` toggles, ⇧-click selects a range; Esc order popover → maximize → panel → selection → checked rows with the list hook mounted (screening passes no `deselectAll`; one step per press; Esc in a text field clears nothing); unit: `useListKeyboardShortcuts` Escape ignores an event with `defaultPrevented` |
+| S1 (S1d) | Keyboard | Vitest: keys inert in a text field and under a dialog; auto-advance picks the next To screen in queue order; the decided row stays in the current view until a view/search/filter change or reload; the next two assignments prefetched; `x` toggles, ⇧-click selects a range; Esc order popover → maximize → panel → selection → checked rows with the list hook mounted (screening passes no `deselectAll`; one step per press; Esc in a text field clears nothing); unit: `useListKeyboardShortcuts` Escape ignores an event with `defaultPrevented` |
 | S1 (S1d) | Keymap signature | `keymap.test.ts`: `screeningKeyAction(event, armed, phase)` for TA (S1) and FT (S3); `DecisionButtons` passes the phase |
 | S1 (S1a, S1c) | Solo re-decide | integration: solo re-decide appends and changes the outcome; skips the reviewer cap; refused after arbitration; dual review still `SCREENING_DECISION_FINAL`. Vitest: recorded-choice ring and "Changed to Exclude" toast |
 | S1 (S1a, S1d) | Old endpoints gone | shipped `test_screening_review.py`, `test_screening_arbitration.py`, hook/component tests and `frontend/e2e/flows/screening.ui.e2e.ts` migrated to the new read, not deleted; `check_retired_symbols` green with the new word symbols |
@@ -997,7 +1005,7 @@ as one PR.
 | S1 (S1b) | Query invalidation | Vitest: each §5 write path (call site listed there) invalidates `screeningKeys.project(projectId)` |
 | S1 (S1d) | Size target | Vitest/bench: 5,000-row render check (§4.6), number recorded in the PR |
 | S1 (S1c) | Reviewer labels | Vitest: conflict ruling form shows "Reviewer A/B", no names; other states show names |
-| S1 (S1b) | Default status view by role | Vitest: reviewer → To screen; non-reviewing arbitrator → Conflict/All; manager/viewer → All |
+| S1 (S1b) | Default status view by role | Vitest: reviewer → To screen; consensus → Conflict when > 0, else To screen; manager/viewer → All |
 | S1 (S1b) | Switcher | `SectionViewSwitcher.test.tsx`: screening entry with Title/abstract + Settings; `viewsScreeningAria` label. Vitest (page): non-manager deep link to `settings` redirected only after the config read resolves (`can_manage` false); no redirect and no first-run landing while it is pending or errored; manager deep link never bounces |
 | S2 | Switcher default | `SectionViewSwitcher.test.tsx`: `defaultValue` highlights Title/abstract with Duplicates listed first |
 | S2 | Dedup schema | roundtrip test; append-only trigger, `deny_all`, REVOKE tests; `test_every_foreign_key_leads_an_index` (`test_screening_schema.py:336-354`) extended to `article_duplicate_verdicts`; `kept_article_id` cascade revives the removed record |
