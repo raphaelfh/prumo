@@ -266,6 +266,11 @@ describe('sortRecords', () => {
     expect(ids(sortRecords([a, b, d], 'year', 'asc'))).toEqual(ids([b, a, d]));
   });
 
+  it('a missing year sorts last in both directions', () => {
+    expect(ids(sortRecords(rows, 'year', 'asc'))).toEqual(ids([b, a, d, c]));
+    expect(ids(sortRecords(rows, 'year', 'desc'))).toEqual(ids([a, d, b, c]));
+  });
+
   it('status follows the workflow order with ties by queue_rank', () => {
     const all = [
       row({status: 'not_enrolled', queue_rank: 10}),
@@ -361,5 +366,26 @@ describe('recordsToCsv', () => {
     expect(lines[1]).toBe(
       'x1,,1,"Sepsis, ""early"" care","Line\nbreak",2020,,,,,true,not_enrolled,,,,,',
     );
+  });
+
+  it.each([
+    ['=', '=HYPERLINK("x")', `"'=HYPERLINK(""x"")"`],
+    ['+', '+1', "'+1"],
+    ['-', '-2+3', "'-2+3"],
+    ['@', '@SUM(A1)', "'@SUM(A1)"],
+    ['tab', '\tcmd', "'\tcmd"],
+    ['CR', '\rcmd', `"'\rcmd"`],
+  ])('guards a string cell starting with %s against formula injection', (_lead, title, cell) => {
+    const r = row({article_id: 'x2', title});
+    const fields = recordsToCsv([r]).split('\r\n').slice(1).join('\r\n');
+    expect(fields.startsWith(`x2,as-`)).toBe(true);
+    expect(fields).toContain(`,${cell},`);
+  });
+
+  it('leaves a plain cell and a negative-looking number untouched', () => {
+    const r = row({article_id: 'x3', title: 'Plain - title', publication_year: 2021});
+    const line = recordsToCsv([r]).split('\r\n')[1];
+    expect(line).toContain(',Plain - title,');
+    expect(line).toContain(',2021,');
   });
 });

@@ -145,16 +145,24 @@ function compareField(a: Row, b: Row, field: RecordSortField): number {
     case 'title':
       return a.title.localeCompare(b.title, undefined, {sensitivity: 'base'});
     case 'year':
-      // A missing year sorts after every known year (ascending).
-      return (a.publication_year ?? Infinity) - (b.publication_year ?? Infinity) || 0;
+      return (a.publication_year ?? 0) - (b.publication_year ?? 0);
     case 'status':
       return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
   }
 }
 
+/** A missing year sorts after every known year in both directions. */
+function missingYearLast(a: Row, b: Row, field: RecordSortField): number {
+  if (field !== 'year') return 0;
+  return Number(a.publication_year === null) - Number(b.publication_year === null);
+}
+
 export function sortRecords(rows: Row[], field: RecordSortField, direction: 'asc' | 'desc'): Row[] {
   const sign = direction === 'asc' ? 1 : -1;
-  return [...rows].sort((a, b) => sign * compareField(a, b, field) || a.queue_rank - b.queue_rank);
+  return [...rows].sort(
+    (a, b) =>
+      missingYearLast(a, b, field) || sign * compareField(a, b, field) || a.queue_rank - b.queue_rank,
+  );
 }
 
 const DECIDED: ReadonlySet<RecordStatus> = new Set<RecordStatus>(['included', 'excluded', 'maybe']);
@@ -196,13 +204,19 @@ export const RECORD_CSV_COLUMNS: readonly (keyof Row)[] = [
   'outcome_exclusion_reason', 'outcome_kind',
 ];
 
+/** A spreadsheet reads a cell starting with one of these as a formula. */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 function csvField(value: Row[keyof Row]): string {
   if (value === null) return '';
-  const text = String(value);
+  const text = typeof value === 'string' && FORMULA_LEAD.test(value) ? `'${value}` : String(value);
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-/** RFC 4180: quoted when a field holds `,`, `"` or a newline; CRLF line breaks. */
+/**
+ * RFC 4180: quoted when a field holds `,`, `"` or a newline; CRLF line breaks.
+ * A string cell that would open as a formula gets a leading `'` first.
+ */
 export function recordsToCsv(rows: Row[]): string {
   const lines = [RECORD_CSV_COLUMNS.join(',')];
   for (const row of rows) lines.push(RECORD_CSV_COLUMNS.map((column) => csvField(row[column])).join(','));
