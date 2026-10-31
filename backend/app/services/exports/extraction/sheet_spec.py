@@ -9,8 +9,12 @@ a worksheet — structural styling only (no conditional formatting, §9).
 
 from __future__ import annotations
 
+import re
+from collections.abc import Collection
 from dataclasses import dataclass
+from typing import Final
 
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -54,6 +58,47 @@ class SheetSpec:
     column_widths: tuple[float | None, ...] = ()  # per-column; None = default
     freeze: str | None = None  # openpyxl freeze ref, e.g. "C3"; None = none
     tab_color: str | None = None  # hex tab colour or None
+
+
+RESERVED_TITLES: Final[tuple[str, ...]] = (
+    "README",
+    "Summary",
+    "Matrix",
+    "Articles",
+    "Data",
+    "Verification",
+    "AI proposals",
+    "Appraisal",
+    "Codebook",
+    "Options",
+    "History",
+)
+
+_TITLE_FORBIDDEN_RE = re.compile(r"[\[\]:*?/\\]")
+_TITLE_MAX = 31
+
+
+def _trim(text: str) -> str:
+    # Excel rejects a leading or trailing apostrophe in a sheet name.
+    return text.strip().strip("'").strip()
+
+
+def safe_sheet_title(raw: str, taken: Collection[str], *, fallback: str) -> str:
+    """Return a deterministic Excel-safe sheet title not colliding with ``taken``.
+
+    Collisions are case-insensitive; the suffix ``" (n)"`` starts at 2.
+    """
+    cleaned = _TITLE_FORBIDDEN_RE.sub("", ILLEGAL_CHARACTERS_RE.sub("", raw))
+    base = _trim(cleaned) or fallback
+    base = _trim(base[:_TITLE_MAX])
+    used = {t.casefold() for t in taken}
+    candidate = base
+    n = 2
+    while candidate.casefold() in used:
+        suffix = f" ({n})"
+        candidate = _trim(base[: _TITLE_MAX - len(suffix)]) + suffix
+        n += 1
+    return candidate
 
 
 def _style_to_kwargs(
@@ -126,7 +171,9 @@ __all__ = [
     "Cell",
     "CellStyle",
     "CellValue",
+    "RESERVED_TITLES",
     "MergeSpan",
     "SheetSpec",
     "_render_sheet_spec",
+    "safe_sheet_title",
 ]
