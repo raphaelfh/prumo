@@ -255,10 +255,17 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
 
 
 @pytest.mark.asyncio
-async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() -> None:
-    """Regression: in ALL_USERS mode "Final value used" reads the consensus
-    slot (rater None) of the value_map; a missed slot would silently produce
-    final_value=None.
+@pytest.mark.parametrize(
+    ("mode", "reviewer_slot"),
+    [(ExportMode.ALL_USERS, None), (ExportMode.SINGLE_USER, uuid4())],
+    ids=["all_users_reads_consensus_slot", "single_user_reads_reviewer_slot"],
+)
+async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode(
+    mode: ExportMode, reviewer_slot
+) -> None:
+    """Regression: "Final value used" reads the primary rater's slot of the
+    value_map: consensus (None) in ALL_USERS, the reviewer in SINGLE_USER. A
+    missed slot would silently produce final_value=None.
     """
     from app.services.extraction_export_service import ExtractionExportService
 
@@ -290,8 +297,8 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         entries={(entity_type_id, None): (inst_id,)},
     )
 
-    # ALL_USERS value_map: the consensus column is rater None.
-    value_map = {value_key(run_id, inst_id, field_id): _tv("Existing registry")}
+    # The value sits ONLY under the primary rater's slot (None, or the reviewer).
+    value_map = {value_key(run_id, inst_id, field_id, reviewer_slot): _tv("Existing registry")}
 
     # Mock the six DB execute calls in _load_ai_proposal_rows order (B-3a):
     #   1. instance query, 2. proposal query, 3. evidence query,
@@ -349,8 +356,8 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         articles=(article,),
         sections=(section,),
         value_map=value_map,
-        mode=ExportMode.ALL_USERS,
-        target_reviewer_id=None,
+        mode=mode,
+        target_reviewer_id=reviewer_slot,
         labels={},
     )
 

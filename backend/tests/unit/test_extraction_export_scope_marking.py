@@ -16,7 +16,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
+
+import pytest
 
 from app.models.extraction import (
     ExtractionCardinality,
@@ -488,3 +491,56 @@ def test_marking_does_not_change_the_derived_overall() -> None:
     # Non-vacuous: the in-scope overall really computes, and the out-of-scope
     # one really reports inapplicable — the poison "High" never counts either way.
     assert before == ("Low", _NOT_APPLICABLE)
+
+
+class _Stop(Exception):
+    """Aborts resolve_layout right after the scope-marking call."""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "expected_primary"),
+    [(ExportMode.SINGLE_USER, "reviewer"), (ExportMode.CONSENSUS, None)],
+    ids=["single_user_marks_the_reviewer_slot", "consensus_marks_slot_none"],
+)
+async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, expected_primary):
+    """resolve_layout hands scope marking the slot readers will read: the
+    reviewer in single_user, consensus (None) otherwise."""
+    from app.services import extraction_export_service as svc
+
+    reviewer = uuid4()
+    seen: dict[str, Any] = {}
+
+    def _spy(**kwargs: Any) -> None:
+        seen["raters"] = kwargs["raters"]
+        raise _Stop
+
+    monkeypatch.setattr(svc, "mark_out_of_scope_values", _spy)
+    monkeypatch.setattr(svc, "pinned_template_rules", AsyncMock(return_value={}))
+    service = ExtractionExportService(db=MagicMock(), user_id="u")
+    monkeypatch.setattr(
+        service, "_load_active_template_version", AsyncMock(return_value=(MagicMock(), MagicMock()))
+    )
+    monkeypatch.setattr(service, "_resolve_project_name", AsyncMock(return_value="P"))
+    monkeypatch.setattr(service, "_load_sections", AsyncMock(return_value=()))
+    monkeypatch.setattr(
+        service, "_resolve_articles_for_single_user", AsyncMock(return_value=((), {}))
+    )
+    monkeypatch.setattr(
+        service, "_resolve_articles_for_consensus", AsyncMock(return_value=((), {}))
+    )
+    monkeypatch.setattr(service, "_build_single_user_value_map", AsyncMock(return_value={}))
+    monkeypatch.setattr(service, "_build_consensus_value_map", AsyncMock(return_value={}))
+
+    with pytest.raises(_Stop):
+        await service.resolve_layout(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            mode=mode,
+            article_ids=[],
+            include_ai_metadata=False,
+            anonymize_reviewer_names=False,
+            reviewer_id=reviewer,
+        )
+
+    assert seen["raters"] == ((reviewer if expected_primary == "reviewer" else None),)

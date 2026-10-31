@@ -88,6 +88,28 @@ def test_one_cardinality_section_is_one_row_per_article():
     assert table.rows[0].values == ("Gaca", "2011")
 
 
+def test_tidy_cell_reads_the_given_rater_slot():
+    study = _study_section()
+    inst = uuid4()
+    run = uuid4()
+    reviewer = uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Gaca, 2011",
+        run_id=run,
+        version_id=None,
+        entries={(study.entity_type_id, None): (inst,)},
+    )
+    f_author = study.fields[0]
+    value_map = {value_key(run, inst, f_author.field_id, reviewer): _tv("Mine")}
+    row = _build_tidy_tables((study,), (article,), value_map, reviewer)[0].rows[0]
+    assert row.values[0] == "Mine"
+    assert _build_tidy_tables((study,), (article,), value_map, None)[0].rows[0].values[0] in (
+        None,
+        "",
+    )
+
+
 def test_many_cardinality_section_fans_out_per_instance():
     model = _model_section()
     run = uuid4()
