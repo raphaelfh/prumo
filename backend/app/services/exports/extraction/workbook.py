@@ -6,8 +6,8 @@ each pure sub-builder in §4 spec order via ``_ordered_specs`` — README /
 Methods (#1), Summary (#2), the extraction matrix (#3), the per-section
 tidy tables (#4..k), the Data dictionary (#k+2) and its co-located
 Dropdown lists catalogue — rendering every non-``None`` ``SheetSpec``
-through the single ``_render_sheet_spec`` writer, after a pre-build
-column guard (§5.5). Every title is allocated first by ``allocate_titles``
+through the single ``_render_sheet_spec`` writer; the matrix is included
+or omitted by ``matrix_fits`` (§5.5). Every title is allocated first by ``allocate_titles``
 and each sub-builder reads its own from the resulting ``SheetTitles``.
 The README sub-builder absorbs the old Notes sheet;
 the optional AI proposals sheet is the trailing sub-builder, emitted only
@@ -73,8 +73,8 @@ def _matrix_column_count(layout: ExportLayout) -> int:
 
     Per-article fan-out reuses the matrix builder's own
     ``_article_fanout_count`` (which honours both the model-instance axis
-    and ``cardinality='many'`` sections), so the guard counts exactly the
-    columns the matrix will emit. All-users mode multiplies each record by
+    and ``cardinality='many'`` sections), so ``matrix_fits`` counts exactly
+    the columns the matrix will emit. All-users mode multiplies each record by
     the reviewer axis (consensus + one column per reviewer).
     """
     if not layout.articles:

@@ -130,7 +130,7 @@ class _DiscardRefusal(AppError):
     """Base for the D5/D6/D8 refusals: HTTP 409 with a slice-local code.
 
     B-9c2 D1 — the endpoint lets these propagate to ``app_error_handler``
-    (the endpoint-propagation precedent) instead of re-raising
+    instead of re-raising
     ``HTTPException(409, str(e))``, which collapsed all five onto
     ``HTTP_ERROR`` and dropped ``details`` entirely. Forwarding by keyword
     keeps ``AppError.__init__``'s ``super().__init__(message)``, so

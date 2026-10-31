@@ -44,3 +44,12 @@ def test_deterministic() -> None:
         == safe_sheet_title("Sec", taken, fallback="T")
         == "Sec (2)"
     )
+
+
+def test_every_leading_and_trailing_apostrophe_is_trimmed() -> None:
+    assert safe_sheet_title("' ' 'x", (), fallback="T") == "x"
+    assert safe_sheet_title("x' ' '", (), fallback="T") == "x"
+    assert safe_sheet_title("' ' 'History", RESERVED_TITLES, fallback="T") == "History (2)"
+    # The 31-character cut and the suffix cut both land on an apostrophe run.
+    assert safe_sheet_title("a" * 28 + "' ' 'b", (), fallback="T") == "a" * 28
+    assert safe_sheet_title("a" * 26 + "' ' 'b", ("a" * 26,), fallback="T") == "a" * 26 + " (2)"

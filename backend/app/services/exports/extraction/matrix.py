@@ -69,8 +69,8 @@ def _article_columns(
 def _article_fanout_count(*, article: ArticleDescriptor, layout: ExportLayout) -> int:
     """Number of instance sub-columns for one article.
 
-    Kept as a function because ``workbook._matrix_column_count`` sizes the
-    Excel 16,384-column guard with it; it is now just the column count.
+    Kept as a function because ``workbook._matrix_column_count`` feeds
+    ``matrix_fits`` with it; it is now just the column count.
     """
     return len(_article_columns(article=article, layout=layout))
 

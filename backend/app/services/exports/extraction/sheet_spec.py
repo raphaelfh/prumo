@@ -80,7 +80,7 @@ _TITLE_MAX = 31
 
 def _trim(text: str) -> str:
     # Excel rejects a leading or trailing apostrophe in a sheet name.
-    return text.strip().strip("'").strip()
+    return text.strip(" \t\r\n'")
 
 
 def safe_sheet_title(raw: str, taken: Collection[str], *, fallback: str) -> str:
