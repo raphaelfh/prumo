@@ -155,7 +155,7 @@ rows. **Mechanism**: the shell's Escape is a capture-phase `window` keydown
 listener (the `RunSplitShell.tsx:78-88` precedent), so it runs before the
 list's bubble-phase window listener. It yields (returns without
 `preventDefault`) while a popover, menu or dialog is open (`isDialogOpen`,
-`useKeyboardShortcuts.ts:53`, plus the list's filter-popover state) or while
+`useKeyboardShortcuts.ts:53`, which also covers the list's filter popover: Radix `PopoverContent` has `role=dialog`, `FilterButtonWithPopover.tsx:19,38`, matched by `OPEN_OVERLAY_SELECTOR`, `useKeyboardShortcuts.ts:45-46`; no extra prop) or while
 focus is in a text field; otherwise it undoes the first applicable step,
 calls `preventDefault` + `stopPropagation`, and stops. Clearing checked rows
 is the **last link of the shell's chain**, not the list's: screening passes
@@ -1031,7 +1031,7 @@ as one PR.
 | S3 | PRISMA rename and FT off | unit: `records_not_found` on the wire; FT-off payload has `null` FT fields and `ta_included`/`ta_maybe`. Vitest: `PrismaCountsPanel` "In progress", method line, "Records included at title/abstract", "Maybe (not assessed)" |
 | S4 | Reading upgrades | unit: `parseStructuredAbstract` (prose such as "Note: …" must not match); schema contract test; Vitest: `?` popover lists every key |
 | S5 | S5 column | Vitest: each stage chip; integration: no-phase records read stays blind-safe (role matrix reused) |
-| all | Design | `design-review` at desktop and narrow width for every new sub-view |
+| all | Design | `design-review` at desktop and narrow width for every new sub-view; list scroll position restored after maximize→restore (`display:none` may drop `scrollTop`; S1 restores it if lost) |
 
 ## 10. Slice B (AI pre-screen) compatibility
 
