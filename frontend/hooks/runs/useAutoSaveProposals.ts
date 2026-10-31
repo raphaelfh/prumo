@@ -67,12 +67,10 @@ export interface UseAutoSaveProposalsProps {
    */
   baselineValues?: Record<string, unknown>;
   /**
-   * D0 (consensus AI trace): ``coordKey`` →
-   * accepted/selected AI proposal id. When a dirty coord has an entry, its
-   * `edit` decision carries `proposal_record_id` so the AI basis survives
-   * into the append-only audit trail. Later manual edits keep the link — the
-   * consensus chip renders "Edited by" when the value differs, so honesty
-   * lives in the read path. Only consulted on the /decisions branch.
+   * ``coordKey`` → the caller's head link while the head still matches the
+   * value (``useRunValues``). It is read only by the dirty fingerprint. The
+   * writer decides the link it sends and resolves with the link this map will
+   * hold for the written draft, and the queue acknowledges ``[draft, that link]``.
    */
   linkByKey?: Record<string, string>;
   /**
@@ -84,8 +82,12 @@ export interface UseAutoSaveProposalsProps {
    * selection event is recorded.
    */
   baselineLinkByKey?: Record<string, string>;
-  /** Writes one dirty coordinate; rejects when the write failed. */
-  writeValue: (params: WriteProposalParams) => Promise<void>;
+  /**
+   * Writes one dirty coordinate and resolves with the AI link ``linkByKey``
+   * will derive for ``params.draft`` once the decision is recorded; rejects
+   * when the write failed.
+   */
+  writeValue: (params: WriteProposalParams) => Promise<string | null>;
   /** Optional authenticated workspace lifetime; never sent to the API. */
   scopeKey?: object;
 }
@@ -292,14 +294,13 @@ export function useAutoSaveProposals(
             fieldId,
             normalizedValue: normalized,
             absentReason,
-            proposalRecordId: currentLinkByKey[key] ?? null,
-          }).then(() => {
-            // Acknowledge value AND link together (the D0 fingerprint) so a
-            // later link-only adoption re-dirties the coord.
-            runAcks[key] = fingerprintCoord(
-              valueData,
-              currentLinkByKey[key],
-            );
+            draft: valueData,
+          }).then((link) => {
+            // Acknowledge the draft with the link the writer resolved with —
+            // the one ``linkByKey`` derives once the decision is recorded — so
+            // the write never re-dirties its own coord, and a later link-only
+            // change still does.
+            runAcks[key] = fingerprintCoord(valueData, link);
           });
         }),
       ).then((results) => {

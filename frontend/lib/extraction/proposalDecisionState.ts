@@ -64,8 +64,14 @@ export function mergeConfirmedRows(
   return [...server.filter(d => !confirmedIds.has(d.id)), ...confirmed];
 }
 
-export function reversalPayload(history: readonly ReviewerDecisionResponse[]): Record<string, unknown> {
-  return history.at(-2)?.value ?? {value: null};
+/** The predecessor's value and link, so un-accepting restores its AI lineage too. */
+export function reversalPayload(
+  history: readonly ReviewerDecisionResponse[],
+): {value: Record<string, unknown>; proposal_record_id: string | null} {
+  const predecessor = history.at(-2);
+  return predecessor
+    ? {value: predecessor.value ?? {value: null}, proposal_record_id: predecessor.proposal_record_id ?? null}
+    : {value: {value: null}, proposal_record_id: null};
 }
 
 /** The link is necessary; equality alone never manufactures an acceptance. */
