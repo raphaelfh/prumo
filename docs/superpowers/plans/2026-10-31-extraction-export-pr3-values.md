@@ -1,3 +1,9 @@
+---
+status: in_progress
+last_reviewed: 2026-10-31
+owner: '@raphaelfh'
+---
+
 # Export values and rule inputs (PR3) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -15,14 +21,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-30-extraction-export-options-design.md` §4.1 (closed value sets), §4.6, §5 rules 5 and 8, §8 rows `values.py` / `value_envelope.py` / `extraction_scope_marking.py` / `derived_judgment_service.py`, §11 row 3.
 
-**Depends on:** PR1 (Delivery and safety) merges first in the §11 order. It re-signs the builders to `build_<x>(layout, titles)`, edits `matrix.py`/`workbook.py`, and renames the fixed titles ("Appraisal", "AI proposals"; R7), so rebase this branch on it. Line numbers below are against dev @ 4ad80f98. No dependency on PR2.
+**Depends on:** PR1 (Delivery and safety) merges first in the §11 order. It re-signs the builders to `build_<x>(layout, titles)`, edits `matrix.py`/`workbook.py`, and renames the fixed titles ("Appraisal", "AI proposals"; R7). PR1 (#1068) and PR2 (#1067) are on dev @ d12b3e9a; this branch starts there. Line numbers below were taken at dev @ 4ad80f98 and drift by up to ~15 lines after PR1 (e.g. `matrix._format_cell`/`_xlsx_safe` are now `:116-160`, `ExportShape` is `workbook.py:49`, the front-matter legend test is `:91-109`, the matrix boolean tests are `:345-370`): locate every edit by symbol, not by line. No dependency on PR2.
 
 **Consumed later by:**
 - PR4: `value_key`, `primary_rater` (level sheets, README counts), `display_value(v, field)` without `target` (R2), `build_option_labels` (PR4 adds defaulted `pinned_latest_first`; PR3 callers unchanged), `tests/unit/test_export_values.py` (R20).
 - PR5: `ExportValue`, `to_export_value`, `OptionLabels`; PR5 deletes `_untyped_field` and its test (R15).
 - PR6: adds `*, target` to `display_value` and updates every caller (R2); renders `AppraisalRow.domain_verdicts` (`ExportValue`) with `AppraisalModel.domain_fields` for Publication (R3).
 
-**Branch:** `feat/export-values` off `dev`, in its own worktree (`git -C "$WT"` for every git call).
+**Branch:** `claude/export-pr3-values-3adceb` off `dev` @ d12b3e9a, in worktree `.claude/worktrees/export-pr1-delivery-f64c05` (`git -C "$WT"` for every git call).
 
 ---
 
@@ -65,7 +71,7 @@ These are verbatim from the spec, limited to what this PR touches.
   - `ExportValue` is `@dataclass(frozen=True, slots=True)`.
   - `values.py` sits under `exports/`, never `exports/extraction/` (import cycle, `exports/extraction/__init__.py:12`). Service and sheet types are imported under `TYPE_CHECKING` only. The same holds for `exports/descriptors.py`: `ExportMode` (`extraction_export_service.py:89`) is a `TYPE_CHECKING` import there, so `primary_rater` compares the `StrEnum` by value.
 - **Gates:**
-  - `extraction_export_service.py` (2166 lines today) stays ≤ 2194 (`scripts/fitness/check_file_size.baseline:4`). New files are capped at 800 lines.
+  - `extraction_export_service.py` is 2156 lines on dev and PR1 tightened its baseline to 2156 (`scripts/fitness/check_file_size.baseline:4`): the file may not grow at all. Offset every added line (imports, `labels` params, `_untyped_field`) by shortening the prose this PR rewrites anyway (the `resolve_value` mentions, the `AppraisalRow` docstring, the `value_map` comment). New files are capped at 800 lines.
   - The mypy and vulture baselines only shrink.
   - ruff `ARG` is enabled (`backend/pyproject.toml:106`), so no unused parameters: `display_value` ships without `target` (R2) and `build_option_labels` without `pinned_latest_first` (PR4 adds it as a defaulted second parameter with its first input; PR3 callers stay valid).
 
@@ -393,7 +399,7 @@ def test_verdict_cells_render_through_display_value() -> None:
             domain_verdicts=(to_export_value({"value": "L"}, f, {(f.field_id, "L"): "Low"}), None),
             overall="Low", per_reviewer_overall={}),))
     layout = _layout_with_appraisal(appraisal)   # existing helper, test file :87
-    # ExportShape (workbook.py:41) and allocate_titles (PR1) from app.services.exports.extraction.workbook
+    # ExportShape (workbook.py:49) and allocate_titles (PR1) from app.services.exports.extraction.workbook
     spec = build_appraisal_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
     assert tuple(c.value for c in spec.rows[1]) == ("Gaca, 2011", "Low", None, "Low")
 
@@ -596,7 +602,7 @@ def test_a_display_label_is_not_an_absent_marker() -> None:
 
 - [ ] `make lint-backend`: ruff check, ruff format --check, and the mypy ratchet. If the ratchet reports fixed pairs, tighten it in this PR: `cd backend && { uv run mypy app --ignore-missing-imports > mypy.out || true; } && uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline --input mypy.out --update`. Then delete `mypy.out`.
 - [ ] Vulture: `cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec`. Expect no new finding. If it reports fixed entries: `... --exec --update`, committed with the baseline.
-- [ ] File size: `python3 scripts/fitness/check_file_size.py`. `extraction_export_service.py` must be ≤ 2194 and `exports/values.py` ≤ 800. If the service shrank, run `python3 scripts/fitness/check_file_size.py --update-baseline backend/app/services/extraction_export_service.py`.
+- [ ] File size: `python3 scripts/fitness/check_file_size.py`. `extraction_export_service.py` must be ≤ 2156 and `exports/values.py` ≤ 800. If the service shrank, run `python3 scripts/fitness/check_file_size.py --update-baseline backend/app/services/extraction_export_service.py`.
 - [ ] Fitness suite (layered arch, retired symbols, scope guards): `bash scripts/fitness/run_all.sh`.
 - [ ] Backend tests: `make test-backend`, the full suite against the local DB.
 - [ ] Frontend: untouched. No public schema change, so `npm run generate:api-types`, `npm run test:run`, `npx knip` and `npx knip --production` are not affected. Run `npm run lint` only if the branch touched `frontend/`.
@@ -614,3 +620,4 @@ def test_a_display_label_is_not_an_absent_marker() -> None:
 - **R20:** unit file is `tests/unit/test_export_values.py`.
 - **D9:** single `other` → blank `value_text`, text in `other_text`; `unit` is the envelope unit; derived overalls stay code-based.
 - **Contract deviations kept (ruff `ARG`):** `build_option_labels(active)` only (PR4 adds defaulted `pinned_latest_first`; no PR3 change needed); no `ExportLayout.option_labels` (no PR3 reader; PR4 adds it with the Options sheet). `ExportLayout.reviewer_id` is a contract addition required by R1.
+- **Reconcile with dev @ d12b3e9a (PR1/PR2 merged):** `build_export` passes `reviewer_id` to `resolve_layout` (no change needed); `matrix_fits` counts one reviewer slot outside all_users, so R1 keeps its width; role ids `appraisal_summary`/`ai_proposals` and `allocate_titles(layout, shape, *, include_matrix)` match; `_xlsx_safe` goes because `display_value` returns scalars only and PR1's `sheet_spec._clean` strips illegal XML characters; service file-size ceiling is now 2156 (no growth); `canonical_key` stays PR5.
