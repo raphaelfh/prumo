@@ -472,7 +472,7 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
     assert layout.appraisal.domain_labels == (fx.domain1_label, fx.domain2_label)
     assert len(layout.appraisal.rows) == 1
     row = layout.appraisal.rows[0]
-    assert row.domain_verdicts == ("Low", "High")
+    assert tuple(v.value_text for v in row.domain_verdicts) == ("Low", "High")
     assert row.overall == "High"
     assert row.per_reviewer_overall == {}
 

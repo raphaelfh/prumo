@@ -31,7 +31,9 @@ from app.models.extraction import (
 from app.models.extraction_workflow import ExtractionConsensusMode
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 from app.services.ai_extraction import ProposalLanding
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction_scope_marking import NOT_APPLICABLE
+from app.services.exports.values import display_value
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import (
     ExportLayout,
@@ -316,7 +318,9 @@ def _consensus_cell(layout: ExportLayout, article_id: UUID, coord: tuple[str, st
         if et == section.entity_type_id
         for iid in ids
     )
-    return layout.value_map.get((article.run_id, instance_id, field.field_id, None))
+    assert article.run_id is not None
+    v = layout.value_map.get(value_key(article.run_id, instance_id, field.field_id))
+    return None if v is None else display_value(v, field)
 
 
 def _overalls(layout: ExportLayout, article_id: UUID) -> dict[str, Any]:
