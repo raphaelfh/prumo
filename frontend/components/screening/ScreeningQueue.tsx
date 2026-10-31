@@ -10,7 +10,8 @@ import {useEffect, useRef, useState} from 'react';
 import {toast} from 'sonner';
 
 import {ErrorState} from '@/components/patterns/ErrorState';
-import {useDecide, useScreeningQueue} from '@/hooks/screening/useScreeningQueue';
+import {useDecide} from '@/hooks/screening/useScreeningMutations';
+import {useScreeningQueue} from '@/hooks/screening/useScreeningQueue';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningDecisionCreate} from '@/services/screeningService';

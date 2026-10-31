@@ -5,6 +5,7 @@
 
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
+import {useQueryClient} from "@tanstack/react-query";
 import {toast} from "sonner";
 import {
   BookOpen,
@@ -26,6 +27,7 @@ import {IdentifiersSection} from './sections/IdentifiersSection';
 import {AdditionalInfoSection} from './sections/AdditionalInfoSection';
 import {FilesSection} from './sections/FilesSection';
 import {t} from '@/lib/copy';
+import {invalidateScreening} from '@/lib/query-keys/screening';
 import {triggerDownload} from '@/lib/download';
 import {
     fetchArticle,
@@ -178,6 +180,7 @@ export function ArticleForm({
                                 onArticleCreated,
                             }: ArticleFormProps) {
   const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const {user: _user} = useAuth();
     // Below lg, Save/Cancel join the section-rail row instead of their own bar
     // — reclaiming a whole bar of vertical space in the pane that has least
@@ -548,6 +551,8 @@ export function ArticleForm({
       }
       savedArticleId = targetId;
     }
+    // The row is written (created or updated): every screening read of the project shows it.
+    void invalidateScreening(queryClient, projectId);
 
     // Phase two. Only files that have not landed yet are retried.
     const failedIds = await uploadStagedFiles(savedArticleId);

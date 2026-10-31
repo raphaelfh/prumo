@@ -9,8 +9,8 @@ export function useScreeningAssignment(assignmentId: string | null) {
   return useQuery({
     queryKey: screeningKeys.assignment(assignmentId ?? ''),
     enabled: Boolean(assignmentId),
-    // No article writer (Zotero/RIS import, manual create, delete) invalidates
-    // the screening keys: under the app's 5-minute staleTime a remount would
+    // Writes made elsewhere (a co-reviewer's decision, another session's
+    // import) never reach this cache: under the app's 5-minute staleTime a remount would
     // otherwise keep a deleted article's record or a stale outcome.
     refetchOnMount: 'always',
     // A missing record or a refused caller will not change on retry.

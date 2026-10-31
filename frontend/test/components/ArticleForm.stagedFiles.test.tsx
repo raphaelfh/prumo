@@ -41,6 +41,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
+import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
 import {
     fetchArticleFiles,
     insertArticle,
@@ -72,6 +73,7 @@ async function stageOnePdf(onDismiss = vi.fn(), onComplete = vi.fn()) {
                 onComplete={onComplete}
             />
         </MemoryRouter>,
+        {wrapper: createQueryWrapper().wrapper},
     );
 
     await user.type(screen.getByLabelText(/titleRequired/), 'A staged study');
@@ -170,6 +172,7 @@ describe('ArticleForm — staged files', () => {
             <MemoryRouter>
                 <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
         await user.click(screen.getByRole('button', {name: /addFiles/}));
         await user.upload(await screen.findByLabelText(/uploadSelectFiles/), [
@@ -189,6 +192,7 @@ describe('ArticleForm — staged files', () => {
             <MemoryRouter>
                 <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         // There is no article row, so fetchMainFileInfo cannot report an

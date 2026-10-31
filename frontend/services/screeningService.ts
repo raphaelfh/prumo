@@ -22,6 +22,9 @@ export type ScreeningDecisionCreate = components['schemas']['ScreeningDecisionCr
 export type ScreeningConflictsRead = components['schemas']['ScreeningConflictsRead'];
 export type ScreeningArbitrationCreate = components['schemas']['ScreeningArbitrationCreate'];
 export type PrismaCountsRead = components['schemas']['PrismaCountsRead'];
+export type ScreeningRecordsRead = components['schemas']['ScreeningRecordsRead'];
+export type ScreeningRecordRow = components['schemas']['ScreeningRecordRow'];
+export type ScreeningPhase = ScreeningRecordsRead['phase'];
 
 export function fetchScreeningConfig(projectId: string): Promise<ErrorResult<ScreeningConfigRead>> {
   return toResult(
@@ -103,6 +106,23 @@ export function fetchScreeningQueue(projectId: string): Promise<ErrorResult<Scre
   return toResult(
     () => apiClient<ScreeningQueueRead>(`/api/v1/projects/${projectId}/screening/queue`),
     'screeningService.fetchScreeningQueue',
+  );
+}
+
+/**
+ * Every project article in the phase, in queue order, as the caller may see it.
+ * 409 SCREENING_NOT_CONFIGURED (the UI gates on the config read and never sends it then); 403 non-member.
+ */
+export function fetchScreeningRecords(
+  projectId: string,
+  phase: ScreeningPhase,
+): Promise<ErrorResult<ScreeningRecordsRead>> {
+  return toResult(
+    () =>
+      apiClient<ScreeningRecordsRead>(
+        `/api/v1/projects/${projectId}/screening/records?phase=${encodeURIComponent(phase)}`,
+      ),
+    'screeningService.fetchScreeningRecords',
   );
 }
 

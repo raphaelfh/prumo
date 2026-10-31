@@ -42,6 +42,7 @@ vi.mock('@/hooks/extraction/useArticleDocuments', () => ({
 }));
 
 import {ArticleSidePanel} from '@/components/articles/ArticleSidePanel';
+import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
 import {fetchArticle, fetchArticleFiles} from '@/services/articlesService';
 
 const baseProps = {
@@ -75,6 +76,7 @@ describe('ArticleSidePanel article identity', () => {
             <MemoryRouter>
                 <ArticleSidePanel {...baseProps} mode="edit" articleId="art-a"/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         // Precondition: article A's title is actually in the field.
@@ -97,6 +99,7 @@ describe('ArticleSidePanel article identity', () => {
             <MemoryRouter>
                 <ArticleSidePanel {...baseProps} mode="edit" articleId="art-a"/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         // Precondition: article A's title is actually loaded before the swap.

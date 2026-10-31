@@ -8,7 +8,8 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: {access_token: 'test-token'}}})}},
 }));
 
-import {useDecide, useScreeningQueue} from '@/hooks/screening/useScreeningQueue';
+import {useDecide} from '@/hooks/screening/useScreeningMutations';
+import {useScreeningQueue} from '@/hooks/screening/useScreeningQueue';
 import {screeningKeys} from '@/lib/query-keys/screening';
 import type {ScreeningQueueRead} from '@/services/screeningService';
 import {server} from '@/test/mocks/server';

@@ -12,7 +12,7 @@ import {toast} from 'sonner';
 import {ErrorState} from '@/components/patterns/ErrorState';
 import {Button} from '@/components/ui/button';
 import {useScreeningAssignment} from '@/hooks/screening/useScreeningAssignment';
-import {useDecide} from '@/hooks/screening/useScreeningQueue';
+import {useDecide} from '@/hooks/screening/useScreeningMutations';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningAssignmentRead, ScreeningDecisionCreate} from '@/services/screeningService';

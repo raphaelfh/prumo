@@ -26,6 +26,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
+import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -37,6 +38,7 @@ function renderForm() {
         <MemoryRouter>
             <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
         </MemoryRouter>,
+        {wrapper: createQueryWrapper().wrapper},
     );
 }
 
