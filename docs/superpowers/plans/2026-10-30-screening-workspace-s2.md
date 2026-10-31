@@ -77,18 +77,21 @@ Parallel groups, in order: **G1** {1} → **G2** {2} → **G3** {3} → **G4** {
 **Depends on:** S1 merged. **Parallel with:** none.
 
 **Files:**
-- Create: `backend/alembic/versions/0095_article_duplicate_verdicts.py`, `backend/app/models/article_duplicate.py`
+- Create: `backend/alembic/versions/0095_article_duplicate_verdicts.py`, `backend/app/models/article_duplicate.py`, `backend/app/schemas/duplicates.py` (the four Literals only; Task 2 adds the models)
 - Modify: `backend/app/models/__init__.py` (import beside the screening models; `__all__`)
 - Modify: `backend/tests/integration/test_screening_schema.py` (FK-index test table list; new cases), `backend/tests/integration/test_migration_roundtrip.py` (`expected_head`)
 
 **Interfaces — Produces:**
 
 ```python
-# app/models/article_duplicate.py
-DUPLICATE_VERDICTS = ("duplicate", "distinct", "cleared")
-DUPLICATE_BASES = ("pmid", "doi", "title", "manual")
+# app/schemas/duplicates.py (created here; support layer — models, repositories and services import the
+# Literals from it, never the reverse: check_layered_arch forbids schemas -> models/services)
 DuplicateVerdictValue = Literal["duplicate", "distinct", "cleared"]
 DuplicateBasis = Literal["pmid", "doi", "title", "manual"]
+DuplicateTier = Literal["exact", "likely", "possible"]
+MatchLabel = Literal["pmid", "doi_title", "title", "doi_only"]
+
+# app/models/article_duplicate.py — CHECK value lists from typing.get_args(DuplicateVerdictValue / DuplicateBasis)
 
 class ArticleDuplicateVerdict(Base, UUIDMixin):
     __tablename__ = "article_duplicate_verdicts"
@@ -101,11 +104,11 @@ class ArticleDuplicateVerdict(Base, UUIDMixin):
     created_at: Mapped[datetime]    # server_default=func.clock_timestamp()
 ```
 
-Migration (copy the 0094 shapes verbatim, `0094_screening_v1.py`): `op.create_table` with the columns above; CHECKs `article_duplicate_verdicts_verdict_check` (`verdict IN ('duplicate','distinct','cleared')`), `..._basis_check`, `..._not_self_check` (`article_id <> kept_article_id`); indexes `ix_article_duplicate_verdicts_project_id`, `..._article_id`, `..._kept_article_id`, `..._decided_by`; the 0094 append-only trigger (`refuse_append_only_change` BEFORE UPDATE OR DELETE, reusing the 0094 function), `ENABLE ROW LEVEL SECURITY`, `deny_all` policy, `REVOKE ALL … FROM authenticated, anon`. Downgrade drops the table. Model `__table_args__` mirrors the CHECKs and indexes so `alembic check` is zero-diff.
+Migration (copy the 0094 shapes verbatim, `0094_screening_v1.py`): `op.create_table` with the columns above; CHECKs named through the `ck` naming convention (`app/models/base.py` `_naming_convention`; short names `verdict`, `basis`, `not_self` → `ck_article_duplicate_verdicts_verdict` …, exactly as 0094 names its CHECKs): `verdict IN ('duplicate','distinct','cleared')`, `basis IN ('pmid','doi','title','manual')`, `article_id <> kept_article_id`; indexes `ix_article_duplicate_verdicts_project_id`, `..._article_id`, `..._kept_article_id`, `..._decided_by`; the 0094 append-only trigger (`refuse_append_only_change` BEFORE UPDATE OR DELETE, reusing the 0094 function), `ENABLE ROW LEVEL SECURITY`, `deny_all` policy, `REVOKE ALL … FROM authenticated, anon`. Downgrade drops the table. Model `__table_args__` mirrors the CHECKs and indexes so `alembic check` is zero-diff.
 
 - [ ] **Step 1: Write the failing schema tests** in `test_screening_schema.py` (follow the 0094 cases one for one):
   - extend `test_every_foreign_key_leads_an_index`'s regclass list with `'article_duplicate_verdicts'::regclass`;
-  - `test_duplicate_verdicts_are_append_only` — insert a row, `UPDATE` and `DELETE` as `authenticated` role each raise (same assertion as the 0094 trigger case);
+  - add `"article_duplicate_verdicts"` to `test_append_only_trigger_refuses_non_owner`'s parametrize (`:184-208`; give it a row builder for the new table): inside the rolled-back transaction `GRANT UPDATE, DELETE … TO service_role`, `SET LOCAL ROLE service_role`, then `UPDATE`/`DELETE` raise `DBAPIError` matching "append-only table" — the trigger refuses, not the ACL (never test as `authenticated`: the REVOKE alone would pass);
   - `test_duplicate_verdicts_deny_all_and_revoked` — policy `deny_all` present; `has_table_privilege('authenticated', …, 'SELECT')` false;
   - `test_duplicate_verdict_checks` — parametrized (`ids=`): `verdict='merged'`, `basis='isbn'`, `article_id = kept_article_id` each raise `IntegrityError`;
   - `test_duplicate_verdict_created_at_is_clock_timestamp` — two inserts in one transaction get different `created_at` (0094's `test_timestamp_defaults` pattern);
@@ -137,7 +140,7 @@ git -C "$WT" commit -m "feat(screening): add the append-only article duplicate v
 **Depends on:** Task 1. **Parallel with:** none.
 
 **Files:**
-- Create: `backend/app/repositories/duplicate_repository.py`, `backend/app/services/duplicate_candidates.py` (pure), `backend/app/services/duplicate_service.py`, `backend/app/schemas/duplicates.py`, `backend/app/api/v1/endpoints/duplicates.py`
+- Create: `backend/app/repositories/duplicate_predicates.py`, `backend/app/repositories/duplicate_repository.py`, `backend/app/services/duplicate_candidates.py` (pure), `backend/app/services/duplicate_service.py`, `backend/app/api/v1/endpoints/duplicates.py`; Modify: `backend/app/schemas/duplicates.py` (Task 1 created it with the Literals)
 - Modify: `backend/app/api/v1/router.py` (register), `scripts/fitness/check_layered_arch.py` only if the scan flags the new modules
 - Create: `backend/tests/unit/test_duplicate_candidates.py`, `backend/tests/unit/test_duplicates_unit.py`, `backend/tests/integration/test_duplicates_read.py`, `backend/tests/integration/test_duplicates_scale.py`
 - Regenerate: `frontend/types/api/openapi.json`, `schema.d.ts`
@@ -145,17 +148,22 @@ git -C "$WT" commit -m "feat(screening): add the append-only article duplicate v
 **Interfaces — Produces:**
 
 ```python
-# repositories/duplicate_repository.py
+# repositories/duplicate_predicates.py — imports models only. Imported by duplicate_repository AND
+# screening_repository (Task 4); it never imports either, so there is no import cycle (spec §8.3 names
+# duplicate_repository.py; ruled: the predicate sits in its own module to break the cycle).
 def removed_duplicate(article: type[Article] | AliasedClass[Article]) -> ColumnElement[bool]:
     """THE removal predicate (§8.3). EXISTS a latest verdict row of an unordered pair containing
     the article with verdict='duplicate', article_id=article.id, project_id=article.project_id,
     AND the kept article is still in article.project_id (R5). Reused everywhere; never re-derived."""
 
+# repositories/duplicate_repository.py — imports duplicate_predicates and, from screening_repository,
+# ARTICLE_STILL_IN_PROJECT + has_main_pdf (one direction only)
 @dataclass(frozen=True)
 class CandidateSource:   # one per non-removed project article
     article_id: UUID; title: str; pmid: str | None; doi_key: str | None   # doi_match_key(Article.doi), '' → None
     publication_year: int | None; journal_title: str | None; article_type: str | None
     zotero_item_type: str | None   # Article.source_payload['data']['itemType'].astext
+    has_review_work: bool; has_pdf: bool; has_abstract: bool   # keep-order facts, computed in the same SELECT
     created_at: datetime
 
 @dataclass(frozen=True)
@@ -172,18 +180,22 @@ class DuplicateRepository:
     async def compare_fields(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> dict[UUID, CompareSide]
     #   Article columns + authors + ingestion_source + has_pdf (S1's MAIN-file exists(); if it is inline in
     #   record_rows, extract it to a module-level `has_main_pdf(article)` in screening_repository and reuse)
-    #   + screening_decisions (current TA decisions: latest per reviewer on the live assignment)
+    #   + screening_decisions (current TA decisions: latest per reviewer on the article's TA assignment joined by
+    #   ARTICLE_STILL_IN_PROJECT — NOT live_assignments, so a resolved pair's removed side still shows the
+    #   decisions §8.3 keeps as audit)
     #   + has_review_work; WHERE Article.project_id == project_id AND Article.id IN ids
-    async def has_refusing_work(self, *, article_ids: Sequence[UUID]) -> set[UUID]   # used by Task 3
+    async def has_refusing_work(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> set[UUID]
+    #   used by Task 3; WHERE Article.project_id == project_id AND Article.id IN ids AND refusing_work(Article)
 
 def review_work(article: type[Article]) -> ColumnElement[bool]   # any TA decision ∨ refusing_work(article)
 def refusing_work(article: type[Article]) -> ColumnElement[bool]
-#   EXISTS ScreeningAssignment(article, phase != SCREENING_PHASE) ∨ EXISTS ExtractionRun.article_id
-#   ∨ EXISTS ExtractionInstance.article_id   (R11; extraction_batch_items do not count)
+#   EXISTS ScreeningAssignment(article_id = article.id, project_id = article.project_id, phase != SCREENING_PHASE)
+#   ∨ EXISTS ExtractionRun(article_id = article.id, project_id = article.project_id)
+#   ∨ EXISTS ExtractionInstance(article_id = article.id, project_id = article.project_id)
+#   (bound to the article's current project, like every predicate here; R11; extraction_batch_items do not count;
+#   TA decisions in review_work join through ARTICLE_STILL_IN_PROJECT)
 
-# services/duplicate_candidates.py (pure, no I/O)
-DuplicateTier = Literal["exact", "likely", "possible"]
-MatchLabel = Literal["pmid", "doi_title", "title", "doi_only"]
+# services/duplicate_candidates.py (pure, no I/O; Literals from app.schemas.duplicates)
 def normalize_title(title: str | None) -> str          # "".join(c for c in title.casefold() if c.isalnum())
 def is_conference_like(source: CandidateSource) -> bool
 #   article_type casefold contains congress|conference|meeting|protocol, or article_type.strip().upper() in
@@ -194,19 +206,18 @@ class Candidate:
 def match(a: CandidateSource, b: CandidateSource) -> tuple[DuplicateTier, MatchLabel, DuplicateBasis] | None
 #   pmid equal → exact/pmid/pmid (no veto applies)
 #   else both DOIs non-null and differ → None
-#   else DOI equal and normalized titles equal → exact/doi_title/doi
+#   else DOI equal and normalized titles equal → exact/doi_title/doi, or possible/doi_title/doi when either
+#        side is conference-like (§8.2: a conference record is never Exact or Likely by title — only by PMID)
 #   else DOI equal → possible/doi_only/doi
 #   else neither conference-like, normalized titles equal, len ≥ 20, years non-null and equal →
 #        likely/title/title, demoted to possible/title/title when both journals non-null and
 #        normalize_title(journal) differ
 #   else None
-def candidate_pairs(sources: Sequence[CandidateSource], closed: set[frozenset[UUID]],
-                    rank: Callable[[UUID], tuple]) -> list[Candidate]
+def candidate_pairs(sources: Sequence[CandidateSource], closed: set[frozenset[UUID]]) -> list[Candidate]
 #   group by pmid, doi_key, (normalize_title, year) to find pairs in O(n) (never all-pairs);
-#   skip pairs in `closed` (latest verdict duplicate|distinct); kept = the side `suggest_kept` picks
-def suggest_kept(a: KeepFacts, b: KeepFacts) -> UUID
-#   KeepFacts(article_id, has_review_work, has_pdf, has_abstract, has_identifier (pmid or doi), created_at);
-#   order: review work → PDF → abstract → identifier → oldest (created_at, then id)
+#   skip pairs in `closed` (latest verdict duplicate|distinct); kept = suggest_kept(a, b)
+def suggest_kept(a: CandidateSource, b: CandidateSource) -> UUID
+#   the one keep order: review work → PDF → abstract → identifier (pmid or doi) → oldest (created_at, then id)
 
 # schemas/duplicates.py
 class DuplicateSide(BaseModel):
@@ -228,7 +239,7 @@ class DuplicatesRead(BaseModel):
 - Route `GET /api/v1/projects/{project_id}/duplicates` → `ApiResponse[DuplicatesRead]`, `@limiter.limit("60/minute")`, `Depends(require_project_manager)`, `responses={403: {"description": "Only project managers review duplicates"}}`.
 
 - [ ] **Step 1: Write the failing unit tests**
-  - `test_duplicate_candidates.py`: `test_normalize_title` (`"Sepsis: a Review." == "sepsis a review"` normalized); `test_match` parametrized (`ids=`) — same PMID different DOI → exact/pmid; DOI + title → exact/doi_title; DOI same, title differs → possible/doi_only; differing DOIs, same title+year → None; title+year (≥ 20 chars) → likely/title; 19-char title → None; one year None → None; journals "JAMA" vs "Lancet" → possible/title; journal None on one side → likely; `article_type="Congress"` → None by title, exact by PMID; `"Clinical Trial Protocol"`, `"CONF"`, `"ABST"`, zotero `conferencePaper` → None by title. `test_candidate_pairs_skips_closed`; `test_candidate_pairs_triple_shares_the_keeper` (A, B, C same PMID, A ranks first → AB, AC kept A; BC kept B). `test_suggest_kept` parametrized over each level deciding alone (review work beats PDF, PDF beats abstract, abstract beats identifier, identifier beats age, older wins at a tie).
+  - `test_duplicate_candidates.py`: `test_normalize_title` (`"Sepsis: a Review." == "sepsis a review"` normalized); `test_match` parametrized (`ids=`) — same PMID different DOI → exact/pmid; DOI + title → exact/doi_title; DOI same, title differs → possible/doi_only; differing DOIs, same title+year → None; title+year (≥ 20 chars) → likely/title; 19-char title → None; one year None → None; journals "JAMA" vs "Lancet" → possible/title; journal None on one side → likely; `article_type="Congress"` → None by title, exact by PMID; `"Clinical Trial Protocol"`, `"CONF"`, `"ABST"`, zotero `conferencePaper` → None by title; conference record with equal DOI and equal title → possible/doi_title (never exact). `test_candidate_pairs_skips_closed`; `test_candidate_pairs_triple_shares_the_keeper` (A, B, C same PMID, A ranks first → AB, AC kept A; BC kept B). `test_suggest_kept` parametrized over each level deciding alone (review work beats PDF, PDF beats abstract, abstract beats identifier, identifier beats age, older wins at a tie).
   - `test_duplicates_unit.py`: `test_duplicates_handler_returns_the_read` (`get_duplicates.__wrapped__` with patched service); `test_duplicates_route_limit` — `limiter._route_limits["app.api.v1.endpoints.duplicates.get_duplicates"]` → `["60 per 1 minute"]`; `test_duplicate_side_has_the_compare_fields` (`set(DuplicateSide.model_fields)` equals the 12 names).
 
 Run: `cd "$WT/backend" && uv run pytest tests/unit/test_duplicate_candidates.py tests/unit/test_duplicates_unit.py -q`
@@ -239,14 +250,14 @@ Expected: FAIL — `ModuleNotFoundError`.
 - [ ] **Step 3: Write the failing integration tests** in `test_duplicates_read.py` (reuse `client_as`, `add_member`, `screening_fixtures` builders as `test_screening_records.py` does; insert verdict rows directly with `ArticleDuplicateVerdict`):
   - `test_non_manager_is_403` (reviewer, viewer, non-member).
   - `test_each_tier_is_listed` — one pair per tier → `open` tiers `["exact", "likely", "possible"]` in that order, `match_label`s, compare fields filled (`has_pdf` true only with a `MAIN` file; `screening_decisions` = 2 for an enrolled record with two current decisions; `has_review_work` true with an `ExtractionRun` row).
-  - `test_vetoes` — differing DOIs, conference `article_type`, zotero `source_payload={"data": {"itemType": "conferencePaper"}}` → no pair; PMID still pairs a conference record.
+  - `test_vetoes` — differing DOIs, conference `article_type`, zotero `source_payload={"data": {"itemType": "conferencePaper"}}` → no pair by title; PMID still pairs a conference record (exact); a conference record with the same DOI and title as a journal article → `possible`, so it is never in "Accept N exact".
   - `test_distinct_suppresses_and_cleared_reopens` — `distinct` row → pair in `resolved` (`verdict == "distinct"`, `decided_by_name`, `created_at`), not in `open`; a later `cleared` row → back in `open`.
   - `test_removed_record_never_pairs_again` — A, B, C same PMID; `duplicate` (B removed, kept A) → `open` holds only A–C; `resolved` holds A–B.
   - `test_moved_article_is_ignored` — B moved to another project after a `duplicate` verdict → in the new project B is a normal article (no pair, not removed: `removed_duplicate` false) and the old project lists no pair with B.
   - `test_kept_article_moved_revives_and_unlists` — `duplicate` (B removed, A kept), then A moved → B is not removed (`select(removed_duplicate(Article)).where(Article.id == B)` false) and `resolved` is empty.
   - `test_foreign_project_articles_never_pair` — same PMID in two projects → no pair.
 
-`test_duplicates_scale.py` (`@pytest.mark.slow` only if the suite has that marker; else plain): 10,000 articles via one `insert(Article)` of dicts, 300 PMID pairs, 300 title pairs → `GET` returns 600 open pairs; `time.perf_counter()` around the request printed (`print(f"duplicates read 10k: {ms:.0f} ms")`) and asserted under 3,000 ms on the local container; the measured number goes in the task report and the PR body (spec §9 "threshold measured"). If over: add an expression index the test shows is needed (§13 builder call) in Task 1's migration file — same PR, not yet merged.
+`test_duplicates_scale.py` (`@pytest.mark.slow` only if the suite has that marker; else plain): 10,000 articles via one `insert(Article)` of dicts, 300 PMID pairs, 300 title pairs → `GET` returns 600 open pairs; `time.perf_counter()` around the request printed (`print(f"duplicates read 10k: {ms:.0f} ms")`); the CI assertion is a loose regression ceiling (`< 15_000` ms, catches an all-pairs blow-up, not runner noise); the measured local number goes in the task report and the PR body (spec §9 "threshold measured"). If the local read exceeds 3,000 ms: add the expression index the query plan shows is needed (§13 builder call) to Task 1's migration file **and** the model's `__table_args__`, then `uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check` (zero diff) — same PR, not yet merged.
 
 Run: `cd "$WT/backend" && uv run pytest tests/integration/test_duplicates_read.py tests/integration/test_duplicates_scale.py -q -s`
 Expected: FAIL — 404 on the route.
@@ -294,7 +305,7 @@ async def DuplicateService.write_verdicts(project_id, user_id, items) -> Duplica
 Route `POST /api/v1/projects/{project_id}/duplicates/verdicts`, `@limiter.limit("10/minute")`, `require_project_manager`, `responses={404: "An article is not in this project", 409: "The record to remove has full-text or extraction work, or the record to keep was already removed"}`. `ArticleNotFoundError` → 404 (as `enroll_screening`). Commit once after the service returns.
 
 Rules, in order, one transaction (spec §8.3 + R9):
-1. `lock_for_update(project_id)` (missing → 404).
+1. `lock_for_update(project_id)` (missing → `ProjectNotFoundError` from `screening_config_service`, mapped to 404 by the route).
 2. `owned_articles` over every `article_id` ∪ `kept_article_id` (one call); `article_id == kept_article_id` → 422 from the schema (`model_validator`).
 3. Per item, in request order, reading state that includes this batch's earlier writes (flush before each read):
    - `duplicate`: removed side already removed → skip (not written, not counted); kept side removed → raise `DUPLICATE_KEPT_IS_REMOVED`; removed side in `has_refusing_work` → raise `DUPLICATE_HAS_REVIEW_WORK`; else insert with `basis` from `match(...)` of the two sources (`manual` when `None`); if the removed article has a live TA assignment and the kept one has none → `ScreeningRepository.enroll(article_ids=[kept])`, `enrolled_kept += rows`.
@@ -303,7 +314,7 @@ Rules, in order, one transaction (spec §8.3 + R9):
 4. Any raise rolls back the whole batch (no partial write).
 
 - [ ] **Step 1: Write the failing tests** — `test_duplicate_verdicts.py`:
-  - `test_non_manager_is_403`; `test_batch_over_500_is_422` (501 items); `test_basis_field_is_refused_422`; `test_foreign_article_is_404`.
+  - `test_non_manager_is_403`; `test_batch_over_500_is_422` (501 items); `test_basis_field_is_refused_422`; `test_foreign_article_is_404` (parametrized: foreign `article_id`; foreign `kept_article_id`).
   - `test_duplicate_records_the_recomputed_basis` — PMID pair → row `basis == "pmid"`; unrelated pair → `"manual"`; title pair → `"title"`.
   - `test_duplicate_on_already_removed_is_skipped` — second `duplicate` of B with another keeper → `written == 0`, one live `duplicate` row for B.
   - `test_chain_keeps_the_first_removed` — B removed (kept A); then A removed (kept C) → both removed; clearing the second restores only A.
@@ -314,7 +325,7 @@ Rules, in order, one transaction (spec §8.3 + R9):
   - `test_cleared_only_after_a_verdict` — `cleared` on an open pair → `written == 0`; after `distinct` → written 1 with the distinct row's basis.
   - `test_undo_allowed_after_extraction_started` — B removed, then an `ExtractionRun` for B, `cleared` → written 1, B not removed; a new `duplicate` on B → 409.
   - `test_written_counts_inserted_rows` — mixed batch (duplicate, distinct, skipped duplicate, cleared) → `written == 3`.
-- `test_duplicates_unit.py`: `test_verdicts_route_limit` → `["10 per 1 minute"]`; `test_verdicts_handler_commits_and_returns` (`__wrapped__`, patched service, `db.commit` awaited once); `test_error_codes_exist` (both names in `ApiErrorCode`).
+- `test_duplicates_unit.py`: `test_verdicts_route_limit` → `["10 per 1 minute"]`; `test_verdicts_handler_commits_and_returns` (`__wrapped__`, patched service, `db.commit` awaited once); `test_verdicts_handler_maps_missing_article_to_404` (service raises `ArticleNotFoundError`); `test_verdicts_handler_maps_missing_project_to_404` (service raises `ProjectNotFoundError`); `test_error_codes_exist` (both names in `ApiErrorCode`).
 - `test_screening_concurrency.py`: `test_concurrent_batches_serialize_on_the_project_lock` — real commits: session 1 locks the project and writes `duplicate` (B, kept A), a second session posts `duplicate` (A, kept C) through the service and parks on the lock (poll `pg_locks WHERE NOT granted` as S1's race case does); after commit 1, session 2 succeeds and both A and B are removed — then the mirror case (session 2 posts `duplicate` (C, kept B)) → `DUPLICATE_KEPT_IS_REMOVED`.
 
 Run: `cd "$WT/backend" && uv run pytest tests/integration/test_duplicate_verdicts.py tests/unit/test_duplicates_unit.py tests/integration/test_screening_concurrency.py -k "duplicate or verdict or lock" -q`
@@ -347,10 +358,10 @@ git -C "$WT" commit -m "feat(screening): record duplicate verdicts with derived 
 **Interfaces — Consumes:** `removed_duplicate` (Task 2). **Produces:** `PrismaCountsRead.other_removed: int` (replaces `imported_not_enrolled`); `ScreeningRepository.count_removed(*, project_id) -> int`.
 
 Threading (§8.3, R1):
-- `live_assignments(project_id)` adds `.where(~removed_duplicate(Article))` (the `Article` already joined by `ARTICLE_STILL_IN_PROJECT`). Every reader inherits it: `count_enrolled`, `live_assignment_ids`, `assignment_states`, `decide`/`arbitrate`/`GET /screening/assignments/{id}` (404 via the existing `snapshot is None` branch).
+- `screening_repository` imports `removed_duplicate` from `duplicate_predicates` (never from `duplicate_repository`). `live_assignments(project_id)` adds `.where(~removed_duplicate(Article))` (the `Article` already joined by `ARTICLE_STILL_IN_PROJECT`). Every reader inherits it: `count_enrolled`, `live_assignment_ids`, `assignment_states`, `decide`/`arbitrate`/`GET /screening/assignments/{id}` (404 via the existing `snapshot is None` branch).
 - `record_rows` adds `~removed_duplicate(Article)` to its WHERE.
 - `enroll` source adds `~removed_duplicate(Article)` (also with explicit `article_ids`).
-- `ScreeningConfigService.read`: `not_enrolled = total - enrolled - removed`. `enroll`: `candidates = total - removed` for enroll-all; for explicit ids, `owned_articles` then drop the removed ones (one query) before `candidates = len(ids)`.
+- `ScreeningConfigService.read`: `not_enrolled = total - enrolled - removed`. `enroll`: takes `ProjectRepository.lock_for_update(project_id)` first (the verdict writer's lock, so a concurrent merge cannot interleave); `candidates = total - removed` for enroll-all; for explicit ids, `owned_articles` then `ScreeningRepository.removed_among(project_id=…, article_ids=…) -> set[UUID]` (new, one SELECT with `removed_duplicate(Article)` and `Article.project_id == project_id`) and drop those before `candidates = len(ids)`.
 - PRISMA (§8.4 table): `_pubmed_identified` = distinct PMIDs of PubMed `_IDENTIFIED_STATUSES` events whose `article_id` is a project article (drop the enrolled join) **plus** PubMed-sourced project articles no PubMed sync event links; `_other_sources` = every project article whose lowered source is not PubMed (drop the enrolled join); `duplicates_removed = identified_total - total + removed`; `other_removed = total - enrolled - removed`. Rewrite the `prisma_counts` docstring invariant ("identified ≥ total − removed while no PMID is linked to two project articles; not clamped").
 - Frontend: `PrismaCountsPanel` reads `other_removed` and the `prismaOtherRemoved` label in both the box and the `screened === 0` notice (R20).
 - Seed (`build`): add articles #13–#16: #13/#14 same PMID `"39000001"` (open exact pair, both not enrolled), #15/#16 same DOI and title (≥ 20 characters, same year) with a `duplicate` verdict (#16 removed, kept #15, `decided_by=manager_id`, basis `doi`) — so Duplicates shows Open and Resolved. Update the seed docstring ("S2 duplicate pairs").
@@ -429,7 +440,7 @@ Rules:
   - `errors.test.ts` (new, `lib/duplicates`): each `CODE_TO_KEY` entry maps; 403 → forbidden; unknown → generic.
   - `SectionViewSwitcher.test.tsx`: `highlights Title/abstract by default with Duplicates listed first` (manager: tab order Duplicates, Title/abstract, Settings; no param → Title/abstract `aria-selected`); `hides Duplicates for a member`.
   - `ScreeningTab.test.tsx`: `redirects a member deep-linked to duplicates only after the config resolves`; `never bounces a manager's duplicates deep link`; `drops article, kept and status when the sub-view changes`.
-  - `TitleAbstractWorkspace.test.tsx`: `asks "Enroll anyway?" while open pairs exist` (MSW duplicates with 23 open → dialog text "23 possible duplicates not reviewed. Enroll anyway?"; confirm posts enroll); `enrolls without asking when no pair is open`; same two for "Enroll N new".
+  - `TitleAbstractWorkspace.test.tsx`: `asks "Enroll anyway?" while open pairs exist` (MSW duplicates with 23 open → dialog text "23 possible duplicates not reviewed. Enroll anyway?"; confirm posts enroll); `enrolls without asking when no pair is open`; `enrolls directly when the duplicates fetch fails`; `"Review duplicates" switches to screeningTab=duplicates without enrolling`; the first two again for "Enroll N new".
 
 Run: `npm run test:run -- frontend/lib frontend/hooks/screening frontend/components/navigation frontend/components/screening`
 Expected: FAIL.
@@ -585,4 +596,5 @@ git -C "$WT" commit -m "test(screening): e2e dedup step — merge, undo, merge b
 ## Self-review notes
 
 - Spec coverage: §8.1 → T1; §8.2 → T2; §8.3 routes/rules/edge cases → T2–T4; §8.4 UX → T5–T7, PRISMA → T4; §4 switcher/redirect → T5; §4.6 Duplicates bullets → T7; §5 key + invalidation → T5; §6.4/§6.5 → T2/T3/T5; S2 E2E + seed → T4/T8; S2 gates → T9; every S2 acceptance row maps to a named test above (perf → T2, error maps → T5).
+- Panel round 1 (2026-10-31): 4 blocking fixed (Literals in `schemas/duplicates.py`; `duplicate_predicates.py` breaks the repository cycle; trigger test runs as `service_role` per the 0094 precedent; conference DOI+title pair is Possible); 11 of 15 advisories folded in.
 - Interface names are consistent: `removed_duplicate`, `refusing_work`, `review_work`, `selectAcceptableExact`, `findSelectedPair`, `duplicatesQueryOptions`, `useDuplicateVerdicts`, `defaultSectionView`.
