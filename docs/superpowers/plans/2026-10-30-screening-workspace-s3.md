@@ -47,6 +47,7 @@ Parallel groups: **G1** {1, 2} → **G2** {3} → **G3** {4} → **G4** {5} → 
 - **Blind review.** No FT payload carries a peer's value or reason before an outcome. At FT, differing exclusion reasons are a conflict and read exactly like any other conflict (`waiting`/`in_review` to everyone but an unseated arbitrator). `ta_*` fields are the TA outcome, which exists before any FT assignment.
 - **Envelope / errors.** `ApiResponse.success(model, trace_id=…)`; state refusals are `ScreeningStateError` (409) with an `ApiErrorCode`; a request-shape refusal is 422 `VALIDATION_ERROR` from the Pydantic model.
 - **Generated types.** After any public schema or route `responses` edit: `cd "$WT" && npm run generate:api-types`, commit `frontend/types/api/openapi.json` + `schema.d.ts`. Never hand-edit. Only Tasks 1, 3, 4, 5, 6 regenerate.
+- **Frontend test helper.** S1 added `frontend/test/helpers/queryClientWrapper.tsx` `createQueryWrapper()`; new hook/component tests use it instead of a hand-built `QueryClientProvider`.
 - **Frontend data path.** component → hook → `services/screeningService.ts` → `apiClient`; keys only from `lib/query-keys/screening.ts` (and `articleKeys` for article files); copy through `t('screening', key)`, `{{x}}` filled with `.replace`. Gates: `check_react_query_keys.py`, `check_frontend_data_path.py`, `check_copy_keys.py`.
 - **React Compiler** (`panicThreshold: 'all_errors'`): no ref read/write during render; no `try/finally` in a component/hook body; reset on prop change with the previous-value-in-state pattern; read subscriptions where consumed.
 - **Keyboard.** New bindings through `useKeyboardShortcuts` (input + dialog guards). The screening shell owns `⇧⌘\` and Escape; a nested `RunSplitShell` registers neither.
@@ -177,7 +178,7 @@ async def assignment_states(db, *, project_id, phase: AssignmentPhase, reviewer_
                             assignment_ids=None) -> dict[UUID, AssignmentSnapshot]
 ```
 
-Every existing call site passes `TITLE_ABSTRACT` except the by-id paths, which pass `ref.phase` (and `reviewer_count_of(settings, ref.phase)`). `assignments_with_articles` takes `phase` too. No behaviour change at TA: this task is plumbing.
+S1 as built (`s1-notes.md`): `ScreeningReviewService.records(project_id, viewer_id, phase)` accepts `phase` but neither `record_rows` nor its `assignment_states` call filters by it — this task passes `phase` through both (`record_rows(project_id=…, phase=phase)`, `assignment_states(…, phase=phase, reviewer_count=reviewer_count_of(settings, phase))`), so the TA read is filtered by its phase for the first time; S1's records tests must stay green. Every existing call site passes `TITLE_ABSTRACT` except the by-id paths, which pass `ref.phase` (and `reviewer_count_of(settings, ref.phase)`). `assignments_with_articles` takes `phase` too. No behaviour change at TA: this task is plumbing.
 
 - [ ] **Step 1: Write the failing tests**
   - `test_screening_schema.py` beside `test_decision_value_is_checked` (`:228`): `test_full_text_and_not_retrieved_are_accepted` — insert an assignment with `phase='full_text'`, a decision `not_retrieved` (no reason) and an arbitration `not_retrieved` → no error; `phase='other'` still `IntegrityError`.
