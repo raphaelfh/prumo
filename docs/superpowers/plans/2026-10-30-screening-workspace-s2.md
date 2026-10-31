@@ -38,6 +38,7 @@ Parallel groups, in order: **G1** {1} → **G2** {2} → **G3** {3} → **G4** {
 
 - **Worktree.** `WT=/Users/raphaelfedericcihaddad/PycharmProjects/prumo/.claude/worktrees/screening-workspace-s2` (branch `screening-workspace-s2`). Every command uses absolute paths or `git -C "$WT"`; never touch the main checkout, never `git switch`/`checkout`, never bare `git stash`. After each task `git -C "$WT" status --short` shows only that task's files.
 - **Precondition (S1).** `test -f "$WT/frontend/components/screening/TitleAbstractWorkspace.tsx"` and `grep -q "def record_rows" "$WT/backend/app/repositories/screening_repository.py"`. If either fails, stop: `origin/dev` with S1 must be merged into the branch first.
+- **S1 names this plan builds on** (S1 hand-over, 2026-10-31): records read = `ScreeningRepository.record_rows` (one SELECT, `has_pdf` an inline `exists()` on `ArticleFile.file_role == 'MAIN'` — Task 2 extracts it to module-level `has_main_pdf(article)` in `screening_repository.py` and `record_rows` reuses it) + `ScreeningReviewService.records`; keys `screeningKeys.records(projectId, phase?)` and `invalidateScreening(queryClient, projectId)` in `lib/query-keys/screening.ts`; TA vocabulary `lib/screening/records.ts` (Duplicates has its own `lib/duplicates/pairs.ts`, nothing shared); `useScreeningRecords`, `useDecide`/`useArbitrate` in `hooks/screening/useScreeningMutations.ts`; local seed `backend/app/seed_screening.py` (`build`, `make db-seed-screening`); Vitest wrapper `frontend/test/helpers/queryClientWrapper.tsx` `createQueryWrapper()` — use it in every new hook/component test.
 - **English only** — code, comments, commits, copy keys and copy.
 - **Migration number.** Built as `0095_article_duplicate_verdicts` (`down_revision = "0094_screening_v1"`). At merge time the orchestrator renumbers to the next free number on `origin/dev` and re-parents onto its head (S3 adds one too); `expected_head` in `backend/tests/integration/test_migration_roundtrip.py` always names this migration's revision. Never apply app DDL through the Supabase MCP.
 - **Ownership (BOLA).** Both routes `Depends(require_project_manager)`; every client article id is bound through `owned_articles` (`app/services/article_read_service.py`); every listed pair binds **both** sides with `Article.project_id == project_id` in the WHERE clause; assignment joins use `ARTICLE_STILL_IN_PROJECT`. Gate: `check_scope_guards.py`.
@@ -178,8 +179,8 @@ class DuplicateRepository:
     #   DISTINCT ON (least(article_id,kept_article_id), greatest(...)) ORDER BY that, created_at DESC, id DESC;
     #   WHERE verdict.project_id = project_id AND both articles' project_id = project_id (joins in WHERE)
     async def compare_fields(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> dict[UUID, CompareSide]
-    #   Article columns + authors + ingestion_source + has_pdf (S1's MAIN-file exists(); if it is inline in
-    #   record_rows, extract it to a module-level `has_main_pdf(article)` in screening_repository and reuse)
+    #   Article columns + authors + ingestion_source + has_pdf (S1 inlines the MAIN-file exists() in record_rows;
+    #   extract it to module-level `has_main_pdf(article)` in screening_repository, used by both)
     #   + screening_decisions (current TA decisions: latest per reviewer on the article's TA assignment joined by
     #   ARTICLE_STILL_IN_PROJECT — NOT live_assignments, so a resolved pair's removed side still shows the
     #   decisions §8.3 keeps as audit)
