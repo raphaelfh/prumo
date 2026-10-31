@@ -14,7 +14,6 @@ consensus value_map (prior task), and must likewise never be a dict.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -126,7 +125,6 @@ async def test_ai_proposed_value_resolves_number_unit(
     service = ExtractionExportService(
         db=db_session,
         user_id=str(profile_id),
-        storage=MagicMock(),
     )
     layout = await service.resolve_layout(
         project_id=project_id,

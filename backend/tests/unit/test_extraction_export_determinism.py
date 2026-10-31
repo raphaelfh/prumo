@@ -332,7 +332,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         ]
     )
 
-    service = ExtractionExportService(db=mock_db, user_id="user-1", storage=MagicMock())
+    service = ExtractionExportService(db=mock_db, user_id="user-1")
     rows = await service._load_ai_proposal_rows(
         articles=(article,),
         sections=(section,),

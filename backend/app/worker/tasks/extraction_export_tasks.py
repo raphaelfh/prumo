@@ -68,12 +68,9 @@ def export_extraction_task(
         from app.worker._session import worker_session
 
         async with worker_session() as session:
-            supabase = get_supabase_client()
-            storage = create_storage_adapter(supabase)
             service = ExtractionExportService(
                 db=session,
                 user_id=user_id,
-                storage=storage,
                 trace_id=self.request.id,
             )
 
@@ -91,6 +88,7 @@ def export_extraction_task(
             # free for the upload coroutine that follows.
             data = await asyncio.to_thread(build_workbook, layout, ExportShape(shape))
 
+            storage = create_storage_adapter(get_supabase_client())
             path = f"{_STORAGE_PREFIX}/{user_id}/{self.request.id}.xlsx"
             await storage.upload(
                 _STORAGE_BUCKET,

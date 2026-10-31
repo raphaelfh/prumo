@@ -25,9 +25,8 @@ from fastapi.responses import JSONResponse
 from redis import Redis
 
 from app.core.config import settings
-from app.core.deps import CurrentUser, DbSession, SupabaseClient
+from app.core.deps import CurrentUser, DbSession
 from app.core.error_handler import AuthorizationError, NotFoundError
-from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_export import (
@@ -127,7 +126,6 @@ async def start_extraction_export(
     payload: ExtractionExportRequest,
     db: DbSession,
     user: CurrentUser,
-    supabase: SupabaseClient,
 ) -> Response | ApiResponse[ExtractionExportStartedResponse]:
     """Validate, authorise, then dispatch via sync or async path.
 
@@ -156,11 +154,9 @@ async def start_extraction_export(
         )
 
     # --- service + auth gate ----------------------------------------------
-    storage = create_storage_adapter(supabase)
     service = ExtractionExportService(
         db=db,
         user_id=user.sub,
-        storage=storage,
         trace_id=trace_id,
     )
 
@@ -309,7 +305,6 @@ async def list_extraction_export_reviewers(
     template_id: UUID,
     db: DbSession,
     user: CurrentUser,
-    supabase: SupabaseClient,
 ) -> ApiResponse[list[dict[str, Any]]]:
     """Return reviewers who have ≥ 1 non-reject decision on this template.
 
@@ -317,11 +312,9 @@ async def list_extraction_export_reviewers(
     see everyone. The dialog uses this to populate the picker.
     """
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
-    storage = create_storage_adapter(supabase)
     service = ExtractionExportService(
         db=db,
         user_id=user.sub,
-        storage=storage,
         trace_id=trace_id,
     )
 

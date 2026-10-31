@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -47,7 +46,6 @@ class _CharmsExportFixture:
     template_id: UUID
     article_ids: tuple[UUID, ...]
     user_id: UUID
-    storage_stub: MagicMock
 
 
 async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture | None:
@@ -131,7 +129,6 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
         template_id=template_id,
         article_ids=(article_id,),
         user_id=profile_id,
-        storage_stub=MagicMock(),
     )
 
 
@@ -144,7 +141,7 @@ async def _charms_workbook(db: AsyncSession):
     fx = await _seed_finalized_charms_run(db)
     if fx is None:
         return None
-    service = ExtractionExportService(db=db, user_id=str(fx.user_id), storage=fx.storage_stub)
+    service = ExtractionExportService(db=db, user_id=str(fx.user_id))
     layout = await service.resolve_layout(
         project_id=fx.project_id,
         template_id=fx.template_id,

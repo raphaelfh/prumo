@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
 from app.core.logging import LoggerMixin
-from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
     ExtractionCardinality,
@@ -379,12 +378,10 @@ class ExtractionExportService(LoggerMixin):
         self,
         db: AsyncSession,
         user_id: str,
-        storage: StorageAdapter,
         trace_id: str | None = None,
     ) -> None:
         self.db = db
         self.user_id = user_id
-        self.storage = storage
         self.trace_id = trace_id or ""
 
     # ------------------------------------------------------------------

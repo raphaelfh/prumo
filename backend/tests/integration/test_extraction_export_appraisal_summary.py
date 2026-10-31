@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -96,7 +95,6 @@ class _QAFixture:
     reviewer_id: UUID
     domain1_label: str
     domain2_label: str
-    storage_stub: MagicMock
 
 
 async def _seed_finalized_qa_run(
@@ -400,7 +398,6 @@ async def _seed_finalized_qa_run(
         reviewer_id=reviewer_id,
         domain1_label=domain1_label,
         domain2_label=domain2_label,
-        storage_stub=MagicMock(),
     )
 
 
@@ -445,7 +442,7 @@ async def _instances_by_entity_type(
 
 
 def _service(db: AsyncSession, fx: _QAFixture) -> ExtractionExportService:
-    return ExtractionExportService(db=db, user_id=str(fx.user_id), storage=fx.storage_stub)
+    return ExtractionExportService(db=db, user_id=str(fx.user_id))
 
 
 async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(

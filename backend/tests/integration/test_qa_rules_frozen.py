@@ -14,7 +14,7 @@ import copy
 import json
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -296,9 +296,7 @@ async def _to_consensus_with_answers(
 
 
 async def _export(db: AsyncSession, template_id: UUID, article_ids: list[UUID]) -> ExportLayout:
-    return await ExtractionExportService(
-        db=db, user_id=str(SEED.primary_profile), storage=MagicMock()
-    ).resolve_layout(
+    return await ExtractionExportService(db=db, user_id=str(SEED.primary_profile)).resolve_layout(
         project_id=SEED.primary_project,
         template_id=template_id,
         mode=ExportMode.ALL_USERS,
