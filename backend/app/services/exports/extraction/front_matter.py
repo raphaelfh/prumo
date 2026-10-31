@@ -17,6 +17,10 @@ if TYPE_CHECKING:
     from app.services.exports.extraction.workbook import SheetTitles
 
 _TITLE = CellStyle(bold=True)
+_MATRIX_OMITTED_NOTE = (
+    "Matrix omitted: it would exceed Excel's 16,384-column limit. "
+    "The values are in the other sheets."
+)
 
 
 def _kv(label: str, value: object) -> tuple[Cell, ...]:
@@ -50,6 +54,10 @@ def build_front_matter(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     rows.append((Cell("Contents", _TITLE),))
     for sheet_name in titles.order:
         rows.append((Cell(""), Cell(sheet_name)))
+
+    if titles.matrix_omitted:
+        rows.append(())
+        rows.append((Cell(_MATRIX_OMITTED_NOTE, CellStyle(wrap=True)),))
 
     if fm is not None and fm.legend:
         rows.append(())

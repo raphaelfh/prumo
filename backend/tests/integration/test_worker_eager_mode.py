@@ -106,6 +106,10 @@ def test_export_extraction_task_signature_and_kwargs_alignment() -> None:
             return_value=b"PK\x03\x04minimal-xlsx-bytes",
         ),
         patch(
+            "app.services.exports.extraction.workbook.matrix_fits",
+            return_value=True,
+        ),
+        patch(
             "app.worker._session.worker_session",
             new=_session_factory_returning(session),
         ),

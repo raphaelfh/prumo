@@ -545,7 +545,7 @@ async def discard_template_draft(
     # the fields it is about. Catching them here to re-raise
     # ``HTTPException`` is what collapsed all five onto ``HTTP_ERROR`` with
     # no ``details`` (precedent for letting them through:
-    # ``ExportColumnLimitError``).
+    # the discard-refusal precedent).
     await db.commit()
     return ApiResponse.success(
         result,

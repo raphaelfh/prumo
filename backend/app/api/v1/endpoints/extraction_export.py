@@ -40,6 +40,7 @@ from app.schemas.extraction_export import (
 from app.services.exports.extraction.workbook import (
     ExportShape,
     build_workbook,
+    matrix_fits,
     shape_needs_articles,
 )
 from app.services.extraction_export_service import (
@@ -226,7 +227,9 @@ async def start_extraction_export(
             )
 
         # Run the CPU-bound openpyxl writer off the event loop.
-        data: bytes = await asyncio.to_thread(build_workbook, layout, shape, include_matrix=True)
+        data: bytes = await asyncio.to_thread(
+            build_workbook, layout, shape, include_matrix=matrix_fits(layout)
+        )
 
         filename = ExtractionExportService.format_filename(
             project_name=layout.project_name,

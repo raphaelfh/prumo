@@ -30,14 +30,12 @@ from app.models.extraction import (
 from app.models.extraction_workflow import ExtractionProposalRecord
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
-# orchestrator package. ``ExportColumnLimitError`` is the package's pre-build
-# column guard (it doubles as an ``AppError``/``ValueError``); the plan named it
-# ``ExportTooWideError`` — reconciled here to the actual exported symbol.
+# orchestrator package.
 from app.services.exports.extraction.workbook import (
-    ExportColumnLimitError,
     ExportShape,
     allocate_titles,
     build_workbook,
+    matrix_fits,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
@@ -418,10 +416,10 @@ def test_column_guard_boundary() -> None:
 
     at_limit = _n_article_layout(16_382)  # 2 + 16382 = 16384
     assert _matrix_column_count(at_limit) == 16_384
+    assert matrix_fits(at_limit) is True
     build_workbook(at_limit, ExportShape.COMPLETE, include_matrix=True)  # must not raise
 
-    with pytest.raises(ValueError):
-        build_workbook(_n_article_layout(16_383), ExportShape.COMPLETE, include_matrix=True)
+    assert matrix_fits(_n_article_layout(16_383)) is False
 
 
 # ----------------------------------------------------------------------
@@ -522,11 +520,10 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
     )
 
 
-def test_500x100_all_users_exceeds_column_guard() -> None:
+def test_500x100_all_users_does_not_fit_the_matrix() -> None:
     # 500 articles × 100 reviewer/instance sub-columns each blows past 16,384.
     layout = _wide_all_users_layout(n_articles=500, subcols_each=100)
-    with pytest.raises(ExportColumnLimitError):
-        build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
+    assert matrix_fits(layout) is False
 
 
 # ----------------------------------------------------------------------

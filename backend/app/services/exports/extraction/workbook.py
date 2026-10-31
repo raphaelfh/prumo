@@ -23,10 +23,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
-from fastapi import status
 from openpyxl import Workbook
 
-from app.core.error_handler import AppError
 from app.services.exports.extraction.ai_metadata import build_ai_metadata
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.exports.extraction.data_dictionary import build_data_dictionary
@@ -67,33 +65,7 @@ class ExportShape(StrEnum):
 
 
 #: Excel's hard ceiling on worksheet columns — XFD is column 16,384 (XLSX spec).
-#: Public so the export service, endpoint, and guard tests share one source of
-#: truth. ``_EXCEL_MAX_COLUMNS`` is kept as a private alias for in-module use.
 EXCEL_MAX_COLUMNS = 16_384
-_EXCEL_MAX_COLUMNS = EXCEL_MAX_COLUMNS
-
-
-class ExportColumnLimitError(AppError, ValueError):
-    """Raised pre-build when the matrix would exceed Excel's column cap.
-
-    Subclasses both ``AppError`` (so the API surfaces the standard
-    ``error.message`` envelope at HTTP 422 with the
-    ``EXPORT_COLUMN_LIMIT_EXCEEDED`` code — this is a user-input problem,
-    not a server fault) and ``ValueError`` (the clear, framework-agnostic
-    "bad input" contract the pure builder package raises and its tests
-    assert on).
-    """
-
-    def __init__(self, columns: int) -> None:
-        super().__init__(
-            code="EXPORT_COLUMN_LIMIT_EXCEEDED",
-            message=(
-                f"This export would produce {columns:,} columns, exceeding "
-                f"Excel's limit of {EXCEL_MAX_COLUMNS:,} columns. Narrow the "
-                "export mode, reviewers, or article selection and try again."
-            ),
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        )
 
 
 def _matrix_column_count(layout: ExportLayout) -> int:
@@ -116,10 +88,9 @@ def _matrix_column_count(layout: ExportLayout) -> int:
     return (_FIRST_DATA_COL - 1) + data_cols
 
 
-def _assert_within_column_limit(layout: ExportLayout) -> None:
-    cols = _matrix_column_count(layout)
-    if cols > _EXCEL_MAX_COLUMNS:
-        raise ExportColumnLimitError(cols)
+def matrix_fits(layout: ExportLayout) -> bool:
+    """True when the Matrix sheet fits Excel's column ceiling."""
+    return _matrix_column_count(layout) <= EXCEL_MAX_COLUMNS
 
 
 #: Which sub-builders each shape keeps (§3). Keyed on BUILDER IDENTITY, never
@@ -298,7 +269,6 @@ def _ordered_specs(
 
 def build_workbook(layout: ExportLayout, shape: ExportShape, *, include_matrix: bool) -> bytes:
     """Build the export workbook bytes for the given layout and shape."""
-    _assert_within_column_limit(layout)
     titles = allocate_titles(layout, shape, include_matrix=include_matrix)
 
     wb = Workbook()
@@ -317,10 +287,10 @@ def build_workbook(layout: ExportLayout, shape: ExportShape, *, include_matrix: 
 
 __all__ = [
     "EXCEL_MAX_COLUMNS",
-    "ExportColumnLimitError",
     "ExportShape",
     "SheetTitles",
     "allocate_titles",
     "build_workbook",
+    "matrix_fits",
     "shape_needs_articles",
 ]

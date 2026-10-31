@@ -60,7 +60,11 @@ def export_extraction_task(
         # Lazy imports + lazy client construction.
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.exports.extraction.workbook import ExportShape, build_workbook
+        from app.services.exports.extraction.workbook import (
+            ExportShape,
+            build_workbook,
+            matrix_fits,
+        )
         from app.services.extraction_export_service import (
             ExportMode,
             ExtractionExportService,
@@ -87,7 +91,7 @@ def export_extraction_task(
             # CPU-bound write — keep it in a thread so the event loop is
             # free for the upload coroutine that follows.
             data = await asyncio.to_thread(
-                build_workbook, layout, ExportShape(shape), include_matrix=True
+                build_workbook, layout, ExportShape(shape), include_matrix=matrix_fits(layout)
             )
 
             storage = create_storage_adapter(get_supabase_client())

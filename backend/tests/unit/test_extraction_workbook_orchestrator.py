@@ -1,4 +1,4 @@
-"""Orchestrator: spec-order sheet assembly + the §5.5 column guard."""
+"""Orchestrator: spec-order sheet assembly."""
 
 from __future__ import annotations
 
@@ -119,14 +119,6 @@ def test_sheet_order_with_ai() -> None:
         "Data dictionary",
         "AI proposals",
     ]
-
-
-def test_column_guard_rejects_oversized_layout() -> None:
-    # 16,385 articles × 1 single-instance column each blows past Excel's
-    # 16,384-column ceiling once the 2 label cols are added.
-    layout = _one_field_layout(include_ai=False, n_articles=16_385)
-    with pytest.raises(ValueError, match="16384|column"):
-        build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
 
 def test_sections_named_history_and_data_get_suffixed_titles() -> None:
