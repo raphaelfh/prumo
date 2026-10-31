@@ -228,6 +228,73 @@ async def test_a_reviewers_decision_is_final(db_session: AsyncSession, phase: st
     assert await _rows_of(db_session, assignment, a) == before
 
 
+async def test_solo_re_decide_appends_and_changes_the_outcome(db_session: AsyncSession) -> None:
+    project_id, (r,), (article,), (assignment,) = await _project(db_session, rc=1, reviewers=1)
+    assert (await _decide(db_session, r, assignment, "include")).status_code == 200
+
+    again = await _decide(db_session, r, assignment, "exclude", "Not ML")
+
+    assert again.status_code == 200, again.text
+    assert again.json()["data"]["outcome"] == {
+        "kind": "solo",
+        "decision": "exclude",
+        "exclusion_reason": "Not ML",
+        "reasons_differ": False,
+    }
+    rows = await _rows_of(db_session, assignment, r)
+    assert [(row[1], row[2]) for row in rows] == [("include", None), ("exclude", "Not ML")]
+    records = await _get(
+        db_session, r, f"/api/v1/projects/{project_id}/screening/records?phase=title_abstract"
+    )
+    (row,) = [x for x in records.json()["data"]["rows"] if x["article_id"] == str(article)]
+    assert row["status"] == "excluded"
+
+
+async def test_solo_re_decide_skips_the_reviewer_cap(db_session: AsyncSession) -> None:
+    _, (r,), _, (assignment,) = await _project(db_session, rc=1, reviewers=1)
+    await add_decision(db_session, assignment, r, "include", created_at=JAN_1)
+
+    again = await _decide(db_session, r, assignment, "maybe")
+
+    assert again.status_code == 200, again.text
+
+
+async def test_solo_re_decide_with_an_unknown_reason_is_refused(db_session: AsyncSession) -> None:
+    _, (r,), _, (assignment,) = await _project(db_session, rc=1, reviewers=1)
+    await add_decision(db_session, assignment, r, "include", created_at=JAN_1)
+    before = await _rows_of(db_session, assignment, r)
+
+    refused = await _decide(db_session, r, assignment, "exclude", "Old reason")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_UNKNOWN_EXCLUSION_REASON"
+    assert await _rows_of(db_session, assignment, r) == before
+
+
+async def test_solo_re_decide_refused_after_arbitration(db_session: AsyncSession) -> None:
+    _, (r,), _, (assignment,) = await _project(db_session, rc=1, reviewers=1)
+    await add_decision(db_session, assignment, r, "include", created_at=JAN_1)
+    await add_ruling(db_session, assignment, MANAGER, "exclude", created_at=JAN_2)
+    before = await _rows_of(db_session, assignment, r)
+
+    refused = await _decide(db_session, r, assignment, "maybe")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_DECISION_FINAL"
+    assert await _rows_of(db_session, assignment, r) == before
+
+
+async def test_another_reviewer_on_a_solo_record_hits_the_cap(db_session: AsyncSession) -> None:
+    _, (r, s), _, (assignment,) = await _project(db_session, rc=1, reviewers=2)
+    await add_decision(db_session, assignment, r, "include", created_at=JAN_1)
+
+    refused = await _decide(db_session, s, assignment, "include")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_REVIEWER_CAP"
+    assert await _rows_of(db_session, assignment, s) == []
+
+
 async def test_a_reviewer_cannot_flip_a_conflict_to_consensus(db_session: AsyncSession) -> None:
     """The review's probe: A posting again after B disagreed is refused; the conflict stands."""
     project_id, (a, b), _, (assignment,) = await _project(db_session, rc=2, reviewers=2)

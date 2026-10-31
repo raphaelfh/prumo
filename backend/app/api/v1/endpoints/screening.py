@@ -177,8 +177,9 @@ async def get_screening_assignment(
         404: {"description": "Assignment not found, or its article left the project"},
         409: {
             "description": (
-                "Screening not set up, the caller already decided (a decision is final), "
-                "the record has all its reviewers, or the exclusion reason is not in the protocol"
+                "Screening not set up, the caller already decided (final in dual review; "
+                "a solo reviewer may decide again until the record is arbitrated), the record "
+                "has all its reviewers, or the exclusion reason is not in the protocol"
             )
         },
     },

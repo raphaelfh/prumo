@@ -12922,7 +12922,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the caller already decided (a decision is final), the record has all its reviewers, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, or the exclusion reason is not in the protocol */
             409: {
                 headers: {
                     [name: string]: unknown;

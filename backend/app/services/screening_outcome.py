@@ -75,7 +75,9 @@ def derive_state(
 ) -> AssignmentState:
     """The assignment's phase and outcome; ``decisions`` holds each reviewer's decision.
 
-    A reviewer's decision is final, so the latest ruling is the last word.
+    A reviewer's latest decision is their current one: final in dual review,
+    re-decidable by a solo reviewer until a ruling (§6.3); the latest ruling is
+    the last word.
     """
     if ruling is not None:
         return AssignmentState(

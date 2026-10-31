@@ -331,11 +331,13 @@ class ScreeningReviewService:
                 ApiErrorCode.SCREENING_UNKNOWN_EXCLUSION_REASON,
                 "The protocol's exclusion reasons changed. Reload and pick again.",
             )
-        if snapshot.seats(reviewer_id):
+        # Post-lock snapshot: a solo reviewer re-decides until a ruling lands (§6.3).
+        re_deciding = snapshot.seats(reviewer_id)
+        if re_deciding and (reviewer_count != 1 or snapshot.ruling is not None):
             raise ScreeningStateError(
                 ApiErrorCode.SCREENING_DECISION_FINAL, "You already decided on this record."
             )
-        if len(snapshot.decisions) >= reviewer_count:
+        if not re_deciding and len(snapshot.decisions) >= reviewer_count:
             raise ScreeningStateError(
                 ApiErrorCode.SCREENING_REVIEWER_CAP, "This record already has all its reviewers."
             )

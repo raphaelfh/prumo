@@ -1,4 +1,4 @@
-.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-fresh dev dev-remote e2e-local e2e-remote test-backend-e2e hooks
+.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-seed-screening db-fresh dev dev-remote e2e-local e2e-remote test-backend-e2e hooks
 
 # Variáveis
 BACKEND_DIR := backend
@@ -267,6 +267,9 @@ db-setup: ## Setup completo do banco: supabase db reset + alembic upgrade head
 db-seed: ## Executa o seed (CHARMS + PROBAST + QUADAS-2 + outros dados base). Idempotente.
 	@echo "$(GREEN)🌱 Aplicando seed (templates globais + dados base)...$(NC)"
 	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run python -m app.seed
+
+db-seed-screening: ## Local only: a screening project with a conflict (refuses a non-local DATABASE_URL)
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run python -m app.seed_screening
 
 db-fresh: ## Reset + migrate + seed em um único comando (AI-friendly dev cycle)
 	@echo "$(GREEN)🌀 Banco zerado de ponta a ponta — reset + migrate + seed$(NC)"
