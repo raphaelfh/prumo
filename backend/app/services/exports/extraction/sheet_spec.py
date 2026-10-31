@@ -119,7 +119,8 @@ def _style_to_kwargs(
 def _clean(value: CellValue) -> CellValue:
     """Strip characters XML 1.0 forbids; openpyxl raises on them otherwise."""
     if isinstance(value, str):
-        return ILLEGAL_CHARACTERS_RE.sub("", value)
+        cleaned: str = ILLEGAL_CHARACTERS_RE.sub("", value)  # openpyxl is untyped
+        return cleaned
     return value
 
 
