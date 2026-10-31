@@ -78,6 +78,10 @@ from app.services.exports.extraction_snapshot_reader import (
 )
 from app.services.exports.value_envelope import resolve_value
 from app.services.extraction_snapshot import pinned_template_rules
+from app.services.project_template_active_service import (
+    ProjectTemplateNotFoundError,
+    owned_template,
+)
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -836,16 +840,10 @@ class ExtractionExportService(LoggerMixin):
         not resolve even though the caller passed our own project's gate, else
         the async export path would leak a foreign project's template metadata.
         """
-        template = (
-            await self.db.execute(
-                select(ProjectExtractionTemplate).where(
-                    ProjectExtractionTemplate.id == template_id,
-                    ProjectExtractionTemplate.project_id == project_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if template is None:
-            raise NotFoundError(f"Project template {template_id} not found.")
+        try:
+            template = await owned_template(self.db, project_id=project_id, template_id=template_id)
+        except ProjectTemplateNotFoundError as exc:
+            raise NotFoundError("Project template") from exc
 
         version = await self._template_versions_repo().get_active(template_id)
         if version is None:

@@ -37,6 +37,7 @@ from app.schemas.extraction_export import (
     ExtractionExportStartedResponse,
     ExtractionExportStatusResponse,
 )
+from app.services.exports.extraction.run import XLSX_MIME
 from app.services.exports.extraction.workbook import (
     ExportShape,
     build_workbook,
@@ -60,7 +61,6 @@ logger = get_logger(__name__)
 #: ``articles_export.SYNC_METADATA_ONLY_MAX_ARTICLES`` (research.md §3).
 SYNC_EXPORT_MAX_ARTICLES = 50
 
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 #: Redis owner record TTL (matches Celery ``result_expires``).
 _EXPORT_OWNER_KEY_PREFIX = "extraction_export_owner:"
@@ -240,7 +240,7 @@ async def start_extraction_export(
 
         return Response(
             content=data,
-            media_type=_XLSX_MIME,
+            media_type=XLSX_MIME,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "Access-Control-Expose-Headers": "Content-Disposition,X-Trace-Id",
