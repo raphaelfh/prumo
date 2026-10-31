@@ -230,7 +230,7 @@ export function useRunValues(args: UseRunValuesArgs) {
     return 'conflict';
   };
 
-  const writeValue = async (params: WriteProposalParams): Promise<void> => {
+  const writeValue = async (params: WriteProposalParams): Promise<string | null> => {
     // A lifecycle flush belongs to its captured run, even after navigation.
     if (blockedSessionsRef.current.has(session) || !currentUserId || reviewerRef.current !== currentUserId) return Promise.reject(new Error(t('extraction', 'reviewDecisionConflict')));
     const coordinate = {instanceId: params.instanceId, fieldId: params.fieldId};
@@ -245,6 +245,7 @@ export function useRunValues(args: UseRunValuesArgs) {
       return Promise.reject(result.error);
     }
     record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
+    return acceptedProposal([result.data], params.draft);
   };
 
   const autosave = useAutoSaveProposals({

@@ -40,7 +40,7 @@ const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
  * under test here, not the guarded writer ``useRunValues`` supplies (its own
  * suite covers that one).
  */
-const postEdit = async (p: WriteProposalParams): Promise<void> => {
+const postEdit = async (p: WriteProposalParams): Promise<string | null> => {
   await apiClient(`/api/v1/runs/${p.runId}/decisions`, {
     method: 'POST',
     keepalive: true,
@@ -49,9 +49,9 @@ const postEdit = async (p: WriteProposalParams): Promise<void> => {
       field_id: p.fieldId,
       decision: 'edit',
       value: p.absentReason ? { value: p.normalizedValue, absent_reason: p.absentReason } : { value: p.normalizedValue },
-      ...(p.proposalRecordId ? { proposal_record_id: p.proposalRecordId } : {}),
     },
   });
+  return null;
 };
 
 /** The queue's props as these tests vary them; the writer is always ``postEdit``. */
@@ -858,61 +858,8 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
   });
 });
 
-describe('useAutoSaveProposals — AI link stamping (D0)', () => {
-  it('attaches proposal_record_id to the edit decision for linked coords', async () => {
-    apiClientMock.mockResolvedValue({});
-
-    const { result } = renderHook(() =>
-      useQueue({
-        runId: 'run-1',
-        stage: 'extract',
-        values: { 'inst-1_field-1': 'ai text' },
-        linkByKey: { 'inst-1_field-1': 'prop-9' },
-      }),
-    );
-
-    await act(async () => {
-      await result.current.saveNow();
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/decisions',
-      expect.objectContaining({
-        method: 'POST',
-        keepalive: true,
-        body: {
-          instance_id: 'inst-1',
-          field_id: 'field-1',
-          decision: 'edit',
-          value: { value: 'ai text' },
-          proposal_record_id: 'prop-9',
-        },
-      }),
-    );
-  });
-
-  it('omits proposal_record_id for unlinked coords', async () => {
-    apiClientMock.mockResolvedValue({});
-
-    const { result } = renderHook(() =>
-      useQueue({
-        runId: 'run-1',
-        stage: 'extract',
-        values: { 'inst-1_field-1': 'typed by hand' },
-        linkByKey: { 'inst-OTHER_field-1': 'prop-9' },
-      }),
-    );
-
-    await act(async () => {
-      await result.current.saveNow();
-    });
-
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-    const body = apiClientMock.mock.calls[0][1].body;
-    expect(body).not.toHaveProperty('proposal_record_id');
-  });
-
-  it('a link-only adoption on an unchanged value still writes the linked decision', async () => {
+describe('useAutoSaveProposals — AI link fingerprint', () => {
+  it('a link-only change on an unchanged value re-dirties the coord', async () => {
     apiClientMock.mockResolvedValue({});
 
     const baseProps: QueueProps = {
@@ -932,8 +879,8 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
     });
     expect(apiClientMock).not.toHaveBeenCalled();
 
-    // The reviewer adopts an AI version whose value is byte-identical — the
-    // selection event must still append a linked decision (D0 / §IX).
+    // The link changes while the value stays byte-identical: the fingerprint
+    // re-dirties the coord, so the writer records the selection (§IX).
     rerender({ ...baseProps, linkByKey: { 'inst-1_field-1': 'prop-9' } });
     await act(async () => {
       await result.current.saveNow();
@@ -942,12 +889,25 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
     expect(apiClientMock).toHaveBeenCalledWith(
       '/api/v1/runs/run-1/decisions',
       expect.objectContaining({
-        body: expect.objectContaining({
-          value: { value: 'same' },
-          proposal_record_id: 'prop-9',
-        }),
+        body: expect.objectContaining({ value: { value: 'same' } }),
       }),
     );
+  });
+
+  it('acknowledges the link the writer resolved with, so a link appearing after the write is not re-written', async () => {
+    const writes: WriteProposalParams[] = [];
+    const writer = async (p: WriteProposalParams) => { writes.push(p); return 'prop-9'; };
+    const props: QueueProps = { runId: 'run-1', stage: 'extract', values: { 'inst-1_field-1': 'typed' } };
+    const { result, rerender } = renderHook(
+      (p: QueueProps) => useAutoSaveProposals({ ...p, writeValue: writer }),
+      { initialProps: props },
+    );
+    await act(async () => { await result.current.saveNow(); });
+    rerender({ ...props, linkByKey: { 'inst-1_field-1': 'prop-9' } });
+    await act(async () => { await result.current.saveNow(); });
+    expect(writes).toHaveLength(1);
+    expect(writes[0].draft).toBe('typed');
+    expect(result.current.hasUnsavedChanges).toBe(false);
   });
 
   it('mount with the persisted link (baselineLinkByKey) does not re-post', async () => {
