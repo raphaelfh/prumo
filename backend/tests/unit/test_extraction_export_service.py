@@ -6,11 +6,11 @@ are replaced with AsyncMock / MagicMock instances.
 
 Coverage targets (in priority order):
   T1  assert_can_export             — auth gate (4 paths)
-  T2  _build_consensus_value_map    — 3-tuple keys, JSONB unwrap
+  T2  _build_consensus_value_map    — consensus keys, JSONB unwrap
   T3  _resolve_articles_for_consensus — stage filtering + omit tracking
   T4  _infer_reviewer_outcome        — pure function, 5 outcomes
   T5  _load_ai_proposal_rows         — 8-query orchestration
-  T6  _build_all_users_value_map     — 4-tuple keys, decision precedence
+  T6  _build_all_users_value_map     — per-rater keys, decision precedence
   T7  list_eligible_reviewers_for_picker — manager vs non-manager
 """
 
@@ -31,6 +31,8 @@ from app.models.extraction import (
 from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.project import ProjectMemberRole
+from app.services.exports.descriptors import value_key
+from app.services.exports.values import display_value, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -41,7 +43,9 @@ from app.services.extraction_export_service import (
     _infer_reviewer_outcome,
     _letter_for,
     _short_id,
+    _untyped_field,
 )
+from app.services.value_semantics import ABSENT_REASON_LABELS
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -151,6 +155,20 @@ def _make_field(label: str) -> FieldDescriptor:
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
     )
+
+
+def _text_fields(*field_ids: UUID) -> dict[UUID, FieldDescriptor]:
+    return {
+        fid: FieldDescriptor(
+            field_id=fid, label="F", type=ExtractionFieldType.TEXT, allowed_values=()
+        )
+        for fid in field_ids
+    }
+
+
+def _tv(raw):
+    """``raw`` typed against a TEXT field, as a value-map entry."""
+    return to_export_value(raw, _make_field("F"), {})
 
 
 def _make_section(label: str) -> SectionDescriptor:
@@ -295,7 +313,7 @@ class TestAssertCanExport:
 
 
 class TestBuildConsensusValueMap:
-    """3-tuple keyed value map from ExtractionPublishedState rows.
+    """Consensus value map from ExtractionPublishedState rows, keyed with rater None.
 
     Mocking strategy: mock svc.db.execute(...).all() to return fake row
     tuples (run_id, instance_id, field_id, value).
@@ -305,13 +323,13 @@ class TestBuildConsensusValueMap:
     async def test_empty_run_ids_returns_empty_dict(self):
         """No run_ids → short-circuits to empty dict without hitting DB."""
         svc = _make_service()
-        result = await svc._build_consensus_value_map(run_ids=[], fields_by_id={})
+        result = await svc._build_consensus_value_map(run_ids=[], fields_by_id={}, labels={})
         assert result == {}
         svc.db.execute.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_multiple_published_states_correct_keys(self):
-        """Multiple rows → each 3-tuple key maps to the unwrapped value."""
+        """Multiple rows → each consensus key maps to its typed value."""
         svc = _make_service()
 
         run_id = uuid4()
@@ -326,10 +344,12 @@ class TestBuildConsensusValueMap:
         ]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
+        result = await svc._build_consensus_value_map(
+            run_ids=[run_id], fields_by_id=_text_fields(field_id1, field_id2), labels={}
+        )
 
-        assert result[(run_id, instance_id1, field_id1)] == "value_a"
-        assert result[(run_id, instance_id2, field_id2)] == "value_b"
+        assert result[value_key(run_id, instance_id1, field_id1)].value_text == "value_a"
+        assert result[value_key(run_id, instance_id2, field_id2)].value_text == "value_b"
         assert len(result) == 2
 
     @pytest.mark.asyncio
@@ -344,14 +364,15 @@ class TestBuildConsensusValueMap:
         rows = [(run_id, instance_id, field_id, {"value": "actual_string"})]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
+        result = await svc._build_consensus_value_map(
+            run_ids=[run_id], fields_by_id=_text_fields(field_id), labels={}
+        )
 
-        assert result[(run_id, instance_id, field_id)] == "actual_string"
+        assert result[value_key(run_id, instance_id, field_id)].value_text == "actual_string"
 
     @pytest.mark.asyncio
-    async def test_unknown_dict_collapses_to_scalar_never_leaks(self):
-        """An unrecognised multi-key dict is collapsed deterministically to
-        a string — ``resolve_value`` never leaks a dict into a cell."""
+    async def test_unknown_dict_is_nonconforming_json_text(self):
+        """An unrecognised multi-key dict becomes deterministic JSON text."""
         svc = _make_service()
 
         run_id = uuid4()
@@ -362,10 +383,25 @@ class TestBuildConsensusValueMap:
         rows = [(run_id, instance_id, field_id, raw)]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
-        resolved = result[(run_id, instance_id, field_id)]
-        assert not isinstance(resolved, dict)
-        assert resolved == "value: x; extra: y"
+        result = await svc._build_consensus_value_map(
+            run_ids=[run_id], fields_by_id=_text_fields(field_id), labels={}
+        )
+        v = result[value_key(run_id, instance_id, field_id)]
+        assert (v.status, v.value_text, v.raw) == (
+            "nonconforming",
+            '{"extra": "y", "value": "x"}',
+            raw,
+        )
+
+    @pytest.mark.asyncio
+    async def test_field_outside_the_active_sections_is_skipped(self):
+        svc = _make_service()
+        run_id, instance_id, field_id = uuid4(), uuid4(), uuid4()
+        svc.db.execute = AsyncMock(
+            return_value=_rows_result([(run_id, instance_id, field_id, {"value": "x"})])
+        )
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={}, labels={})
+        assert result == {}
 
 
 # ===========================================================================
@@ -768,6 +804,7 @@ class TestLoadAiProposalRows:
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
         assert result == ()
         svc.db.execute.assert_not_called()
@@ -799,6 +836,7 @@ class TestLoadAiProposalRows:
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
         assert result == ()
 
@@ -880,6 +918,7 @@ class TestLoadAiProposalRows:
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
 
         assert len(result) == 1
@@ -951,9 +990,10 @@ class TestLoadAiProposalRows:
         result = await svc._load_ai_proposal_rows(
             articles=(article,),
             sections=(),
-            value_map={(run_id, instance_id, field_id): "v"},
+            value_map={value_key(run_id, instance_id, field_id): _tv("v")},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
         assert len(result) == 1
         row = result[0]
@@ -964,7 +1004,7 @@ class TestLoadAiProposalRows:
 
     @pytest.mark.asyncio
     async def test_single_proposal_accept_decision_consensus_mode(self):
-        """Accepted proposal in CONSENSUS mode → outcome='accepted', 3-tuple key for final value."""
+        """Accepted proposal in CONSENSUS mode → outcome='accepted', consensus slot for final value."""
         svc = _make_service()
         run_id = uuid4()
         article_id = uuid4()
@@ -995,8 +1035,7 @@ class TestLoadAiProposalRows:
         # decision row: (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
         decision_row = (run_id, instance_id, field_id, reviewer_id, "accept_proposal", proposal_id)
 
-        # value_map uses 3-tuple for CONSENSUS mode
-        value_map = {(run_id, instance_id, field_id): "consensus_val"}
+        value_map = {value_key(run_id, instance_id, field_id): _tv("consensus_val")}
 
         svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
@@ -1020,6 +1059,7 @@ class TestLoadAiProposalRows:
             value_map=value_map,
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
 
         assert len(result) == 1
@@ -1029,141 +1069,9 @@ class TestLoadAiProposalRows:
         assert row.ai_proposed_value == "consensus_val"  # unwrapped from {"value": ...}
 
     @pytest.mark.asyncio
-    async def test_all_users_mode_uses_4_tuple_key_with_none(self):
-        """ALL_USERS mode uses (run, instance, field, None) key for consensus sub-column.
-
-        Regression guard for raphaelfh's fix in aa9b288: ALL_USERS was
-        previously using the 3-tuple key which missed the consensus value.
-        """
-        svc = _make_service()
-        run_id = uuid4()
-        article_id = uuid4()
-        instance_id = uuid4()
-        entity_type_id = uuid4()
-        field_id = uuid4()
-        proposal_id = uuid4()
-        ts = datetime(2024, 3, 1, tzinfo=UTC)
-
-        article = self._make_article(
-            run_id=run_id,
-            article_id=article_id,
-            study_instances={entity_type_id: instance_id},
-        )
-
-        proposal_row = (
-            proposal_id,
-            run_id,
-            instance_id,
-            field_id,
-            "val",
-            None,
-            None,
-            ts,
-            _proposal_record(run_id),
-        )
-
-        # ALL_USERS value_map has 4-tuple keys (None = consensus sub-column)
-        value_map_4tuple = {(run_id, instance_id, field_id, None): "consensus_for_all_users"}
-        # But also the 3-tuple key should NOT be picked up in ALL_USERS mode
-        value_map_4tuple[(run_id, instance_id, field_id)] = "wrong_3tuple_value"
-
-        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
-        svc.db.execute = AsyncMock(
-            side_effect=[
-                _rows_result([(instance_id, entity_type_id, article_id)]),
-                _rows_result([proposal_row]),
-                _rows_result([]),
-                _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
-                _scalars_result([_export_run(run_id)]),
-                # 6. entity-label fallback
-                _rows_result([(entity_type_id, "Section")]),
-                # 7. field fallback (field_id not in sections=())
-                _rows_result([(field_id, "Field Label")]),
-            ]
-        )
-
-        result = await svc._load_ai_proposal_rows(
-            articles=(article,),
-            sections=(),
-            value_map=value_map_4tuple,
-            mode=ExportMode.ALL_USERS,
-            target_reviewer_id=None,
-        )
-
-        assert len(result) == 1
-        row = result[0]
-        # Must use 4-tuple key lookup (None for consensus), NOT 3-tuple
-        assert row.final_value_used == "consensus_for_all_users"
-
-    @pytest.mark.asyncio
-    async def test_consensus_mode_uses_3_tuple_key(self):
-        """CONSENSUS mode uses (run, instance, field) 3-tuple key for final value.
-
-        Complement to the ALL_USERS regression test — ensures CONSENSUS
-        still reads from the 3-tuple key correctly.
-        """
-        svc = _make_service()
-        run_id = uuid4()
-        article_id = uuid4()
-        instance_id = uuid4()
-        entity_type_id = uuid4()
-        field_id = uuid4()
-        proposal_id = uuid4()
-        ts = datetime(2024, 3, 15, tzinfo=UTC)
-
-        article = self._make_article(
-            run_id=run_id,
-            article_id=article_id,
-            study_instances={entity_type_id: instance_id},
-        )
-
-        proposal_row = (
-            proposal_id,
-            run_id,
-            instance_id,
-            field_id,
-            "pval",
-            None,
-            None,
-            ts,
-            _proposal_record(run_id),
-        )
-
-        # Only 3-tuple key in value_map
-        value_map = {(run_id, instance_id, field_id): "3tuple_value"}
-
-        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
-        svc.db.execute = AsyncMock(
-            side_effect=[
-                _rows_result([(instance_id, entity_type_id, article_id)]),
-                _rows_result([proposal_row]),
-                _rows_result([]),
-                _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
-                _scalars_result([_export_run(run_id)]),
-                # 6. entity-label fallback
-                _rows_result([(entity_type_id, "Section")]),
-                # 7. field fallback (field_id not in sections=())
-                _rows_result([(field_id, "Field Label")]),
-            ]
-        )
-
-        result = await svc._load_ai_proposal_rows(
-            articles=(article,),
-            sections=(),
-            value_map=value_map,
-            mode=ExportMode.CONSENSUS,
-            target_reviewer_id=None,
-        )
-
-        assert len(result) == 1
-        assert result[0].final_value_used == "3tuple_value"
-
-    @pytest.mark.asyncio
     async def test_single_user_outcome_scoped_to_target_reviewer(self):
         """A3: in SINGLE_USER mode the outcome reflects ONLY the target reviewer's
-        decision, matching the single-user 'Final value used' (3-tuple key).
+        decision, matching the single-user 'Final value used' (the reviewer's slot).
 
         Target reviewer rejected; another reviewer accepted the same proposal.
         The row must read 'rejected' (target's view), not 'accepted'."""
@@ -1217,9 +1125,10 @@ class TestLoadAiProposalRows:
         result = await svc._load_ai_proposal_rows(
             articles=(article,),
             sections=(),
-            value_map={(run_id, instance_id, field_id): None},  # single-user reject → blank
+            value_map={},  # single-user reject → no slot → blank
             mode=ExportMode.SINGLE_USER,
             target_reviewer_id=target_reviewer,
+            labels={},
         )
         assert len(result) == 1
         assert result[0].reviewer_outcome == "rejected"
@@ -1277,6 +1186,7 @@ class TestLoadAiProposalRows:
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
 
         assert len(result) == 1
@@ -1334,6 +1244,7 @@ class TestLoadAiProposalRows:
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
 
         assert len(result) == 1
@@ -1398,9 +1309,10 @@ class TestLoadAiProposalRows:
         result = await svc._load_ai_proposal_rows(
             articles=(article,),
             sections=(),
-            value_map={(run_id, instance_id, field_id): "v"},
+            value_map={value_key(run_id, instance_id, field_id): _tv("v")},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
         assert len(result) == 1
         assert result[0].reviewer_outcome == "accepted"
@@ -1412,7 +1324,7 @@ class TestLoadAiProposalRows:
 
 
 class TestBuildAllUsersValueMap:
-    """4-tuple keyed value map for All-users mode (FR-015).
+    """Per-rater value map for All-users mode (FR-015); consensus is rater None.
 
     Mocking strategy: svc.db.execute side_effect — first call returns
     consensus rows (ExtractionPublishedState), second call returns
@@ -1423,13 +1335,15 @@ class TestBuildAllUsersValueMap:
     async def test_empty_run_ids_returns_empty(self):
         """No run_ids → short-circuit to empty dict."""
         svc = _make_service()
-        result = await svc._build_all_users_value_map(run_ids=[], reviewer_ids=[], fields_by_id={})
+        result = await svc._build_all_users_value_map(
+            run_ids=[], reviewer_ids=[], fields_by_id={}, labels={}
+        )
         assert result == {}
         svc.db.execute.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_consensus_only_no_reviewer_ids(self):
-        """Consensus rows with no reviewer_ids → only (run, inst, field, None) keys."""
+        """Consensus rows with no reviewer_ids → only consensus (rater None) keys."""
         svc = _make_service()
         run_id = uuid4()
         instance_id = uuid4()
@@ -1439,17 +1353,17 @@ class TestBuildAllUsersValueMap:
         svc.db.execute = AsyncMock(return_value=_rows_result([consensus_row]))
 
         result = await svc._build_all_users_value_map(
-            run_ids=[run_id], reviewer_ids=[], fields_by_id={}
+            run_ids=[run_id], reviewer_ids=[], fields_by_id=_text_fields(field_id), labels={}
         )
 
-        assert result[(run_id, instance_id, field_id, None)] == "published_value"
+        assert result[value_key(run_id, instance_id, field_id)].value_text == "published_value"
         assert len(result) == 1
         # Should only have called execute once (consensus only, no reviewer ids)
         svc.db.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_accept_proposal_uses_proposed_value(self):
-        """accept_proposal decision → uses proposed_value in 4-tuple key."""
+        """accept_proposal decision → uses proposed_value under the reviewer's key."""
         svc = _make_service()
         run_id = uuid4()
         instance_id = uuid4()
@@ -1476,15 +1390,21 @@ class TestBuildAllUsersValueMap:
         )
 
         result = await svc._build_all_users_value_map(
-            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+            run_ids=[run_id],
+            reviewer_ids=[reviewer_id],
+            fields_by_id=_text_fields(field_id),
+            labels={},
         )
 
-        assert result[(run_id, instance_id, field_id, None)] is None
-        assert result[(run_id, instance_id, field_id, reviewer_id)] == "proposed_val"
+        assert result[value_key(run_id, instance_id, field_id)].status == "cleared"
+        assert (
+            result[value_key(run_id, instance_id, field_id, reviewer_id)].value_text
+            == "proposed_val"
+        )
 
     @pytest.mark.asyncio
     async def test_edit_decision_uses_decision_value(self):
-        """edit decision → uses decision.value in 4-tuple key."""
+        """edit decision → uses decision.value under the reviewer's key."""
         svc = _make_service()
         run_id = uuid4()
         instance_id = uuid4()
@@ -1509,10 +1429,15 @@ class TestBuildAllUsersValueMap:
         )
 
         result = await svc._build_all_users_value_map(
-            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+            run_ids=[run_id],
+            reviewer_ids=[reviewer_id],
+            fields_by_id=_text_fields(field_id),
+            labels={},
         )
 
-        assert result[(run_id, instance_id, field_id, reviewer_id)] == "edited_val"
+        assert (
+            result[value_key(run_id, instance_id, field_id, reviewer_id)].value_text == "edited_val"
+        )
 
     @pytest.mark.asyncio
     async def test_reject_decision_absent_from_map(self):
@@ -1533,10 +1458,13 @@ class TestBuildAllUsersValueMap:
         )
 
         result = await svc._build_all_users_value_map(
-            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+            run_ids=[run_id],
+            reviewer_ids=[reviewer_id],
+            fields_by_id=_text_fields(field_id),
+            labels={},
         )
 
-        assert (run_id, instance_id, field_id, reviewer_id) not in result
+        assert value_key(run_id, instance_id, field_id, reviewer_id) not in result
 
     @pytest.mark.asyncio
     async def test_consensus_and_reviewer_both_present(self):
@@ -1566,11 +1494,17 @@ class TestBuildAllUsersValueMap:
         )
 
         result = await svc._build_all_users_value_map(
-            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+            run_ids=[run_id],
+            reviewer_ids=[reviewer_id],
+            fields_by_id=_text_fields(field_id),
+            labels={},
         )
 
-        assert result[(run_id, instance_id, field_id, None)] == "consensus_val"
-        assert result[(run_id, instance_id, field_id, reviewer_id)] == "reviewer_val"
+        assert result[value_key(run_id, instance_id, field_id)].value_text == "consensus_val"
+        assert (
+            result[value_key(run_id, instance_id, field_id, reviewer_id)].value_text
+            == "reviewer_val"
+        )
 
 
 # ===========================================================================
@@ -2253,52 +2187,58 @@ class TestResolveArticlesForSingleUser:
 
 
 class TestBuildSingleUserValueMap:
-    """3-tuple keyed value map for single-user mode."""
+    """Single-user value map: every value sits in the reviewer's slot (R1)."""
 
     @pytest.mark.asyncio
     async def test_empty_run_ids_returns_empty(self):
         svc = _make_service()
         result = await svc._build_single_user_value_map(
-            run_ids=[], reviewer_id=uuid4(), fields_by_id={}
+            run_ids=[], reviewer_id=uuid4(), fields_by_id={}, labels={}
         )
         assert result == {}
         svc.db.execute.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_accept_proposal_uses_proposed_value(self):
-        svc = _make_service()
+        svc, r = _make_service(), uuid4()
         run_id, instance_id, field_id = uuid4(), uuid4(), uuid4()
         row = (run_id, instance_id, field_id, "accept_proposal", None, "proposed_val")
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
         result = await svc._build_single_user_value_map(
-            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+            run_ids=[run_id], reviewer_id=r, fields_by_id=_text_fields(field_id), labels={}
         )
-        assert result[(run_id, instance_id, field_id)] == "proposed_val"
+        assert result[value_key(run_id, instance_id, field_id, r)].value_text == "proposed_val"
 
     @pytest.mark.asyncio
-    async def test_edit_decision_uses_decision_value(self):
-        svc = _make_service()
+    async def test_value_is_keyed_by_the_reviewer(self):
+        svc, r = _make_service(), uuid4()
         run_id, instance_id, field_id = uuid4(), uuid4(), uuid4()
-        row = (run_id, instance_id, field_id, "edit", {"value": "edited"}, None)
-        svc.db.execute = AsyncMock(return_value=_rows_result([row]))
-
-        result = await svc._build_single_user_value_map(
-            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        svc.db.execute = AsyncMock(
+            return_value=_rows_result(
+                [(run_id, instance_id, field_id, "edit", {"value": "e"}, None)]
+            )
         )
-        assert result[(run_id, instance_id, field_id)] == "edited"
+        f = FieldDescriptor(
+            field_id=field_id, label="F", type=ExtractionFieldType.TEXT, allowed_values=()
+        )
+        out = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=r, fields_by_id={field_id: f}, labels={}
+        )
+        assert out[value_key(run_id, instance_id, field_id, r)].value_text == "e"
+        assert value_key(run_id, instance_id, field_id) not in out
 
     @pytest.mark.asyncio
     async def test_reject_key_absent(self):
-        svc = _make_service()
+        svc, r = _make_service(), uuid4()
         run_id, instance_id, field_id = uuid4(), uuid4(), uuid4()
         row = (run_id, instance_id, field_id, "reject", None, None)
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
         result = await svc._build_single_user_value_map(
-            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+            run_ids=[run_id], reviewer_id=r, fields_by_id=_text_fields(field_id), labels={}
         )
-        assert (run_id, instance_id, field_id) not in result
+        assert value_key(run_id, instance_id, field_id, r) not in result
 
 
 # ===========================================================================
@@ -2544,8 +2484,25 @@ class TestAiProposalRowsModelInstances:
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
 
         assert len(result) == 1
         # model_instance_id1 is first → instance_index = 1
         assert result[0].instance_index == 1
+
+
+def test_ai_row_value_for_a_field_outside_the_active_version() -> None:
+    # PR5 deletes this with _untyped_field (R15).
+    f = _untyped_field(uuid4())
+
+    def show(raw):
+        return display_value(to_export_value(raw, f, {}), f)
+
+    assert show({"value": "Cohort"}) == "Cohort"
+    assert show({"value": 5}) == "5"
+    assert show({"value": {"b": 1, "a": 2}}) == '{"a": 2, "b": 1}'
+    assert (
+        show({"value": None, "absent_reason": "not_evaluated"})
+        == ABSENT_REASON_LABELS["not_evaluated"]
+    )

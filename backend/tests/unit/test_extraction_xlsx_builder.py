@@ -17,7 +17,9 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -39,6 +41,10 @@ def _field(label: str, ftype: ExtractionFieldType) -> FieldDescriptor:
         type=ftype,
         allowed_values=(),
     )
+
+
+def _ev(field: FieldDescriptor, raw: object) -> ExportValue:
+    return to_export_value({"value": raw}, field, {})
 
 
 def _section(
@@ -160,7 +166,7 @@ def test_single_article_single_section_single_field_consensus():
         _layout(
             sections=(section,),
             articles=(article,),
-            value_map={(article.run_id, inst_id, field_id): "Existing registry"},
+            value_map={value_key(article.run_id, inst_id, field_id): _ev(f, "Existing registry")},
         ),
         ExportShape.COMPLETE,
         include_matrix=True,
@@ -212,9 +218,11 @@ def test_multi_instance_article_repeats_study_section_values():
             sections=(study, model),
             articles=(article,),
             value_map={
-                (article.run_id, study_inst, study_fid): "Gaca",
-                (article.run_id, model_inst_a, model_fid): "Logistic regression",
-                (article.run_id, model_inst_b, model_fid): "Cox model",
+                value_key(article.run_id, study_inst, study_fid): _ev(study_field, "Gaca"),
+                value_key(article.run_id, model_inst_a, model_fid): _ev(
+                    model_field, "Logistic regression"
+                ),
+                value_key(article.run_id, model_inst_b, model_fid): _ev(model_field, "Cox model"),
             },
         ),
         ExportShape.COMPLETE,
@@ -294,7 +302,7 @@ def test_section_header_rows_have_bold_font_and_grey_fill():
         ),
     ],
 )
-def test_format_cell_per_field_type(ftype, raw_value, expected):
+def test_cell_renders_per_field_type(ftype, raw_value, expected):
     f = _field("F", ftype)
     section = _section("S", [f])
     inst = uuid4()
@@ -303,7 +311,7 @@ def test_format_cell_per_field_type(ftype, raw_value, expected):
         _layout(
             sections=(section,),
             articles=(article,),
-            value_map={(article.run_id, inst, section.fields[0].field_id): raw_value},
+            value_map={value_key(article.run_id, inst, f.field_id): _ev(f, raw_value)},
         ),
         ExportShape.COMPLETE,
         include_matrix=True,
@@ -402,11 +410,13 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
         notes=ExportNotes(generated_at=datetime(2026, 5, 23, tzinfo=UTC)),
         value_map={
             # consensus
-            (article.run_id, inst_id, field_id, None): "Existing registry",
+            value_key(article.run_id, inst_id, field_id): _ev(f, "Existing registry"),
             # reviewer A
-            (article.run_id, inst_id, field_id, reviewer_a_id): "Existing registry",
+            value_key(article.run_id, inst_id, field_id, reviewer_a_id): _ev(
+                f, "Existing registry"
+            ),
             # reviewer B (disagrees)
-            (article.run_id, inst_id, field_id, reviewer_b_id): "RCT",
+            value_key(article.run_id, inst_id, field_id, reviewer_b_id): _ev(f, "RCT"),
         },
     )
     data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
@@ -484,10 +494,9 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
     assert ws.cell(row=2, column=13).value == "Existing registry"
 
 
-def test_ai_metadata_value_columns_render_via_shared_helper():
-    """The 'AI proposed value' (E) and 'Final value used' (L) columns
-    pass already-resolved scalars through the shared format helper, not a
-    dict-stringify path — number+unit / Yes survive intact."""
+def test_ai_metadata_value_columns_pass_rendered_values_through():
+    """The 'AI proposed value' (E) and 'Final value used' (M) columns carry
+    values the loader already rendered — number+unit / Yes survive intact."""
     from app.services.extraction_export_service import AIProposalRow, ExportLayout
 
     proposal = AIProposalRow(
@@ -524,15 +533,6 @@ def test_ai_metadata_value_columns_render_via_shared_helper():
     # E2 = "AI proposed value" (col 5), M2 = "Final value used" (col 13, shifted +1).
     assert ws.cell(row=2, column=5).value == "5 mg"
     assert ws.cell(row=2, column=13).value == "Yes"
-
-
-def test_xlsx_safe_raises_on_dict() -> None:
-    """A dict reaching _xlsx_safe means resolve_value was bypassed — it
-    must fail loud, not silently str() into the sheet."""
-    from app.services.exports.extraction.matrix import _xlsx_safe
-
-    with pytest.raises(TypeError):
-        _xlsx_safe({"value": 5, "unit": "mg"})
 
 
 def test_workbook_emits_sheets_in_section4_order():
@@ -631,7 +631,7 @@ def test_workbook_emits_sheets_in_section4_order():
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
         notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
-        value_map={(run, inst, fid): "Cohort"},
+        value_map={value_key(run, inst, fid): _ev(section.fields[0], "Cohort")},
         front_matter=fm,
         data_dictionary=(dict_entry,),
         tidy_tables=(tidy,),
@@ -655,14 +655,16 @@ def test_workbook_emits_appraisal_sheet_after_tidy_tables() -> None:
     from app.services.extraction_export_service import AppraisalModel, AppraisalRow
 
     # Build the smallest QA layout that yields one appraisal row.
+    risk = _field("RoB", ExtractionFieldType.SELECT)
     appraisal = AppraisalModel(
         domain_section_ids=(uuid4(),),
         domain_labels=("Participants",),
+        domain_fields=(risk,),
         rows=(
             AppraisalRow(
                 article_id=uuid4(),
                 record_label="Gaca, 2011",
-                domain_verdicts=("High",),
+                domain_verdicts=(_ev(risk, "High"),),
                 overall="High",
                 per_reviewer_overall={},
             ),

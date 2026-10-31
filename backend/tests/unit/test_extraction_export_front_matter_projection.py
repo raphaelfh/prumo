@@ -9,6 +9,8 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -17,6 +19,17 @@ from app.services.extraction_export_service import (
     _build_front_matter,
     _build_tidy_tables,
 )
+
+
+def _tv(raw: object) -> ExportValue:
+    """``raw`` typed against a TEXT field, as a value-map entry."""
+    return to_export_value(
+        {"value": raw},
+        FieldDescriptor(
+            field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+        ),
+        {},
+    )
 
 
 def _study() -> SectionDescriptor:
@@ -49,8 +62,8 @@ def test_front_matter_assembles_counts_and_obsolete() -> None:
         version_id=None,
         entries={(study.entity_type_id, None): (inst,)},
     )
-    value_map = {(run, inst, study.fields[0].field_id): "Gaca"}
-    tidy = _build_tidy_tables((study,), (article,), value_map, ExportMode.CONSENSUS)
+    value_map = {value_key(run, inst, study.fields[0].field_id): _tv("Gaca")}
+    tidy = _build_tidy_tables((study,), (article,), value_map, None)
     fm = _build_front_matter(
         project_name="My Project",
         template_name="CHARMS",

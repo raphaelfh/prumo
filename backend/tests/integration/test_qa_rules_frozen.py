@@ -31,7 +31,9 @@ from app.models.extraction import (
 from app.models.extraction_workflow import ExtractionConsensusMode
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
 from app.services.ai_extraction import ProposalLanding
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction_scope_marking import NOT_APPLICABLE
+from app.services.exports.values import ExportValue, display_value
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import (
     ExportLayout,
@@ -306,7 +308,10 @@ async def _export(db: AsyncSession, template_id: UUID, article_ids: list[UUID]) 
     )
 
 
-def _consensus_cell(layout: ExportLayout, article_id: UUID, coord: tuple[str, str, str]) -> Any:
+def _consensus_cell(
+    layout: ExportLayout, article_id: UUID, coord: tuple[str, str, str]
+) -> tuple[ExportValue, Any]:
+    """The consensus ``ExportValue`` and its display string."""
     article = next(a for a in layout.articles if a.article_id == article_id)
     section = next(s for s in layout.sections if s.name == coord[0])
     field = next(f for f in section.fields if f.name == coord[1])
@@ -316,7 +321,9 @@ def _consensus_cell(layout: ExportLayout, article_id: UUID, coord: tuple[str, st
         if et == section.entity_type_id
         for iid in ids
     )
-    return layout.value_map.get((article.run_id, instance_id, field.field_id, None))
+    assert article.run_id is not None
+    v = layout.value_map[value_key(article.run_id, instance_id, field.field_id)]
+    return v, display_value(v, field)
 
 
 def _overalls(layout: ExportLayout, article_id: UUID) -> dict[str, Any]:
@@ -327,8 +334,10 @@ def _overalls(layout: ExportLayout, article_id: UUID) -> dict[str, Any]:
 
 def _assert_scoped_by_old_rules(layout: ExportLayout, article_id: UUID) -> None:
     """Development-only under RULES_OLD: evaluation out of play, development kept."""
-    assert _consensus_cell(layout, article_id, _DEV) == "High"
-    assert _consensus_cell(layout, article_id, _EVAL) == NOT_APPLICABLE
+    dev, dev_shown = _consensus_cell(layout, article_id, _DEV)
+    assert (dev.value_text, dev.out_of_scope, dev_shown) == ("High", False, "High")
+    ev, ev_shown = _consensus_cell(layout, article_id, _EVAL)
+    assert (ev.value_text, ev.out_of_scope, ev_shown) == ("High", True, NOT_APPLICABLE)
     overalls = _overalls(layout, article_id)
     assert overalls[_DEV_OVERALL] != NOT_APPLICABLE
     assert overalls[_EVAL_OVERALL] == NOT_APPLICABLE
@@ -336,8 +345,10 @@ def _assert_scoped_by_old_rules(layout: ExportLayout, article_id: UUID) -> None:
 
 def _assert_scoped_by_new_rules(layout: ExportLayout, article_id: UUID) -> None:
     """Development-only under RULES_NEW (scope swapped): development out of play."""
-    assert _consensus_cell(layout, article_id, _DEV) == NOT_APPLICABLE
-    assert _consensus_cell(layout, article_id, _EVAL) == "High"
+    dev, dev_shown = _consensus_cell(layout, article_id, _DEV)
+    assert (dev.value_text, dev.out_of_scope, dev_shown) == ("High", True, NOT_APPLICABLE)
+    ev, ev_shown = _consensus_cell(layout, article_id, _EVAL)
+    assert (ev.value_text, ev.out_of_scope, ev_shown) == ("High", False, "High")
     overalls = _overalls(layout, article_id)
     assert overalls[_DEV_OVERALL] == NOT_APPLICABLE
     assert overalls[_EVAL_OVERALL] != NOT_APPLICABLE

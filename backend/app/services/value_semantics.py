@@ -60,7 +60,7 @@ _ABSENT_REASON_CODES: frozenset[str] = frozenset(r.value for r in AbsentReason)
 
 # The single source of truth for a coded disposition's human-readable label
 # (ADR-0016 Phase 4). Colocated with the enum so a new code can't ship without a
-# label. Reused by the export cell resolver (``exports/value_envelope``), the
+# label. Reused by the export cell renderer (``exports/values``), the
 # export front-matter legend, and the appraisal worst-case exclusion — all read
 # THIS map so a cell, its legend row, and the roll-up can never drift. The
 # frontend mirrors these exact strings via its own copy keys (FE/BE parity tests
@@ -80,7 +80,7 @@ def strip_verification(raw: Any) -> Any:
     cells are always clean. The ONE strip shared by every read/resolution seam
     (``ai_extraction.landing`` dedupe, ``run_lifecycle_service``
     resolution + reopen carry-over, ``extraction_consensus_service`` publish,
-    ``exports/value_envelope``), so an annotated accept and a clean edit of the
+    ``exports/values``), so an annotated accept and a clean edit of the
     same value can never diverge. Non-dict values pass through untouched.
     """
     if isinstance(raw, dict) and "verification" in raw:

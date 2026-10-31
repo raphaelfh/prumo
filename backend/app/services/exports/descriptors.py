@@ -34,11 +34,28 @@ if TYPE_CHECKING:  # descriptors live in the service; importing them at
     # runtime would close an import cycle.
     from app.services.extraction_export_service import (
         ArticleDescriptor,
+        ExportMode,
         SectionDescriptor,
     )
 
 # (entity_type_id, parent_instance_id) — ``None`` parent for a root section.
 EntryKey = tuple[UUID, UUID | None]
+
+# (run_id, instance_id, field_id, rater): rater ``None`` is the consensus slot
+# only; every reviewer slot, single_user included, is keyed by reviewer_id (R1).
+ValueKey = tuple[UUID, UUID, UUID, UUID | None]
+
+
+def value_key(
+    run_id: UUID, instance_id: UUID, field_id: UUID, rater: UUID | None = None
+) -> ValueKey:
+    return (run_id, instance_id, field_id, rater)
+
+
+def primary_rater(mode: ExportMode, reviewer_id: UUID | None) -> UUID | None:
+    """The slot a single-slot reader reads: the reviewer in single_user, else
+    consensus (``None``). Compared by value: ``ExportMode`` is TYPE_CHECKING-only."""
+    return reviewer_id if mode == "single_user" else None
 
 
 def build_entries(
