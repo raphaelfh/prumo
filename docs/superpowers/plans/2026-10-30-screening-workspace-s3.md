@@ -42,7 +42,7 @@ Parallel groups: **G1** {1, 2} → **G2** {3} → **G3** {4} → **G4** {5} → 
 - **Worktree.** `WT=/Users/raphaelfedericcihaddad/PycharmProjects/prumo/.claude/worktrees/screening-workspace-s3` (branch `screening-workspace-s3`). Every command uses absolute paths or `git -C "$WT"`; never touch the main checkout, never `git switch`/`checkout`, never bare `git stash`. After each task, `git -C "$WT" status --short` shows only that task's files.
 - **Precondition (S1).** `test -f "$WT/frontend/components/screening/TitleAbstractWorkspace.tsx" && grep -q "def records" "$WT/backend/app/services/screening_review_service.py"`. If either fails, stop: S1 is not merged into this branch.
 - **English only** — code, comments, commits, copy keys and copy.
-- **Migration.** Exactly one, Task 1. Revision id `0095_screening_full_text` (≤ 32 chars), `down_revision = "0094_screening_v1"` — **provisional**: at merge time it takes the next free number against `origin/dev`'s head (S2 also adds one; the second to merge re-parents) and `expected_head` in `backend/tests/integration/test_migration_roundtrip.py` moves with it. SHORT constraint names (`phase`, `decision`) per `.claude/rules/backend.md`; check the DDL with `alembic upgrade 0094_screening_v1:head --sql`. `alembic check` → "No new upgrade operations detected".
+- **Migration.** Exactly one, Task 1. Revision id `0095_screening_full_text` (≤ 32 chars), `down_revision = "0094_screening_v1"` — **provisional**: at merge time it takes the next free number against `origin/dev`'s head (S2 also adds one; the second to merge re-parents) and `expected_head` in `backend/tests/integration/test_migration_roundtrip.py` moves with it; when re-parented, the revision id, the file name, the roundtrip test's name and its downgrade target (`0094_screening_v1` → the new parent) move too, or the test silently downgrades through the other slice's migration. SHORT constraint names (`phase`, `decision`) per `.claude/rules/backend.md`; check the DDL with `alembic upgrade 0094_screening_v1:head --sql`. `alembic check` → "No new upgrade operations detected".
 - **Ownership (BOLA).** Scope predicate in the WHERE clause; assignment-to-article joins through `ARTICLE_STILL_IN_PROJECT`; an assignment by id only through `load_assignment_for_member` → `ScreeningAssignmentRef`. No new guard: FT enroll derives its ids from the project's own TA snapshots. Gate: `check_scope_guards.py`.
 - **Blind review.** No FT payload carries a peer's value or reason before an outcome. At FT, differing exclusion reasons are a conflict and read exactly like any other conflict (`waiting`/`in_review` to everyone but an unseated arbitrator). `ta_*` fields are the TA outcome, which exists before any FT assignment.
 - **Envelope / errors.** `ApiResponse.success(model, trace_id=…)`; state refusals are `ScreeningStateError` (409) with an `ApiErrorCode`; a request-shape refusal is 422 `VALIDATION_ERROR` from the Pydantic model.
@@ -63,7 +63,7 @@ Parallel groups: **G1** {1, 2} → **G2** {3} → **G3** {4} → **G4** {5} → 
 1. **Two FT reviewers both exclude, with different reasons.** It is a conflict; both reviewers read `waiting`, a non-seated reviewer `in_review`, only an unseated arbitrator `conflict`, and no payload carries the peer's reason — Task 5 `test_full_text_records_role_matrix`.
 2. **A manager clicks "Send N to full text" while another manager turns full text off (or a second send runs).** The send and the config change serialize on the project row; the late send gets 409 `SCREENING_NOT_CONFIGURED`, a concurrent second send enrolls 0 with `already_enrolled = N` — Task 3 `test_full_text_enroll_and_config_serialize`, `test_two_sends_enroll_once`; the UI toasts the mapped 409 and refetches — Task 9 `toasts a refused send and refetches the config`.
 3. **Turning full text off once a report was sent.** `PUT` with `full_text_reviewer_count: null` → 409 `SCREENING_CONFIG_FROZEN`; the Phases radio and FT count are disabled with the lock hint — Task 3 `test_full_text_count_locks_once_sent`, Task 10 `locks the phase radio once a report was sent`.
-4. **`⇧⌘\`, Escape and `⌘F` while the maximized panel shows the PDF.** The outer shell restores (one step per press); the nested `RunSplitShell` does nothing; `⌘F` reaches the PDF viewer, not the hidden list's search — Task 2 `nested: registers neither the chord nor Escape`, Task 9 `list shortcuts are off while maximized`.
+4. **`⇧⌘\`, Escape and `⌘F` while the maximized panel shows the PDF.** The outer shell restores (one step per press); the nested `RunSplitShell` does nothing; `⌘F` reaches the PDF viewer, not the hidden list's search — Task 9 `outer ⇧⌘\ and Escape win over the nested PDF split, one step per press` and `list shortcuts are off while maximized`; Task 2 `nested: registers neither the chord nor Escape`.
 5. **A reviewer attaches the missing PDF from the FT panel.** Without a reload the row's PDF column reads "Attached" and the panel shows the PDF — Task 8 `attaching a PDF refreshes the row and the panel`.
 
 ## Spec reconciliation and rulings (focused gate, 2026-10-31)
@@ -107,6 +107,29 @@ The focused gate (one `Explore` seat; §7, S3 rows of §9, §4.1 nested parts; c
 35. Ruling: acceptance rows the spec lacks are added to the owning tasks (FT off / nothing enrolled at FT states, attach invalidation, switcher entry, sent toast, ghost "Report not retrieved" posts `not_retrieved`, Maybe absent at FT, deciding with no PDF, FT note, config `full_text_ready`/`full_text_enrolled`, seed FT content, the PRISMA field-set rewrite) — §9 "each requirement → its test" — none.
 36. Ruling: S5 needs from S3 — the row shape stays phase-agnostic (`ta_*` additive), FT status comes from the same `record_status`, and `records(projectId)` (no phase) remains the prefix of both phases — written to `s3-notes.md` in the shared notes folder — none.
 
+**Panel round (ship-panel, 2026-10-31: 4 blocking confirmed, 1 refuted, 15 advisory).** Blocking, revised in the plan:
+
+37. Ruling: the outer `⇧⌘\`/Escape over the nested PDF split is tested with both shells mounted (Task 9 `outer ⇧⌘\ and Escape win over the nested PDF split, one step per press`) — spec §9 FT panel row — none.
+38. Ruling: the attach invalidations are tested on the real `ArticleFileUploadDialogNew` (new test file, full and partial success) and in `ArticleForm.stagedFiles.test.tsx` — stale-cache incident class — none.
+39. Ruling: `ArticleViewButton` is `ViewButton` moved verbatim (`active, onClick, label, disabled?, title?, describedById?`) — `ArticleSidePanel` must compile with no visible change — none.
+40. Ruling: `FullTextRecordView` calls `useIsBelowDesktop`, `usePdfPanel({initialOpen: true, compact})` and the store state unconditionally; the PDF pane is always open and shows the PDF or the missing-PDF body, so attaching while maximized shows the PDF (tested) — rules of hooks / React Compiler — none.
+
+Advisory, adopted: phase typed `AssignmentPhase`/`ScreeningPhase` everywhere (no bare `str`); `enroll_screening.__wrapped__` unit test; the `FOR SHARE`↔`FOR UPDATE` serialization is stated in Task 4 and pinned by `test_title_abstract_re_decide_and_full_text_send_serialize`; the downgrade also deletes rulings whose `selected_decision_id` is a deleted decision; the merge-time re-parent moves the roundtrip test's name and target too; one `has_assignment(…, article_id=None)` instead of two queries; `emptyTitle` dropped; the extracted documents body keeps the spinner and gains a files-read error state; `mainOnly` makes a supplement-only article read "Missing" in both places; tests for the `already_enrolled` toast, the phase's my-decision values and the `not_retrieved` chip; the seed builds its storage adapter from `get_supabase_client()`; an unknown `?status=` for the phase falls back to the role default.
+
+Advisory, ruled not adopted:
+41. Ruling: hiding Attach for a viewer stays UI-only — the file-confirm route (`article_files.py:39-55`, `ensure_project_member`) predates S3 and serves Articles; tightening it is its own change — a viewer can attach a PDF through the API, as today. Follow-up noted in the PR.
+42. Ruling: PRISMA computes `full_text_ready` through `full_text_candidates` (one more TA `assignment_states` pass, three queries) rather than threading its snapshots — one helper, one derivation; PRISMA is not a hot path — a few ms per PRISMA read.
+43. Ruling: refuted finding (FT enroll vs TA re-decide TOCTOU) — the refuters showed the project-row locks already serialize them; Task 4's `test_title_abstract_re_decide_and_full_text_send_serialize` pins it — none.
+
+## Composition with S2 (deduplication)
+
+S2 (`docs/superpowers/plans/2026-10-30-screening-workspace-s2.md`, notes `s2-notes.md`) builds in parallel on S1. Whichever merges second rebases onto the other; Phase B re-checks this section against `origin/dev`.
+- S2 adds `~removed_duplicate(Article)` (`app/repositories/duplicate_predicates.py`) to `live_assignments`, `record_rows` and `enroll`. Task 1's phase threading keeps that predicate in all three; FT candidates come from TA snapshots, so a removed duplicate never reaches full text.
+- S2's `ScreeningConfigService.enroll` takes the project lock; Ruling 10's `lock_for_update` is the same lock — keep one acquisition.
+- S2 replaces PRISMA `imported_not_enrolled` with `other_removed` and rewrites `_pubmed_identified`/`_other_sources`; Task 6 builds on that shape (the TA box stays TA-only).
+- S2's `DUPLICATE_HAS_REVIEW_WORK` already counts any `phase != 'title_abstract'` assignment as review work. **S3 owns its test**: when S2 is merged, Task 3 adds `test_duplicate_with_full_text_work_is_refused` to S2's verdict test file (an FT assignment on the record to remove → 409 `DUPLICATE_HAS_REVIEW_WORK`).
+- Both slices edit `frontend/lib/copy/screening.ts` (S2 renames `prismaNotEnrolled` → `prismaOtherRemoved`) and `SCREENING_ARTICLES` in `fixture-ids.ts`; conflicts resolve at merge.
+
 ---
 
 ### Task 1: Migration and phase plumbing (backend, S3a1-1)
@@ -130,24 +153,27 @@ _DECISION_CHECK = "decision IN ('include', 'exclude', 'maybe', 'not_retrieved')"
 # CheckConstraint("phase IN ('title_abstract', 'full_text')", name="phase")
 
 # schemas/screening.py
+AssignmentPhase = Literal["title_abstract", "full_text"]   # Task 5 folds it into ScreeningPhase and deletes this name
 class ScreeningAssignmentRef(BaseModel):  # gains
-    phase: Literal["title_abstract", "full_text"]
+    phase: AssignmentPhase
 
 # services/screening_settings.py
-def reviewer_count_of(settings: Mapping[str, Any] | None, phase: str) -> int | None:
+def reviewer_count_of(settings: Mapping[str, Any] | None, phase: AssignmentPhase) -> int | None:
     """TA → settings.screening.reviewer_count; FT → .full_text_reviewer_count; 1..3 else None."""
 
 # repositories/screening_repository.py
-def live_assignments(project_id: UUID, phase: str) -> Select[tuple[ScreeningAssignment]]
-ScreeningRepository.enroll(*, project_id, enrolled_by, article_ids, phase: str) -> int
-ScreeningRepository.count_enrolled(*, project_id, phase: str) -> int
-ScreeningRepository.live_assignment_ids(*, project_id, phase: str, assignment_ids=None) -> list[UUID]
+# every `phase` parameter below is typed `AssignmentPhase` (never a bare str)
+def live_assignments(project_id: UUID, phase: AssignmentPhase) -> Select[tuple[ScreeningAssignment]]
+ScreeningRepository.enroll(*, project_id, enrolled_by, article_ids, phase) -> int
+ScreeningRepository.count_enrolled(*, project_id, phase) -> int
+ScreeningRepository.live_assignment_ids(*, project_id, phase, assignment_ids=None) -> list[UUID]
 ScreeningRepository.project_has_decision(*, project_id) -> bool   # now TA decisions only
-ScreeningRepository.has_assignment(*, project_id, phase: str) -> bool  # any row, moved articles included
-ScreeningRepository.record_rows(*, project_id, phase: str) -> list[RecordSource]  # S1's; TA behaviour unchanged here
+ScreeningRepository.has_assignment(*, project_id, phase, article_id: UUID | None = None) -> bool
+#   any row in that phase (moved articles included); narrowed to one article when given — Task 4 uses that form
+ScreeningRepository.record_rows(*, project_id, phase) -> list[RecordSource]  # S1's; TA behaviour unchanged here
 
 # services/screening_review_service.py
-async def assignment_states(db, *, project_id, phase: str, reviewer_count: int | None,
+async def assignment_states(db, *, project_id, phase: AssignmentPhase, reviewer_count: int | None,
                             assignment_ids=None) -> dict[UUID, AssignmentSnapshot]
 ```
 
@@ -155,7 +181,7 @@ Every existing call site passes `TITLE_ABSTRACT` except the by-id paths, which p
 
 - [ ] **Step 1: Write the failing tests**
   - `test_screening_schema.py` beside `test_decision_value_is_checked` (`:228`): `test_full_text_and_not_retrieved_are_accepted` — insert an assignment with `phase='full_text'`, a decision `not_retrieved` (no reason) and an arbitration `not_retrieved` → no error; `phase='other'` still `IntegrityError`.
-  - `test_migration_roundtrip.py`: `expected_head = "0095_screening_full_text"`; `test_0095_screening_full_text_roundtrip` (the `:2791` 0094 shape): upgrade to head, insert a TA assignment with an include decision, an FT assignment with a `not_retrieved` decision, and a TA arbitration `not_retrieved`; downgrade to `0094_screening_v1` → the FT assignment, both `not_retrieved` rows gone, the TA include kept; `phase='full_text'` insert now raises; upgrade again succeeds.
+  - `test_migration_roundtrip.py`: `expected_head = "0095_screening_full_text"`; `test_0095_screening_full_text_roundtrip` (the `:2791` 0094 shape): upgrade to head, insert a TA assignment with an include decision, an FT assignment with a `not_retrieved` decision, a TA arbitration `not_retrieved`, and an FT arbitration `include` whose `selected_decision_id` is that FT `not_retrieved` decision; downgrade to `0094_screening_v1` → the FT assignment, both `not_retrieved` rows gone, the TA include kept; `phase='full_text'` insert now raises; upgrade again succeeds.
   - `test_screening_config_unit.py`: `test_reviewer_count_of_reads_the_phase_key` parametrized (`ids=`): `({"screening": {"reviewer_count": 2, "full_text_reviewer_count": 1}}, "full_text") → 1`, same with `"title_abstract"` → 2, `({"screening": {"reviewer_count": 2}}, "full_text") → None`, `full_text_reviewer_count: 4` → None, `True` → None. Import from `app.services.screening_settings`.
   - `test_screening_review.py` (integration): `test_full_text_assignment_reads_by_id` — enroll an article at FT through `ScreeningRepository.enroll(phase=FULL_TEXT)` with `full_text_reviewer_count = 2` set by `update_settings_key`; `GET /screening/assignments/{id}` as a reviewer → 200, `status == "awaiting_me"`; with the FT count unset the read still answers 200 (pending everywhere, `_UNCONFIGURED`).
   - `test_screening_config.py`: `test_full_text_decisions_do_not_lock_the_title_abstract_count` — an FT assignment with a decision only → `reviewer_count_locked is False`.
@@ -163,7 +189,7 @@ Every existing call site passes `TITLE_ABSTRACT` except the by-id paths, which p
 Run: `cd "$WT/backend" && uv run pytest tests/integration/test_screening_schema.py tests/integration/test_migration_roundtrip.py tests/unit/test_screening_config_unit.py tests/integration/test_screening_review.py tests/integration/test_screening_config.py -q`
 Expected: FAIL — CHECK violation on `full_text`, head mismatch, `ImportError: screening_settings`, 404 on the FT assignment.
 
-- [ ] **Step 2: Write the migration** — `revision = "0095_screening_full_text"`, `down_revision = "0094_screening_v1"`. Upgrade: drop and re-create `ck_screening_assignments_phase`, `ck_screening_decisions_decision`, `ck_screening_arbitrations_decision` with the widened expressions (SHORT names to `op.create_check_constraint`; raw `ALTER TABLE … DROP CONSTRAINT` for the drop). Downgrade: `DELETE FROM public.screening_arbitrations WHERE decision = 'not_retrieved'`, then `screening_decisions` likewise, then `DELETE FROM public.screening_assignments WHERE phase = 'full_text'`, then narrow the three CHECKs. Module docstring states the provisional number (renumbered at merge).
+- [ ] **Step 2: Write the migration** — `revision = "0095_screening_full_text"`, `down_revision = "0094_screening_v1"`. Upgrade: drop and re-create `ck_screening_assignments_phase`, `ck_screening_decisions_decision`, `ck_screening_arbitrations_decision` with the widened expressions (SHORT names to `op.create_check_constraint`; raw `ALTER TABLE … DROP CONSTRAINT` for the drop). Downgrade: `DELETE FROM public.screening_arbitrations WHERE decision = 'not_retrieved' OR selected_decision_id IN (SELECT id FROM public.screening_decisions WHERE decision = 'not_retrieved')` (no surviving ruling may point at a deleted decision through the deferred composite FK), then `DELETE FROM public.screening_decisions WHERE decision = 'not_retrieved'`, then `DELETE FROM public.screening_assignments WHERE phase = 'full_text'`, then narrow the three CHECKs. Module docstring states the provisional number (renumbered at merge).
 
 Run: `cd "$WT/backend" && uv run alembic upgrade 0094_screening_v1:head --sql | grep -i constraint`
 Expected: DROP/ADD of exactly `ck_screening_assignments_phase`, `ck_screening_decisions_decision`, `ck_screening_arbitrations_decision` (no `ck_ck_` double prefix).
@@ -196,7 +222,8 @@ git -C "$WT" commit -m "feat(screening): add the full-text phase to the schema a
 **Files:**
 - Modify: `frontend/components/runs/RunSplitShell.tsx`, `frontend/components/runs/RunSplitShell.test.tsx` (`:207,:209`)
 - Create: `frontend/components/articles/ArticleDocumentsBody.tsx` (extracted from `ArticleSidePanel.tsx`: the files loading `:101-107`, empty state `:108-118`, attach dialog `:124-132`), `frontend/components/articles/ArticleViewButton.tsx` (`ViewButton`, `:137-169`, exported as `ArticleViewButton`)
-- Modify: `frontend/components/articles/ArticleSidePanel.tsx` (consumes both; no visible change), `frontend/components/articles/ArticleFileUploadDialogNew.tsx` (success path invalidates), `frontend/components/articles/ArticleForm.tsx` (upload success `:589` invalidates)
+- Modify: `frontend/components/articles/ArticleSidePanel.tsx` (consumes both; no visible change), `frontend/components/articles/ArticleFileUploadDialogNew.tsx` (success paths invalidate), `frontend/components/articles/ArticleForm.tsx` (upload success `:589` invalidates), `frontend/hooks/extraction/useArticleDocuments.ts` (`filesError`, `refetchFiles`)
+- Test: `frontend/components/articles/__tests__/ArticleFileUploadDialogNew.test.tsx` (create), `frontend/test/components/ArticleForm.stagedFiles.test.tsx` (one case)
 - Modify: `frontend/hooks/useListKeyboardShortcuts.ts` (+ `enabled`), `frontend/hooks/useListKeyboardShortcuts.test.ts` (S1's file)
 - Test: `frontend/components/articles/__tests__/ArticleDocumentsBody.test.tsx` (create), existing `ArticleSidePanel` tests stay green
 
@@ -210,29 +237,37 @@ interface RunSplitShellProps { /* … */
 }
 // chord binding: {type: 'chord', key: '\\', code: 'Backslash', mod: true, shift: true, …}
 
-// ArticleDocumentsBody.tsx
+// ArticleDocumentsBody.tsx — the ArticleSidePanel block moved verbatim (spinner + `panelDocumentLoading`
+// while files load; `panelNoDocument*` empty state; the attach dialog), plus a files-read error state
 export function ArticleDocumentsBody(props: {
   projectId: string;
   articleId: string;
   canAttach: boolean;            // false → empty state without the attach action
-  emptyTitle?: string;           // caller copy; defaults to the ArticleSidePanel copy
-  children: (files: ArticleDocument[]) => ReactNode; // rendered once files exist
+  mainOnly?: boolean;            // true (FT panel): only `file_role === 'MAIN'` files count, matching `has_pdf`
+  children: (files: ArticleFileListItem[]) => ReactNode; // rendered once (MAIN) files exist
 }): JSX.Element;
 
-// ArticleViewButton.tsx
-export function ArticleViewButton(props: {active: boolean; icon: LucideIcon; label: string; onClick: () => void}): JSX.Element;
+// ArticleViewButton.tsx — ViewButton (`ArticleSidePanel.tsx:137-169`) moved verbatim, same props
+export function ArticleViewButton(props: {
+  active: boolean; onClick: () => void; label: string;
+  disabled?: boolean; title?: string; describedById?: string;
+}): JSX.Element;
+
+// useArticleDocuments gains: filesError: boolean; refetchFiles: () => void  (from filesQuery.isError / refetch)
 
 // useListKeyboardShortcuts
 enabled?: boolean; // default true; false registers no listener
 ```
 
-`ArticleFileUploadDialogNew` after a successful upload (`:353`, `:356`): `void invalidateScreening(queryClient, projectId)` and `void queryClient.invalidateQueries({queryKey: articleKeys.files(articleId)})`, before `onFileUploaded?.()`. `ArticleForm` the same after its upload (`:589`). (`ArticleDocument` = the item type `useArticleDocuments` already returns; reuse it, do not redeclare.)
+`ArticleDocumentsBody` with `filesError` → `ErrorState` with retry (`refetchFiles`) instead of the empty state (a failed files read must not read as "no PDF"). `ArticleFileUploadDialogNew`, in both success branches (partial `:350-353` and full `:356`): `void invalidateScreening(queryClient, projectId)` and `void queryClient.invalidateQueries({queryKey: articleKeys.files(articleId)})`, before `onFileUploaded?.()`. `ArticleForm` the same after its upload (`:589`).
 
 - [ ] **Step 1: Write the failing tests**
   - `RunSplitShell.test.tsx`: rewrite `:207,:209` to `fireEvent.keyDown(window, {key: '|', code: 'Backslash', metaKey: true, shiftKey: true})` → expands; add `nested: registers neither the chord nor Escape` (render with `nested` and `initialPdfOpen`, fire the chord → not expanded; expand through the toolbar button, fire Escape → still expanded).
-  - `ArticleDocumentsBody.test.tsx` (MSW / mocked `useArticleDocuments`): `shows a skeleton while files load`; `shows the empty state with Attach when canAttach`; `hides Attach when not canAttach`; `renders children with the files`; `invalidates the screening family and the article files after an upload` (spy `invalidateQueries`: called with `{queryKey: ['screening','project',projectId]}` and `{queryKey: articleKeys.files(articleId)}` — drive the dialog's success through its existing test seam).
+  - `ArticleDocumentsBody.test.tsx` (mocked `useArticleDocuments`): `shows the loading spinner while files load`; `shows an error with retry when the files read fails` (retry calls `refetchFiles`; no Attach button); `shows the empty state with Attach when canAttach`; `hides Attach when not canAttach`; `renders children with the files`; `mainOnly ignores a supplement-only article` (one `SUPPLEMENT` file → empty state).
+  - Create `frontend/components/articles/__tests__/ArticleFileUploadDialogNew.test.tsx` — render the **real** dialog in a `QueryClientProvider`, `vi.mock('@/services/articlesService')` so `uploadArticleFile` resolves ok (and, for the partial case, ok for one file and an error for the other); select files through the file input and submit: `invalidates the screening family and the article files after an upload` and `… after a partial upload` (spy `invalidateQueries` called with `{queryKey: ['screening','project',projectId]}` and `{queryKey: articleKeys.files(articleId)}`; `onFileUploaded` called).
+  - `frontend/test/components/ArticleForm.stagedFiles.test.tsx`: `invalidates the screening family and the article files after a staged upload` (same two assertions; the file already mocks `uploadArticleFile`).
   - `useListKeyboardShortcuts.test.ts`: `registers nothing when disabled` (⌘F → search not focused, `f` → popover setter not called).
-  - `ArticleSidePanel` existing suite: unchanged and green.
+  - `ArticleSidePanel` existing suites: unchanged and green (it now renders `ArticleViewButton` and `ArticleDocumentsBody`, no `mainOnly`).
 
 Run: `npm run test:run -- frontend/components/runs/RunSplitShell.test.tsx frontend/components/articles frontend/hooks/useListKeyboardShortcuts.test.ts`
 Expected: FAIL — chord on `code`, `nested`, unresolved `ArticleDocumentsBody`, `enabled`.
@@ -245,7 +280,7 @@ Expected: PASS, exit 0. (`ArticleViewButton` and `nested` gain a screening consu
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C "$WT" add frontend/components/runs frontend/components/articles frontend/hooks/useListKeyboardShortcuts.ts frontend/hooks/useListKeyboardShortcuts.test.ts
+git -C "$WT" add frontend/components/runs frontend/components/articles frontend/hooks/useListKeyboardShortcuts.ts frontend/hooks/useListKeyboardShortcuts.test.ts frontend/hooks/extraction/useArticleDocuments.ts frontend/test/components/ArticleForm.stagedFiles.test.tsx
 git -C "$WT" commit -m "feat(articles): extract the documents body, nested RunSplitShell, refresh screening on attach" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -287,7 +322,7 @@ async def full_text_candidates(db: AsyncSession, *, project_id: UUID, ta_reviewe
 # screening_config_service.py
 async def set_config(self, project_id: UUID, viewer_id: UUID, body: ScreeningConfigUpdate) -> ScreeningConfigRead
 async def enroll(self, project_id: UUID, enrolled_by: UUID, article_ids: list[UUID] | None,
-                 phase: str = TITLE_ABSTRACT) -> ScreeningEnrollResult
+                 phase: AssignmentPhase = TITLE_ABSTRACT) -> ScreeningEnrollResult
 ```
 
 Rules (§6.1, §7.2):
@@ -303,7 +338,8 @@ Rules (§6.1, §7.2):
   - `test_full_text_enroll_derives_include_and_maybe` — same fixture → `{enrolled: 2, already_enrolled: 0}`; FT assignments exist for r1, r2 only; second call → `{0, 0}`; the TA PRISMA box (`GET /prisma`) equals its value before the send.
   - `test_full_text_enroll_refusals` — FT off → 409 `SCREENING_NOT_CONFIGURED`; no protocol reasons → 409 `SCREENING_REASON_REQUIRED`; body `{phase: "full_text", article_ids: [x]}` → 422 `VALIDATION_ERROR`; a reviewer → 403.
   - `test_screening_concurrency.py` (real commits): `test_two_sends_enroll_once` — two sessions run FT enroll concurrently → results `{2,0}` and `{0,2}` (either order), 2 FT rows; `test_full_text_enroll_and_config_serialize` — session A holds `lock_for_update` on the project and turns FT off, session B's send parks on the lock (poll `pg_locks WHERE NOT granted` as S1's solo race does), A commits → B raises `SCREENING_NOT_CONFIGURED`, 0 FT rows.
-  - `test_screening_config_unit.py`: `test_enroll_request_refuses_ids_at_full_text` (ValidationError), `test_put_handler_passes_the_body` (`put_screening_config.__wrapped__` with `set_config` patched, awaited with the body).
+  - Only if S2 is merged (`test -f "$WT/backend/app/repositories/duplicate_predicates.py"`): `test_duplicate_with_full_text_work_is_refused` in S2's duplicate-verdict integration file — an article with an FT assignment posted as the removed side → 409 `DUPLICATE_HAS_REVIEW_WORK`.
+  - `test_screening_config_unit.py`: `test_enroll_request_refuses_ids_at_full_text` (ValidationError), `test_put_handler_passes_the_body` (`put_screening_config.__wrapped__` with `set_config` patched, awaited with the body); `test_enroll_handler_passes_the_phase` (`enroll_screening.__wrapped__` with `ScreeningConfigService.enroll` patched: body `{phase: 'full_text'}` → awaited with `(PROJECT, CALLER, None, 'full_text')`; no body → `(PROJECT, CALLER, None, 'title_abstract')`).
 
 Run: `cd "$WT/backend" && uv run pytest tests/integration/test_screening_config.py tests/integration/test_screening_concurrency.py tests/unit/test_screening_config_unit.py -q`
 Expected: FAIL — unknown field `full_text_reviewer_count`, `KeyError: full_text_ready`, enroll ignores `phase`.
@@ -336,9 +372,8 @@ git -C "$WT" commit -m "feat(screening): full-text setting with its lock and the
 - Modify: `backend/app/schemas/common.py` (`ApiErrorCode` += `SCREENING_PHASE_ADVANCED`, `SCREENING_DECISION_NOT_IN_PHASE`)
 - Modify: `backend/app/services/screening_outcome.py` (`derive_state(…, reasons_must_match: bool = False)`)
 - Modify: `backend/app/services/screening_review_service.py` (`decide`, `arbitrate`, `assignment_states` passes `reasons_must_match=(phase == FULL_TEXT)`)
-- Modify: `backend/app/repositories/screening_repository.py` (`article_has_assignment`)
 - Modify: `backend/app/api/v1/endpoints/screening.py` (decide/arbitrate 409 descriptions name the new codes)
-- Test: `backend/tests/unit/test_screening_outcome.py`, `backend/tests/integration/test_screening_review.py`, `test_screening_arbitration.py`
+- Test: `backend/tests/unit/test_screening_outcome.py`, `backend/tests/integration/test_screening_review.py`, `test_screening_arbitration.py`, `test_screening_concurrency.py`
 - Regenerate: `frontend/types/api/*`
 
 **Interfaces — Produces:**
@@ -347,15 +382,15 @@ git -C "$WT" commit -m "feat(screening): full-text setting with its lock and the
 def derive_state(reviewer_count, decisions, ruling, reasons_must_match: bool = False) -> AssignmentState
 #   reasons_must_match and len({d.exclusion_reason for d in decisions}) > 1 → _CONFLICT (after the values check)
 
-ScreeningRepository.article_has_assignment(*, project_id: UUID, article_id: UUID, phase: str) -> bool
+# uses Task 1's has_assignment(project_id=…, phase=FULL_TEXT, article_id=…)
 
-def _check_decision_for_phase(phase: str, decision: str, exclusion_reason: str | None) -> None
+def _check_decision_for_phase(phase: AssignmentPhase, decision: str, exclusion_reason: str | None) -> None
 #   TA + not_retrieved → SCREENING_DECISION_NOT_IN_PHASE; FT + maybe → same;
 #   FT + exclude + no reason → SCREENING_REASON_REQUIRED
 ```
 
-Rules (§6.3, §7.3), all read **after** `lock_assignment`:
-- `decide`: `_check_decision_for_phase(ref.phase, …)` first (before the reason-in-protocol check). S1's solo re-decide branch at TA: if `article_has_assignment(article_id=ref.article_id, phase=FULL_TEXT)` → `SCREENING_PHASE_ADVANCED` ("This article is already in full-text screening."), checked before the ruling/`DECISION_FINAL` checks. The solo branch applies at FT with `full_text_reviewer_count == 1` (no FT advance check).
+Rules (§6.3, §7.3), all read **after** `lock_assignment`. **Lock dependency:** the FT-assignment check is race-free only because `decide`/`arbitrate` hold the project row `FOR SHARE` (`settings_for_share`) from before `lock_assignment` until commit, and FT enroll takes the same row `FOR UPDATE` (Task 3): a send and a TA re-decide/re-ruling serialize. Keep `settings_for_share` as the first read; say so in a comment at the check.
+- `decide`: `_check_decision_for_phase(ref.phase, …)` first (before the reason-in-protocol check). S1's solo re-decide branch at TA: if `has_assignment(project_id=ref.project_id, phase=FULL_TEXT, article_id=ref.article_id)` → `SCREENING_PHASE_ADVANCED` ("This article is already in full-text screening."), checked before the ruling/`DECISION_FINAL` checks. The solo branch applies at FT with `full_text_reviewer_count == 1` (no FT advance check).
 - `arbitrate`: TA and the article has an FT assignment → `SCREENING_PHASE_ADVANCED`. Override path: `_check_decision_for_phase(ref.phase, body.decision, body.exclusion_reason)`; adopt path needs no check (the adopted decision passed it). Guard: allowed when in conflict, when arbitrated (today), **or** when `ref.phase == FULL_TEXT` and `outcome.decision == "not_retrieved"` ("PDF found later"); still never by a seated arbitrator.
 
 - [ ] **Step 1: Write the failing tests**
@@ -363,8 +398,9 @@ Rules (§6.3, §7.3), all read **after** `lock_assignment`:
   - `test_screening_review.py` (FT fixture: FT count 2, protocol reasons `["Wrong population", "Wrong outcome"]`, an FT assignment):
     `test_full_text_refuses_maybe` (409 `SCREENING_DECISION_NOT_IN_PHASE`); `test_title_abstract_refuses_not_retrieved` (same code); `test_full_text_exclude_needs_a_reason` (409 `SCREENING_REASON_REQUIRED`); `test_full_text_not_retrieved_takes_no_reason` (200; rows show `not_retrieved`, reason null); `test_full_text_note_is_kept` (`rationale` stored); `test_full_text_differing_reasons_conflict` (A exclude "Wrong population", B exclude "Wrong outcome" → assignment read as a third reviewer `awaiting_others`, as an unseated manager `conflict`); `test_full_text_uses_its_own_count` (TA rc 2, FT rc 1: one FT decision → outcome `solo`; a second reviewer → `SCREENING_REVIEWER_CAP`; the FT solo reviewer re-decides → 200); `test_title_abstract_re_decide_after_full_text_is_refused` (TA rc 1, R includes, FT enroll, R posts exclude → 409 `SCREENING_PHASE_ADVANCED`).
   - `test_screening_arbitration.py`: the three phase refusals on the override path (maybe at FT, not_retrieved at TA, FT exclude without reason); `test_title_abstract_ruling_after_full_text_is_refused` (TA conflict ruled, FT enroll, re-ruling → `SCREENING_PHASE_ADVANCED`); `test_pdf_found_later` (FT rc 2, both `not_retrieved` → decided; unseated MANAGER rules include → 200, outcome `arbitrated` include; a seated arbitrator → `ScreeningSelfArbitrationError` 409 as today); `test_not_retrieved_vs_include_is_ruled_like_a_conflict`.
+  - `test_screening_concurrency.py`: `test_title_abstract_re_decide_and_full_text_send_serialize` — TA rc 1, R includes; session A starts FT enroll and holds the project `FOR UPDATE`; session B's TA re-decide (exclude) parks on the `FOR SHARE` (poll `pg_locks WHERE NOT granted`); A commits → B raises `SCREENING_PHASE_ADVANCED`, R's current decision is still include.
 
-Run: `cd "$WT/backend" && uv run pytest tests/unit/test_screening_outcome.py tests/integration/test_screening_review.py tests/integration/test_screening_arbitration.py -q`
+Run: `cd "$WT/backend" && uv run pytest tests/unit/test_screening_outcome.py tests/integration/test_screening_review.py tests/integration/test_screening_arbitration.py tests/integration/test_screening_concurrency.py -q`
 Expected: FAIL — 422 on `not_retrieved`, 200 where 409s are expected.
 
 - [ ] **Step 2: Implement** per Interfaces and Rules; reword the `derive_state` docstring to mention `reasons_must_match` ("at full text, differing exclusion reasons are a conflict").
@@ -388,7 +424,7 @@ git -C "$WT" commit -m "feat(screening): full-text decision rules, not retrieved
 **Depends on:** Task 4.
 
 **Files:**
-- Modify: `backend/app/schemas/screening.py` (`ScreeningPhase` widened; the Ref's inline literal replaced by it; `ScreeningRecordStatus` += `"not_retrieved"`; `ScreeningRecordRow` += `ta_*`)
+- Modify: `backend/app/schemas/screening.py` (`ScreeningPhase = Literal["title_abstract", "full_text"]`; every `AssignmentPhase` use replaced by it and `AssignmentPhase` deleted; `ScreeningRecordStatus` += `"not_retrieved"`; `ScreeningRecordRow` += `ta_*`)
 - Modify: `backend/app/services/screening_outcome.py` (`record_status`), `screening_review_service.py` (`records`), `backend/app/repositories/screening_repository.py` (`record_rows` FT branch)
 - Modify: `backend/app/seed_screening.py`
 - Test: `backend/tests/integration/test_screening_records.py`, `backend/tests/unit/test_screening_records_unit.py`, `backend/tests/unit/test_screening_outcome.py`, `backend/tests/integration/test_seed_screening.py`, `backend/tests/unit/test_seed_screening.py`
@@ -408,13 +444,13 @@ class ScreeningRecordRow(BaseModel):  # S1's 17 fields + (full-text rows only; n
 
 Rules: `records(phase=FULL_TEXT)`: FT count `None` → 409 `SCREENING_NOT_CONFIGURED`; rows = live FT assignments only (`record_rows` inner-joins at FT; the TA anti-join is unchanged), in FT queue order; statuses from FT snapshots (`reasons_must_match`); `reviewer_count` = FT count; `ta_*` from one TA `assignment_states` call keyed by article id, `ta_reviewer_count` = TA count. `record_status`: outcome `not_retrieved` → `"not_retrieved"`.
 
-Seed (Ruling 24): `build` turns FT on (`full_text_reviewer_count: 2`), adds two more both-include TA records, FT-enrolls the three include records through `ScreeningConfigService.enroll(phase=FULL_TEXT)` (so the seed exercises the real path), r1 excludes one FT record "Wrong outcome", and inserts one MAIN `ArticleFile` (`file_type="pdf"`, `storage_key=SEED_PDF_KEY = f"{project_id}/{article_id}/seed-screening.pdf"`) on another; `main()` after commit uploads `SEED_PDF_BYTES` (a minimal one-page PDF literal in the module) through `create_storage_adapter()` to that key. TA counts S1's test asserts stay true (`exactly 2 not_enrolled`).
+Seed (Ruling 24): `build` turns FT on (`full_text_reviewer_count: 2`), adds two more both-include TA records, FT-enrolls the three include records through `ScreeningConfigService.enroll(phase=FULL_TEXT)` (so the seed exercises the real path), r1 excludes one FT record "Wrong outcome", and inserts one MAIN `ArticleFile` (`file_type="pdf"`, `storage_key=SEED_PDF_KEY = f"{project_id}/{article_id}/seed-screening.pdf"`) on another; `main()` after commit uploads `SEED_PDF_BYTES` (a minimal one-page PDF literal in the module) through `create_storage_adapter(get_supabase_client())` (`app/core/factories.py:18`, `app/core/deps.py:76`; the local Supabase URL and service key from `backend/.env`) to that key. TA counts S1's test asserts stay true (`exactly 2 not_enrolled`).
 
 - [ ] **Step 1: Write the failing tests**
   - `test_screening_records_unit.py`: `test_record_row_has_exactly_the_wire_fields` → the 20 names; `test_records_handler_passes_full_text`.
   - `test_screening_outcome.py`: `test_record_status` gains `decided not_retrieved → not_retrieved`.
   - `test_screening_records.py`: flip S1's `test_records_phase_is_required_and_closed` (`phase=full_text` → 409 when FT off, 200 when on; `phase=other` → 422); `test_full_text_records_role_matrix` — FT rc 2, reviewers A, B, C, consensus K, viewer V, MANAGER: F1 (A exclude "Wrong population", B exclude "Wrong outcome" → reason conflict), F2 (A include), F3 (A, B `not_retrieved`), F4 not decided; assert per caller A: waiting/waiting/not_retrieved/to_screen; C: in_review/to_screen/not_retrieved/to_screen; K and MANAGER: conflict/to_screen/not_retrieved/to_screen; V: in_review/in_review/not_retrieved/in_review; A's F1 `my_exclusion_reason == "Wrong population"`, `outcome_exclusion_reason is None`; no row anywhere carries "Wrong outcome" for A or C; every row has the 20 keys. `test_full_text_rows_are_full_text_assignments_only` (TA-only and not-enrolled articles absent; `queue_rank` 0..n-1); `test_full_text_rows_carry_the_title_abstract_outcome` (`ta_outcome == "include"`, `ta_outcome_kind == "consensus"`, `ta_reviewer_count == 2`; an arbitrated maybe → `"maybe"`, `"arbitrated"`); `test_title_abstract_rows_have_no_ta_fields` (all three null); `test_full_text_has_pdf`.
-  - `test_seed_screening.py` (integration): the existing case gains — the FT records read as manager has 3 rows; the record with r1's exclude reads `to_screen` to the manager (FT rc 2, one decision) and `waiting` to r1; exactly one row has `has_pdf`; config `full_text_enrolled == 3`. Unit: `test_main_uploads_the_seed_pdf_after_commit` (patch `create_storage_adapter` → `upload` awaited once with `SEED_PDF_KEY` after `build`; not called when `build` raises).
+  - `test_seed_screening.py` (integration): the existing case gains — the FT records read as manager has 3 rows; the record with r1's exclude reads `to_screen` to the manager (FT rc 2, one decision) and `waiting` to r1; exactly one row has `has_pdf`; config `full_text_enrolled == 3`. Unit: `test_main_uploads_the_seed_pdf_after_commit` (patch `get_supabase_client` and `create_storage_adapter` → `upload` awaited once with `SEED_PDF_KEY` after `build`; not called when `build` raises).
 
 Run: `cd "$WT/backend" && uv run pytest tests/unit/test_screening_records_unit.py tests/unit/test_screening_outcome.py tests/integration/test_screening_records.py tests/integration/test_seed_screening.py tests/unit/test_seed_screening.py -q`
 Expected: FAIL — 422 on `phase=full_text`, 17 fields, missing seed FT rows.
@@ -515,7 +551,7 @@ export function statusViewsFor(phase: ScreeningPhase): readonly StatusView[];
 //   (STATUS_VIEWS is replaced by this; its S1 consumers switch)
 export type RecordFilterId = /* S1's */ | 'pdf';           // values 'attached' | 'missing' (FT only)
 //   sortRecords status order gains not_retrieved after excluded; progress().decided counts not_retrieved;
-//   my_decision filter values gain 'not_retrieved' (FT) and drop 'maybe' at FT (the list passes the phase's set)
+export function myDecisionValuesFor(phase: ScreeningPhase): readonly string[]; // TA include/exclude/maybe/none; FT include/exclude/not_retrieved/none
 export const EXCLUDED_REPORT_CSV_COLUMNS = ['title','first_author','publication_year','journal_title','pmid','doi','outcome_exclusion_reason'] as const;
 export function excludedReportsCsv(rows: ScreeningRecordRow[]): string; // status 'excluded' only; same RFC 4180 rules as recordsToCsv
 // RECORD_CSV_COLUMNS: the 20 wire fields
@@ -533,7 +569,8 @@ export function screeningKeyAction(event: KeyEventLike, armed: boolean, phase: S
 `CODE_TO_KEY` gains `SCREENING_PHASE_ADVANCED` → `errorPhaseAdvanced` "This article is already in full-text screening.", `SCREENING_DECISION_NOT_IN_PHASE` → `errorDecisionNotInPhase` "That decision is not available in this phase.", `SCREENING_REASON_REQUIRED` → `errorReasonRequired` "Pick an exclusion reason." Copy: `statusNotRetrieved` "Not retrieved", `reportNotRetrieved` "Report not retrieved", `decisionNoteLabel` "Note (optional)", `filterPdf` "PDF", `pdfAttached` "Attached", `pdfMissing` "Missing", `exportExcludedReports` "Export excluded reports".
 
 - [ ] **Step 1: Write the failing tests**
-  - `records.test.ts`: `statusViewsFor` both phases (FT has `not_retrieved`, no `maybe`/`not_enrolled`; TA unchanged); `filters by PDF attached and missing`; `sorts not_retrieved after excluded`; `counts not_retrieved as decided`; `excludedReportsCsv has one row per excluded report with its reason` (3 rows: excluded "Wrong outcome", included, not_retrieved → header + 1 line ending `,Wrong outcome`); `RECORD_CSV_COLUMNS has the 20 wire fields`.
+  - `records.test.ts`: `statusViewsFor` both phases (FT has `not_retrieved`, no `maybe`/`not_enrolled`; TA unchanged); `filters by PDF attached and missing`; `sorts not_retrieved after excluded`; `counts not_retrieved as decided`; `excludedReportsCsv has one row per excluded report with its reason` (3 rows: excluded "Wrong outcome", included, not_retrieved → header + 1 line ending `,Wrong outcome`); `RECORD_CSV_COLUMNS has the 20 wire fields`; `my decision filter values follow the phase` (FT: include, exclude, not_retrieved, none; TA: include, exclude, maybe, none — exported `myDecisionValuesFor(phase)`).
+  - `RecordStatusChip` (S1's list suite or a new `RecordStatusChip.test.tsx`): `labels not_retrieved "Not retrieved"`.
   - `keymap.test.ts`: FT `1` → include; `2` → arm; `e` → arm; `3` → null; armed `2` → reason index 1; TA cases unchanged.
   - `DecisionButtons.test.tsx`: `full text has no Maybe`; `full text Exclude opens the reasons and needs one` (clicking a reason posts `{decision:'exclude', exclusion_reason:…}`); `Report not retrieved posts not_retrieved`; `the note rides along` (type a note, include → `rationale` trimmed); `3 does nothing at full text`.
   - `errors.test.ts`: the three new codes map to their copy.
@@ -594,9 +631,10 @@ export function FullTextDecisionPane(props: {
 
 Layout (§7.3):
 - Provenance line from `ta_*`: "Included at title/abstract · {{n}} reviewers, {{kind}}" (`taProvenance`; kind label: solo → "one reviewer" variant `taProvenanceSolo` "Included at title/abstract · 1 reviewer"; consensus → "consensus"; arbitrated → "arbitrated"; outcome maybe → "Maybe at title/abstract …").
-- **Docked**: a strip `Abstract | PDF` of `ArticleViewButton`s; default PDF when `row.has_pdf`, else Abstract. PDF view → `ArticleDocumentsBody` (`canAttach = !readOnly`) whose children render `RunPdfContent` with a store from `createViewerStore()` (memoized per article id via state). Missing PDF → the extracted empty state with attach, plus the decision pane still active with a "No PDF attached" line (`noPdfAttached`).
-- **Maximized**: `RunSplitShell nested pdfState={usePdfPanel({initialOpen: row.has_pdf})} viewerStore={store} formPanel={decision pane + abstract} pdfPanel={RunPdfContent or the missing-PDF body}`.
-- **Below `lg`** (`useIsBelowDesktop()`): never `RunSplitShell`; the strip shows, and the PDF view uses `usePdfPanel({compact: true})` + `createViewerStore` (not `useRunReader`).
+- **Hooks, unconditional, at the top of `FullTextRecordView`**: `const belowDesktop = useIsBelowDesktop()`; `const pdf = usePdfPanel({initialOpen: true, compact: belowDesktop})` (always open: the PDF pane shows either the PDF or the missing-PDF body, so a PDF attached while maximized appears without reopening anything); the viewer store from `createViewerStore()` kept in state and recreated when `row.article_id` changes (previous-value-in-state pattern). No hook sits inside a layout branch.
+- **Docked**: a strip `Abstract | PDF` of `ArticleViewButton`s (labels `viewAbstract`, `viewPdf`); default PDF when `row.has_pdf`, else Abstract. PDF view → `ArticleDocumentsBody` (`mainOnly`, `canAttach = !readOnly`) whose children render `RunPdfContent({articleId, projectId, store})`. Missing PDF → the extracted empty state with attach, plus the decision pane still active with a "No PDF attached" line (`noPdfAttached`).
+- **Maximized** (and not below `lg`): `RunSplitShell nested pdfState={pdf} viewerStore={store} formPanel={decision pane + abstract} pdfPanel={<ArticleDocumentsBody mainOnly …>{() => <RunPdfContent … />}</ArticleDocumentsBody>}`.
+- **Below `lg`**: never `RunSplitShell` (maximized or not); the strip shows and the PDF view renders the same `ArticleDocumentsBody` + `RunPdfContent` with `pdf` (compact) and the store — not `useRunReader`.
 - Status branches (S1's `AssignmentView` order, phase-aware): `awaiting_me` → FT decision pane; solo re-decide when the phase's count is 1 (`config.reviewer_count` at TA, `config.full_text_reviewer_count` at FT); `conflict` → `ConflictRulingForm` (FT reasons); decided with outcome `not_retrieved` and the caller an unseated arbitrator (`config.can_arbitrate && !read.my_decision`) → read-only body + `ConflictRulingForm` (header copy `pdfFoundLater` "PDF found later? Rule on this report."); everyone else → read-only.
 
 Copy: `viewAbstract` "Abstract", `viewPdf` "PDF", `noPdfAttached` "No PDF attached", `taProvenance` "Included at title/abstract · {{n}} reviewers, {{kind}}", `taProvenanceSolo` "Included at title/abstract · 1 reviewer", `taProvenanceMaybe` "Maybe at title/abstract · {{n}} reviewers, {{kind}}", `taKindConsensus` "consensus", `taKindArbitrated` "arbitrated", `pdfFoundLater` (above).
@@ -604,7 +642,7 @@ Copy: `viewAbstract` "Abstract", `viewPdf` "PDF", `noPdfAttached` "No PDF attach
 - [ ] **Step 1: Write the failing tests** (`FullTextRecordView.test.tsx`; mock `RunPdfContent` as a stub `data-testid="pdf"` — it pulls pdfjs; MSW for files, assignment, decisions)
   - `defaults to PDF when a file exists`; `defaults to Abstract without one`; `switches between Abstract and PDF`.
   - `shows the missing-PDF state with Attach and keeps deciding allowed` ("No PDF attached" line, Include posts); `hides Attach for a viewer`.
-  - `attaching a PDF refreshes the row and the panel` (drive the upload dialog's success; spy shows both invalidations; after the records refetch returns `has_pdf: true` the PDF view renders).
+  - `attaching a PDF refreshes the row and the panel` (docked; `vi.mock('@/services/articlesService')` so `uploadArticleFile` resolves ok, drive the real dialog; after the files refetch returns a MAIN file and the rerendered row has `has_pdf: true`, the PDF view renders the `pdf` stub); `attaching while maximized shows the PDF in the split` (same, maximized: the split's PDF pane changes from the missing-PDF body to the `pdf` stub with no click on any PDF toggle).
   - `renders RunSplitShell nested when maximized` (`[data-testid="assessment-shell-form"]` present; firing `⇧⌘\` with `code: 'Backslash'` inside does not expand the inner PDF).
   - `opens the reader below lg without RunSplitShell` (`matchMedia` narrow; PDF view shows `pdf` stub, no `assessment-shell-form`).
   - `shows the TA provenance line` (consensus 2 → "Included at title/abstract · 2 reviewers, consensus"; solo; maybe arbitrated).
@@ -650,6 +688,7 @@ export function ExportExcludedReportsButton({rows}: {rows: ScreeningRecordRow[]}
 Rules:
 - `ScreeningTab`: `screeningTab=full_text` → `full_text_reviewer_count === null` → toolbar row + `Notice` "Full-text screening is off" (`ftOffTitle`) with "Open Settings" for a manager (`ftOffManager` "Turn it on in Settings.") or `ftOffMember` "A manager turns it on in Settings."; else `ScreeningWorkspace phase="full_text"`. TA unconfigured behaves as S1 (gate on the config read).
 - FT workspace: records `useScreeningRecords(projectId, 'full_text', enabled)`; `config.full_text_enrolled === 0` → "No records in full text yet" (`ftEmptyTitle`) + `SendToFullTextButton` (manager) or `ftEmptyMember` "A manager sends records to full text."; a 403 → `ErrorState`. Toolbar: `SendToFullTextButton` (manager), `ExportExcludedReportsButton` (every member incl. viewer — read-only export), "Start screening" (same rule as TA). No PubMed import and no Enroll at FT.
+- `?status=` not in `statusViewsFor(phase)` (the switcher keeps every param when it changes sub-view) → replaced with the role default (`defaultStatusView`), `replace: true`.
 - List at FT: status views `statusViewsFor('full_text')`; PDF column (Attached/Missing) and PDF filter (FT only); Reason column on by default (toggle stays); Mine column uses FT `my_decision`. List shortcuts (`⌘F`, `f`) `enabled: !maximized` (Ruling 30).
 - TA progress strip: append " · {{k}} to full text →" (`progressToFullText`, a link button) when `config.full_text_reviewer_count !== null && config.full_text_ready > 0`; it sets `screeningTab=full_text` and deletes `status`, `article` (replace: false — it is navigation).
 - `SendToFullTextButton` "Send {{n}} to full text" (`sendToFullText`), N = `config.full_text_ready`; disabled + tooltip when FT off (`sendDisabledOff` "Full-text screening is off"), no reasons (`config.exclusion_reasons.length === 0` → `sendDisabledReasons` "Add exclusion reasons to the protocol first"), N = 0 (`sendDisabledNone` "No records are ready for full text"); in flight busy + disabled; success `toast(sentToFullText.replace('{{n}}', enrolled))` "Sent {{n}} to full text"; error → `toast.error(screeningErrorMessage(e))` and the hook's `onSettled` invalidates `screeningKeys.project`.
@@ -657,7 +696,7 @@ Rules:
 - [ ] **Step 1: Write the failing tests**
   - `SectionViewSwitcher.test.tsx`: `renders Title/abstract, Full text and Settings for a screening manager`.
   - `ScreeningTab.test.tsx`: `shows "Full-text screening is off" with Open Settings to a manager` / member copy; no records request is sent then.
-  - `FullTextWorkspace.test.tsx` (MSW): `shows skeleton rows`, `shows an error with retry`, `shows the 403 error state`; `shows "No records in full text yet" with Send for a manager` / member copy; `lists Not retrieved and hides Maybe and Not enrolled views`; `shows the PDF column and filters missing PDFs`; `shows the Reason column by default`; `Start screening at full text`; `list shortcuts are off while maximized` (maximize, ⌘F → list search not focused); `Export excluded reports downloads one row per excluded report`; `Send to full text` — `disabled with its tooltip when full text is off`, `… when the protocol has no reasons`, `… when nothing is ready`; `busy while sending`; `toasts "Sent 3 to full text"` (body `{phase:'full_text'}`, no `article_ids`); `toasts a refused send and refetches the config` (409 `SCREENING_REASON_REQUIRED` → mapped toast; `invalidateQueries` called with the project key).
+  - `FullTextWorkspace.test.tsx` (MSW): `shows skeleton rows`, `shows an error with retry`, `shows the 403 error state`; `shows "No records in full text yet" with Send for a manager` / member copy; `lists Not retrieved and hides Maybe and Not enrolled views`; `shows the PDF column and filters missing PDFs`; `shows the Reason column by default`; `Start screening at full text`; `list shortcuts are off while maximized` (maximize, ⌘F → list search not focused); `outer ⇧⌘\ and Escape win over the nested PDF split, one step per press` (real `ListDetailSplitShell` + real `RunSplitShell`, only `RunPdfContent` stubbed; open an FT record with a PDF, "Start screening" → `[data-maximized="true"]` and `assessment-shell-form` present; `keyDown(window, {key:'|', code:'Backslash', metaKey:true, shiftKey:true})` → not maximized, `assessment-shell-form` gone, panel still open; maximize again with the chord; Escape → not maximized, panel open; Escape → panel closed; `?article=` still set; Escape → `?article=` cleared — each press one step); `falls back to the role default for a status the phase lacks` (`?screeningTab=full_text&status=maybe` and `…&status=not_enrolled` → the param is replaced with the role default, e.g. `to_screen` for a reviewer); `Export excluded reports downloads one row per excluded report`; `Send to full text` — `disabled with its tooltip when full text is off`, `… when the protocol has no reasons`, `… when nothing is ready`; `busy while sending`; `toasts "Sent 3 to full text"` (body `{phase:'full_text'}`, no `article_ids`); `toasts the enrolled count when a concurrent send got there first` (response `{enrolled: 1, already_enrolled: 2}` → "Sent 1 to full text"); `toasts a refused send and refetches the config` (409 `SCREENING_REASON_REQUIRED` → mapped toast; `invalidateQueries` called with the project key).
   - `ScreeningRecordList.test.tsx`: rewrite S1's "no full-text segment" as `shows "K to full text →" only when full text is on and K > 0` (link click → `screeningTab=full_text`, no `status`/`article`).
   - `ScreeningWorkspace.test.tsx`: S1's suite unchanged under the new name.
 
