@@ -142,7 +142,7 @@ git -C "$WT" commit -m "feat(screening): add the append-only article duplicate v
 
 **Files:**
 - Create: `backend/app/repositories/duplicate_predicates.py`, `backend/app/repositories/duplicate_repository.py`, `backend/app/services/duplicate_candidates.py` (pure), `backend/app/services/duplicate_service.py`, `backend/app/api/v1/endpoints/duplicates.py`; Modify: `backend/app/schemas/duplicates.py` (Task 1 created it with the Literals)
-- Modify: `backend/app/api/v1/router.py` (register), `scripts/fitness/check_layered_arch.py` only if the scan flags the new modules
+- Modify: `backend/app/api/v1/router.py` (register), `backend/app/repositories/screening_repository.py` (extract `has_main_pdf`; `record_rows` reuses it). Never edit `check_layered_arch.py` or its baseline: a flagged edge is fixed by moving the import
 - Create: `backend/tests/unit/test_duplicate_candidates.py`, `backend/tests/unit/test_duplicates_unit.py`, `backend/tests/integration/test_duplicates_read.py`, `backend/tests/integration/test_duplicates_scale.py`
 - Regenerate: `frontend/types/api/openapi.json`, `schema.d.ts`
 
