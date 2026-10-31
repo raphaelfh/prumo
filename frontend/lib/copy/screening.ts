@@ -84,6 +84,7 @@ export const screening = {
 
   // Title/abstract workspace
   panelToggle: 'Toggle the record panel',
+  nextRecordAnnouncement: 'Next record: {{title}}',
   notInPhase: 'This article is not in this phase',
   startScreening: 'Start screening',
   noArticlesTitle: 'No articles yet',

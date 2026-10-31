@@ -9,8 +9,15 @@
  * checked rows, the list cursor while the panel is closed, and the article ids
  * decided this session, which stay in the current view until the view, search
  * or a filter changes (never persisted, so a reload clears them).
+ *
+ * Keyboard (§4.5): j/k and ↓/↑ move the cursor through the visible order (the
+ * selection follows while the panel is open), Enter opens the cursor row, `x`
+ * checks it; ⇧-click checks a range. A decision advances to the next To screen
+ * row in queue order, announces it and prefetches the two after it; a ruling
+ * stays on the ruled record (§4.4 advances after a decision only).
  */
 import {FileText} from 'lucide-react';
+import {useQueryClient} from '@tanstack/react-query';
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {useSearchParams} from 'react-router';
 import {toast} from 'sonner';
@@ -19,7 +26,9 @@ import {ListDetailSplitShell} from '@/components/layout/ListDetailSplitShell';
 import {ErrorState} from '@/components/patterns/ErrorState';
 import {EmptyListState} from '@/components/shared/list';
 import {Skeleton} from '@/components/ui/skeleton';
+import {assignmentQueryOptions} from '@/hooks/screening/useScreeningAssignment';
 import {useScreeningRecords} from '@/hooks/screening/useScreeningRecords';
+import {useKeyboardShortcuts} from '@/hooks/useKeyboardShortcuts';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import {
@@ -27,6 +36,7 @@ import {
   isReadOnly,
   nextToScreen,
   progress,
+  sortRecords,
   statusCounts,
   STATUS_VIEWS,
   type StatusView,
@@ -38,6 +48,18 @@ import {ScreeningRecordPanel} from './ScreeningRecordPanel';
 import {EnrollAllButton, PubMedImportButton, StartScreeningButton} from './ScreeningToolbarActions';
 
 const SKELETON_ROWS = 6;
+const PREFETCH_AHEAD = 2;
+
+/** The To screen rows after `from` in queue order, skipping the one just decided (its cached status is pre-decision). */
+function queueAfter(rows: ScreeningRecordRow[], from: ScreeningRecordRow, decidedId: string): ScreeningRecordRow[] {
+  return sortRecords(
+    rows.filter(
+      (row) => row.status === 'to_screen' && row.article_id !== decidedId && row.queue_rank > from.queue_rank,
+    ),
+    'queue',
+    'asc',
+  );
+}
 
 function isStatusView(value: string | null): value is StatusView {
   return value !== null && (STATUS_VIEWS as readonly string[]).includes(value);
@@ -77,6 +99,16 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [listCursor, setListCursor] = useState<string | null>(null);
   const [keepArticleIds, setKeepArticleIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [rangeAnchorId, setRangeAnchorId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const queryClient = useQueryClient();
+
+  // The list reports what it shows (view + search + filters + sort); only the
+  // key and click handlers read it.
+  const visibleRowsRef = useRef<ScreeningRecordRow[]>([]);
+  const [onVisibleRowsChange] = useState(() => (visible: ScreeningRecordRow[]) => {
+    visibleRowsRef.current = visible;
+  });
 
   // The role default needs the counts, so it is fixed when the first read
   // lands: a later count change (the last conflict ruled) must not switch the
@@ -110,29 +142,47 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
   const [onNotInPhase] = useState(() => () => notInPhaseRef.current());
 
   // A client miss (initial or after a refetch): no request is made for it.
+  // One updater for both URL repairs: react-router's functional
+  // `setSearchParams` reads the last render's params, so a second navigate in
+  // the same commit would restore what the first one removed.
   const selectionMissing =
     rows !== undefined && articleId !== null && !rows.some((row) => row.article_id === articleId);
   useEffect(() => {
-    if (selectionMissing) onNotInPhase();
-  }, [selectionMissing, onNotInPhase]);
+    if (!hasLegacyAssignment && !selectionMissing) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('assignment');
+        if (selectionMissing) next.delete('article');
+        return next;
+      },
+      {replace: true},
+    );
+    if (selectionMissing) toast(t('screening', 'notInPhase'));
+  }, [hasLegacyAssignment, selectionMissing, setSearchParams]);
 
-  useEffect(() => {
-    if (hasLegacyAssignment) {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('assignment');
-          return next;
-        },
-        {replace: true},
-      );
-    }
-  }, [hasLegacyAssignment, setSearchParams]);
-
-  const openRow = (row: ScreeningRecordRow) => {
+  const cursorArticleId = panelOpen ? articleId : listCursor;
+  const selectRow = (row: ScreeningRecordRow) => {
     updateParams((params) => params.set('article', row.article_id));
     setListCursor(row.article_id);
+  };
+  const openRow = (row: ScreeningRecordRow) => {
+    selectRow(row);
     setPanelOpen(true);
+  };
+  const cursorRow = () => rows?.find((row) => row.article_id === cursorArticleId) ?? null;
+
+  const moveCursor = (step: 1 | -1) => {
+    const visible = visibleRowsRef.current;
+    if (visible.length === 0) return;
+    const index = visible.findIndex((row) => row.article_id === cursorArticleId);
+    const target = index === -1 ? visible[0] : visible[Math.min(Math.max(index + step, 0), visible.length - 1)];
+    if (panelOpen) selectRow(target);
+    else setListCursor(target.article_id);
+    // Focus on a row stays on the cursor row, so a native Enter opens that one.
+    if (document.activeElement?.closest('[data-record-row]')) {
+      document.querySelector<HTMLElement>(`[data-record-row="${target.article_id}"] button:not([role="checkbox"])`)?.focus();
+    }
   };
   const changePanelOpen = (open: boolean) => {
     setPanelOpen(open);
@@ -142,14 +192,57 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
     updateParams((params) => params.set('status', next));
     setKeepArticleIds(new Set());
   };
-  const toggleRow = (row: ScreeningRecordRow) => {
+  /** A plain toggle flips one row; ⇧ checks every visible row from the last toggled one to this one. */
+  const toggleRow = (row: ScreeningRecordRow, {shiftKey}: {shiftKey: boolean}) => {
+    const visible = visibleRowsRef.current;
+    const from = shiftKey ? visible.findIndex((candidate) => candidate.article_id === rangeAnchorId) : -1;
+    const to = visible.findIndex((candidate) => candidate.article_id === row.article_id);
     const next = new Set(checkedIds);
-    if (next.has(row.article_id)) next.delete(row.article_id);
+    if (from !== -1 && to !== -1) {
+      for (const inRange of visible.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(inRange.article_id);
+    } else if (next.has(row.article_id)) next.delete(row.article_id);
     else next.add(row.article_id);
     setCheckedIds(next);
+    setRangeAnchorId(row.article_id);
   };
-  const onDecided = (row: ScreeningRecordRow) =>
-    setKeepArticleIds((prev) => new Set(prev).add(row.article_id));
+
+  const onDecided = (decided: ScreeningRecordRow) => {
+    setKeepArticleIds((prev) => new Set(prev).add(decided.article_id));
+    const next = rows ? nextToScreen(rows, decided.article_id) : null;
+    if (!rows || !next) return;
+    selectRow(next);
+    setAnnouncement(t('screening', 'nextRecordAnnouncement').replace('{{title}}', next.title));
+    for (const ahead of queueAfter(rows, next, decided.article_id).slice(0, PREFETCH_AHEAD)) {
+      if (ahead.assignment_id) void queryClient.prefetchQuery(assignmentQueryOptions(ahead.assignment_id));
+    }
+  };
+
+  useKeyboardShortcuts({
+    enabled: rows !== undefined,
+    bindings: [
+      {type: 'chord', key: 'j', handler: () => moveCursor(1)},
+      {type: 'chord', key: 'ArrowDown', handler: () => moveCursor(1)},
+      {type: 'chord', key: 'k', handler: () => moveCursor(-1)},
+      {type: 'chord', key: 'ArrowUp', handler: () => moveCursor(-1)},
+      {
+        type: 'chord',
+        key: 'Enter',
+        yieldToControls: true,
+        handler: () => {
+          const row = cursorRow();
+          if (row) openRow(row);
+        },
+      },
+      {
+        type: 'chord',
+        key: 'x',
+        handler: () => {
+          const row = cursorRow();
+          if (row) toggleRow(row, {shiftKey: false});
+        },
+      },
+    ],
+  });
 
   const start = () => {
     const next = rows ? nextToScreen(rows, null) : null;
@@ -224,11 +317,12 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
             status={status}
             onStatusChange={changeStatus}
             activeArticleId={articleId}
-            cursorArticleId={panelOpen ? articleId : listCursor}
+            cursorArticleId={cursorArticleId}
             onOpenRow={openRow}
             checkedIds={checkedIds}
             onCheckedChange={setCheckedIds}
             onToggleRow={toggleRow}
+            onVisibleRowsChange={onVisibleRowsChange}
             toolbarActions={toolbarActions}
             keepArticleIds={keepArticleIds}
             onFiltersChange={() => setKeepArticleIds(new Set())}
@@ -246,13 +340,18 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
       toggleLabel={t('screening', 'panelToggle')}
       list={list}
       panel={
-        <ScreeningRecordPanel
-          projectId={projectId}
-          row={selectedRow}
-          config={config}
-          onDecided={onDecided}
-          onNotInPhase={onNotInPhase}
-        />
+        <div className="relative h-full min-h-0">
+          <p role="status" data-testid="next-record-announcement" className="sr-only">
+            {announcement}
+          </p>
+          <ScreeningRecordPanel
+            projectId={projectId}
+            row={selectedRow}
+            config={config}
+            onDecided={onDecided}
+            onNotInPhase={onNotInPhase}
+          />
+        </div>
       }
       panelOpen={panelOpen}
       onPanelOpenChange={changePanelOpen}

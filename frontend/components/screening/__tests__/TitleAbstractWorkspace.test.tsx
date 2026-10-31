@@ -33,6 +33,7 @@ import {server} from '@/test/mocks/server';
 const RECORDS_URL = '*/api/v1/projects/:projectId/screening/records';
 const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
 const DECIDE_URL = '*/api/v1/screening/assignments/:assignmentId/decisions';
+const ARBITRATE_URL = '*/api/v1/screening/assignments/:assignmentId/arbitration';
 const ENROLL_URL = '*/api/v1/projects/:projectId/screening/enroll';
 
 const ok = (data: unknown) => HttpResponse.json({ok: true, data});
@@ -132,13 +133,14 @@ function assignmentFor(r: ScreeningRecordRow): ScreeningAssignmentRead {
   };
 }
 
-function serveAssignments(rows: ScreeningRecordRow[]) {
-  const calls = {count: 0};
+function serveAssignments(rows: ScreeningRecordRow[], read: (r: ScreeningRecordRow) => ScreeningAssignmentRead = assignmentFor) {
+  const calls = {count: 0, ids: [] as string[]};
   server.use(
     http.get(ASSIGNMENT_URL, ({params}) => {
       calls.count += 1;
+      calls.ids.push(params.assignmentId as string);
       const r = rows.find((candidate) => candidate.assignment_id === params.assignmentId);
-      return r ? ok(assignmentFor(r)) : fail(404, 'NOT_FOUND');
+      return r ? ok(read(r)) : fail(404, 'NOT_FOUND');
     }),
   );
   return calls;
@@ -154,8 +156,10 @@ const search = () => new URLSearchParams(screen.getByTestId('location').textCont
 function renderWorkspace({
   cfg = config(),
   path = '/projects/p1?tab=screening',
-}: {cfg?: ScreeningConfigRead; path?: string} = {}) {
+  cached,
+}: {cfg?: ScreeningConfigRead; path?: string; cached?: ScreeningRecordRow[]} = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
+  if (cached) client.setQueryData(screeningKeys.records('p1', 'title_abstract'), records(cached));
   const view = render(
     <QueryClientProvider client={client}>
       <HeaderActionsProvider>
@@ -169,6 +173,7 @@ function renderWorkspace({
   return {...view, client};
 }
 
+const liveRegion = () => screen.getByTestId('next-record-announcement');
 const titleButton = (title: string) => screen.queryByRole('button', {name: title});
 const panel = () => document.querySelector('[data-testid="screening-shell-panel"]');
 
@@ -420,6 +425,18 @@ describe('TitleAbstractWorkspace — selection', () => {
     expect(calls.count).toBe(0);
   });
 
+  it('strips ?assignment= and clears a missing ?article= in the same first render', async () => {
+    serveRecords([ALPHA]);
+    serveAssignments([ALPHA]);
+    renderWorkspace({path: '/projects/p1?tab=screening&assignment=a1&article=missing', cached: [ALPHA]});
+    // Cached rows: both edits are due on the first commit.
+    expect(screen.getByRole('button', {name: 'Alpha trial'})).toBeInTheDocument();
+    await waitFor(() => expect(search().has('article')).toBe(false));
+    expect(search().has('assignment')).toBe(false);
+    expect(search().get('tab')).toBe('screening');
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+
   it('clears a selection that drops out after a refetch', async () => {
     const current = serveRecords([ALPHA, BETA]);
     serveAssignments([ALPHA, BETA]);
@@ -479,5 +496,305 @@ describe('TitleAbstractWorkspace — selection', () => {
 
     escape();
     await waitFor(() => expect(screen.getByRole('checkbox', {name: 'Select Beta cohort'})).not.toBeChecked());
+  });
+});
+
+describe('TitleAbstractWorkspace — keyboard', () => {
+  const press = (key: string, target: Element = document.body) => fireEvent.keyDown(target, {key});
+  const cursorTitle = () => document.querySelector('[data-cursor="true"]')?.querySelector('button:not([role="checkbox"])')?.textContent ?? null;
+  const box = (title: string) => screen.getByRole('checkbox', {name: `Select ${title}`});
+
+  // Manager → the All view: Alpha, Beta, Gamma in queue order.
+  const renderAll = (path?: string) => {
+    serveRecords([ALPHA, BETA, GAMMA]);
+    serveAssignments([ALPHA, BETA, GAMMA]);
+    return renderWorkspace({cfg: config(MANAGER), path});
+  };
+
+  it('j and k move the cursor; the panel follows when open', async () => {
+    renderAll();
+    await screen.findByRole('button', {name: 'Alpha trial'});
+    expect(cursorTitle()).toBeNull();
+
+    press('j');
+    expect(cursorTitle()).toBe('Alpha trial');
+    press('j');
+    expect(cursorTitle()).toBe('Beta cohort');
+    press('k');
+    expect(cursorTitle()).toBe('Alpha trial');
+    // Closed panel: the cursor moves alone, nothing is selected.
+    expect(search().has('article')).toBe(false);
+    expect(panel()).toBeNull();
+
+    press('Enter');
+    expect(await screen.findByRole('heading', {name: 'Alpha trial'})).toBeInTheDocument();
+    press('j');
+    await waitFor(() => expect(search().get('article')).toBe('art2'));
+    expect(await screen.findByRole('heading', {name: 'Beta cohort'})).toBeInTheDocument();
+    expect(cursorTitle()).toBe('Beta cohort');
+  });
+
+  it('arrow keys move the cursor too', async () => {
+    renderAll();
+    await screen.findByRole('button', {name: 'Alpha trial'});
+    press('ArrowDown');
+    press('ArrowDown');
+    press('ArrowDown');
+    expect(cursorTitle()).toBe('Gamma review');
+    // The last row holds the cursor.
+    press('ArrowDown');
+    expect(cursorTitle()).toBe('Gamma review');
+    press('ArrowUp');
+    expect(cursorTitle()).toBe('Beta cohort');
+  });
+
+  it('Enter opens the cursor row', async () => {
+    renderAll();
+    await screen.findByRole('button', {name: 'Alpha trial'});
+    press('j');
+    press('j');
+    press('Enter');
+    expect(search().get('article')).toBe('art2');
+    expect(await screen.findByRole('heading', {name: 'Beta cohort'})).toBeInTheDocument();
+    expect(panel()).not.toBeNull();
+  });
+
+  it('keys are inert in a text field', async () => {
+    renderAll();
+    await screen.findByRole('button', {name: 'Alpha trial'});
+    const searchBox = screen.getByPlaceholderText('Search records…');
+    searchBox.focus();
+    press('j', searchBox);
+    press('x', searchBox);
+    expect(cursorTitle()).toBeNull();
+    // Precondition: the same key outside the field moves the cursor.
+    press('j');
+    expect(cursorTitle()).toBe('Alpha trial');
+  });
+
+  it('keys are inert under a dialog', async () => {
+    const user = userEvent.setup();
+    renderAll('/projects/p1?tab=screening&article=art1');
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+    let decides = 0;
+    server.use(
+      http.post(DECIDE_URL, () => {
+        decides += 1;
+        return ok(assignmentFor(ALPHA));
+      }),
+    );
+    await user.click(screen.getByRole('button', {name: 'Import from PubMed'}));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    press('j');
+    press('1');
+    press('x');
+    expect(search().get('article')).toBe('art1');
+    expect(cursorTitle()).toBe('Alpha trial');
+    expect(decides).toBe(0);
+  });
+
+  it('x toggles the cursor row', async () => {
+    renderAll();
+    await screen.findByRole('button', {name: 'Alpha trial'});
+    press('j');
+    press('j');
+    press('x');
+    expect(box('Beta cohort')).toBeChecked();
+    expect(box('Alpha trial')).not.toBeChecked();
+    press('x');
+    expect(box('Beta cohort')).not.toBeChecked();
+  });
+
+  it('shift-click selects a range', async () => {
+    const user = userEvent.setup();
+    renderAll();
+    await screen.findByRole('button', {name: 'Alpha trial'});
+    await user.click(box('Alpha trial'));
+    await user.keyboard('{Shift>}');
+    await user.click(box('Gamma review'));
+    await user.keyboard('{/Shift}');
+    expect(box('Alpha trial')).toBeChecked();
+    expect(box('Beta cohort')).toBeChecked();
+    expect(box('Gamma review')).toBeChecked();
+  });
+
+  it('Esc order: popover, maximize, panel, selection, checked rows — one step per press', async () => {
+    const user = userEvent.setup();
+    renderAll('/projects/p1?tab=screening&article=art1');
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+    await user.click(box('Beta cohort'));
+    fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
+    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    press('f');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    const escape = () => fireEvent.keyDown(document.activeElement ?? document.body, {key: 'Escape'});
+    escape();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    // Focus returns to the filter trigger, whose tooltip opens: the tooltip
+    // takes its own Escape, which is not a chain step.
+    if (screen.queryByRole('tooltip')) {
+      escape();
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+      expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    }
+
+    escape();
+    expect(document.querySelector('[data-maximized]')).toBeNull();
+    expect(panel()).not.toBeNull();
+
+    escape();
+    expect(panel()).toBeNull();
+    expect(search().get('article')).toBe('art1');
+
+    escape();
+    await waitFor(() => expect(search().has('article')).toBe(false));
+    expect(box('Beta cohort')).toBeChecked();
+
+    escape();
+    await waitFor(() => expect(box('Beta cohort')).not.toBeChecked());
+  });
+
+  it('Esc in the search field clears nothing', async () => {
+    const user = userEvent.setup();
+    renderAll('/projects/p1?tab=screening&article=art1');
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+    await user.click(box('Beta cohort'));
+    const searchBox = screen.getByPlaceholderText('Search records…');
+    searchBox.focus();
+    press('Escape', searchBox);
+    expect(panel()).not.toBeNull();
+    expect(search().get('article')).toBe('art1');
+    expect(box('Beta cohort')).toBeChecked();
+  });
+});
+
+describe('TitleAbstractWorkspace — auto-advance', () => {
+  const DELTA = row({article_id: 'art4', assignment_id: 'a4', queue_rank: 4, title: 'Delta study'});
+  const EPSILON = row({article_id: 'art5', assignment_id: 'a5', queue_rank: 5, title: 'Epsilon series'});
+  const ZETA = row({article_id: 'art6', assignment_id: 'a6', queue_rank: 6, title: 'Zeta report'});
+
+  function serveDecide(current: {rows: ScreeningRecordRow[]}, decided: ScreeningRecordRow) {
+    server.use(
+      http.post(DECIDE_URL, () => {
+        current.rows = current.rows.map((r) =>
+          r.article_id === decided.article_id
+            ? {...r, status: 'included', my_decision: 'include', outcome: 'include'}
+            : r,
+        );
+        return ok({...assignmentFor(decided), status: 'decided'});
+      }),
+    );
+  }
+
+  it('auto-advances to the next To screen in queue order after a decision', async () => {
+    // Beta sits before Alpha in the payload; Gamma (decided) is skipped.
+    const current = serveRecords([{...BETA, queue_rank: 3}, GAMMA, {...ALPHA, queue_rank: 1}, DELTA]);
+    serveAssignments(current.rows);
+    serveDecide(current, ALPHA);
+    const user = userEvent.setup();
+    renderWorkspace({path: '/projects/p1?tab=screening&article=art1'});
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+
+    await user.click(await screen.findByRole('button', {name: /Include/}));
+
+    await waitFor(() => expect(search().get('article')).toBe('art2'));
+    expect(await screen.findByRole('heading', {name: 'Beta cohort'})).toBeInTheDocument();
+    // After the refetch the decided row is still listed in To screen, with its new chip.
+    expect(screen.getByRole('tab', {name: /^To screen/})).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() =>
+      expect(within(titleButton('Alpha trial')!.closest('tr')!).getByText('Included')).toBeInTheDocument(),
+    );
+  });
+
+  it('announces the next record', async () => {
+    const current = serveRecords([ALPHA, BETA]);
+    serveAssignments(current.rows);
+    serveDecide(current, ALPHA);
+    const user = userEvent.setup();
+    renderWorkspace({path: '/projects/p1?tab=screening&article=art1'});
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+    const live = liveRegion();
+    expect(live).toHaveTextContent('');
+
+    await user.click(await screen.findByRole('button', {name: /Include/}));
+
+    await waitFor(() => expect(live).toHaveTextContent('Next record: Beta cohort'));
+  });
+
+  it('prefetches the next two assignments', async () => {
+    const current = serveRecords([ALPHA, BETA, DELTA, EPSILON, ZETA]);
+    const calls = serveAssignments(current.rows);
+    serveDecide(current, ALPHA);
+    const user = userEvent.setup();
+    renderWorkspace({path: '/projects/p1?tab=screening&article=art1'});
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+    expect(calls.ids).not.toContain('a4');
+
+    await user.click(await screen.findByRole('button', {name: /Include/}));
+
+    await waitFor(() => expect(search().get('article')).toBe('art2'));
+    // Beta is open (its own read); Delta and Epsilon wait in the cache, Zeta does not.
+    await waitFor(() => expect(calls.ids).toEqual(expect.arrayContaining(['a2', 'a4', 'a5'])));
+    expect(calls.ids).not.toContain('a6');
+    expect(search().get('article')).toBe('art2');
+  });
+
+  it('stays on the decided record when nothing is left to screen', async () => {
+    const current = serveRecords([ALPHA, GAMMA]);
+    serveAssignments(current.rows);
+    serveDecide(current, ALPHA);
+    const user = userEvent.setup();
+    renderWorkspace({path: '/projects/p1?tab=screening&article=art1'});
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+
+    await user.click(await screen.findByRole('button', {name: /Include/}));
+
+    await waitFor(() =>
+      expect(within(titleButton('Alpha trial')!.closest('tr')!).getByText('Included')).toBeInTheDocument(),
+    );
+    expect(search().get('article')).toBe('art1');
+    expect(screen.getByRole('heading', {name: 'Alpha trial'})).toBeInTheDocument();
+    expect(liveRegion()).toHaveTextContent('');
+  });
+
+  // Spec §4.4 advances after a To screen decision only: a ruling keeps the
+  // arbitrator on the ruled record, which then reads as arbitrated.
+  it('keeps the panel on a ruled record', async () => {
+    const CONFLICT = row({article_id: 'art7', assignment_id: 'a7', queue_rank: 7, title: 'Eta trial', status: 'conflict'});
+    serveRecords([ALPHA, CONFLICT]);
+    const peer = (id: string, decision: 'include' | 'exclude') => ({
+      id,
+      reviewer_id: `r-${id}`,
+      reviewer_name: `Name ${id}`,
+      decision,
+      exclusion_reason: null,
+      rationale: null,
+      created_at: '2026-10-01T10:00:00Z',
+    });
+    serveAssignments([ALPHA, CONFLICT], (r) =>
+      r === CONFLICT
+        ? {...assignmentFor(r), status: 'conflict', peer_decisions: [peer('dA', 'include'), peer('dB', 'exclude')]}
+        : assignmentFor(r),
+    );
+    let rulings = 0;
+    server.use(
+      http.post(ARBITRATE_URL, () => {
+        rulings += 1;
+        return ok({...assignmentFor(CONFLICT), status: 'decided'});
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace({cfg: config(MANAGER), path: '/projects/p1?tab=screening&article=art7'});
+    await screen.findByRole('heading', {name: 'Eta trial'});
+
+    await user.click(await screen.findByRole('button', {name: "Use Reviewer A's decision"}));
+
+    await waitFor(() => expect(rulings).toBe(1));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Conflict resolved'));
+    expect(search().get('article')).toBe('art7');
+    expect(liveRegion()).toHaveTextContent('');
   });
 });

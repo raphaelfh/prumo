@@ -113,7 +113,9 @@ export function ScreeningRecordTable({
           return (
             <TableRow
               key={row.article_id}
+              data-record-row={row.article_id}
               data-state={active ? 'selected' : undefined}
+              data-cursor={row.article_id === cursorArticleId || undefined}
               className={cn(
                 'group relative h-9 border-b border-border/30 transition-colors duration-75 hover:bg-muted/40',
                 active && 'bg-muted/60 font-medium',
