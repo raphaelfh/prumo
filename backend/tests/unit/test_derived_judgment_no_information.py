@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.seed_probast_ai import _PAI_DERIVED_JUDGMENTS as _V2_SPEC
-from app.services.derived_judgment_service import compute_derived_judgments, worst_domain
+from app.services.derived_judgment_service import compute_derived_judgments
 
 # The v1 PROBAST+AI derivation spec, FROZEN VERBATIM as v1 project clones'
 # ``schema_`` rows still carry it in prod (clones copy the spec at clone time
@@ -87,17 +87,6 @@ _V1_DERIVED_JUDGMENTS: list[dict[str, Any]] = [
 ]
 
 NI: dict[str, Any] = {"value": None, "absent_reason": "no_information"}
-
-# What `resolve_value` hands the xlsx export for the same stored marker. The
-# run view passes the raw envelope above; both must read identically or the
-# banner and the workbook disagree about the same run.
-NI_RESOLVED = "No information"
-
-
-def test_both_caller_shapes_agree() -> None:
-    """The run view passes raw envelopes, the export passes resolved labels."""
-    assert worst_domain(["Low", NI, "Low"]) == worst_domain(["Low", NI_RESOLVED, "Low"])
-    assert worst_domain(["Low", NI_RESOLVED, "Low"]) == "Unclear"
 
 
 def test_d4_collapse_excludes_no_information_as_not_reported() -> None:

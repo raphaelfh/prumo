@@ -1,10 +1,10 @@
 """The screen and the workbook must report the SAME overall judgments.
 
-The two callers of ``derived_judgment_service`` read the same stored value
-through different seams: the run view passes the RAW jsonb envelope, while the
-export reads it back out of a value_map of ``ExportValue`` entries. A read-time
-interpretation that diverges between the two makes the banner and the xlsx
-disagree in silence — which has happened once already.
+The two callers of ``derived_judgment_service`` both feed it RAW stored
+envelopes: the run view straight from the jsonb, the export from the ``raw``
+of each ``ExportValue`` in its value_map. Different seams, one input contract.
+A read-time interpretation that diverges between them makes the banner and the
+xlsx disagree in silence — which has happened once already.
 
 This module is the guard: one value set, both paths, assert equality. It runs
 the real payload builder and the real export model builder, not a mental model
@@ -409,9 +409,9 @@ def test_v2_ni_on_the_stored_judgment_is_unclear() -> None:
     _assert_agree("v2 NI judgment", values, "Unclear", _V2_SPEC, _V2_SECTIONS)
 
 
-def test_signaling_worst_agrees_across_caller_shapes() -> None:
-    """Rule-level parity for the recommendation rule: raw envelopes (run
-    view) and resolved display labels (any future export caller) agree."""
+def test_signaling_worst_reads_raw_envelopes_only() -> None:
+    """Rule-level contract for the recommendation rule: a raw marker envelope
+    contributes Unclear; the same text as a resolved label is an unknown answer."""
     from app.services.derived_judgment_service import compute_derived_judgments
 
     spec = [
@@ -434,7 +434,8 @@ def test_signaling_worst_agrees_across_caller_shapes() -> None:
     a = compute_derived_judgments(spec, raw)[0]
     b = compute_derived_judgments(spec, resolved)[0]
     assert a.value == b.value == "High"
-    assert [i.contribution for i in a.inputs] == [i.contribution for i in b.inputs]
+    assert [i.contribution for i in a.inputs] == ["High", "Unclear"]
+    assert [i.contribution for i in b.inputs] == ["High", None]
 
 
 # --- scope: the one case where the two surfaces deliberately DIFFER ---------
