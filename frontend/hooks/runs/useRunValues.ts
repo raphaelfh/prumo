@@ -64,8 +64,13 @@ export interface UseRunValuesArgs {
 
 /** `conflict`: the review authority disagrees (409, moved head, run left extract); `failed`: anything else. */
 type Outcome = 'saved' | 'conflict' | 'failed';
-/** `value`/`proposalRecordId` are the action itself, so an undone action can be redone verbatim. */
-interface LocalDecision extends Coord { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown>; value: Record<string, unknown>; proposalRecordId: string | null }
+/** `value`/`proposalRecordId` are the action itself, so an undone action can be redone verbatim;
+ * `predecessor`/`predecessorLink` are what undo restores. */
+interface LocalDecision extends Coord { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown>; predecessorLink: string | null; value: Record<string, unknown>; proposalRecordId: string | null }
+/** The head a local action replaced: its id, value and AI link. */
+type Prior = {id: string | null; value: Record<string, unknown>; link: string | null};
+const priorOf = (history: readonly ReviewerDecisionResponse[]): Prior =>
+  ({id: history.at(-1)?.id ?? null, value: history.at(-1)?.value ?? {value: null}, link: history.at(-1)?.proposal_record_id ?? null});
 /** The in-flight decision; `proposalId` is null for undo/redo. */
 interface PendingDecision extends Coord { proposalId: string | null }
 /** The form: its values, the server map they were hydrated from, and the coordinates the last hydration added. */
@@ -197,11 +202,11 @@ export function useRunValues(args: UseRunValuesArgs) {
   };
 
   // Confirmed rows are merged locally: a write never invalidates the run view.
-  const record = (decision: ReviewerDecisionResponse, predecessor: Record<string, unknown>, undoable: boolean, predecessorId: string | null = null, redone = false) => {
+  const record = (decision: ReviewerDecisionResponse, prior: Prior, undoable: boolean, redone = false) => {
     if (!isCurrent()) return;
     setRows([...sessionRows(confirmedRef.current), decision]);
-    if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id, predecessorId, predecessor,
-      value: decision.value ?? {value: null}, proposalRecordId: decision.proposal_record_id ?? null});
+    if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id,
+      predecessorId: prior.id, predecessor: prior.value, predecessorLink: prior.link, value: decision.value ?? {value: null}, proposalRecordId: decision.proposal_record_id ?? null});
     // A new action forks the history: what was undone before it can no longer be redone.
     if (undoable && !redone) redoRef.current = [];
     setState(prev => ({...prev, session, stack: [...stackRef.current], redo: [...redoRef.current]}));
@@ -254,7 +259,7 @@ export function useRunValues(args: UseRunValuesArgs) {
       await settleFailure(result.error, coordinate);
       return Promise.reject(result.error);
     }
-    record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
+    record(result.data, priorOf(history), true);
     return acceptedProposal([result.data], params.draft);
   };
 
@@ -307,7 +312,7 @@ export function useRunValues(args: UseRunValuesArgs) {
         ...expectedHead(history),
       });
       if (!result.ok) { outcome = await settleFailure(result.error, proposal); return; }
-      record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
+      record(result.data, priorOf(history), true);
       reconcile(proposal, result.data, draft);
       outcome = 'saved';
     });
@@ -346,18 +351,18 @@ export function useRunValues(args: UseRunValuesArgs) {
     });
   };
 
-  const undoLatestLocalDecision = (): Promise<boolean> => replayLocal(stackRef, entry => ({value: entry.predecessor, proposal_record_id: null}), (entry, decision) => {
+  const undoLatestLocalDecision = (): Promise<boolean> => replayLocal(stackRef, entry => ({value: entry.predecessor, proposal_record_id: entry.predecessorLink}), (entry, decision) => {
     // The compensating edit becomes the expected head for the preceding
     // local action on this coordinate; it is not itself an undoable action.
     const previous = [...stackRef.current].reverse().find(item => item.instanceId === entry.instanceId && item.fieldId === entry.fieldId);
     if (previous && previous.expectedId === entry.predecessorId) previous.expectedId = decision.id;
     redoRef.current.push({...entry, expectedId: decision.id});
-    record(decision, entry.predecessor, false);
+    record(decision, {id: null, value: entry.predecessor, link: entry.predecessorLink}, false);
   });
 
   /** Re-applies the latest undone action, link included, on top of its compensating edit. */
   const redoLatestLocalDecision = (): Promise<boolean> => replayLocal(redoRef, entry => ({value: entry.value, proposal_record_id: entry.proposalRecordId}),
-    (entry, decision) => record(decision, entry.predecessor, true, entry.expectedId, true));
+    (entry, decision) => record(decision, {id: entry.expectedId, value: entry.predecessor, link: entry.predecessorLink}, true, true));
 
   /** Explicitly resume the retained draft after refreshing current authority.
    * This does not rebase an undo entry onto an external decision. */

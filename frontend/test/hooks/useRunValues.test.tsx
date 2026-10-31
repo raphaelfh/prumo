@@ -401,6 +401,26 @@ describe('confirmed proposal decisions and local undo', () => {
     expect(view.result.current.canUndo).toBe(false);
     expect(view.result.current.values.i_a).toBeUndefined();
   });
+  it('undo of a typed edit made over an accepted AI value restores the AI link', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', 'X'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: 'p1', expected_current_decision_id: '2'});
+    expect(view.result.current.isAccepted(proposal)).toBe(true);
+  });
+  it('undo after redo restores the redone entry\'s predecessor link', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', 'X'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    await act(async () => {expect(await view.result.current.redoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({value: {value: 'X'}, proposal_record_id: 'p1', expected_current_decision_id: '3'});
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: 'p1', expected_current_decision_id: '4'});
+  });
   it('un-accepting B restores A with its link, then undoes multiple local actions at one coordinate', async () => {
     const view = setup({}, {proposals: [aiRow('p1'), aiRow('p2', ['B', 'C'])]});
     await act(async () => {await view.result.current.acceptProposal(proposal);});
@@ -411,10 +431,13 @@ describe('confirmed proposal decisions and local undo', () => {
     expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBe('p1');
     expect(view.result.current.isAccepted(proposal)).toBe(true);
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)?.proposal_record_id).toBe('p2');
     expect(view.result.current.values.i_a).toEqual(['B', 'C']);
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)?.proposal_record_id).toBe('p1');
     expect(view.result.current.values.i_a).toBe('AI');
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)?.proposal_record_id).toBeNull();
     expect(view.result.current.values.i_a).toBeNull();
     expect(view.result.current.canUndo).toBe(false);
   });
