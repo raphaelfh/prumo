@@ -37,7 +37,7 @@ owner: '@raphaelfh'
 
 1. **Esc typed in a text field inside the panel** (e.g. `ArticleFieldRow` revert, `ArticleFieldRow.tsx:241`): the shell must not close/restore anything — test in Task 1 (`ignores Escape in a text field`).
 2. **Esc while a popover, menu or dialog is open**: the capture listener runs before Radix's document-capture dismiss, so it must yield (no step, no `preventDefault`, no `stopPropagation`) and let the overlay close — test in Task 1 (`yields Escape to an open overlay`).
-3. **List state while maximized**: the list stays mounted (hidden, inert), so its filters/scroll/checked rows survive a restore — test in Task 1 (`keeps list state across maximize and restore`). **Panel closed by the caller while maximized, then reopened**: it reopens docked, never maximized — test in Task 1 (`reopens docked after a close while maximized`).
+3. **List state while maximized**: the list stays mounted (`display: none`), so its filters/scroll/checked rows survive a restore — test in Task 1 (`keeps list state across maximize and restore`). **Panel closed by the caller while maximized, then reopened**: it reopens docked, never maximized — test in Task 1 (`reopens docked after a close while maximized`).
 4. **Esc with nothing to undo**: the event is neither `preventDefault`ed nor stopped, so bubble-phase Escape handlers elsewhere on the page still see it — test in Task 1 (`leaves an idle Escape untouched`).
 5. **Articles really opted out**: `⇧⌘\` and Escape change nothing on the Articles split — test in Task 2 (`ignores maximize and Escape`).
 
@@ -91,8 +91,8 @@ Behaviour the implementation must keep from today's `ArticlesSplitShell.tsx:148-
 Maximize (only when `maximizable`; chord and `data-` attribute after `RunSplitShell.tsx:59-64, 143-156`, but the list is **kept mounted**, unlike RunSplitShell, so list state survives — coordinator ruling):
 - Local `const [maximized, setMaximized] = useState(false)`; effective `isMaximized = maximizable && panelOpen && maximized`.
 - Binding `{type: 'chord', key: '\\', code: 'Backslash', mod: true, shift: true, handler}` — matched on `e.code` because Shift+\\ reports `e.key === '|'` on real keyboards (RunSplitShell has the same bug; do not touch it, S3b fixes it): panel closed → `setMaximized(true)` + `onPanelOpenChange(true)`; open → `setMaximized(m => !m)`.
-- Key the three children (`key="list"`, `key="handle"`, `key="panel"`). While `isMaximized` **nothing leaves the tree** (no remount of the list or the panel body): the list `ResizablePanel` gets `minSize="0%"`, `aria-hidden`, `inert` and is hidden (computed `display: none`); the handle is hidden the same way; the panel `ResizablePanel` gets `minSize="100%" maxSize="100%"` and `data-maximized="true"` (attribute absent otherwise). v4 panels carry inline styles that may beat the `hidden` attribute: if `hidden` does not yield `display: none` (the `not.toBeVisible()` assertions catch it), use the Tailwind important class `hidden!`. jsdom cannot check that the panel actually fills the width; S1's `design-review` of the maximized screening panel does.
-- `panelOpen` going false (by any path, including the caller's own discard confirm) clears `maximized`: track the previous `panelOpen` in state and reset during render (Global Constraints, React Compiler).
+- Key the three children (`key="list"`, `key="handle"`, `key="panel"`). While `isMaximized` **nothing leaves the tree** (no remount of the list or the panel body): the list `ResizablePanel` gets `minSize="0%"` and is hidden with `display: none` only (no `aria-hidden`, no `inert`); the handle is hidden the same way; the panel `ResizablePanel` gets `minSize="100%" maxSize="100%"` and `data-maximized="true"` (attribute absent otherwise). v4 panels carry inline styles that may beat the `hidden` attribute: if `hidden` does not yield `display: none` (the `not.toBeVisible()` assertions catch it), use the Tailwind important class `hidden!`. jsdom cannot check that the panel actually fills the width; S1's `design-review` of the maximized screening panel does.
+- `panelOpen` going false (by any path, including the caller's own discard confirm) clears `maximized`: reset with a guarded set during render, `if (!panelOpen && maximized) setMaximized(false)` (no effect, no previous-value state; React Compiler safe).
 
 Esc chain (only when `escapeCloses`): a `useEffect` that registers `window.addEventListener('keydown', onKeyDownCapture, {capture: true})` and removes it on cleanup (copy the shape of `RunSplitShell.tsx:77-88`; read the latest state through the effect's deps, not refs). The listener:
 1. returns untouched unless `event.key === 'Escape'`, or when `event.defaultPrevented || isDialogOpen() || isTypingTarget(event)` (an open popover/menu/dialog takes this press: Radix dismisses in its later document-capture listener);
@@ -104,22 +104,13 @@ Comment above the effect: the full order (popover/menu → maximize → panel �
 
 Harness: render inside `HeaderActionsProvider` with a `HeaderActionsOutlet` (`<>{useHeaderActions()}</>`), as `frontend/test/components/ArticlesSplitShell.test.tsx:58-92` does. A `Harness` component holds `const [open, setOpen] = useState(initialOpen)` and passes `panelOpen={open}`, `onPanelOpenChange={(o) => {spy(o); setOpen(o);}}`, `idPrefix="t-shell"`, `toggleLabel="Toggle panel"`, `list={<input aria-label="search"/>}`, `panel={<div data-testid="panel-body"><input aria-label="field"/></div>}`, plus props under test. Set `window.matchMedia` per test (`setDesktop` = `matches: true`, `setNarrow` = `matches: false`, copy `setMatches` from that file). Fire chords platform-agnostically: `fireEvent.keyDown(window, {key: '\\', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true})`, `{key: 'B', ctrlKey: true, metaKey: true, shiftKey: true}`, `{key: 'Escape'}`. `const list = () => document.querySelector('[data-testid="t-shell-list"]')`, `const panelEl = () => document.querySelector('[data-testid="t-shell-panel"]')`.
 
-```ts
-describe('ListDetailSplitShell layout', () => {
-  it('docks the panel beside the list above lg and stacks it below lg')
-  //   setDesktop → document.querySelector<HTMLElement>('[data-group]')!.style.flexDirection === 'row'
-  //   unmount; setNarrow → 'column'; panelEl() not null in both
-  it('renders only the list while the panel is closed')        // panelEl() === null, list() !== null
-  it('toggles from the Topbar button and ⌘⇧B, reporting each request')
-  //   getByRole('button', {name: 'Toggle panel'}) aria-pressed 'true'; click → spy(false), panelEl() null;
-  //   ⌘⇧B → spy(true), panelEl() not null
-  it('draws the toggle as a right panel above lg and a bottom panel below lg')  // lucide-panel-right / lucide-panel-bottom svg classes
-});
+Layout (dock/stack, vertical vs horizontal group, toggle icon, Topbar toggle, ⌘⇧B) is NOT re-asserted here: `ArticlesSplitShell.test.tsx:146,153,170,234` keeps those assertions and runs through the shell after Task 2. Shell tests cover only what is new: maximize, the Esc chain, the chord and the mounted list.
 
+```ts
 describe('ListDetailSplitShell maximize', () => {
   it('maximizes on ⇧⌘\\ and restores on the second press')
-  //   maximizable, open: chord → list() still in the DOM but not.toBeVisible() with aria-hidden="true" and inert, panelEl() has data-maximized="true",
-  //   panel-body same node (identity captured before); chord → list() toBeVisible(), no aria-hidden, no data-maximized
+  //   maximizable, open: chord → list() still in the DOM but not.toBeVisible(), panelEl() has data-maximized="true",
+  //   panel-body same node (identity captured before); chord → list() toBeVisible(), no data-maximized
   it('keeps list state across maximize and restore')
   //   list = a Counter child (useState, button "count N"); click to 2 → maximize → restore → button reads "count 2"
   it('matches the chord by code, as real keyboards send it')
@@ -258,7 +249,7 @@ Expected: PASS, 0 failed (every pre-existing case unchanged and green — 14 in 
 
 Run: `DOM_DUMP=<scratchpad>/articles-dom-after.html npm run test:run -- frontend/test/components/__articles_dom_dump.test.tsx`
 Then: `diff <(sed -E 's/«r[0-9a-z]+»//g; s/:r[0-9a-z]+://g' <scratchpad>/articles-dom-before.html) <(sed -E 's/«r[0-9a-z]+»//g; s/:r[0-9a-z]+://g' <scratchpad>/articles-dom-after.html)`
-Expected: no output (identical markup, React `useId` values normalised). Any other difference (class, attribute, size, element order) is a visible change: fix the shell or report it, never accept it.
+Expected: no output (identical markup, React `useId` values normalised). Paste the diff result (empty) into the PR body notes. Any other difference (class, attribute, size, element order) is a visible change: fix the shell or report it, never accept it.
 
 Then delete the scratch test: `rm "$WT/frontend/test/components/__articles_dom_dump.test.tsx"` and confirm `git -C "$WT" status --short` lists only `ArticlesSplitShell.tsx` and `ArticlesSplitShell.test.tsx`.
 
@@ -282,8 +273,8 @@ git -C "$WT" commit -m "refactor(articles): move the Articles split onto ListDet
 
 - [ ] **Step 1: Frontend tests for the touched dirs**
 
-Run: `npm run test:run -- frontend/components/layout frontend/components/articles frontend/test/components frontend/test/pages frontend/components/runs`
-Expected: PASS, 0 failed (`frontend/components/runs` proves `RunSplitShell` untouched).
+Run the full suite: `npm run test:run`
+Expected: PASS, 0 failed. Full, not scoped: `runChord` changed (optional `code`), and its consumers span screening, extraction/review, runs and pdf-viewer.
 
 - [ ] **Step 2: Static gates**
 

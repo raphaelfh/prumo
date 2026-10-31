@@ -101,6 +101,16 @@ beforeEach(() => {
 });
 
 describe('ArticlesSplitShell', () => {
+    it('ignores maximize and Escape (Articles opts out of both)', () => {
+        renderShell({mode: 'edit', articleId: 'a1'});
+        fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
+        expect(document.querySelector('[data-testid="articles-shell-list"]')).not.toBeNull();
+        expect(document.querySelector('[data-maximized]')).toBeNull();
+        fireEvent.keyDown(window, {key: 'Escape'});
+        expect(screen.getByTestId('article-side-panel')).toHaveTextContent('a1:details');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
+    });
+
     it('starts with the panel closed when the URL carries no selection', () => {
         renderShell();
 
