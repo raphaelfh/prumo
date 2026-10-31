@@ -37,7 +37,7 @@ owner: '@raphaelfh'
 
 1. **Esc typed in a text field inside the panel** (e.g. `ArticleFieldRow` revert, `ArticleFieldRow.tsx:241`): the shell must not close/restore anything — test in Task 1 (`ignores Escape in a text field`).
 2. **Esc while a popover, menu or dialog is open**: the capture listener runs before Radix's document-capture dismiss, so it must yield (no step, no `preventDefault`, no `stopPropagation`) and let the overlay close — test in Task 1 (`yields Escape to an open overlay`).
-3. **Panel closed by the caller while maximized, then reopened**: it reopens docked, never maximized — test in Task 1 (`reopens docked after a close while maximized`).
+3. **List state while maximized**: the list stays mounted (hidden, inert), so its filters/scroll/checked rows survive a restore — test in Task 1 (`keeps list state across maximize and restore`). **Panel closed by the caller while maximized, then reopened**: it reopens docked, never maximized — test in Task 1 (`reopens docked after a close while maximized`).
 4. **Esc with nothing to undo**: the event is neither `preventDefault`ed nor stopped, so bubble-phase Escape handlers elsewhere on the page still see it — test in Task 1 (`leaves an idle Escape untouched`).
 5. **Articles really opted out**: `⇧⌘\` and Escape change nothing on the Articles split — test in Task 2 (`ignores maximize and Escape`).
 
@@ -47,11 +47,12 @@ owner: '@raphaelfh'
 
 **Depends on:** nothing. **Files:**
 - Create: `frontend/components/layout/ListDetailSplitShell.tsx`
-- Modify: `frontend/hooks/useKeyboardShortcuts.ts:38` (add `export` to `isTypingTarget`)
+- Modify: `frontend/hooks/useKeyboardShortcuts.ts` (export `isTypingTarget` at `:38`; optional `code` on `ChordBinding`)
+- Test (modify): `frontend/hooks/useKeyboardShortcuts.test.ts`
 - Test: `frontend/components/layout/ListDetailSplitShell.test.tsx`
 
 **Interfaces:**
-- Consumes (existing): `ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle` from `@/components/ui/resizable`; `useIsBelowDesktop` from `@/hooks/use-mobile`; `useKeyboardShortcuts`, `isDialogOpen` and `isTypingTarget` from `@/hooks/useKeyboardShortcuts` (this task adds `export` to the existing `function isTypingTarget(e: KeyboardEvent): boolean`, `useKeyboardShortcuts.ts:38`, no other change to that file); `PanelToggleButton` from `@/components/layout/PanelToggleButton`; `useSetHeaderActions` from `@/contexts/HeaderActionsContext`.
+- Consumes (existing): `ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle` from `@/components/ui/resizable`; `useIsBelowDesktop` from `@/hooks/use-mobile`; `useKeyboardShortcuts`, `isDialogOpen` and `isTypingTarget` from `@/hooks/useKeyboardShortcuts` (this task adds `export` to the existing `function isTypingTarget(e: KeyboardEvent): boolean`, `useKeyboardShortcuts.ts:38`, and an optional `code?: string` to `ChordBinding`: when set, `runChord` matches `e.code === b.code` instead of `e.key`; no other change to that file); `PanelToggleButton` from `@/components/layout/PanelToggleButton`; `useSetHeaderActions` from `@/contexts/HeaderActionsContext`.
 - Produces (Task 2 and S1 rely on these exact names):
 
 ```ts
@@ -66,7 +67,7 @@ export interface ListDetailSplitShellProps {
   idPrefix: string;
   /** Accessible name + tooltip of the Topbar PanelToggleButton. */
   toggleLabel: string;
-  /** ⇧⌘\ maximizes the panel (list leaves the tree). Default false. */
+  /** ⇧⌘\ maximizes the panel (list stays mounted, hidden). Default false. */
   maximizable?: boolean;
   /** Escape undoes one step per press: maximize → panel → URL selection → checked rows. Default false. */
   escapeCloses?: boolean;
@@ -87,10 +88,10 @@ Behaviour the implementation must keep from today's `ArticlesSplitShell.tsx:148-
 - Topbar: `useSetHeaderActions(<PanelToggleButton side={belowDesktop ? 'bottom' : 'right'} pressed={panelOpen} onToggle={toggle} ariaLabel={toggleLabel} shortcut={['mod', '⇧', 'B']} />)`, where `toggle = () => onPanelOpenChange(!panelOpen)`.
 - One `useKeyboardShortcuts({bindings, enabled: true})` call. `bindings` always holds `{type: 'chord', key: 'b', mod: true, shift: true, handler: toggle}`; the `⇧⌘\` chord is added when `maximizable` (below). Escape is NOT a binding (below). Keep the `⌘B is the app sidebar, so this panel takes Shift` comment.
 
-Maximize (only when `maximizable`; the `RunSplitShell.tsx:59-64, 90-156` pattern):
+Maximize (only when `maximizable`; chord and `data-` attribute after `RunSplitShell.tsx:59-64, 143-156`, but the list is **kept mounted**, unlike RunSplitShell, so list state survives — coordinator ruling):
 - Local `const [maximized, setMaximized] = useState(false)`; effective `isMaximized = maximizable && panelOpen && maximized`.
-- Binding `{type: 'chord', key: '\\', mod: true, shift: true, handler}`: panel closed → `setMaximized(true)` + `onPanelOpenChange(true)`; open → `setMaximized(m => !m)`.
-- Key the three children (`key="list"`, `key="handle"`, `key="panel"`) as `RunSplitShell` does. While `isMaximized`: the list `ResizablePanel` and the handle leave the tree; the panel `ResizablePanel` keeps one `key="panel"` across both states (no remount of the panel body), gets `minSize="100%" maxSize="100%"` and `data-maximized="true"` (attribute absent otherwise).
+- Binding `{type: 'chord', key: '\\', code: 'Backslash', mod: true, shift: true, handler}` — matched on `e.code` because Shift+\\ reports `e.key === '|'` on real keyboards (RunSplitShell has the same bug; do not touch it, S3b fixes it): panel closed → `setMaximized(true)` + `onPanelOpenChange(true)`; open → `setMaximized(m => !m)`.
+- Key the three children (`key="list"`, `key="handle"`, `key="panel"`). While `isMaximized` **nothing leaves the tree** (no remount of the list or the panel body): the list `ResizablePanel` gets `minSize="0%"`, `aria-hidden`, `inert` and is hidden (computed `display: none`); the handle is hidden the same way; the panel `ResizablePanel` gets `minSize="100%" maxSize="100%"` and `data-maximized="true"` (attribute absent otherwise). v4 panels carry inline styles that may beat the `hidden` attribute: if `hidden` does not yield `display: none` (the `not.toBeVisible()` assertions catch it), use the Tailwind important class `hidden!`. jsdom cannot check that the panel actually fills the width; S1's `design-review` of the maximized screening panel does.
 - `panelOpen` going false (by any path, including the caller's own discard confirm) clears `maximized`: track the previous `panelOpen` in state and reset during render (Global Constraints, React Compiler).
 
 Esc chain (only when `escapeCloses`): a `useEffect` that registers `window.addEventListener('keydown', onKeyDownCapture, {capture: true})` and removes it on cleanup (copy the shape of `RunSplitShell.tsx:77-88`; read the latest state through the effect's deps, not refs). The listener:
@@ -101,7 +102,7 @@ Comment above the effect: the full order (popover/menu → maximize → panel �
 
 - [ ] **Step 1: Write the failing tests** in `frontend/components/layout/ListDetailSplitShell.test.tsx`
 
-Harness: render inside `HeaderActionsProvider` with a `HeaderActionsOutlet` (`<>{useHeaderActions()}</>`), as `frontend/test/components/ArticlesSplitShell.test.tsx:58-92` does. A `Harness` component holds `const [open, setOpen] = useState(initialOpen)` and passes `panelOpen={open}`, `onPanelOpenChange={(o) => {spy(o); setOpen(o);}}`, `idPrefix="t-shell"`, `toggleLabel="Toggle panel"`, `list={<input aria-label="search"/>}`, `panel={<div data-testid="panel-body"><input aria-label="field"/></div>}`, plus props under test. Set `window.matchMedia` per test (`setDesktop` = `matches: true`, `setNarrow` = `matches: false`, copy `setMatches` from that file). Fire chords platform-agnostically: `fireEvent.keyDown(window, {key: '\\', ctrlKey: true, metaKey: true, shiftKey: true})`, `{key: 'B', ...same}`, `{key: 'Escape'}`. `const list = () => document.querySelector('[data-testid="t-shell-list"]')`, `const panelEl = () => document.querySelector('[data-testid="t-shell-panel"]')`.
+Harness: render inside `HeaderActionsProvider` with a `HeaderActionsOutlet` (`<>{useHeaderActions()}</>`), as `frontend/test/components/ArticlesSplitShell.test.tsx:58-92` does. A `Harness` component holds `const [open, setOpen] = useState(initialOpen)` and passes `panelOpen={open}`, `onPanelOpenChange={(o) => {spy(o); setOpen(o);}}`, `idPrefix="t-shell"`, `toggleLabel="Toggle panel"`, `list={<input aria-label="search"/>}`, `panel={<div data-testid="panel-body"><input aria-label="field"/></div>}`, plus props under test. Set `window.matchMedia` per test (`setDesktop` = `matches: true`, `setNarrow` = `matches: false`, copy `setMatches` from that file). Fire chords platform-agnostically: `fireEvent.keyDown(window, {key: '\\', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true})`, `{key: 'B', ctrlKey: true, metaKey: true, shiftKey: true}`, `{key: 'Escape'}`. `const list = () => document.querySelector('[data-testid="t-shell-list"]')`, `const panelEl = () => document.querySelector('[data-testid="t-shell-panel"]')`.
 
 ```ts
 describe('ListDetailSplitShell layout', () => {
@@ -117,12 +118,17 @@ describe('ListDetailSplitShell layout', () => {
 
 describe('ListDetailSplitShell maximize', () => {
   it('maximizes on ⇧⌘\\ and restores on the second press')
-  //   maximizable, open: chord → list() null, panelEl() has data-maximized="true", panel-body same node (assert identity via a ref'd element captured before); chord → list() not null, no data-maximized
-  it('opens and maximizes a closed panel on ⇧⌘\\')             // spy(true); list() null after
-  it('ignores ⇧⌘\\ when not maximizable')                      // list() not null, no data-maximized
+  //   maximizable, open: chord → list() still in the DOM but not.toBeVisible() with aria-hidden="true" and inert, panelEl() has data-maximized="true",
+  //   panel-body same node (identity captured before); chord → list() toBeVisible(), no aria-hidden, no data-maximized
+  it('keeps list state across maximize and restore')
+  //   list = a Counter child (useState, button "count N"); click to 2 → maximize → restore → button reads "count 2"
+  it('matches the chord by code, as real keyboards send it')
+  //   fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true}) → data-maximized present
+  it('opens and maximizes a closed panel on ⇧⌘\\')             // spy(true); list() not.toBeVisible() after
+  it('ignores ⇧⌘\\ when not maximizable')                      // list() toBeVisible(), no data-maximized
   it('reopens docked after a close while maximized')
-  //   maximize → ⌘⇧B (spy(false)) → ⌘⇧B (spy(true)) → list() not null, no data-maximized
-  it('maximizes below lg too, hiding the stacked list')        // setNarrow; chord → list() null
+  //   maximize → ⌘⇧B (spy(false)) → ⌘⇧B (spy(true)) → list() toBeVisible(), no data-maximized
+  it('maximizes below lg too, hiding the stacked list')        // setNarrow; chord → list() not.toBeVisible()
 });
 
 describe('ListDetailSplitShell Escape chain', () => {
@@ -130,7 +136,7 @@ describe('ListDetailSplitShell Escape chain', () => {
   // the harness makes hasSelection and checkedCount controllable (clear callbacks set them to false / 0)
   it('undoes one step per press: maximize, panel, selection, checked rows')
   //   open + maximized + hasSelection + checkedCount 2:
-  //   Esc1 → list() back, spy not called with false, neither clear called
+  //   Esc1 → list() toBeVisible() again, spy not called with false, neither clear called
   //   Esc2 → spy(false), panelEl() null, neither clear called
   //   Esc3 → onClearSelection once, onClearChecked not called
   //   Esc4 → onClearChecked once
@@ -153,10 +159,12 @@ describe('ListDetailSplitShell Escape chain', () => {
 
 Write each `it` with the assertions in its comment; the names above are the test names.
 
+Also add to `frontend/hooks/useKeyboardShortcuts.test.ts`: `it('matches a chord by code when the binding names one')` — binding `{type: 'chord', key: '\\', code: 'Backslash', mod: true, shift: true, handler}`; `{key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true}` calls handler once; `{key: '\\', code: 'IntlBackslash', ...same mods}` does not.
+
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npm run test:run -- frontend/components/layout/ListDetailSplitShell.test.tsx`
-Expected: FAIL — `Failed to resolve import "@/components/layout/ListDetailSplitShell"`.
+Run: `npm run test:run -- frontend/components/layout/ListDetailSplitShell.test.tsx frontend/hooks/useKeyboardShortcuts.test.ts`
+Expected: FAIL — `Failed to resolve import "@/components/layout/ListDetailSplitShell"`; the hook's code-match case fails (handler not called).
 
 - [ ] **Step 3: Implement `ListDetailSplitShell` in `frontend/components/layout/ListDetailSplitShell.tsx`**
 
@@ -165,7 +173,7 @@ Per the Interfaces block and the behaviour lists above. File docstring: what the
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `npm run test:run -- frontend/components/layout/ListDetailSplitShell.test.tsx`
-Expected: PASS, 16 tests.
+Expected: PASS, 18 tests.
 
 Run: `npm run test:run -- frontend/hooks && npm run typecheck && npx eslint frontend/components/layout/ListDetailSplitShell.tsx frontend/components/layout/ListDetailSplitShell.test.tsx frontend/hooks/useKeyboardShortcuts.ts`
 Expected: exit 0, no output from eslint.
@@ -175,7 +183,7 @@ Expected: exit 0, no output from eslint.
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C "$WT" add frontend/components/layout/ListDetailSplitShell.tsx frontend/components/layout/ListDetailSplitShell.test.tsx frontend/hooks/useKeyboardShortcuts.ts
+git -C "$WT" add frontend/components/layout/ListDetailSplitShell.tsx frontend/components/layout/ListDetailSplitShell.test.tsx frontend/hooks/useKeyboardShortcuts.ts frontend/hooks/useKeyboardShortcuts.test.ts
 git -C "$WT" commit -m "feat(layout): add ListDetailSplitShell with opt-in maximize and Esc chain" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -207,7 +215,7 @@ Expected: PASS, file written (non-empty).
 ```ts
 it('ignores maximize and Escape (Articles opts out of both)', () => {
   renderShell({mode: 'edit', articleId: 'a1'});
-  fireEvent.keyDown(window, {key: '\\', ctrlKey: true, metaKey: true, shiftKey: true});
+  fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
   expect(document.querySelector('[data-testid="articles-shell-list"]')).not.toBeNull();
   expect(document.querySelector('[data-maximized]')).toBeNull();
   fireEvent.keyDown(window, {key: 'Escape'});
