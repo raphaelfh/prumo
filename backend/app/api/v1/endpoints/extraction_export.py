@@ -226,7 +226,7 @@ async def start_extraction_export(
             )
 
         # Run the CPU-bound openpyxl writer off the event loop.
-        data: bytes = await asyncio.to_thread(build_workbook, layout, shape)
+        data: bytes = await asyncio.to_thread(build_workbook, layout, shape, include_matrix=True)
 
         filename = ExtractionExportService.format_filename(
             project_name=layout.project_name,

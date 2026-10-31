@@ -1,15 +1,20 @@
 """README / Methods (front-matter) sub-builder.
 
 Pure: consumes an ``ExportLayout`` and returns a ``SheetSpec``. Absorbs the
-old Notes sheet — template identity, export provenance, a generated contents
-list, a glyph/sentinel legend, caveats, and the per-Run obsolete-field block
-(§4 #1, §5.1).
+old Notes sheet — template identity, export provenance, a contents list
+(the allocated sheet titles), a glyph/sentinel legend, caveats, and the
+per-Run obsolete-field block (§4 #1, §5.1).
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
 from app.services.extraction_export_service import ExportLayout
+
+if TYPE_CHECKING:
+    from app.services.exports.extraction.workbook import SheetTitles
 
 _TITLE = CellStyle(bold=True)
 
@@ -18,7 +23,7 @@ def _kv(label: str, value: object) -> tuple[Cell, ...]:
     return (Cell(label, _TITLE), Cell("" if value is None else str(value)))
 
 
-def build_front_matter(layout: ExportLayout) -> SheetSpec:
+def build_front_matter(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     fm = layout.front_matter
     rows: list[tuple[Cell, ...]] = []
 
@@ -39,11 +44,12 @@ def build_front_matter(layout: ExportLayout) -> SheetSpec:
         rows.append(_kv("Articles", fm.article_count))
         rows.append(_kv("Records", fm.record_count))
 
-    if fm is not None and fm.contents:
-        rows.append(())
-        rows.append((Cell("Contents", _TITLE),))
-        for sheet_name in fm.contents:
-            rows.append((Cell(""), Cell(sheet_name)))
+    # Rendered from the allocated titles, so the list is the real sheet list
+    # for every shape, even when ``layout.front_matter`` is None.
+    rows.append(())
+    rows.append((Cell("Contents", _TITLE),))
+    for sheet_name in titles.order:
+        rows.append((Cell(""), Cell(sheet_name)))
 
     if fm is not None and fm.legend:
         rows.append(())
@@ -64,7 +70,7 @@ def build_front_matter(layout: ExportLayout) -> SheetSpec:
             rows.append((Cell(str(article_id)), Cell("; ".join(labels))))
 
     return SheetSpec(
-        title="README",
+        title=titles.fixed["front_matter"],
         rows=tuple(rows),
         column_widths=(36.0, 90.0),
         tab_color="1F4E78",

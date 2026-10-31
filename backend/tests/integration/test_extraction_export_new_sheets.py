@@ -24,7 +24,7 @@ from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKin
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
 from app.services.hitl_session_service import HITLSessionService
@@ -151,12 +151,14 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
     assert layout.data_dictionary  # >=1 field
     assert layout.tidy_tables  # >=1 section table
 
-    wb = load_workbook(io.BytesIO(build_workbook(layout)))
+    wb = load_workbook(
+        io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
     assert "README" in wb.sheetnames
     assert "Summary" in wb.sheetnames
     assert "Data dictionary" in wb.sheetnames
     # At least one tidy-table sheet beyond the always-present ones.
-    base = {"README", "Summary", "Data dictionary", layout.template_name[:31]}
+    base = {"README", "Summary", "Matrix", "Data dictionary"}
     assert any(name not in base and name != "Dropdown lists" for name in wb.sheetnames)
 
     # Front matter carries the template identity + export mode.

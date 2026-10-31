@@ -15,7 +15,7 @@ dependency on any legacy writer.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.models.extraction import (
@@ -37,11 +37,11 @@ from app.services.extraction_export_service import (
     SectionDescriptor,
 )
 
+if TYPE_CHECKING:
+    from app.services.exports.extraction.workbook import SheetTitles
+
 #: Column index (1-based) of the first article data column.
 _FIRST_DATA_COL = 3
-
-_FORBIDDEN_SHEET_CHARS = set(r"[]:*?/\\")
-_SHEET_MAX_LEN = 31
 
 # Publication-grade STRUCTURAL styling only (spec §9): no conditional
 # formatting (no per-value tinting / traffic lights). ``_render_sheet_spec``
@@ -50,11 +50,6 @@ _HEADER_STYLE = CellStyle(bold=True, align="center", wrap=False)
 _BAND_STYLE = CellStyle(bold=True, fill="EEEEEE", align="left")
 _LABEL_STYLE = CellStyle(align="left", wrap=True)
 _MATRIX_TAB_COLOR = "1F4E78"
-
-
-def _safe_sheet_name(raw: str) -> str:
-    cleaned = "".join(c for c in raw if c not in _FORBIDDEN_SHEET_CHARS).strip()
-    return cleaned[:_SHEET_MAX_LEN]
 
 
 def _article_columns(
@@ -163,9 +158,11 @@ def _xlsx_safe(value: Any) -> Any:
     return value
 
 
-def build_matrix(layout: ExportLayout) -> SheetSpec:
-    """Build the data-entry matrix sheet as a pure SheetSpec."""
-    title = _safe_sheet_name(layout.template_name) or "Export"
+def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
+    """Build the data-entry matrix sheet, or ``None`` when its role is absent."""
+    title = titles.fixed.get("matrix")
+    if title is None:
+        return None
 
     if not layout.articles:
         return SheetSpec(

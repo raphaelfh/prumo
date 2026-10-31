@@ -86,7 +86,9 @@ def export_extraction_task(
 
             # CPU-bound write — keep it in a thread so the event loop is
             # free for the upload coroutine that follows.
-            data = await asyncio.to_thread(build_workbook, layout, ExportShape(shape))
+            data = await asyncio.to_thread(
+                build_workbook, layout, ExportShape(shape), include_matrix=True
+            )
 
             storage = create_storage_adapter(get_supabase_client())
             path = f"{_STORAGE_PREFIX}/{user_id}/{self.request.id}.xlsx"

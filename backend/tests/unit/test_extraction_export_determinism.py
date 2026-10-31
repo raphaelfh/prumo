@@ -35,6 +35,8 @@ from app.models.extraction_workflow import ExtractionProposalRecord
 # ``ExportTooWideError`` — reconciled here to the actual exported symbol.
 from app.services.exports.extraction.workbook import (
     ExportColumnLimitError,
+    ExportShape,
+    allocate_titles,
     build_workbook,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
@@ -103,7 +105,6 @@ def _fixed_layout() -> ExportLayout:
         generated_at=_GENERATED_AT,
         article_count=1,
         record_count=1,
-        contents=("README", "Data dictionary", "1. Source of data"),
         legend=(("—", "field not present in this Run"),),
         caveats=("Reviewer outcomes are best-effort.",),
         obsolete_fields_per_article={},
@@ -172,8 +173,8 @@ def _unzip_entries(blob: bytes) -> dict[str, bytes]:
 
 def test_build_workbook_consensus_is_deterministic_modulo_doc_properties():
     layout = _fixed_layout()
-    a = build_workbook(layout)
-    b = build_workbook(layout)
+    a = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
+    b = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
     entries_a = _unzip_entries(a)
     entries_b = _unzip_entries(b)
@@ -224,14 +225,14 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
         value_map=base.value_map,
         ai_proposal_rows=proposals,
     )
-    a = build_workbook(layout)
-    b = build_workbook(layout)
+    a = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
+    b = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
     # Open both and compare the AI metadata sheet cell-by-cell.
     wb_a = load_workbook(io.BytesIO(a))
     wb_b = load_workbook(io.BytesIO(b))
-    ws_a = wb_a["AI metadata"]
-    ws_b = wb_b["AI metadata"]
+    ws_a = wb_a["AI proposals"]
+    ws_b = wb_b["AI proposals"]
     rows_a = [list(r) for r in ws_a.iter_rows(values_only=True)]
     rows_b = [list(r) for r in ws_b.iter_rows(values_only=True)]
     assert rows_a == rows_b
@@ -354,8 +355,8 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
 
 def test_styled_matrix_is_structurally_deterministic() -> None:
     layout = _fixed_layout()
-    a = build_workbook(layout)
-    b = build_workbook(layout)
+    a = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
+    b = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
     def _entries(data: bytes) -> dict[str, bytes]:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -417,10 +418,10 @@ def test_column_guard_boundary() -> None:
 
     at_limit = _n_article_layout(16_382)  # 2 + 16382 = 16384
     assert _matrix_column_count(at_limit) == 16_384
-    build_workbook(at_limit)  # must not raise
+    build_workbook(at_limit, ExportShape.COMPLETE, include_matrix=True)  # must not raise
 
     with pytest.raises(ValueError):
-        build_workbook(_n_article_layout(16_383))
+        build_workbook(_n_article_layout(16_383), ExportShape.COMPLETE, include_matrix=True)
 
 
 # ----------------------------------------------------------------------
@@ -452,14 +453,14 @@ def _sheet_titles(blob: bytes) -> list[str]:
 
 def test_new_sheets_are_structurally_deterministic() -> None:
     layout = _fixed_layout()
-    a = _structural_entries(build_workbook(layout))
-    b = _structural_entries(build_workbook(layout))
+    a = _structural_entries(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    b = _structural_entries(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
     assert a.keys() == b.keys()
     for name in a:
         assert a[name] == b[name], f"divergent entry: {name}"
 
     # The new sub-builder sheets are present in the rendered workbook.
-    names = _sheet_titles(build_workbook(layout))
+    names = _sheet_titles(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
     assert "Data dictionary" in names
     assert any(n.startswith("README") or "Methods" in n for n in names)
     # The tidy table + co-located dropdown catalogue render too (the
@@ -525,7 +526,7 @@ def test_500x100_all_users_exceeds_column_guard() -> None:
     # 500 articles × 100 reviewer/instance sub-columns each blows past 16,384.
     layout = _wide_all_users_layout(n_articles=500, subcols_each=100)
     with pytest.raises(ExportColumnLimitError):
-        build_workbook(layout)
+        build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
 
 # ----------------------------------------------------------------------
@@ -678,8 +679,12 @@ def test_appraisal_summary_spec_is_reproducible_and_tie_breaks_first_worst() -> 
         value_map=value_map,
     )
 
-    spec_a = build_appraisal_summary(layout)
-    spec_b = build_appraisal_summary(layout)
+    spec_a = build_appraisal_summary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
+    spec_b = build_appraisal_summary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec_a is not None
 
     def _rows(spec):
@@ -719,22 +724,24 @@ def test_appraisal_reviewer_columns_pinned_to_layout_order() -> None:
 
     sections, articles, reviewers, value_map = _tied_appraisal_inputs()
 
+    layout = _appraisal_layout(
+        sections=sections,
+        articles=articles,
+        reviewers=reviewers,
+        value_map=value_map,
+    )
     forward = build_appraisal_summary(
-        _appraisal_layout(
-            sections=sections,
-            articles=articles,
-            reviewers=reviewers,
-            value_map=value_map,
-        )
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
     )
     reversed_reviewers = tuple(reversed(reviewers))
+    layout = _appraisal_layout(
+        sections=sections,
+        articles=articles,
+        reviewers=reversed_reviewers,
+        value_map=value_map,
+    )
     backward = build_appraisal_summary(
-        _appraisal_layout(
-            sections=sections,
-            articles=articles,
-            reviewers=reversed_reviewers,
-            value_map=value_map,
-        )
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
     )
 
     fwd_header = tuple(c.value for c in forward.rows[0])
@@ -759,7 +766,9 @@ def test_appraisal_workbook_is_byte_stable_across_value_map_reshuffles() -> None
             articles=articles,
             reviewers=reviewers,
             value_map=value_map,
-        )
+        ),
+        ExportShape.COMPLETE,
+        include_matrix=True,
     )
     base_entries = _unzip_entries(baseline)
     ignored = {"docProps/core.xml", "docProps/app.xml"}
@@ -779,7 +788,7 @@ def test_appraisal_workbook_is_byte_stable_across_value_map_reshuffles() -> None
             reviewers=reviewers,
             value_map=shuffled_value_map,
         )
-        blob = build_workbook(layout)
+        blob = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
         entries = _unzip_entries(blob)
         assert entries.keys() == base_entries.keys()
         for name in base_entries:

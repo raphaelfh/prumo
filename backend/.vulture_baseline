@@ -32,6 +32,7 @@ app/services/exports/extraction/sheet_spec.py:attribute:data_type
 app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
 app/services/exports/extraction/sheet_spec.py:attribute:quotePrefix
 app/services/exports/extraction/sheet_spec.py:attribute:tabColor
+app/services/exports/extraction/workbook.py:variable:matrix_omitted
 app/services/extraction_export_service.py:variable:ai_proposed_value
 app/services/extraction_export_service.py:variable:article_label
 app/services/extraction_export_service.py:variable:final_value_used

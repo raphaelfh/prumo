@@ -24,6 +24,7 @@ from app.models.extraction import (
 from app.services.exports.extraction.workbook import (
     EXCEL_MAX_COLUMNS,
     ExportColumnLimitError,
+    ExportShape,
     _matrix_column_count,
     build_workbook,
 )
@@ -96,7 +97,7 @@ def test_guard_raises_when_columns_exceed_excel_limit() -> None:
     # 500 articles × 100 instance sub-columns each = 50,000 data columns > 16,384.
     layout = _wide_layout(n_articles=500, n_subcols_each=100)
     with pytest.raises(ExportColumnLimitError) as exc:
-        build_workbook(layout)
+        build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
     msg = str(exc.value)
     assert str(EXCEL_MAX_COLUMNS) in msg or "16,384" in msg
     # Actionable hint for the user.
@@ -109,7 +110,7 @@ def test_guard_error_surfaces_as_a_422_envelope() -> None:
     # at HTTP 422 (a user input problem, not a 400/500), with a stable code.
     layout = _wide_layout(n_articles=500, n_subcols_each=100)
     with pytest.raises(ExportColumnLimitError) as exc:
-        build_workbook(layout)
+        build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
     err = exc.value
     assert isinstance(err, AppError)
     assert isinstance(err, ValueError)
@@ -132,5 +133,5 @@ def test_guard_counts_the_boundary_exactly() -> None:
 def test_guard_allows_an_in_bounds_layout() -> None:
     # A small layout well under the limit must build to valid XLSX bytes.
     layout = _wide_layout(n_articles=2, n_subcols_each=3)
-    data = build_workbook(layout)
+    data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
     assert data[:2] == b"PK"

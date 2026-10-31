@@ -17,7 +17,7 @@ the real local Supabase Postgres (RLS, CHECK constraints, the real
       ``layout.reviewers`` order), mirroring the matrix reviewer fan-out;
     * single_user → that reviewer's rollup, with no per-reviewer columns.
 * **Render-through** — ``build_workbook`` writes the resolved scalar
-  verdicts into the ``Appraisal summary`` cells (no envelope-dict leak).
+  verdicts into the ``Appraisal`` cells (no envelope-dict leak).
 
 The fixture builds a self-contained two-domain QA project template
 (pointing at the seeded global PROBAST), drives a real run to FINALIZED
@@ -56,7 +56,7 @@ from app.models.extraction_workflow import (
     ExtractionConsensusMode,
     ExtractionReviewerDecisionType,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
 from app.services.extraction_review_service import ExtractionReviewService
@@ -550,7 +550,7 @@ async def test_qa_all_users_and_single_user_overall(db_session: AsyncSession) ->
 
 
 async def test_qa_appraisal_renders_through_to_workbook(db_session: AsyncSession) -> None:
-    """The resolved verdicts reach the ``Appraisal summary`` cells.
+    """The resolved verdicts reach the ``Appraisal`` cells.
 
     Builds the consensus QA workbook and asserts the sheet exists, its
     header row is ``(Record, <d1>, <d2>, Overall)`` and the data row's
@@ -571,9 +571,11 @@ async def test_qa_appraisal_renders_through_to_workbook(db_session: AsyncSession
         anonymize_reviewer_names=False,
     )
 
-    wb = load_workbook(__import__("io").BytesIO(build_workbook(layout)))
-    assert "Appraisal summary" in wb.sheetnames
-    sheet = wb["Appraisal summary"]
+    wb = load_workbook(
+        __import__("io").BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
+    assert "Appraisal" in wb.sheetnames
+    sheet = wb["Appraisal"]
     rows = list(sheet.iter_rows(values_only=True))
     assert rows[0] == ("Record", fx.domain1_label, fx.domain2_label, "Overall")
     # One data row; its Overall (last cell) is the resolved scalar.
@@ -608,8 +610,10 @@ async def test_qa_appraisal_marker_verdict_excluded_from_overall(
         anonymize_reviewer_names=False,
     )
 
-    wb = load_workbook(__import__("io").BytesIO(build_workbook(layout)))
-    sheet = wb["Appraisal summary"]
+    wb = load_workbook(
+        __import__("io").BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
+    sheet = wb["Appraisal"]
     rows = list(sheet.iter_rows(values_only=True))
     assert rows[0] == ("Record", fx.domain1_label, fx.domain2_label, "Overall")
     # domain1 cell renders the resolved disposition LABEL — not a dict, not blank.
@@ -659,10 +663,12 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
         anonymize_reviewer_names=False,
     )
 
-    wb = load_workbook(__import__("io").BytesIO(build_workbook(layout)))
+    wb = load_workbook(
+        __import__("io").BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
 
     # 1. The appraisal sheet: domain 2 is inapplicable, domain 1 untouched.
-    rows = list(wb["Appraisal summary"].iter_rows(values_only=True))
+    rows = list(wb["Appraisal"].iter_rows(values_only=True))
     assert rows[0] == ("Record", fx.domain1_label, fx.domain2_label, "Overall")
     assert rows[1][1] == "Low"
     assert rows[1][2] == "Not applicable"

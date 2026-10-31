@@ -189,7 +189,7 @@ class FrontMatter:
 
     Built service-side in ``resolve_layout`` (slice task T53) and rendered by
     the pure ``build_front_matter`` sub-builder: template identity, export
-    provenance, a generated ``contents`` list, the glyph/sentinel ``legend``,
+    provenance, the glyph/sentinel ``legend``,
     provenance ``caveats``, and the per-Run ``obsolete_fields_per_article``
     block lifted from ``ExportNotes`` (§5.1).
     """
@@ -201,7 +201,6 @@ class FrontMatter:
     generated_at: datetime
     article_count: int
     record_count: int
-    contents: tuple[str, ...]  # generated sheet-name list
     legend: tuple[tuple[str, str], ...]  # (glyph/sentinel, meaning)
     caveats: tuple[str, ...]  # provenance + best-effort-outcome caveats
     obsolete_fields_per_article: dict[UUID, tuple[str, ...]]  # activated §5.1
@@ -281,7 +280,7 @@ class TidyTable:
     """
 
     section_id: UUID
-    title: str  # sheet-name-safe section label
+    title: str  # section label; ``allocate_titles`` derives the sheet title
     cardinality: ExtractionCardinality
     column_field_ids: tuple[UUID, ...]  # ordered by sort_order
     column_labels: tuple[str, ...]
@@ -539,7 +538,7 @@ class ExtractionExportService(LoggerMixin):
         )
 
         # README/Methods projection (§4 #1): assembled from the already-computed
-        # counts, the generated contents list, and the obsolete-field block
+        # counts and the obsolete-field block
         # lifted from ``notes`` — no further IO.
         front_matter = _build_front_matter(
             project_name=project_name,
@@ -1834,14 +1833,11 @@ def _build_front_matter(
 ) -> FrontMatter:
     """Assemble the README/Methods front matter (§4 #1).
 
-    Counts, the generated ``contents`` list, the static ``legend``/``caveats``,
+    Counts, the static ``legend``/``caveats``,
     and the per-Run ``obsolete_fields_per_article`` block (lifted from
     ``ExportNotes``) come from already-computed inputs. ``record_count`` is the
     total number of tidy-table rows across every section.
     """
-    contents: list[str] = ["README / Methods", "Summary", template_name]
-    contents.extend(t.title for t in tidy_tables)
-    contents.append("Data dictionary")
     record_count = sum(len(t.rows) for t in tidy_tables)
     return FrontMatter(
         project_name=project_name,
@@ -1851,7 +1847,6 @@ def _build_front_matter(
         generated_at=generated_at,
         article_count=len(articles),
         record_count=record_count,
-        contents=tuple(contents),
         legend=_FRONT_MATTER_LEGEND,
         caveats=_FRONT_MATTER_CAVEATS,
         obsolete_fields_per_article={
