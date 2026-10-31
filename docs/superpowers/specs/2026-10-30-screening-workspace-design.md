@@ -101,6 +101,13 @@ param `screeningTab`, rendered by
 - `managerOnly` only hides a tab. A non-manager who deep-links
   `?screeningTab=duplicates|settings` is redirected to `title_abstract`
   (replace) with no toast; the backend still refuses (403) on its own.
+  **The redirect waits for the role**: its source is
+  `ScreeningConfigRead.can_manage` (`backend/app/schemas/screening.py:16-26`,
+  read through `useScreeningConfig`), and it fires only once that query has
+  succeeded; while it is pending or errored the page shows the §4.6 loading /
+  error state and never redirects (a manager's deep link must not bounce while
+  the role loads). The switcher's tab hiding keeps `useProjectMemberRole`
+  (`SectionViewSwitcher.tsx:20-23`), which only hides tabs, never navigates.
 - **Sub-views per slice**: S1 ships `Title/abstract` + `Settings`; S2 adds
   `Duplicates` (and with it `defaultValue` and the "Duplicates listed first"
   test); S3 adds `Full text`. Within the shipped set the sub-views are static:
@@ -122,7 +129,9 @@ param `screeningTab`, rendered by
   articles"). The true empty state ("No articles yet" + the toolbar's import)
   is only for a project with 0 articles.
 - **First run**: a manager whose screening is not set up lands on Settings; a
-  member sees the "not set up" empty state.
+  member sees the "not set up" empty state. Both are decided from the loaded
+  config read (`can_manage`, `reviewer_count` null), only after it has
+  succeeded, the same gate as the redirect above.
 
 ### 4.1 Shared shell
 
@@ -131,19 +140,43 @@ It keeps the resizable list/panel split (55/45, the same mins and max), `⌘⇧B
 panel toggle, vertical orientation below `lg`, and the Topbar
 `PanelToggleButton`. It adds **maximize** (`⇧⌘\`, the
 `frontend/components/runs/RunSplitShell.tsx` pattern): the list hides and the
-panel takes the full width. `Esc` undoes one thing per press, in this order:
+panel takes the full width. The list stays **mounted but hidden** while
+maximized, so its state (scroll, filters, checked rows, cursor) survives a
+restore. The chord matches `event.code === 'Backslash'`: with Shift held,
+`event.key` is `|` on US layouts, and `useKeyboardShortcuts` matches `e.key`
+only (`useKeyboardShortcuts.ts:94-97`). `RunSplitShell` has the same latent
+bug (`key: "\\"`, `RunSplitShell.tsx:62`; its test fires `key: "\\"` with
+`shiftKey`, `RunSplitShell.test.tsx:207`); it is fixed in S3b, where that file
+is first touched. Maximize is uncontrolled in S0; S1 adds a controlled
+`maximized` / `onMaximizedChange` prop pair so "Start screening" (§4.2) can
+maximize the panel. `Esc` undoes one thing per press, in this order:
 open popover/menu → maximize → panel → URL selection (`?article=`) → checked
-rows. The shell's Escape handler returns when `event.defaultPrevented` is set,
-and the list's existing window Escape (`useListKeyboardShortcuts.ts:53-64`:
-filter popover, then checked rows) keeps those two ends of the chain, so one
-press never does two steps. Articles moves onto the shell with no visible change.
+rows. **Mechanism**: the shell's Escape is a capture-phase `window` keydown
+listener (the `RunSplitShell.tsx:78-88` precedent), so it runs before the
+list's bubble-phase window listener. It yields (returns without
+`preventDefault`) while a popover, menu or dialog is open (`isDialogOpen`,
+`useKeyboardShortcuts.ts:53`, plus the list's filter-popover state) or while
+focus is in a text field; otherwise it undoes the first applicable step,
+calls `preventDefault` + `stopPropagation`, and stops. Clearing checked rows
+is the **last link of the shell's chain**, not the list's: screening passes
+no `deselectAll` to `useListKeyboardShortcuts`, whose Escape branch
+(`useListKeyboardShortcuts.ts:53-64`) has no `inInput` guard and would
+otherwise clear rows from a text field or race the shell
+(`:80-93` registers it in bubble phase). The list's Escape keeps only closing
+its filter popover, the first link. S1d also adds an `event.defaultPrevented`
+early return to the list hook's Escape branch, so an Escape the shell already
+handled never reaches it. One press therefore never does two steps.
+Articles moves onto the shell with no visible change.
 The article-specific pieces (dirty-discard dialog, `ArticleSidePanel`, copy
 keys, ids) stay in `ArticlesSplitShell` as the caller. Maximize and the Esc
 chain are opt-in props (`maximizable`, `escapeCloses`); **Articles opts out of
 both in S0**, so it really has no visible change (`ArticleFieldRow.tsx:241`
 keeps Escape for reverting an edit, and closing still goes through the dirty
-guard `requestCollapse`). Screening opts in. Esc never fires while focus is
-in a text field. When the maximized screening panel renders `RunSplitShell`
+guard `requestCollapse`; Articles keeps passing `deselectAll` to the list
+hook as today). Screening opts in. Esc never fires while focus is in a text
+field. S0's unit test pins the capture-phase ordering (shell listener runs
+before a bubble-phase window listener; yields under an open dialog and in a
+text field); S1 tests the combined list + shell chain. When the maximized screening panel renders `RunSplitShell`
 (§7.3), the outer shell owns `⇧⌘\` and Esc: `RunSplitShell` gets a prop that
 disables its own chord and capture-phase Escape (`RunSplitShell.tsx:62`,
 `:78-88`) while nested; that prop ships in S3b. The panel's open
@@ -247,13 +280,16 @@ seat, so it leaks no peer decision to anyone who must still decide.
 
 All new bindings go through `frontend/hooks/useKeyboardShortcuts.ts` (input
 and dialog guards). Do not add bare keys to `useListKeyboardShortcuts`, which
-has no dialog guard.
+has no dialog guard. **One exception**: the shell's Escape is its own
+capture-phase `window` listener (§4.1), because the chain must run before the
+list's bubble-phase Escape; it applies the same input and dialog guards by
+hand.
 
 | Key | Action |
 | --- | --- |
 | j / k, ↓ / ↑ | move the row cursor; the panel follows when open |
 | Enter | open the panel |
-| Esc | popover → maximize → panel → URL selection → checked rows, one per press (§4.1) |
+| Esc | popover → maximize → panel → URL selection → checked rows, one per press; shell capture-phase listener owns the chain (§4.1) |
 | x · ⇧-click · ⌘A | toggle row · range · select visible. Only ⌘A exists (`useListKeyboardShortcuts.ts:66-78`); `x` and ⇧-click range are new S1 work with their own tests |
 | `⇧⌘\` | maximize / restore the panel |
 | 1 / 2 / 3, E, 1–9 | decide (only while the panel shows a decidable record); `screeningKeyAction(event, armed, phase)` in `frontend/lib/screening/keymap.ts` |
@@ -287,7 +323,9 @@ Every sub-view, list level:
 - A status view with 0: the view stays visible and muted and its list shows
   "No records in this view"; Conflict and Not enrolled hide at 0 (§4.2).
 - Viewer (read-only: no decision buttons, no toolbar writes).
-- Non-manager on a managerOnly sub-view (redirect, §4).
+- Non-manager on a managerOnly sub-view (redirect, §4), only after the config
+  read (`can_manage`) has loaded; while it loads, the loading state, no
+  redirect and no first-run landing on Settings.
 - `GET /duplicates` or a Settings write refused 403 (`ErrorState` "Only
   project managers can do this").
 - Narrow width (`ListRowCard`, panel stacks vertically).
@@ -356,9 +394,13 @@ the list before shipping. Above 5,000 is a known limit, recorded in the PR.
   `refactor(screening)` commit.
 
 **Query keys** (`frontend/lib/query-keys/screening.ts`): remove `queue` and
-`conflicts`; add `records(projectId, phase?)` = `[...project(projectId),
-'records', phase]`, whose phase-less form `records(projectId)` is the prefix of
-every phase, and `duplicates(projectId)` = `[...project(projectId),
+`conflicts`; add `records(projectId, phase?)` = `phase ?
+[...project(projectId), 'records', phase] : [...project(projectId),
+'records']`. The phase-less form drops the trailing element rather than
+carrying `undefined`: TanStack's `partialMatchKey` compares element-wise, so
+`[..., 'records', undefined]` would not prefix-match `[..., 'records',
+'title_abstract']`. `records(projectId)` is thus the prefix of every phase (a
+unit test pins both shapes and the prefix match); and `duplicates(projectId)` = `[...project(projectId),
 'duplicates']`. Both sit under `project(projectId)`, so every existing
 screening mutation, which invalidates that prefix (`useScreeningConfig.ts:46,60`,
 `useScreeningConflicts.ts:47`, `useScreeningQueue.ts:65`,
@@ -408,7 +450,8 @@ projectId)`, beside the query keys.
 - **Reviewers per article — title/abstract** and **— full text** (moved from
   `ScreeningConfigForm`; each disabled with a `FieldHint` once locked).
 - **Exclusion reasons**: read-only list from the protocol + "Edit in protocol".
-  One list serves both phases.
+  One list serves both phases. Read from `ScreeningConfigRead.exclusion_reasons`
+  (§6.4, S1a), not from the records read, so Settings needs no records fetch.
 
 S1 ships the title/abstract count with its lock hint and the reasons list. S3
 adds the Phases radio and the full-text count (and the PUT with the key
@@ -441,6 +484,7 @@ final", `screening_outcome.py:76`) is updated.
 | --- | --- | --- |
 | `ScreeningDecisionValue` (`:9`) | add `"not_retrieved"` | S3 |
 | `ScreeningConfigUpdate` (`:29-34`, `extra="forbid"`) | add `full_text_reviewer_count: int \| None` (1–3). Key absent = unchanged; `null` = turn full text off (refused once an FT assignment exists). `SCREENING_TOO_FEW_REVIEWERS` applies to both counts. | S3 |
+| `ScreeningConfigRead` (`:16-26`) | add `exclusion_reasons: list[str]`, derived through `protocol_exclusion_reasons` (`project_ai_context.py:197-216`; `load_exclusion_reasons` `:213`); read by the Settings sub-view (§6.2) | S1 (S1a) |
 | `ScreeningConfigRead` (`:16-26`) | add `full_text_reviewer_count`, `full_text_count_locked`, `full_text_ready`, `full_text_enrolled` | S3 |
 | `ScreeningEnrollRequest` (`:37-44`) | add `phase` (default `title_abstract`). With `phase=full_text`, `article_ids` is refused (422, `VALIDATION_ERROR`): the server derives the ids. | S3 |
 | new `ScreeningRecordRow` / `ScreeningRecordsRead` | §5 | S1 |
@@ -822,15 +866,16 @@ as one PR.
 
 | Task | Scope |
 | --- | --- |
-| S1a backend | records read (§5, incl. 409 unconfigured, 120/min, `protocol_inclusion_criteria`); solo re-decide (§6.3, TA only); queue/conflicts deletions (service, repository, endpoints, schemas) and unit/integration test migration; decide 409 doc; `RETIRED` symbols; `seed_screening` (conflict fixture); sibling `refactor(screening)` md5 comment |
-| S1b frontend | switcher entry + `viewsScreeningAria`; list (status views, search/filter/sort, columns, progress strip, toolbar incl. import + Enroll, bulk Enroll/Export); every §4.6 list-level state; Settings sub-view (TA part); `records` query key + every §5 invalidation call site; `?assignment=` removal |
-| S1c frontend | every panel state (§4.4, §4.6 panel list) incl. conflict ruling form; `useDecide`/`useArbitrate` new home; keyboard (keymap signature, `x`, ⇧-click, Esc chain, auto-advance, prefetch); deletions + test rewrites below; E2E rewrite; 5,000-row render check |
+| S1a backend | records read (§5, incl. 409 unconfigured, 120/min, `protocol_inclusion_criteria`); `ScreeningConfigRead.exclusion_reasons` (§6.4) + contract test; solo re-decide (§6.3, TA only); queue/conflicts deletions (service, repository, endpoints, schemas) and unit/integration test migration; decide 409 doc; `RETIRED` symbols; `seed_screening` (conflict fixture); sibling `refactor(screening)` md5 comment |
+| S1b frontend | switcher entry + `viewsScreeningAria`; managerOnly redirect and first-run landing gated on the loaded config (§4); list (status views, search/filter/sort, columns, progress strip, toolbar incl. import + Enroll + Start screening via the shell's controlled `maximized` prop (§4.1), bulk Enroll/Export); every §4.6 list-level state; Settings sub-view (TA part, reasons from config); `records` query key (§5 shape + unit test) + every §5 invalidation call site; `?assignment=` removal |
+| S1c frontend | every panel state (§4.4, §4.6 panel list); conflict ruling form extracted from `ConflictCard` and retyped on `ScreeningAssignmentRead`; `useDecide`/`useArbitrate` move to `useScreeningMutations.ts`; consumers `AssignmentView.tsx` and `ScreeningParts.tsx` + their tests (`AssignmentView.test.tsx`) |
+| S1d frontend | keyboard: keymap signature, `x`, ⇧-click, Esc chain integration (shell + list, §4.1) incl. the `defaultPrevented` guard in `useListKeyboardShortcuts`' Escape branch, auto-advance, prefetch; remaining deletions and test rewrites (`ScreeningTab.test.tsx`, `ScreeningQueue.test.tsx`, `ConflictsPanel.test.tsx`, `useScreeningQueue.test.tsx`, `screeningQueries.remount.test.tsx`); E2E rewrite; 5,000-row render check |
 | S2a1 backend | migration + model + registration + schema tests (§8.1); candidates repository (tiers, vetoes incl. Zotero `itemType`) and `GET /duplicates` + schemas |
 | S2a2 backend | `POST /duplicates/verdicts` (rules, edge cases, auto-enroll); removal predicate threaded into `live_assignments`, enroll and counts; PRISMA formulas (§8.4); seed duplicate pair |
 | S2b frontend | Duplicates sub-view + `defaultValue`; compare panel; dialogs; Undo; `lib/duplicates/errors.ts`; copy (incl. `prismaOtherRemoved`); "Enroll anyway?"; E2E dedup step |
 | S3a1 backend | migration + model CHECKs + head pin; `SCREENING_PHASE` split and phase threading; per-phase reviewer count; config (`full_text_reviewer_count`, locks, ready/enrolled); FT enroll |
 | S3a2 backend | FT decide/arbitrate rules + S3 error codes; `reasons_must_match`; `SCREENING_PHASE_ADVANCED`; `phase=full_text` records + `ta_*` fields; PRISMA reports box, `ta_included`/`ta_maybe`, `refactor(prisma)` rename; seed FT record with PDF |
-| S3b frontend | Full text sub-view (list, PDF column/filter, Reason column, CSV export); panel with PDF + `RunSplitShell` nested-shortcut prop; keymap FT branch; Settings radio + FT count; Send to full text; progress strip segment; PRISMA panel; E2E full-text step |
+| S3b frontend | Full text sub-view (list, PDF column/filter, Reason column, CSV export); panel with PDF + `RunSplitShell` nested-shortcut prop and its `⇧⌘\` chord fixed to `event.code === 'Backslash'` (§4.1); keymap FT branch; Settings radio + FT count; Send to full text; progress strip segment; PRISMA panel; E2E full-text step |
 
 **Deleted or moved code** (S1):
 
@@ -930,28 +975,30 @@ as one PR.
 
 | Slice | Requirement | Test |
 | --- | --- | --- |
-| S0 | Shell extraction is invisible | existing `ArticlesSplitShell*.test.tsx` green; new unit tests for maximize, Esc chain (one step per press, `defaultPrevented` honoured), below-`lg` orientation |
-| S1 | Records read is blind-safe | integration per role (seated reviewer, unseated reviewer, seated/unseated arbitrator, viewer, manager): `conflict` only for an unseated arbitrator; Waiting vs In review split by seat; no peer values in the payload; an article moved to another project drops out |
-| S1 | Records read contract | integration: unconfigured project → 409 `SCREENING_NOT_CONFIGURED`; rate limit 120/min declared; `has_pdf` true only with a MAIN file; schema contract: `ScreeningRecordRow` has no abstract field |
-| S1 | `protocol_inclusion_criteria` | unit beside the `protocol_exclusion_reasons` tests |
-| S1 | Not-enrolled rows and counts | integration: anti-join rows; status-view counts match Vitest fixture |
-| S1 | Toolbar and import move | Vitest: toolbar with "Import from PubMed" renders for every member in every state, including nothing enrolled; nothing enrolled = Not enrolled rows + "Enroll all" (manager) / member copy; 0 articles = empty state; manager with no config lands on Settings |
-| S1 | Status views | Vitest: a view with 0 is muted and lists "No records in this view"; Conflict and Not enrolled hidden at 0 |
-| S1 | List toolbar and columns | Vitest: search, each filter, each sort (Queue order default); Mine column hidden for non-reviewers; progress strip "X of N decided · you: M left" (no FT segment in S1); "Start screening" only when M > 0, selects the first To screen in queue order and maximizes |
-| S1 | Bulk actions | Vitest: Enroll selected posts the ids (manager only); Export selected CSV has the §5 row fields and no abstract |
-| S1 | Not enrolled panel | Vitest: manager "Enroll" posts that id; others see metadata only |
-| S1 | `?assignment=` removed | Vitest: the param is stripped (replace) and nothing opens |
-| S1 | Keyboard | Vitest: keys inert in a text field and under a dialog; auto-advance picks the next To screen in queue order; the next two assignments prefetched; `x` toggles, ⇧-click selects a range; Esc order popover → maximize → panel → selection → checked rows |
-| S1 | Keymap signature | `keymap.test.ts`: `screeningKeyAction(event, armed, phase)` for TA (S1) and FT (S3); `DecisionButtons` passes the phase |
-| S1 | Solo re-decide | integration: solo re-decide appends and changes the outcome; skips the reviewer cap; refused after arbitration; dual review still `SCREENING_DECISION_FINAL`. Vitest: recorded-choice ring and "Changed to Exclude" toast |
-| S1 | Old endpoints gone | shipped `test_screening_review.py`, `test_screening_arbitration.py`, hook/component tests and `frontend/e2e/flows/screening.ui.e2e.ts` migrated to the new read, not deleted; `check_retired_symbols` green with the new word symbols |
-| S1 | §4.6 states | Vitest per shipped sub-view, one case per bullet of §4.6 (list level and panel) |
-| S1 | Settings sub-view (TA) | Vitest: TA count, lock hint, reasons list + "Edit in protocol"; save pending; 409 `SCREENING_CONFIG_FROZEN` |
-| S1 | Query invalidation | Vitest: each §5 write path (call site listed there) invalidates `screeningKeys.project(projectId)` |
-| S1 | Size target | Vitest/bench: 5,000-row render check (§4.6), number recorded in the PR |
-| S1 | Reviewer labels | Vitest: conflict ruling form shows "Reviewer A/B", no names; other states show names |
-| S1 | Default status view by role | Vitest: reviewer → To screen; non-reviewing arbitrator → Conflict/All; manager/viewer → All |
-| S1 | Switcher | `SectionViewSwitcher.test.tsx`: screening entry with Title/abstract + Settings; `viewsScreeningAria` label |
+| S0 | Shell extraction is invisible | existing `ArticlesSplitShell*.test.tsx` green; new unit tests for maximize (chord fires on `code: 'Backslash'` with `key: '|'`; list stays mounted and keeps its state across maximize/restore), Esc chain (one step per press; capture-phase listener runs before a bubble-phase window listener and stops it; yields under an open dialog/popover and in a text field), below-`lg` orientation |
+| S1 (S1a) | Records read is blind-safe | integration per role (seated reviewer, unseated reviewer, seated/unseated arbitrator, viewer, manager): `conflict` only for an unseated arbitrator; Waiting vs In review split by seat; no peer values in the payload; an article moved to another project drops out |
+| S1 (S1a) | Records read contract | integration: unconfigured project → 409 `SCREENING_NOT_CONFIGURED`; rate limit 120/min declared; `has_pdf` true only with a MAIN file; schema contract: `ScreeningRecordRow` has no abstract field |
+| S1 (S1a) | `protocol_inclusion_criteria` | unit beside the `protocol_exclusion_reasons` tests |
+| S1 (S1a) | Config carries exclusion reasons | schema contract test: `ScreeningConfigRead` has `exclusion_reasons: list[str]`; integration: equals `protocol_exclusion_reasons` for the project's protocol |
+| S1 (S1a) | Not-enrolled rows and counts | integration: anti-join rows; status-view counts match Vitest fixture |
+| S1 (S1b) | Toolbar and import move | Vitest: toolbar with "Import from PubMed" renders for every member in every state, including nothing enrolled; nothing enrolled = Not enrolled rows + "Enroll all" (manager) / member copy; 0 articles = empty state; manager with no config lands on Settings |
+| S1 (S1b) | Status views | Vitest: a view with 0 is muted and lists "No records in this view"; Conflict and Not enrolled hidden at 0 |
+| S1 (S1b) | List toolbar and columns | Vitest: search, each filter, each sort (Queue order default); Mine column hidden for non-reviewers; progress strip "X of N decided · you: M left" (no FT segment in S1); "Start screening" only when M > 0, selects the first To screen in queue order and maximizes through the shell's controlled `maximized` prop |
+| S1 (S1b) | Bulk actions | Vitest: Enroll selected posts the ids (manager only); Export selected CSV has the §5 row fields and no abstract |
+| S1 (S1c) | Not enrolled panel | Vitest: manager "Enroll" posts that id; others see metadata only |
+| S1 (S1b) | `?assignment=` removed | Vitest: the param is stripped (replace) and nothing opens |
+| S1 (S1d) | Keyboard | Vitest: keys inert in a text field and under a dialog; auto-advance picks the next To screen in queue order; the next two assignments prefetched; `x` toggles, ⇧-click selects a range; Esc order popover → maximize → panel → selection → checked rows with the list hook mounted (screening passes no `deselectAll`; one step per press; Esc in a text field clears nothing); unit: `useListKeyboardShortcuts` Escape ignores an event with `defaultPrevented` |
+| S1 (S1d) | Keymap signature | `keymap.test.ts`: `screeningKeyAction(event, armed, phase)` for TA (S1) and FT (S3); `DecisionButtons` passes the phase |
+| S1 (S1a, S1c) | Solo re-decide | integration: solo re-decide appends and changes the outcome; skips the reviewer cap; refused after arbitration; dual review still `SCREENING_DECISION_FINAL`. Vitest: recorded-choice ring and "Changed to Exclude" toast |
+| S1 (S1a, S1d) | Old endpoints gone | shipped `test_screening_review.py`, `test_screening_arbitration.py`, hook/component tests and `frontend/e2e/flows/screening.ui.e2e.ts` migrated to the new read, not deleted; `check_retired_symbols` green with the new word symbols |
+| S1 (S1b (list), S1c (panel)) | §4.6 states | Vitest per shipped sub-view, one case per bullet of §4.6 (list level and panel) |
+| S1 (S1b) | Settings sub-view (TA) | Vitest: TA count, lock hint, reasons list (from `ScreeningConfigRead.exclusion_reasons`) + "Edit in protocol"; save pending; 409 `SCREENING_CONFIG_FROZEN` |
+| S1 (S1b) | Records query key | unit: `records(p)` = `[...project(p), 'records']` (no trailing `undefined`), `records(p, 'title_abstract')` appends the phase; `records(p)` prefix-matches every phase |
+| S1 (S1b) | Query invalidation | Vitest: each §5 write path (call site listed there) invalidates `screeningKeys.project(projectId)` |
+| S1 (S1d) | Size target | Vitest/bench: 5,000-row render check (§4.6), number recorded in the PR |
+| S1 (S1c) | Reviewer labels | Vitest: conflict ruling form shows "Reviewer A/B", no names; other states show names |
+| S1 (S1b) | Default status view by role | Vitest: reviewer → To screen; non-reviewing arbitrator → Conflict/All; manager/viewer → All |
+| S1 (S1b) | Switcher | `SectionViewSwitcher.test.tsx`: screening entry with Title/abstract + Settings; `viewsScreeningAria` label. Vitest (page): non-manager deep link to `settings` redirected only after the config read resolves (`can_manage` false); no redirect and no first-run landing while it is pending or errored; manager deep link never bounces |
 | S2 | Switcher default | `SectionViewSwitcher.test.tsx`: `defaultValue` highlights Title/abstract with Duplicates listed first |
 | S2 | Dedup schema | roundtrip test; append-only trigger, `deny_all`, REVOKE tests; `test_every_foreign_key_leads_an_index` (`test_screening_schema.py:336-354`) extended to `article_duplicate_verdicts`; `kept_article_id` cascade revives the removed record |
 | S2 | Dedup access | integration: non-manager 403 on `GET /duplicates` and `POST /duplicates/verdicts`; batch > 500 → 422 |
@@ -975,7 +1022,7 @@ as one PR.
 | S3 | FT enroll refusals | integration: full text off → `SCREENING_NOT_CONFIGURED`; no reasons → `SCREENING_REASON_REQUIRED`; `article_ids` with `phase=full_text` → 422 |
 | S3 | FT decision rules | integration: maybe refused; `not_retrieved` at TA refused (`SCREENING_DECISION_NOT_IN_PHASE`); exclude without reason refused; the same three in `arbitrate`; differing reasons → conflict; `not_retrieved` vs include → conflict; `not_retrieved` reopen path |
 | S3 | TA re-decide / re-ruling after FT | integration: TA `decide` and `arbitrate` refused with `SCREENING_PHASE_ADVANCED` once an FT assignment exists |
-| S3 | FT panel | Vitest: PDF default when a file exists; missing-PDF state with attach; below-`lg` reader opens; nested shortcuts — outer `⇧⌘\`/Esc win; TA provenance line from `ta_*` fields |
+| S3 | FT panel | Vitest: PDF default when a file exists; missing-PDF state with attach; below-`lg` reader opens; nested shortcuts — outer `⇧⌘\`/Esc win; `RunSplitShell`'s chord fires on `code: 'Backslash'` with `key: '|'`; TA provenance line from `ta_*` fields |
 | S3 | FT list extras | Vitest: PDF column and Missing PDF filter; Reason column on; progress strip "K to full text →" segment |
 | S3 | Not retrieved panel | Vitest: unseated arbitrator gets the ruling form; others read-only |
 | S3 | Send to full text | Vitest: disabled for N = 0, FT off, no reasons, each with its tooltip; in-flight busy state |
