@@ -401,14 +401,15 @@ describe('confirmed proposal decisions and local undo', () => {
     expect(view.result.current.canUndo).toBe(false);
     expect(view.result.current.values.i_a).toBeUndefined();
   });
-  it('reverses B to A without reaccepting A, then undoes multiple local actions at one coordinate', async () => {
-    const view = setup();
+  it('un-accepting B restores A with its link, then undoes multiple local actions at one coordinate', async () => {
+    const view = setup({}, {proposals: [aiRow('p1'), aiRow('p2', ['B', 'C'])]});
     await act(async () => {await view.result.current.acceptProposal(proposal);});
     const second = {...proposal, id: 'p2', value: ['B', 'C']};
     await act(async () => {await view.result.current.acceptProposal(second);});
     await act(async () => {await view.result.current.acceptProposal(second);});
-    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: null});
-    expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBeNull();
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: 'p1', expected_current_decision_id: '2'});
+    expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBe('p1');
+    expect(view.result.current.isAccepted(proposal)).toBe(true);
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
     expect(view.result.current.values.i_a).toEqual(['B', 'C']);
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
@@ -416,6 +417,16 @@ describe('confirmed proposal decisions and local undo', () => {
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
     expect(view.result.current.values.i_a).toBeNull();
     expect(view.result.current.canUndo).toBe(false);
+  });
+  it('un-accepting A after it was restored reverses to the B acceptance (D8 ping-pong)', async () => {
+    const view = setup({}, {proposals: [aiRow('p1'), aiRow('p2', ['B', 'C'])]});
+    const second = {...proposal, id: 'p2', value: ['B', 'C']};
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    await act(async () => {await view.result.current.acceptProposal(second);});
+    await act(async () => {await view.result.current.acceptProposal(second);});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    expect(requests.at(-1)).toMatchObject({value: {value: ['B', 'C']}, proposal_record_id: 'p2', expected_current_decision_id: '3'});
+    expect(view.result.current.isAccepted(second)).toBe(true);
   });
   it('redo re-applies an undone acceptance with its link, guarded on the compensating head, and can be undone again', async () => {
     const view = setup();

@@ -303,8 +303,7 @@ export function useRunValues(args: UseRunValuesArgs) {
         decisionMatchesVersion(history.at(-1)?.value, proposal.value);
       const result = await appendReviewerDecision(runId!, {
         instance_id: proposal.instanceId, field_id: proposal.fieldId, decision: 'edit',
-        proposal_record_id: reverse ? null : proposal.id,
-        value: reverse ? reversalPayload(history) : toConsensusValueEnvelope(proposal.value),
+        ...(reverse ? reversalPayload(history) : {value: toConsensusValueEnvelope(proposal.value), proposal_record_id: proposal.id}),
         ...expectedHead(history),
       });
       if (!result.ok) { outcome = await settleFailure(result.error, proposal); return; }
