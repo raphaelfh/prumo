@@ -136,6 +136,8 @@ def _select_value(
             and payload.get("selected") == "other"
             and isinstance(payload.get("other_text"), str)
         ):
+            if not payload["other_text"]:
+                return ExportValue(raw=raw, status="cleared")
             return ExportValue(raw=raw, status="answered", other_text=payload["other_text"])
         return None
     codes: list[Any]
@@ -152,6 +154,8 @@ def _select_value(
         return None
     if not all(isinstance(c, str) for c in [*codes, *others]):
         return None
+    if not codes and not others:
+        return ExportValue(raw=raw, status="cleared")
     return ExportValue(
         raw=raw,
         status="answered",

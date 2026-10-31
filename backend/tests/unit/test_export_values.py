@@ -122,6 +122,23 @@ def test_cleared(raw):
     assert (v.status, display_value(v, f)) == ("cleared", None)
 
 
+@pytest.mark.parametrize(
+    ("ftype", "raw"),
+    [
+        (ExtractionFieldType.MULTISELECT, {"selected": [], "other_texts": []}),
+        (ExtractionFieldType.MULTISELECT, {"value": {"selected": [], "other_texts": []}}),
+        (ExtractionFieldType.MULTISELECT, {"value": []}),
+        (ExtractionFieldType.SELECT, {"value": {"selected": "other", "other_text": ""}}),
+    ],
+)
+def test_empty_select_shapes_are_cleared(ftype, raw):
+    f = _field(ftype)
+    v = to_export_value(raw, f, {})
+    assert v.status == "cleared"
+    assert (v.value_text, v.value_label, v.other_text) == (None, None, None)
+    assert display_value(v, f) is None
+
+
 def test_rejected_keeps_raw_and_renders_blank():
     f = _field(ExtractionFieldType.TEXT)
     raw = {"value": "x"}
