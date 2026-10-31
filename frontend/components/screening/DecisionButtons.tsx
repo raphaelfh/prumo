@@ -4,7 +4,12 @@
  * window listener applies it, unless another handler took the key or an
  * overlay other than its own reasons dialog is open. The caller keys this
  * component by record, so a record change closes the reasons dialog.
+ *
+ * `recorded` (a solo record's own decision) draws that button with the
+ * recorded-choice ring; choosing it again does nothing, another value
+ * re-decides.
  */
+import {Check} from 'lucide-react';
 import {useEffect, useRef, useState} from 'react';
 
 import {AppDialog} from '@/components/patterns/AppDialog';
@@ -13,17 +18,34 @@ import {KbdBadge} from '@/components/ui/kbd-badge';
 import {isDialogOpen} from '@/hooks/useKeyboardShortcuts';
 import {t} from '@/lib/copy';
 import {screeningKeyAction} from '@/lib/screening/keymap';
+import {cn} from '@/lib/utils';
 import type {ScreeningDecisionCreate} from '@/services/screeningService';
 
 interface DecisionButtonsProps {
   reasons: string[];
   disabled: boolean;
   onDecide: (body: ScreeningDecisionCreate) => void;
+  phase: 'title_abstract';
+  /** The caller's recorded decision on a solo record: drawn with the recorded-choice ring; pressing it again does nothing, another value re-decides. */
+  recorded?: ScreeningDecisionCreate['decision'] | null;
 }
 
-export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsProps) {
+type Decision = ScreeningDecisionCreate['decision'];
+
+const DECISIONS = [
+  {decision: 'include', key: '1', label: 'decisionInclude', variant: 'default'},
+  {decision: 'exclude', key: '2', label: 'decisionExclude', variant: 'outline'},
+  {decision: 'maybe', key: '3', label: 'decisionMaybe', variant: 'outline'},
+] as const satisfies readonly {decision: Decision; key: string; label: string; variant: 'default' | 'outline'}[];
+
+export function DecisionButtons({reasons, disabled, onDecide, phase, recorded}: DecisionButtonsProps) {
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const reasonsList = useRef<HTMLOListElement>(null);
+
+  const decide = (decision: Decision) => {
+    if (decision === recorded) return;
+    onDecide({decision});
+  };
 
   const pickReason = (reason: string) => {
     setReasonsOpen(false);
@@ -35,10 +57,10 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
       if (disabled || event.repeat || event.defaultPrevented) return;
       // Another overlay (the PubMed import, a menu, a confirm) owns the keys.
       if (isDialogOpen(reasonsOpen ? reasonsList.current : null)) return;
-      const action = screeningKeyAction(event, reasonsOpen);
+      const action = screeningKeyAction(event, reasonsOpen, phase);
       if (action === null) return;
       if (action.kind === 'decide') {
-        onDecide({decision: action.decision});
+        decide(action.decision);
       } else if (action.kind === 'open_reasons') {
         if (reasons.length === 0) return;
         setReasonsOpen(true);
@@ -56,30 +78,25 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="default" aria-keyshortcuts="1" disabled={disabled} onClick={() => onDecide({decision: 'include'})}>
-          {t('screening', 'decisionInclude')}
-          <KbdBadge keys={['1']} />
-        </Button>
-        <Button
-          size="default"
-          variant="outline"
-          aria-keyshortcuts="2"
-          disabled={disabled}
-          onClick={() => onDecide({decision: 'exclude'})}
-        >
-          {t('screening', 'decisionExclude')}
-          <KbdBadge keys={['2']} />
-        </Button>
-        <Button
-          size="default"
-          variant="outline"
-          aria-keyshortcuts="3"
-          disabled={disabled}
-          onClick={() => onDecide({decision: 'maybe'})}
-        >
-          {t('screening', 'decisionMaybe')}
-          <KbdBadge keys={['3']} />
-        </Button>
+        {DECISIONS.map(({decision, key, label, variant}) => {
+          const isRecorded = recorded === decision;
+          return (
+            <Button
+              key={decision}
+              size="default"
+              variant={isRecorded ? 'outline' : variant}
+              aria-keyshortcuts={key}
+              aria-pressed={recorded ? isRecorded : undefined}
+              className={cn(isRecorded && 'bg-success/10 text-success ring-1 ring-success hover:bg-success/10')}
+              disabled={disabled}
+              onClick={() => decide(decision)}
+            >
+              {isRecorded && <Check className="h-4 w-4" strokeWidth={1.5} />}
+              {t('screening', label)}
+              <KbdBadge keys={[key]} />
+            </Button>
+          );
+        })}
         {reasons.length > 0 && (
           <Button
             size="default"

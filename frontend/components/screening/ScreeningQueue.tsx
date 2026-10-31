@@ -103,6 +103,7 @@ export function ScreeningQueue({projectId}: {projectId: string}) {
             reasons={exclusion_reasons}
             disabled={decide.isPending}
             onDecide={onDecide}
+            phase="title_abstract"
           />
         </div>
       </div>

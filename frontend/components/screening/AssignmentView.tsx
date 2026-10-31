@@ -156,7 +156,7 @@ export function AssignmentView({assignmentId, canReview, onBack}: AssignmentView
       {canReview && read.status === 'awaiting_me' && (
         <div className="sticky bottom-0 border-t border-border/40 bg-background px-4 py-3">
           <div className="mx-auto w-full max-w-3xl">
-            <DecisionButtons reasons={read.exclusion_reasons} disabled={decide.isPending} onDecide={onDecide} />
+            <DecisionButtons reasons={read.exclusion_reasons} disabled={decide.isPending} onDecide={onDecide} phase="title_abstract" />
           </div>
         </div>
       )}

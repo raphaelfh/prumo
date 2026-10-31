@@ -123,6 +123,7 @@ function ConflictCard({conflict, reasons, deciding, busy, onToggleDeciding, onRu
             reasons={reasons}
             disabled={busy}
             onDecide={({decision, exclusion_reason}) => rule({decision, exclusion_reason})}
+            phase="title_abstract"
           />
         )}
       </div>
