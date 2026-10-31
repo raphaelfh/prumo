@@ -1,12 +1,12 @@
 ---
-status: draft
+status: approved
 last_reviewed: 2026-10-30
 owner: '@raphaelfh'
 ---
 
 # Screening workspace: overview, full text and deduplication — design
 
-> **Status:** Draft — front direction approved on mockups 2026-10-30 ·
+> **Status:** Approved 2026-10-30 (front direction approved on mockups) ·
 > Owner: @raphaelfh · Builds on
 > [`2026-10-23-screening-v1-ai-prescreen-design.md`](2026-10-23-screening-v1-ai-prescreen-design.md)
 > ("v1"). Where this document and v1 disagree, this one wins; §11 lists every
