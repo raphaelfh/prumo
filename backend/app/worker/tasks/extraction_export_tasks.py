@@ -9,7 +9,6 @@ module's docstring for the event-loop rationale.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -52,7 +51,7 @@ def export_extraction_task(
 ) -> dict[str, Any]:
     """Async extraction export job.
 
-    Builds the workbook via ``ExtractionExportService``, uploads bytes
+    Builds the workbook via ``build_export``, uploads bytes
     to Supabase Storage, returns ``{download_url, expires_at, user_id}``.
     """
 
@@ -60,48 +59,27 @@ def export_extraction_task(
         # Lazy imports + lazy client construction.
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.exports.extraction.workbook import (
-            ExportShape,
-            build_workbook,
-            matrix_fits,
-        )
-        from app.services.extraction_export_service import (
-            ExportMode,
-            ExtractionExportService,
-        )
+        from app.services.exports.extraction.run import ExportRequest, build_export
+        from app.services.exports.extraction.workbook import ExportShape
+        from app.services.extraction_export_service import ExportMode
         from app.worker._session import worker_session
 
+        req = ExportRequest(
+            project_id=UUID(project_id),
+            template_id=UUID(template_id),
+            mode=ExportMode(mode),
+            article_ids=tuple(UUID(aid) for aid in article_ids),
+            reviewer_id=UUID(reviewer_id) if reviewer_id else None,
+            include_ai_metadata=include_ai_metadata,
+            anonymize_reviewer_names=anonymize_reviewer_names,
+            shape=ExportShape(shape),
+        )
         async with worker_session() as session:
-            service = ExtractionExportService(
-                db=session,
-                user_id=user_id,
-                trace_id=self.request.id,
-            )
-
-            layout = await service.resolve_layout(
-                project_id=UUID(project_id),
-                template_id=UUID(template_id),
-                mode=ExportMode(mode),
-                article_ids=[UUID(aid) for aid in article_ids],
-                include_ai_metadata=include_ai_metadata,
-                anonymize_reviewer_names=anonymize_reviewer_names,
-                reviewer_id=UUID(reviewer_id) if reviewer_id else None,
-            )
-
-            # CPU-bound write — keep it in a thread so the event loop is
-            # free for the upload coroutine that follows.
-            data = await asyncio.to_thread(
-                build_workbook, layout, ExportShape(shape), include_matrix=matrix_fits(layout)
-            )
+            file = await build_export(session, req, user_id=user_id, trace_id=self.request.id)
 
             storage = create_storage_adapter(get_supabase_client())
-            path = f"{_STORAGE_PREFIX}/{user_id}/{self.request.id}.xlsx"
-            await storage.upload(
-                _STORAGE_BUCKET,
-                path,
-                data,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+            path = f"{_STORAGE_PREFIX}/{user_id}/{self.request.id}/{file.filename}"
+            await storage.upload(_STORAGE_BUCKET, path, file.content, file.media_type)
             download_url = await storage.get_signed_url(
                 _STORAGE_BUCKET, path, expires_in=_DOWNLOAD_URL_TTL_SECONDS
             )

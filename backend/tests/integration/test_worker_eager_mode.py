@@ -81,64 +81,86 @@ def _session_factory_returning(session: _FakeAsyncSession) -> Any:
 # ----------------------------------------------------------------------
 
 
+def _export_kwargs() -> dict[str, Any]:
+    return {
+        "project_id": str(uuid4()),
+        "template_id": str(uuid4()),
+        "mode": "consensus",
+        "article_ids": [str(uuid4())],
+        "article_scope": "current_list",
+        "user_id": str(uuid4()),
+        "reviewer_id": None,
+        "include_ai_metadata": False,
+        "anonymize_reviewer_names": False,
+        "shape": "dictionary",
+    }
+
+
+def _fake_export_storage() -> MagicMock:
+    storage = MagicMock()
+    storage.upload = AsyncMock(return_value=None)
+    storage.get_signed_url = AsyncMock(return_value="https://signed.example/url")
+    return storage
+
+
 def test_export_extraction_task_signature_and_kwargs_alignment() -> None:
-    """The 9 task kwargs must align with what the endpoint passes."""
+    """The 10 task kwargs must align with what the endpoint passes."""
+    from app.services.exports.extraction.run import ExportFile
+    from app.services.exports.extraction.workbook import ExportShape
     from app.worker.tasks.extraction_export_tasks import export_extraction_task
 
     session = _FakeAsyncSession()
-    fake_service = MagicMock()
-    fake_service.resolve_layout = AsyncMock(return_value=object())
-    fake_storage = MagicMock()
-    fake_storage.upload = AsyncMock(return_value=None)
-    fake_storage.get_signed_url = AsyncMock(return_value="https://signed.example/url")
+    fake_storage = _fake_export_storage()
+    kwargs = _export_kwargs()
 
     with (
         patch(
-            "app.services.extraction_export_service.ExtractionExportService",
-            return_value=fake_service,
-        ),
-        patch(
-            "app.core.factories.create_storage_adapter",
-            return_value=fake_storage,
-        ),
-        patch(
-            "app.services.exports.extraction.workbook.build_workbook",
-            return_value=b"PK\x03\x04minimal-xlsx-bytes",
-        ),
-        patch(
-            "app.services.exports.extraction.workbook.matrix_fits",
-            return_value=True,
-        ),
-        patch(
-            "app.worker._session.worker_session",
-            new=_session_factory_returning(session),
-        ),
-        patch(
-            "app.core.deps.get_supabase_client",
-            return_value=MagicMock(),
-        ),
+            "app.services.exports.extraction.run.build_export",
+            new=AsyncMock(return_value=ExportFile(b"PK..", "P_T_consensus_20261031-000000.xlsx")),
+        ) as build_export,
+        patch("app.core.factories.create_storage_adapter", return_value=fake_storage),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
     ):
-        result = export_extraction_task.apply(
-            kwargs={
-                "project_id": str(uuid4()),
-                "template_id": str(uuid4()),
-                "mode": "consensus",
-                "article_ids": [str(uuid4())],
-                "article_scope": "current_list",
-                "user_id": str(uuid4()),
-                "reviewer_id": None,
-                "include_ai_metadata": False,
-                "anonymize_reviewer_names": False,
-            }
-        ).get(timeout=5)
+        result = export_extraction_task.apply(kwargs=kwargs, task_id="job-1").get(timeout=5)
 
     assert result["download_url"] == "https://signed.example/url"
     assert "expires_at" in result
-    assert "user_id" in result
-    # Layout resolved, workbook built, bytes uploaded, signed URL returned.
-    fake_service.resolve_layout.assert_awaited_once()
-    fake_storage.upload.assert_awaited_once()
+    assert result["user_id"] == kwargs["user_id"]
+    assert (
+        fake_storage.upload.call_args.args[1]
+        == f"exports/extraction/{kwargs['user_id']}/job-1/P_T_consensus_20261031-000000.xlsx"
+    )
+    assert fake_storage.upload.call_args.args[3] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert build_export.await_args.args[0] is session
+    assert build_export.await_args.args[1].shape is ExportShape.DICTIONARY
+    assert build_export.await_args.kwargs == {"user_id": kwargs["user_id"], "trace_id": "job-1"}
     fake_storage.get_signed_url.assert_awaited_once()
+
+
+def test_export_extraction_task_fails_with_a_coded_message_when_empty() -> None:
+    from app.services.exports.extraction.run import EmptyExportError
+    from app.worker.tasks.extraction_export_tasks import export_extraction_task
+
+    session = _FakeAsyncSession()
+    fake_storage = _fake_export_storage()
+
+    with (
+        patch(
+            "app.services.exports.extraction.run.build_export",
+            new=AsyncMock(side_effect=EmptyExportError()),
+        ),
+        patch("app.core.factories.create_storage_adapter", return_value=fake_storage),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+    ):
+        res = export_extraction_task.apply(kwargs=_export_kwargs(), throw=False)
+
+    assert res.state == "FAILURE"
+    assert str(res.result).startswith("EMPTY_ELIGIBLE_ARTICLES: ")
+    fake_storage.upload.assert_not_awaited()
 
 
 # ----------------------------------------------------------------------
