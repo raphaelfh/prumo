@@ -142,13 +142,8 @@ export interface WriteProposalParams {
    * legacy write never gains a spurious `absent_reason` key.
    */
   absentReason?: string | null;
-  /**
-   * D0 (consensus AI trace): the accepted/selected AI proposal this coord's
-   * value originated from, so the arbitrator can trace an edit back to its AI
-   * basis; the backend validates it references a non-human proposal on the
-   * same (instance, field).
-   */
-  proposalRecordId?: string | null;
+  /** The form value the queue fingerprints (pre-normalization). */
+  draft: unknown;
 }
 
 /** Append the typed envelope and optional current-decision condition unchanged. */

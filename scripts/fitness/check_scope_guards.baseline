@@ -4,7 +4,6 @@
 #   # why it is grandfathered
 # Consolidating a group onto one guard removes its lines; see
 # .claude/rules/backend.md.
-duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/extraction_export_service.py::_load_active_template_version
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/extraction_export_service.py::list_eligible_reviewers_for_picker
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/project_template_active_service.py::owned_template  # THE canonical guard — the one the other lines should collapse onto
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_draft_lock_service.py::claim_draft_lock  # UPDATE: scope must be inline in the mutating WHERE, cannot delegate

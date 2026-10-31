@@ -30,7 +30,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -144,7 +144,9 @@ class _Charms:
 
 
 def _sheet(charms: _Charms):
-    return load_workbook(io.BytesIO(build_workbook(charms.layout())))["CHARMS"]
+    return load_workbook(
+        io.BytesIO(build_workbook(charms.layout(), ExportShape.COMPLETE, include_matrix=True))
+    )["Matrix"]
 
 
 def _value_columns(ws) -> int:

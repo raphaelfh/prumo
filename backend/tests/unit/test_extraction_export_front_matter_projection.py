@@ -38,7 +38,7 @@ def _study() -> SectionDescriptor:
     )
 
 
-def test_front_matter_assembles_counts_contents_and_obsolete() -> None:
+def test_front_matter_assembles_counts_and_obsolete() -> None:
     study = _study()
     inst, run = uuid4(), uuid4()
     aid = uuid4()
@@ -66,9 +66,6 @@ def test_front_matter_assembles_counts_contents_and_obsolete() -> None:
     assert fm.export_mode_label  # non-empty human label
     assert fm.article_count == 1
     assert fm.record_count == 1  # one tidy row
-    # contents lists the rendered sheet names incl. the tidy table title
-    assert "README / Methods" in fm.contents
-    assert "Study characteristics" in fm.contents
     # legend + caveats are non-empty (generic glyph/sentinel legend)
     assert fm.legend
     assert fm.caveats

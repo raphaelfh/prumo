@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.data_dictionary import build_data_dictionary
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles
 from app.services.extraction_export_service import (
     AllowedValue,
     ExportLayout,
@@ -73,7 +74,10 @@ def _flat(spec) -> str:
 
 
 def test_data_dictionary_header_columns():
-    spec = build_data_dictionary(_layout(_entries()))
+    layout = _layout(_entries())
+    spec = build_data_dictionary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec.title == "Data dictionary"
     header = _header(spec)
     for col in (
@@ -90,7 +94,10 @@ def test_data_dictionary_header_columns():
 
 
 def test_data_dictionary_renders_one_row_per_field():
-    spec = build_data_dictionary(_layout(_entries()))
+    layout = _layout(_entries())
+    spec = build_data_dictionary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     flat = _flat(spec)
     assert "Source of data" in flat
     assert "Number of participants" in flat
@@ -104,5 +111,8 @@ def test_data_dictionary_renders_one_row_per_field():
 
 
 def test_data_dictionary_empty_entries_is_header_only():
-    spec = build_data_dictionary(_layout(()))
+    layout = _layout(())
+    spec = build_data_dictionary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert len(spec.rows) == 1  # header only

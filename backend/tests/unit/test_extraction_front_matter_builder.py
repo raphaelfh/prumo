@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.services.exports.extraction.front_matter import build_front_matter
+from app.services.exports.extraction.workbook import ExportShape, SheetTitles, allocate_titles
 from app.services.extraction_export_service import (
     ExportLayout,
     ExportMode,
@@ -40,7 +41,6 @@ def _front_matter() -> FrontMatter:
         generated_at=datetime(2026, 6, 14, 9, 30, 0, tzinfo=UTC),
         article_count=12,
         record_count=20,
-        contents=("README / Methods", "Summary", "CHARMS", "Study characteristics"),
         legend=(("(blank)", "No value / rejected"), ("No information", "Reported as not stated")),
         caveats=("Reviewer outcomes labelled best-effort rely on heuristics.",),
         obsolete_fields_per_article={},
@@ -54,7 +54,10 @@ def _flat(spec) -> str:
 
 
 def test_front_matter_renders_identity_block():
-    spec = build_front_matter(_layout_with_front_matter(_front_matter()))
+    layout = _layout_with_front_matter(_front_matter())
+    spec = build_front_matter(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     flat = _flat(spec)
     assert spec.title == "README"
     assert "My SR Project" in flat
@@ -67,10 +70,19 @@ def test_front_matter_renders_identity_block():
 
 
 def test_front_matter_lists_contents_and_legend():
-    spec = build_front_matter(_layout_with_front_matter(_front_matter()))
+    titles = SheetTitles(
+        fixed={"front_matter": "README"},
+        levels={},
+        order=("README", "Study characteristics", "Codebook (2)"),
+        matrix_omitted=False,
+    )
+    spec = build_front_matter(_layout_with_front_matter(_front_matter()), titles)
+    values = [tuple(c.value for c in row) for row in spec.rows]
+    start = values.index(("Contents",)) + 1
+    contents = [row[1] for row in values[start : start + len(titles.order)]]
+    assert contents == list(titles.order)
+    assert values[start + len(titles.order)] == ()  # nothing else in the block
     flat = _flat(spec)
-    assert "Summary" in flat
-    assert "Study characteristics" in flat
     assert "No information" in flat
     assert "Reported as not stated" in flat
     assert "best-effort" in flat.lower()
@@ -109,12 +121,14 @@ def test_front_matter_renders_obsolete_fields_block():
         generated_at=fm.generated_at,
         article_count=fm.article_count,
         record_count=fm.record_count,
-        contents=fm.contents,
         legend=fm.legend,
         caveats=fm.caveats,
         obsolete_fields_per_article={aid: ("Old field A", "Old field B")},
     )
-    spec = build_front_matter(_layout_with_front_matter(fm))
+    layout = _layout_with_front_matter(fm)
+    spec = build_front_matter(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     flat = _flat(spec)
     assert "Old field A" in flat
     assert "Old field B" in flat
@@ -136,6 +150,8 @@ def test_front_matter_handles_missing_front_matter_gracefully():
         value_map={},
         front_matter=None,
     )
-    spec = build_front_matter(layout)
+    spec = build_front_matter(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     # Falls back to layout fields; never raises.
     assert "T" in _flat(spec)

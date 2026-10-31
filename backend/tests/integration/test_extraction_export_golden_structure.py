@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -25,7 +24,7 @@ from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKin
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
 from app.services.hitl_session_service import HITLSessionService
@@ -34,9 +33,16 @@ from tests.integration.conftest import SEED
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-#: Sheets that are NOT per-section tidy tables / the matrix; used to count the
-#: data sheets and to find the matrix sheet by exclusion.
-_RESERVED = {"Summary", "Data dictionary", "Dropdown lists", "AI metadata"}
+#: Fixed sheets (every one but README); what is left is the per-section tidy
+#: tables.
+_RESERVED = {
+    "Summary",
+    "Matrix",
+    "Appraisal",
+    "Data dictionary",
+    "Dropdown lists",
+    "AI proposals",
+}
 
 
 @dataclass(frozen=True)
@@ -47,7 +53,6 @@ class _CharmsExportFixture:
     template_id: UUID
     article_ids: tuple[UUID, ...]
     user_id: UUID
-    storage_stub: MagicMock
 
 
 async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture | None:
@@ -131,7 +136,6 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
         template_id=template_id,
         article_ids=(article_id,),
         user_id=profile_id,
-        storage_stub=MagicMock(),
     )
 
 
@@ -144,7 +148,7 @@ async def _charms_workbook(db: AsyncSession):
     fx = await _seed_finalized_charms_run(db)
     if fx is None:
         return None
-    service = ExtractionExportService(db=db, user_id=str(fx.user_id), storage=fx.storage_stub)
+    service = ExtractionExportService(db=db, user_id=str(fx.user_id))
     layout = await service.resolve_layout(
         project_id=fx.project_id,
         template_id=fx.template_id,
@@ -153,11 +157,13 @@ async def _charms_workbook(db: AsyncSession):
         include_ai_metadata=True,
         anonymize_reviewer_names=False,
     )
-    return load_workbook(io.BytesIO(build_workbook(layout)))
+    return load_workbook(
+        io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
 
 
 async def test_workbook_has_the_expected_sheet_inventory(db_session: AsyncSession) -> None:
-    """README/Methods first, Summary + Data dictionary present, AI metadata last."""
+    """README/Methods first, Summary + Data dictionary present, AI proposals last."""
     wb = await _charms_workbook(db_session)
     if wb is None:
         pytest.skip("Missing fixtures.")
@@ -168,11 +174,12 @@ async def test_workbook_has_the_expected_sheet_inventory(db_session: AsyncSessio
     assert titles[0] == "README"
     assert "Summary" in titles
     assert "Data dictionary" in titles
-    # AI-metadata toggle is on, so it is appended last (after every §4 sheet).
-    assert titles[-1] == "AI metadata"
-    # At least the matrix + one tidy table beyond the reserved sheets and README.
+    # The AI toggle is on, so AI proposals is appended last (after every §4 sheet).
+    assert titles[-1] == "AI proposals"
+    assert "Matrix" in titles
+    # At least one tidy table beyond the fixed sheets and README.
     data_sheets = [t for t in titles if t not in _RESERVED and t != "README"]
-    assert len(data_sheets) >= 2
+    assert len(data_sheets) >= 1
 
     await db_session.rollback()
 
@@ -199,14 +206,11 @@ async def test_data_dictionary_header_is_canonical(db_session: AsyncSession) -> 
 
 
 async def test_matrix_label_columns_are_section_and_field(db_session: AsyncSession) -> None:
-    """The matrix sheet (named after the template) leads with Section / Field."""
+    """The Matrix sheet leads with Section / Field."""
     wb = await _charms_workbook(db_session)
     if wb is None:
         pytest.skip("Missing fixtures.")
-    # The matrix sheet is named after the template; find it by exclusion — it is
-    # the first non-reserved, non-README sheet (it is rendered before the tidy
-    # tables in §4 order).
-    matrix = next(ws for ws in wb.worksheets if ws.title not in _RESERVED and ws.title != "README")
+    matrix = wb["Matrix"]
     assert matrix.cell(row=1, column=1).value == "Section"
     assert matrix.cell(row=1, column=2).value == "Field"
 

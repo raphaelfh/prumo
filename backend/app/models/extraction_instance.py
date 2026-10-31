@@ -62,7 +62,9 @@ class ExtractionInstance(BaseModel):
 
     label: Mapped[str] = mapped_column(String, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default={}, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

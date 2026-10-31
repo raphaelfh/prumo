@@ -12,17 +12,15 @@ import io
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-import pytest
 from openpyxl import Workbook, load_workbook
 
-from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
 from app.services.exports.extraction.matrix import build_matrix
 from app.services.exports.extraction.sheet_spec import _render_sheet_spec
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles, build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -83,9 +81,11 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
                 (run_id, inst_a, fid): "CT angiography",
                 (run_id, inst_b, fid): "MRI",
             },
-        )
+        ),
+        ExportShape.COMPLETE,
+        include_matrix=True,
     )
-    ws = load_workbook(io.BytesIO(data))["CHARMS"]
+    ws = load_workbook(io.BytesIO(data))["Matrix"]
 
     # Article header spans TWO instance sub-columns (merged C1:D1).
     assert ws.cell(row=1, column=3).value == "Gaca, 2011"
@@ -103,38 +103,6 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
     assert ws.cell(row=field_row, column=4).value == "MRI"
 
 
-def test_column_guard_rejects_layouts_over_excel_limit():
-    # One study-many section with an absurd instance count to blow the
-    # 16,384-column budget deterministically (no real fan-out needed).
-    eid = uuid4()
-    fid = uuid4()
-    field = FieldDescriptor(
-        field_id=fid,
-        label="F",
-        type=ExtractionFieldType.TEXT,
-        allowed_values=(),
-    )
-    section = SectionDescriptor(
-        entity_type_id=eid,
-        label="S",
-        parent_entity_type_id=None,
-        fields=(field,),
-        cardinality=ExtractionCardinality.MANY,
-    )
-    run_id = uuid4()
-    instance_ids = tuple(uuid4() for _ in range(16_400))
-    article = ArticleDescriptor(
-        article_id=uuid4(),
-        header_label="Big",
-        run_id=run_id,
-        version_id=None,
-        entries={(eid, None): instance_ids},
-    )
-    with pytest.raises(AppError) as exc:
-        build_workbook(_layout((section,), (article,), {}))
-    assert "16384" in str(exc.value) or "column" in str(exc.value).lower()
-
-
 # ----------------------------------------------------------------------
 # §5.4 sub-builder: build_matrix -> SheetSpec, asserted on the rendered
 # worksheet so the verbatim lift keeps cell values / merges identical.
@@ -142,7 +110,7 @@ def test_column_guard_rejects_layouts_over_excel_limit():
 
 
 def _render_matrix(layout: ExportLayout):
-    spec = build_matrix(layout)
+    spec = build_matrix(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
     wb = Workbook()
     wb.remove(wb.active)
     ws = wb.create_sheet(title="tmp")
@@ -286,7 +254,7 @@ def test_matrix_structural_styling() -> None:
         entries={(sec_id, None): (inst_id,)},
     )
     layout = _spec_layout(sections=(section,), articles=(article,))
-    spec = build_matrix(layout)
+    spec = build_matrix(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
 
     # Freeze locks label block (A,B) + header row -> first scrollable cell C2.
     assert spec.freeze == "C2"
@@ -336,7 +304,7 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
         mode=ExportMode.ALL_USERS,
         reviewers=(ReviewerDescriptor(reviewer_id=rid, display_label="R1"),),
     )
-    spec = build_matrix(layout)
+    spec = build_matrix(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
     assert spec.freeze == "C3"
 
 

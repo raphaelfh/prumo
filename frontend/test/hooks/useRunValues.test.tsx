@@ -33,13 +33,17 @@ let fail: boolean;
 let offline: boolean;
 let gate: Promise<void> | null;
 let viewReads: number;
+let canon: (v: Record<string, unknown>) => Record<string, unknown>;
 const proposal = {id: 'p1', instanceId: 'i', fieldId: 'a', value: 'AI'};
 const row = (id: string, field: string, value: Record<string, unknown>): ReviewerDecisionResponse => ({
   id, run_id: 'run', instance_id: 'i', field_id: field, reviewer_id: 'me', value,
   decision: 'edit', proposal_record_id: null, rationale: null, created_at: `2026-09-15T00:00:${id.padStart(2, '0')}Z`,
 });
+/** A run-view proposal on coordinate `i`/`a`; `source` defaults to `ai`. */
+const aiRow = (id: string, value: unknown = 'AI', source = 'ai') => ({id, run_id: 'run', instance_id: 'i', field_id: 'a', source,
+  source_user_id: null, proposed_value: {value}, confidence_score: null, rationale: null, created_at: '2026-09-15T00:00:00Z'});
 beforeEach(() => {
-  history = []; requests = []; postedRuns = []; fail = false; offline = false; gate = null; viewReads = 0;
+  history = []; requests = []; postedRuns = []; fail = false; offline = false; gate = null; viewReads = 0; canon = v => v;
   server.use(
     http.get('*/api/v1/runs/:run/view', () => {viewReads += 1; return HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}});}),
     http.post('*/api/v1/runs/:run/decisions', async ({request, params}) => {
@@ -53,7 +57,8 @@ beforeEach(() => {
       if (body.expected_current_decision_id && body.expected_current_decision_id !== latest?.id) {
         return HttpResponse.json({ok: false, error: {code: 'DECISION_CONFLICT', message: 'Decision changed'}}, {status: 409});
       }
-      const decision = {...row(String(Math.max(0, ...history.map(item => Number(item.id))) + 1), body.field_id, body.value!), run_id: String(params.run), ...body};
+      // `canon` models the server canonicalizing the stored value (number '5' → 5).
+      const decision = {...row(String(Math.max(0, ...history.map(item => Number(item.id))) + 1), body.field_id, body.value!), run_id: String(params.run), ...body, value: canon(body.value!)};
       history.push(decision as ReviewerDecisionResponse);
       return HttpResponse.json({ok: true, data: decision});
     }),
@@ -78,8 +83,8 @@ function renderValues(initial: RunViewResponse | undefined, {user = 'me' as stri
 }
 
 /** The decision harness: run `run` in extract for caller `me`, its `current_values` from `hydrated` (field → value). */
-function setup(hydrated: Record<string, unknown> = {}, {kind = 'extraction' as Kind} = {}) {
-  const viewFor = (id: string) => makeRunView({run: {id, kind}, decisions: history,
+function setup(hydrated: Record<string, unknown> = {}, {kind = 'extraction' as Kind, proposals = [] as unknown[]} = {}) {
+  const viewFor = (id: string) => makeRunView({run: {id, kind}, decisions: history, proposals: proposals as RunViewResponse['proposals'],
     current_values: Object.entries(hydrated).map(([field, value]) => current(field, value))});
   const runs: Record<string, RunViewResponse> = {run: viewFor('run'), run2: viewFor('run2'), 'other-run': viewFor('other-run')};
   const {queryClient, wrapper} = wrapperFor();
@@ -197,9 +202,11 @@ describe('another run or caller replaces the form', () => {
 
 describe('the baseline: hydrated values are never re-written', () => {
   it.each(KINDS)('%s: a decision-backed coordinate and an accepted linked one post nothing on mount', async kind => {
-    history = [row('1', 'a', {value: 'Y'}), {...row('2', 'b', {value: 'AI'}), proposal_record_id: 'p1'}];
-    renderValues(makeRunView({run: {id: 'run', kind}, decisions: history,
-      current_values: [current('a', 'Y'), current('b', 'AI')]}), {debounceMs: 20});
+    // `c`: a typed edit that kept the AI link (head {value: 'X', link: p1}) is hydrated, not re-written.
+    history = [row('1', 'a', {value: 'Y'}), {...row('2', 'b', {value: 'AI'}), proposal_record_id: 'p1'},
+      {...row('3', 'c', {value: 'X'}), proposal_record_id: 'p1'}];
+    renderValues(makeRunView({run: {id: 'run', kind}, decisions: history, proposals: [aiRow('p1')] as RunViewResponse['proposals'],
+      current_values: [current('a', 'Y'), current('b', 'AI'), current('c', 'X')]}), {debounceMs: 20});
     // Past the debounce window, or the assertion is vacuous.
     await act(async () => {await new Promise(resolve => setTimeout(resolve, 120));});
     expect(requests).toHaveLength(0);
@@ -273,6 +280,73 @@ describe('one accept path for both kinds', () => {
     expect(requests.at(-1)).toMatchObject({value: {value: null}, proposal_record_id: null});
     expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBeNull();
   });
+
+  it('a typed edit over an accepted AI value sends its id in exactly one write', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', 'X'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => [r.value, r.proposal_record_id])).toEqual([[{value: 'AI'}, 'p1'], [{value: 'X'}, 'p1']]);
+    expect(requests[1].expected_current_decision_id).toBe('1');
+    expect(view.result.current.isAccepted(proposal)).toBe(false);
+  });
+
+  it('a typed edit over an accepted AI value the server canonicalizes is written once and recorded once', async () => {
+    canon = v => (v.value === '5' ? {...v, value: 5} : v);
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', '5'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => [r.value, r.proposal_record_id])).toEqual([[{value: 'AI'}, 'p1'], [{value: '5'}, 'p1']]);
+    expect(view.result.current.undoTarget).toMatchObject({id: '2', value: {value: 5}, proposalRecordId: 'p1'});
+  });
+
+  it('guard: accept, clear, then type sends no link', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', null));
+    await act(async () => {await view.result.current.saveNow();});
+    act(() => view.result.current.edit('a', 'Y'));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => r.proposal_record_id)).toEqual(['p1', null, null]);
+  });
+
+  it.each([
+    ['a unit number', {value: 5, unit: 'mg'}, {value: '', unit: 'mg'}, {value: '7', unit: 'mg'}],
+    ['a multiselect', ['B'], [], ['C']],
+    ['a multiselect with other', {selected: ['B'], other_texts: []}, {selected: [], other_texts: ['']}, {selected: ['C'], other_texts: []}],
+  ])('guard: accept, clear %s, then type sends no link', async (_label, accepted, cleared, typed) => {
+    const view = setup({}, {proposals: [aiRow('p1', accepted)]});
+    await act(async () => {await view.result.current.acceptProposal({...proposal, value: accepted});});
+    act(() => view.result.current.edit('a', cleared));
+    await act(async () => {await view.result.current.saveNow();});
+    act(() => view.result.current.edit('a', typed));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => [r.value, r.proposal_record_id])).toEqual([
+      [{value: accepted}, 'p1'], [{value: cleared}, null], [{value: typed}, null],
+    ]);
+  });
+
+  it.each([
+    ['a system proposal', [aiRow('s1', 'S', 'system')]],
+    ['a proposal outside this run view', []],
+  ])('guard: a head linked to %s carries no link into a typed edit', async (_label, proposals) => {
+    history = [{...row('1', 'a', {value: 'S'}), proposal_record_id: 's1'}];
+    const view = setup({a: 'S'}, {proposals});
+    act(() => view.result.current.edit('a', 'T'));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests).toEqual([expect.objectContaining({value: {value: 'T'}, proposal_record_id: null})]);
+  });
+
+  it('a no-information marker over an accepted AI value keeps the link (D8)', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', {value: null, absent_reason: 'no_information'}));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.at(-1)).toMatchObject({value: {value: null, absent_reason: 'no_information'}, proposal_record_id: 'p1'});
+  });
 });
 
 describe('confirmed proposal decisions and local undo', () => {
@@ -343,21 +417,55 @@ describe('confirmed proposal decisions and local undo', () => {
     expect(view.result.current.canUndo).toBe(false);
     expect(view.result.current.values.i_a).toBeUndefined();
   });
-  it('reverses B to A without reaccepting A, then undoes multiple local actions at one coordinate', async () => {
-    const view = setup();
+  it('undo of a typed edit made over an accepted AI value restores the AI link', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', 'X'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: 'p1', expected_current_decision_id: '2'});
+    expect(view.result.current.isAccepted(proposal)).toBe(true);
+  });
+  it('undo after redo restores the redone entry\'s predecessor link', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', 'X'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    await act(async () => {expect(await view.result.current.redoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({value: {value: 'X'}, proposal_record_id: 'p1', expected_current_decision_id: '3'});
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: 'p1', expected_current_decision_id: '4'});
+  });
+  it('un-accepting B restores A with its link, then undoes multiple local actions at one coordinate', async () => {
+    const view = setup({}, {proposals: [aiRow('p1'), aiRow('p2', ['B', 'C'])]});
     await act(async () => {await view.result.current.acceptProposal(proposal);});
     const second = {...proposal, id: 'p2', value: ['B', 'C']};
     await act(async () => {await view.result.current.acceptProposal(second);});
     await act(async () => {await view.result.current.acceptProposal(second);});
-    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: null});
-    expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBeNull();
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: 'p1', expected_current_decision_id: '2'});
+    expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBe('p1');
+    expect(view.result.current.isAccepted(proposal)).toBe(true);
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)?.proposal_record_id).toBe('p2');
     expect(view.result.current.values.i_a).toEqual(['B', 'C']);
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)?.proposal_record_id).toBe('p1');
     expect(view.result.current.values.i_a).toBe('AI');
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)?.proposal_record_id).toBeNull();
     expect(view.result.current.values.i_a).toBeNull();
     expect(view.result.current.canUndo).toBe(false);
+  });
+  it('un-accepting A after it was restored reverses to the B acceptance (D8 ping-pong)', async () => {
+    const view = setup({}, {proposals: [aiRow('p1'), aiRow('p2', ['B', 'C'])]});
+    const second = {...proposal, id: 'p2', value: ['B', 'C']};
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    await act(async () => {await view.result.current.acceptProposal(second);});
+    await act(async () => {await view.result.current.acceptProposal(second);});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    expect(requests.at(-1)).toMatchObject({value: {value: ['B', 'C']}, proposal_record_id: 'p2', expected_current_decision_id: '3'});
+    expect(view.result.current.isAccepted(second)).toBe(true);
   });
   it('redo re-applies an undone acceptance with its link, guarded on the compensating head, and can be undone again', async () => {
     const view = setup();

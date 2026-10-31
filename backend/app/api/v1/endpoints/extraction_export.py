@@ -14,7 +14,6 @@ project-wide ``ApiResponse`` envelope.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import uuid
 from typing import Any
@@ -25,24 +24,24 @@ from fastapi.responses import JSONResponse
 from redis import Redis
 
 from app.core.config import settings
-from app.core.deps import CurrentUser, DbSession, SupabaseClient
-from app.core.error_handler import AuthorizationError, NotFoundError
-from app.core.factories import create_storage_adapter
+from app.core.deps import CurrentUser, DbSession
+from app.core.error_handler import AuthorizationError, NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_export import (
-    ExtractionArticleScope,
     ExtractionExportCancelResponse,
     ExtractionExportMode,
     ExtractionExportRequest,
     ExtractionExportStartedResponse,
     ExtractionExportStatusResponse,
 )
-from app.services.exports.extraction.workbook import (
-    ExportShape,
-    build_workbook,
-    shape_needs_articles,
+from app.services.exports.extraction.run import (
+    EmptyExportError,
+    ExportRequest,
+    authorize_export,
+    build_export,
 )
+from app.services.exports.extraction.workbook import ExportShape
 from app.services.extraction_export_service import (
     ExportMode,
     ExtractionExportService,
@@ -60,7 +59,6 @@ logger = get_logger(__name__)
 #: ``articles_export.SYNC_METADATA_ONLY_MAX_ARTICLES`` (research.md §3).
 SYNC_EXPORT_MAX_ARTICLES = 50
 
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 #: Redis owner record TTL (matches Celery ``result_expires``).
 _EXPORT_OWNER_KEY_PREFIX = "extraction_export_owner:"
@@ -101,6 +99,19 @@ def _lookup_export_owner(job_id: str) -> str | None:
     return str(raw)
 
 
+def _export_request(project_id: UUID, payload: ExtractionExportRequest) -> ExportRequest:
+    return ExportRequest(
+        project_id=project_id,
+        template_id=payload.template_id,
+        mode=ExportMode(payload.mode.value),
+        article_ids=tuple(payload.article_ids),
+        reviewer_id=payload.reviewer_id,
+        include_ai_metadata=payload.include_ai_metadata,
+        anonymize_reviewer_names=payload.anonymize_reviewer_names,
+        shape=ExportShape(payload.shape.value),
+    )
+
+
 def _should_run_sync(payload: ExtractionExportRequest) -> bool:
     """Decide between sync inline delivery and async background job."""
     if payload.mode is ExtractionExportMode.ALL_USERS:
@@ -127,7 +138,6 @@ async def start_extraction_export(
     payload: ExtractionExportRequest,
     db: DbSession,
     user: CurrentUser,
-    supabase: SupabaseClient,
 ) -> Response | ApiResponse[ExtractionExportStartedResponse]:
     """Validate, authorise, then dispatch via sync or async path.
 
@@ -139,42 +149,22 @@ async def start_extraction_export(
     """
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
 
-    # --- request coherence ------------------------------------------------
-    if payload.mode is ExtractionExportMode.SINGLE_USER and payload.reviewer_id is None:
-        return _envelope_failure(
-            status.HTTP_400_BAD_REQUEST,
-            code="VALIDATION_ERROR",
-            message="reviewer_id is required when mode=single_user.",
-            trace_id=trace_id,
-        )
-    if payload.article_scope is ExtractionArticleScope.SELECTED_ONLY and not payload.article_ids:
-        return _envelope_failure(
-            status.HTTP_400_BAD_REQUEST,
-            code="VALIDATION_ERROR",
-            message="article_ids cannot be empty when article_scope=selected_only.",
-            trace_id=trace_id,
-        )
-
-    # --- service + auth gate ----------------------------------------------
-    storage = create_storage_adapter(supabase)
-    service = ExtractionExportService(
-        db=db,
-        user_id=user.sub,
-        storage=storage,
-        trace_id=trace_id,
-    )
-
+    req = _export_request(project_id, payload)
     try:
-        await service.assert_can_export(
-            project_id=project_id,
-            mode=ExportMode(payload.mode.value),
-            target_reviewer_id=payload.reviewer_id,
-        )
+        await authorize_export(db, req, user_id=user.sub)
     except AuthorizationError as exc:
         return _envelope_failure(
-            status.HTTP_403_FORBIDDEN,
-            code="FORBIDDEN",
-            message=str(exc),
+            status.HTTP_403_FORBIDDEN, code="FORBIDDEN", message=exc.message, trace_id=trace_id
+        )
+    except NotFoundError as exc:
+        return _envelope_failure(
+            status.HTTP_404_NOT_FOUND, code="NOT_FOUND", message=exc.message, trace_id=trace_id
+        )
+    except ValidationError as exc:
+        return _envelope_failure(
+            status.HTTP_400_BAD_REQUEST,
+            code="VALIDATION_ERROR",
+            message=exc.message,
             trace_id=trace_id,
         )
 
@@ -196,55 +186,20 @@ async def start_extraction_export(
 
     # --- sync path --------------------------------------------------------
     if _should_run_sync(payload):
-        shape = ExportShape(payload.shape.value)
         try:
-            layout = await service.resolve_layout(
-                project_id=project_id,
-                template_id=payload.template_id,
-                mode=ExportMode(payload.mode.value),
-                article_ids=payload.article_ids,
-                include_ai_metadata=payload.include_ai_metadata,
-                anonymize_reviewer_names=payload.anonymize_reviewer_names,
-                reviewer_id=payload.reviewer_id,
-            )
-        except NotFoundError as exc:
-            return _envelope_failure(
-                status.HTTP_404_NOT_FOUND,
-                code="NOT_FOUND",
-                message=str(exc),
-                trace_id=trace_id,
-            )
-
-        # A dictionary-only workbook is a description of the INSTRUMENT — its
-        # three sheets are template projections that never read a run — so it
-        # must not be refused for want of finalized assessments.
-        if not layout.articles and shape_needs_articles(shape):
+            file = await build_export(db, req, user_id=user.sub, trace_id=trace_id)
+        except EmptyExportError as exc:
             return _envelope_failure(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                code="EMPTY_ELIGIBLE_ARTICLES",
-                message=(
-                    "No eligible articles for the selected mode + scope. "
-                    "Finalize at least one Run, then retry."
-                ),
+                code=exc.code,
+                message=exc.message,
                 trace_id=trace_id,
             )
-
-        # Run the CPU-bound openpyxl writer off the event loop.
-        data: bytes = await asyncio.to_thread(build_workbook, layout, shape)
-
-        filename = ExtractionExportService.format_filename(
-            project_name=layout.project_name,
-            template_name=layout.template_name,
-            mode=ExportMode(payload.mode.value),
-            generated_at=layout.notes.generated_at,
-        )
-
         return Response(
-            content=data,
-            media_type=_XLSX_MIME,
+            content=file.content,
+            media_type=file.media_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "Access-Control-Expose-Headers": "Content-Disposition,X-Trace-Id",
+                "Content-Disposition": f'attachment; filename="{file.filename}"',
                 "X-Trace-Id": trace_id,
             },
         )
@@ -309,7 +264,6 @@ async def list_extraction_export_reviewers(
     template_id: UUID,
     db: DbSession,
     user: CurrentUser,
-    supabase: SupabaseClient,
 ) -> ApiResponse[list[dict[str, Any]]]:
     """Return reviewers who have ≥ 1 non-reject decision on this template.
 
@@ -317,11 +271,9 @@ async def list_extraction_export_reviewers(
     see everyone. The dialog uses this to populate the picker.
     """
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
-    storage = create_storage_adapter(supabase)
     service = ExtractionExportService(
         db=db,
         user_id=user.sub,
-        storage=storage,
         trace_id=trace_id,
     )
 

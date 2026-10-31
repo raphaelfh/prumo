@@ -6,6 +6,8 @@ import uuid
 
 import pytest
 
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles
+
 
 def test_appraisal_dataclasses_importable_and_default_none() -> None:
     """AppraisalModel/AppraisalRow exist and ExportLayout.appraisal defaults to None."""
@@ -118,7 +120,12 @@ def test_build_appraisal_summary_none_when_no_layer() -> None:
     from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 
     layout = _layout_with_appraisal(None)
-    assert build_appraisal_summary(layout) is None
+    assert (
+        build_appraisal_summary(
+            layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        )
+        is None
+    )
 
 
 def test_build_appraisal_summary_consensus_shape() -> None:
@@ -139,7 +146,10 @@ def test_build_appraisal_summary_consensus_shape() -> None:
             ),
         ),
     )
-    spec = build_appraisal_summary(_layout_with_appraisal(appraisal))
+    layout = _layout_with_appraisal(appraisal)
+    spec = build_appraisal_summary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec is not None
     # Header row: Record + each domain + Overall.
     header = tuple(c.value for c in spec.rows[0])
@@ -176,8 +186,9 @@ def test_build_appraisal_summary_all_users_per_reviewer_columns() -> None:
             ),
         ),
     )
+    layout = _layout_with_appraisal(appraisal, mode_name="all_users", reviewers=reviewers)
     spec = build_appraisal_summary(
-        _layout_with_appraisal(appraisal, mode_name="all_users", reviewers=reviewers)
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
     )
     header = tuple(c.value for c in spec.rows[0])
     # consensus Overall + one Overall column PER reviewer, in reviewer order.
@@ -209,7 +220,10 @@ def test_build_appraisal_summary_single_user_one_overall() -> None:
             ),
         ),
     )
-    spec = build_appraisal_summary(_layout_with_appraisal(appraisal, mode_name="single_user"))
+    layout = _layout_with_appraisal(appraisal, mode_name="single_user")
+    spec = build_appraisal_summary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     header = tuple(c.value for c in spec.rows[0])
     assert header == ("Record", "Participants", "Overall")  # no per-reviewer cols
     assert tuple(c.value for c in spec.rows[1]) == ("Gaca, 2011", "High", "High")

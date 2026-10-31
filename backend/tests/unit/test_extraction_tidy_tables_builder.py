@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.models.extraction import ExtractionCardinality
 from app.services.exports.extraction.tidy_tables import build_tidy_tables
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles
 from app.services.extraction_export_service import (
     ExportLayout,
     ExportMode,
@@ -84,18 +85,27 @@ def _model_table() -> TidyTable:
 
 
 def test_one_sheet_per_tidy_table():
-    specs = build_tidy_tables(_layout((_study_table(), _model_table())))
+    layout = _layout((_study_table(), _model_table()))
+    specs = build_tidy_tables(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert [s.title for s in specs] == ["Study characteristics", "Model characteristics"]
 
 
 def test_tidy_table_header_is_record_plus_field_labels():
-    spec = build_tidy_tables(_layout((_study_table(),)))[0]
+    layout = _layout((_study_table(),))
+    spec = build_tidy_tables(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )[0]
     header = [c.value for c in spec.rows[0]]
     assert header == ["Record", "Author", "Year"]
 
 
 def test_tidy_table_one_row_per_record_with_baked_values():
-    spec = build_tidy_tables(_layout((_study_table(),)))[0]
+    layout = _layout((_study_table(),))
+    spec = build_tidy_tables(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )[0]
     body = spec.rows[1:]
     assert [r[0].value for r in body] == ["Gaca, 2011", "De Feo, 2012"]
     assert body[0][1].value == "Gaca"
@@ -104,7 +114,10 @@ def test_tidy_table_one_row_per_record_with_baked_values():
 
 
 def test_many_cardinality_records_each_instance():
-    spec = build_tidy_tables(_layout((_model_table(),)))[0]
+    layout = _layout((_model_table(),))
+    spec = build_tidy_tables(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )[0]
     body = spec.rows[1:]
     assert [r[0].value for r in body] == ["Gaca, 2011 — Model 1", "Gaca, 2011 — Model 2"]
     assert body[0][1].value == "Logistic regression"
@@ -112,4 +125,10 @@ def test_many_cardinality_records_each_instance():
 
 
 def test_empty_tidy_tables_returns_empty_list():
-    assert build_tidy_tables(_layout(())) == []
+    layout = _layout(())
+    assert (
+        build_tidy_tables(
+            layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        )
+        == []
+    )

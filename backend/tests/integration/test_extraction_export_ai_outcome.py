@@ -32,7 +32,6 @@ proposal / decision insertion and ``project_id`` scoping used in
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -234,9 +233,7 @@ async def _record_decision(
 
 
 def _service(db: AsyncSession, *, profile_id: UUID) -> ExtractionExportService:
-    return ExtractionExportService(
-        db=db, user_id=str(profile_id), storage=MagicMock(), trace_id="t"
-    )
+    return ExtractionExportService(db=db, user_id=str(profile_id), trace_id="t")
 
 
 def _article(

@@ -15,7 +15,6 @@ project, and roll the transaction back at the end.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -157,7 +156,6 @@ async def seeded_export_fixture(
     service = ExtractionExportService(
         db=db,
         user_id=str(profile_id),
-        storage=MagicMock(),
     )
     return _ExportFixtureCtx(
         service=service,

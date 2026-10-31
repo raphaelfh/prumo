@@ -136,25 +136,21 @@ def _every_sheet_layout() -> ExportLayout:
 
 
 def _sheetnames(shape: ExportShape) -> list[str]:
-    data = build_workbook(_every_sheet_layout(), shape=shape)
+    data = build_workbook(_every_sheet_layout(), shape, include_matrix=True)
     return load_workbook(io.BytesIO(data)).sheetnames
 
 
-def test_complete_is_the_default_and_emits_every_sheet() -> None:
-    every = [
+def test_complete_emits_every_sheet() -> None:
+    assert _sheetnames(ExportShape.COMPLETE) == [
         "README",
         "Summary",
-        "PROBAST",
+        "Matrix",
         "Participants",
-        "Appraisal summary",
+        "Appraisal",
         "Data dictionary",
         "Dropdown lists",
-        "AI metadata",
+        "AI proposals",
     ]
-    assert _sheetnames(ExportShape.COMPLETE) == every
-    # No shape argument = today's behaviour, byte-for-byte the same sheets.
-    default = load_workbook(io.BytesIO(build_workbook(_every_sheet_layout())))
-    assert default.sheetnames == every
 
 
 def test_dictionary_keeps_readme_and_the_catalogue_only() -> None:
@@ -169,7 +165,7 @@ def test_publication_keeps_readme_the_tidy_tables_and_the_appraisal() -> None:
     assert _sheetnames(ExportShape.PUBLICATION) == [
         "README",
         "Participants",
-        "Appraisal summary",
+        "Appraisal",
     ]
 
 
@@ -184,26 +180,29 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
     called: set[str] = set()
 
     def _spy(name: str, result):
-        def _fn(_layout):
+        def _fn(_layout, _titles):
             called.add(name)
             return result
 
         return _fn
 
     one = SheetSpec(title="x", rows=((Cell("x"),),))
-    for name, result in (
-        ("front_matter", one),
-        ("summary", one),
-        ("matrix", one),
-        ("appraisal_summary", one),
-        ("data_dictionary", one),
-        ("dropdown_lists", one),
-        ("ai_metadata", one),
+    for role, fn_name, result in (
+        ("front_matter", "build_front_matter", one),
+        ("summary", "build_summary", one),
+        ("matrix", "build_matrix", one),
+        ("appraisal_summary", "build_appraisal_summary", one),
+        ("data_dictionary", "build_data_dictionary", one),
+        ("dropdown_lists", "build_dropdown_lists", one),
+        # The role id is ``ai_proposals``; the module keeps its name until PR5.
+        ("ai_proposals", "build_ai_metadata", one),
     ):
-        monkeypatch.setattr(workbook_module, f"build_{name}", _spy(name, result))
+        monkeypatch.setattr(workbook_module, fn_name, _spy(role, result))
     monkeypatch.setattr(workbook_module, "build_tidy_tables", _spy("tidy_tables", []))
 
-    workbook_module._ordered_specs(_every_sheet_layout(), shape)
+    layout = _every_sheet_layout()
+    titles = workbook_module.allocate_titles(layout, shape, include_matrix=True)
+    workbook_module._ordered_specs(layout, shape, titles)
     return called
 
 
@@ -227,7 +226,7 @@ def test_complete_shape_calls_every_builder(monkeypatch) -> None:
         "appraisal_summary",
         "data_dictionary",
         "dropdown_lists",
-        "ai_metadata",
+        "ai_proposals",
     }
 
 
@@ -245,7 +244,7 @@ def _no_article_layout() -> ExportLayout:
 
 
 def test_dictionary_shape_builds_with_no_articles() -> None:
-    data = build_workbook(_no_article_layout(), shape=ExportShape.DICTIONARY)
+    data = build_workbook(_no_article_layout(), ExportShape.DICTIONARY, include_matrix=True)
     wb = load_workbook(io.BytesIO(data))
     assert wb.sheetnames == ["README", "Data dictionary", "Dropdown lists"]
     # The catalogue is the point: it must carry the field, not just a header.

@@ -10,7 +10,7 @@ Feature: 009-extraction-excel-export. Contract:
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ExtractionExportMode(StrEnum):
@@ -67,8 +67,10 @@ class ExtractionExportRequest(BaseModel):
     )
     article_ids: list[UUID] = Field(
         ...,
-        description="Candidate article ids (resolved by the caller per article_scope).",
-        min_length=1,
+        description=(
+            "Candidate article ids (resolved by the caller per article_scope). "
+            "May be empty only when shape=dictionary."
+        ),
     )
     include_ai_metadata: bool = Field(
         default=False,
@@ -82,6 +84,12 @@ class ExtractionExportRequest(BaseModel):
         default=ExtractionExportShape.COMPLETE,
         description="Which sheets the workbook carries. Defaults to every sheet.",
     )
+
+    @model_validator(mode="after")
+    def _require_articles_unless_dictionary(self) -> "ExtractionExportRequest":
+        if not self.article_ids and self.shape is not ExtractionExportShape.DICTIONARY:
+            raise ValueError("article_ids must not be empty unless shape=dictionary.")
+        return self
 
 
 class ExtractionExportStartedResponse(BaseModel):

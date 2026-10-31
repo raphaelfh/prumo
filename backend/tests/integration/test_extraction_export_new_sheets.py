@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -25,7 +24,7 @@ from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKin
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
 from app.services.hitl_session_service import HITLSessionService
@@ -43,7 +42,6 @@ class _CharmsExportFixture:
     template_id: UUID
     article_ids: tuple[UUID, ...]
     user_id: UUID
-    storage_stub: MagicMock
 
 
 async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture | None:
@@ -129,7 +127,6 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
         template_id=template_id,
         article_ids=(article_id,),
         user_id=profile_id,
-        storage_stub=MagicMock(),
     )
 
 
@@ -139,9 +136,7 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
     if fx is None:
         pytest.skip("Missing fixtures.")
 
-    service = ExtractionExportService(
-        db=db_session, user_id=str(fx.user_id), storage=fx.storage_stub
-    )
+    service = ExtractionExportService(db=db_session, user_id=str(fx.user_id))
     layout = await service.resolve_layout(
         project_id=fx.project_id,
         template_id=fx.template_id,
@@ -156,12 +151,14 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
     assert layout.data_dictionary  # >=1 field
     assert layout.tidy_tables  # >=1 section table
 
-    wb = load_workbook(io.BytesIO(build_workbook(layout)))
+    wb = load_workbook(
+        io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
     assert "README" in wb.sheetnames
     assert "Summary" in wb.sheetnames
     assert "Data dictionary" in wb.sheetnames
     # At least one tidy-table sheet beyond the always-present ones.
-    base = {"README", "Summary", "Data dictionary", layout.template_name[:31]}
+    base = {"README", "Summary", "Matrix", "Data dictionary"}
     assert any(name not in base and name != "Dropdown lists" for name in wb.sheetnames)
 
     # Front matter carries the template identity + export mode.

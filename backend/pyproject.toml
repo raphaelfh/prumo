@@ -164,6 +164,7 @@ dev = [
     "pytest-deadfixtures>=2.2",
     "mutmut>=3.0",
     "celery-types>=0.26.0",
+    "pandas>=3.0",
 ]
 
 [tool.mutmut]

@@ -9,8 +9,12 @@ a worksheet — structural styling only (no conditional formatting, §9).
 
 from __future__ import annotations
 
+import re
+from collections.abc import Collection
 from dataclasses import dataclass
+from typing import Final
 
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -56,6 +60,47 @@ class SheetSpec:
     tab_color: str | None = None  # hex tab colour or None
 
 
+RESERVED_TITLES: Final[tuple[str, ...]] = (
+    "README",
+    "Summary",
+    "Matrix",
+    "Articles",
+    "Data",
+    "Verification",
+    "AI proposals",
+    "Appraisal",
+    "Codebook",
+    "Options",
+    "History",
+)
+
+_TITLE_FORBIDDEN_RE = re.compile(r"[\[\]:*?/\\]")
+_TITLE_MAX = 31
+
+
+def _trim(text: str) -> str:
+    # Excel rejects a leading or trailing apostrophe in a sheet name.
+    return text.strip(" \t\r\n'")
+
+
+def safe_sheet_title(raw: str, taken: Collection[str], *, fallback: str) -> str:
+    """Return a deterministic Excel-safe sheet title not colliding with ``taken``.
+
+    Collisions are case-insensitive; the suffix ``" (n)"`` starts at 2.
+    """
+    cleaned = _TITLE_FORBIDDEN_RE.sub("", ILLEGAL_CHARACTERS_RE.sub("", raw))
+    base = _trim(cleaned) or fallback
+    base = _trim(base[:_TITLE_MAX])
+    used = {t.casefold() for t in taken}
+    candidate = base
+    n = 2
+    while candidate.casefold() in used:
+        suffix = f" ({n})"
+        candidate = _trim(base[: _TITLE_MAX - len(suffix)]) + suffix
+        n += 1
+    return candidate
+
+
 def _style_to_kwargs(
     style: CellStyle,
 ) -> tuple[Font | None, Alignment | None, PatternFill | None]:
@@ -69,6 +114,14 @@ def _style_to_kwargs(
         )
     fill = PatternFill("solid", fgColor=style.fill) if style.fill else None
     return font, alignment, fill
+
+
+def _clean(value: CellValue) -> CellValue:
+    """Strip characters XML 1.0 forbids; openpyxl raises on them otherwise."""
+    if isinstance(value, str):
+        cleaned: str = ILLEGAL_CHARACTERS_RE.sub("", value)  # openpyxl is untyped
+        return cleaned
+    return value
 
 
 def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
@@ -99,7 +152,12 @@ def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
             if (r_idx, c_idx) in merged_non_anchor:
                 target = ws.cell(row=r_idx, column=c_idx)
             else:
-                target = ws.cell(row=r_idx, column=c_idx, value=cell.value)
+                value = _clean(cell.value)
+                target = ws.cell(row=r_idx, column=c_idx, value=value)
+                if isinstance(value, str) and value.startswith("="):
+                    # Written as text, never a formula (injection/readback).
+                    target.data_type = "s"
+                    target.quotePrefix = True
             if cell.style is not None:
                 font, alignment, fill = _style_to_kwargs(cell.style)
                 if font is not None:
@@ -126,7 +184,9 @@ __all__ = [
     "Cell",
     "CellStyle",
     "CellValue",
+    "RESERVED_TITLES",
     "MergeSpan",
     "SheetSpec",
     "_render_sheet_spec",
+    "safe_sheet_title",
 ]

@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
 from app.core.logging import LoggerMixin
-from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
     ExtractionCardinality,
@@ -79,6 +78,10 @@ from app.services.exports.extraction_snapshot_reader import (
 )
 from app.services.exports.value_envelope import resolve_value
 from app.services.extraction_snapshot import pinned_template_rules
+from app.services.project_template_active_service import (
+    ProjectTemplateNotFoundError,
+    owned_template,
+)
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -190,7 +193,7 @@ class FrontMatter:
 
     Built service-side in ``resolve_layout`` (slice task T53) and rendered by
     the pure ``build_front_matter`` sub-builder: template identity, export
-    provenance, a generated ``contents`` list, the glyph/sentinel ``legend``,
+    provenance, the glyph/sentinel ``legend``,
     provenance ``caveats``, and the per-Run ``obsolete_fields_per_article``
     block lifted from ``ExportNotes`` (§5.1).
     """
@@ -202,7 +205,6 @@ class FrontMatter:
     generated_at: datetime
     article_count: int
     record_count: int
-    contents: tuple[str, ...]  # generated sheet-name list
     legend: tuple[tuple[str, str], ...]  # (glyph/sentinel, meaning)
     caveats: tuple[str, ...]  # provenance + best-effort-outcome caveats
     obsolete_fields_per_article: dict[UUID, tuple[str, ...]]  # activated §5.1
@@ -282,7 +284,7 @@ class TidyTable:
     """
 
     section_id: UUID
-    title: str  # sheet-name-safe section label
+    title: str  # section label; ``allocate_titles`` derives the sheet title
     cardinality: ExtractionCardinality
     column_field_ids: tuple[UUID, ...]  # ordered by sort_order
     column_labels: tuple[str, ...]
@@ -379,12 +381,10 @@ class ExtractionExportService(LoggerMixin):
         self,
         db: AsyncSession,
         user_id: str,
-        storage: StorageAdapter,
         trace_id: str | None = None,
     ) -> None:
         self.db = db
         self.user_id = user_id
-        self.storage = storage
         self.trace_id = trace_id or ""
 
     # ------------------------------------------------------------------
@@ -542,7 +542,7 @@ class ExtractionExportService(LoggerMixin):
         )
 
         # README/Methods projection (§4 #1): assembled from the already-computed
-        # counts, the generated contents list, and the obsolete-field block
+        # counts and the obsolete-field block
         # lifted from ``notes`` — no further IO.
         front_matter = _build_front_matter(
             project_name=project_name,
@@ -840,16 +840,10 @@ class ExtractionExportService(LoggerMixin):
         not resolve even though the caller passed our own project's gate, else
         the async export path would leak a foreign project's template metadata.
         """
-        template = (
-            await self.db.execute(
-                select(ProjectExtractionTemplate).where(
-                    ProjectExtractionTemplate.id == template_id,
-                    ProjectExtractionTemplate.project_id == project_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if template is None:
-            raise NotFoundError(f"Project template {template_id} not found.")
+        try:
+            template = await owned_template(self.db, project_id=project_id, template_id=template_id)
+        except ProjectTemplateNotFoundError as exc:
+            raise NotFoundError("Project template") from exc
 
         version = await self._template_versions_repo().get_active(template_id)
         if version is None:
@@ -1837,14 +1831,11 @@ def _build_front_matter(
 ) -> FrontMatter:
     """Assemble the README/Methods front matter (§4 #1).
 
-    Counts, the generated ``contents`` list, the static ``legend``/``caveats``,
+    Counts, the static ``legend``/``caveats``,
     and the per-Run ``obsolete_fields_per_article`` block (lifted from
     ``ExportNotes``) come from already-computed inputs. ``record_count`` is the
     total number of tidy-table rows across every section.
     """
-    contents: list[str] = ["README / Methods", "Summary", template_name]
-    contents.extend(t.title for t in tidy_tables)
-    contents.append("Data dictionary")
     record_count = sum(len(t.rows) for t in tidy_tables)
     return FrontMatter(
         project_name=project_name,
@@ -1854,7 +1845,6 @@ def _build_front_matter(
         generated_at=generated_at,
         article_count=len(articles),
         record_count=record_count,
-        contents=tuple(contents),
         legend=_FRONT_MATTER_LEGEND,
         caveats=_FRONT_MATTER_CAVEATS,
         obsolete_fields_per_article={

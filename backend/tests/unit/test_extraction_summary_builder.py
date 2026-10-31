@@ -9,6 +9,7 @@ from app.models.extraction import (
     ExtractionFieldType,
 )
 from app.services.exports.extraction.summary import build_summary
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -76,7 +77,8 @@ def test_summary_one_row_per_article_with_completeness():
     f0, f1 = section.fields
     # one of two fields filled → 50% completeness
     value_map = {(run, inst, f0.field_id): "filled"}
-    spec = build_summary(_layout((section,), (article,), value_map))
+    layout = _layout((section,), (article,), value_map)
+    spec = build_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
     flat = _flat(spec)
     assert spec.title == "Summary"
     assert "Gaca, 2011" in flat
@@ -112,7 +114,8 @@ def test_summary_has_an_article_row_then_one_row_per_entry():
             (container.entity_type_id, None): (m_a, m_b),
         },
     )
-    spec = build_summary(_layout((study, container), (article,), {}))
+    layout = _layout((study, container), (article,), {})
+    spec = build_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
 
     body = list(spec.rows[1:])
     assert [c[1].value for c in body] == ["", "Model 1", "Model 2"]
@@ -164,7 +167,8 @@ def test_an_entry_row_counts_only_its_own_subtree():
             (child_id, m_b): (c_b,),
         },
     )
-    spec = build_summary(_layout((group, child), (article,), {(run, c_a, field_id): "Logistic"}))
+    layout = _layout((group, child), (article,), {(run, c_a, field_id): "Logistic"})
+    spec = build_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
 
     body = list(spec.rows[1:])
     # article row, then Model 1 (1/1), then Model 2 (0/1).
@@ -177,7 +181,8 @@ def test_an_entry_row_counts_only_its_own_subtree():
 
 def test_summary_includes_omitted_by_stage():
     notes = ExportNotes(omitted_articles_by_stage={"extract": 3, "no_run": 1})
-    spec = build_summary(_layout((), (), {}, notes=notes))
+    layout = _layout((), (), {}, notes=notes)
+    spec = build_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
     flat = _flat(spec)
     assert "extract" in flat
     assert "3" in flat
