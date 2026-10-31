@@ -232,49 +232,6 @@ class ScreeningRepository:
         )
         return [RecordSource(*row) for row in (await self.db.execute(stmt)).all()]
 
-    def _awaiting(
-        self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int
-    ) -> Select[tuple[ScreeningAssignment]]:
-        """THE "awaiting this reviewer" query: no ruling, no decision of theirs, a free seat."""
-        reviewers = (
-            select(func.count(func.distinct(ScreeningDecision.reviewer_id)))
-            .where(ScreeningDecision.assignment_id == ScreeningAssignment.id)
-            .scalar_subquery()
-        )
-        return live_assignments(project_id).where(
-            ~exists().where(ScreeningArbitration.assignment_id == ScreeningAssignment.id),
-            ~exists().where(
-                ScreeningDecision.assignment_id == ScreeningAssignment.id,
-                ScreeningDecision.reviewer_id == reviewer_id,
-            ),
-            reviewers < reviewer_count,
-        )
-
-    async def queue_page(
-        self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int, limit: int = 20
-    ) -> list[tuple[UUID, Article]]:
-        stmt = (
-            self._awaiting(
-                project_id=project_id, reviewer_id=reviewer_id, reviewer_count=reviewer_count
-            )
-            .with_only_columns(ScreeningAssignment.id, Article)
-            .order_by(*_QUEUE_ORDER)
-            .limit(limit)
-        )
-        return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
-
-    async def count_awaiting_me(
-        self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int
-    ) -> int:
-        awaiting = (
-            self._awaiting(
-                project_id=project_id, reviewer_id=reviewer_id, reviewer_count=reviewer_count
-            )
-            .with_only_columns(ScreeningAssignment.id)
-            .subquery()
-        )
-        return int((await self.db.execute(select(func.count()).select_from(awaiting))).scalar_one())
-
     async def add_decision(
         self,
         assignment_id: UUID,

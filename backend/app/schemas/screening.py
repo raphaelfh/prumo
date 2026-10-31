@@ -1,4 +1,4 @@
-"""Title/abstract screening: config, enrollment, records, queue, decisions and arbitration. snake_case on the wire."""
+"""Title/abstract screening: config, enrollment, records, decisions and arbitration. snake_case on the wire."""
 
 from datetime import datetime
 from typing import Literal, Self
@@ -67,20 +67,6 @@ class ScreeningArticle(BaseModel):
     publication_year: int | None
     pmid: str | None
     doi: str | None
-
-
-class ScreeningQueueItem(BaseModel):
-    assignment_id: UUID
-    article: ScreeningArticle
-
-
-class ScreeningQueueRead(BaseModel):
-    """The caller's next records to screen, with the counts around them."""
-
-    items: list[ScreeningQueueItem]
-    awaiting_me: int
-    awaiting_others: int
-    exclusion_reasons: list[str]
 
 
 class ScreeningRecordRow(BaseModel):
@@ -168,21 +154,6 @@ class ScreeningAssignmentRead(BaseModel):
     my_decision: ScreeningDecisionRead | None
     outcome: ScreeningOutcomeRead | None
     peer_decisions: list[PeerDecisionRead]
-    exclusion_reasons: list[str]
-
-
-class ScreeningConflictItem(BaseModel):
-    """One unruled conflict with every reviewer's current decision."""
-
-    assignment_id: UUID
-    article: ScreeningArticle
-    decisions: list[PeerDecisionRead]
-
-
-class ScreeningConflictsRead(BaseModel):
-    """The project's unruled conflicts, and the protocol reasons an override may cite."""
-
-    items: list[ScreeningConflictItem]
     exclusion_reasons: list[str]
 
 

@@ -1,4 +1,4 @@
-"""Blind title/abstract review over HTTP, on real Postgres: queue, decisions, derived outcomes."""
+"""Blind title/abstract review over HTTP, on real Postgres: records, decisions, derived outcomes."""
 
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ def _decision_path(assignment_id: UUID) -> str:
     return f"/api/v1/screening/assignments/{assignment_id}/decisions"
 
 
-def _queue_path(project_id: UUID) -> str:
-    return f"/api/v1/projects/{project_id}/screening/queue"
+def _records_path(project_id: UUID) -> str:
+    return f"/api/v1/projects/{project_id}/screening/records?phase=title_abstract"
 
 
 async def _request(
@@ -191,6 +191,12 @@ async def test_reviewer_beyond_cap_is_409(db_session: AsyncSession) -> None:
     assert await _rows_of(db_session, assignment, c) == []
 
 
+async def _statuses(db: AsyncSession, user: UUID, project_id: UUID) -> dict[str, str]:
+    """``user``'s records-read status of every enrolled row, by assignment id."""
+    rows = (await _get(db, user, _records_path(project_id))).json()["data"]["rows"]
+    return {row["assignment_id"]: row["status"] for row in rows if row["assignment_id"]}
+
+
 async def _rows_of(db: AsyncSession, assignment: UUID, reviewer: UUID) -> list[tuple[Any, ...]]:
     """Every decision row ``reviewer`` holds on ``assignment``, oldest first."""
     rows = await db.execute(
@@ -243,9 +249,7 @@ async def test_solo_re_decide_appends_and_changes_the_outcome(db_session: AsyncS
     }
     rows = await _rows_of(db_session, assignment, r)
     assert [(row[1], row[2]) for row in rows] == [("include", None), ("exclude", "Not ML")]
-    records = await _get(
-        db_session, r, f"/api/v1/projects/{project_id}/screening/records?phase=title_abstract"
-    )
+    records = await _get(db_session, r, _records_path(project_id))
     (row,) = [x for x in records.json()["data"]["rows"] if x["article_id"] == str(article)]
     assert row["status"] == "excluded"
 
@@ -307,10 +311,8 @@ async def test_a_reviewer_cannot_flip_a_conflict_to_consensus(db_session: AsyncS
     assert _error_code(refused) == "SCREENING_DECISION_FINAL"
     manager_view = (await _get(db_session, MANAGER, _assignment_path(assignment))).json()["data"]
     assert (manager_view["status"], manager_view["outcome"]) == ("conflict", None)
-    conflicts = await _get(
-        db_session, MANAGER, f"/api/v1/projects/{project_id}/screening/conflicts"
-    )
-    assert [i["assignment_id"] for i in conflicts.json()["data"]["items"]] == [str(assignment)]
+    assert await _statuses(db_session, MANAGER, project_id) == {str(assignment): "conflict"}
+    assert await _statuses(db_session, a, project_id) == {str(assignment): "waiting"}
 
 
 async def test_viewer_reads_but_cannot_decide(db_session: AsyncSession) -> None:
@@ -364,15 +366,11 @@ async def test_reason_on_include_is_422(db_session: AsyncSession) -> None:
 
 
 async def test_unconfigured_project(db_session: AsyncSession) -> None:
-    project_id, (reviewer,), _, (assignment,) = await _project(db_session, rc=None, reviewers=1)
+    _, (reviewer,), _, (assignment,) = await _project(db_session, rc=None, reviewers=1)
 
     decided = await _decide(db_session, reviewer, assignment, "include")
     assert decided.status_code == 409
     assert _error_code(decided) == "SCREENING_NOT_CONFIGURED"
-
-    queue = await _get(db_session, reviewer, _queue_path(project_id))
-    assert queue.status_code == 409
-    assert _error_code(queue) == "SCREENING_NOT_CONFIGURED"
 
 
 async def test_deleted_article_assignment_is_404(db_session: AsyncSession) -> None:
@@ -386,7 +384,7 @@ async def test_deleted_article_assignment_is_404(db_session: AsyncSession) -> No
     assert (await _get(db_session, reviewer, _assignment_path(assignment))).status_code == 404
 
 
-async def test_moved_article_leaves_the_queue_and_404s(db_session: AsyncSession) -> None:
+async def test_moved_article_leaves_the_records_and_404s(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     reviewer = await add_member(db_session, project_id, "reviewer")
     await set_reviewer_count(db_session, project_id, 2)
@@ -398,17 +396,18 @@ async def test_moved_article_leaves_the_queue_and_404s(db_session: AsyncSession)
     await enroll_articles(db_session, project_id, rest, by=MANAGER, enrolled_at=JAN_2)
     other_project = await make_project(db_session)
 
-    before = (await _get(db_session, reviewer, _queue_path(project_id))).json()["data"]
-    assert before["items"][0]["assignment_id"] == str(moved_assignment)
+    before = await _statuses(db_session, reviewer, project_id)
+    assert next(iter(before)) == str(moved_assignment)
     config_before = (
         await _get(db_session, MANAGER, f"/api/v1/projects/{project_id}/screening/config")
     ).json()["data"]
 
     await move_article(db_session, moved, other_project)
 
-    after = (await _get(db_session, reviewer, _queue_path(project_id))).json()["data"]
-    assert str(moved_assignment) not in {item["assignment_id"] for item in after["items"]}
-    assert after["awaiting_me"] == before["awaiting_me"] - 1
+    after = await _statuses(db_session, reviewer, project_id)
+    assert str(moved_assignment) not in after
+    to_screen = [s for s in before.values() if s == "to_screen"]
+    assert len([s for s in after.values() if s == "to_screen"]) == len(to_screen) - 1
     assert (await _get(db_session, reviewer, _assignment_path(moved_assignment))).status_code == (
         404
     )
@@ -431,7 +430,7 @@ def _md5_order(ids: list[UUID]) -> list[str]:
     return [str(i) for i in sorted(ids, key=lambda i: hashlib.md5(str(i).encode()).hexdigest())]
 
 
-async def test_queue_contents_and_order(db_session: AsyncSession) -> None:
+async def test_records_order_and_statuses(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     await db_session.execute(
         text("UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb) WHERE id = :p"),
@@ -446,12 +445,11 @@ async def test_queue_contents_and_order(db_session: AsyncSession) -> None:
         db_session, project_id, second, by=MANAGER, enrolled_at=JAN_2
     )
 
-    queue = (await _get(db_session, a, _queue_path(project_id))).json()["data"]
-    order = [item["assignment_id"] for item in queue["items"]]
-    assert len(order) == 20
-    assert order == _md5_order(first_ids) + _md5_order(second_ids)[:8]
-    again = (await _get(db_session, a, _queue_path(project_id))).json()["data"]
-    assert [item["assignment_id"] for item in again["items"]] == order
+    before = await _statuses(db_session, a, project_id)
+    order = list(before)
+    assert order == _md5_order(first_ids) + _md5_order(second_ids)
+    assert set(before.values()) == {"to_screen"}
+    assert list(await _statuses(db_session, a, project_id)) == order
 
     one, two, three = (UUID(i) for i in order[:3])
     assert (await _decide(db_session, a, one, "include")).status_code == 200
@@ -459,16 +457,24 @@ async def test_queue_contents_and_order(db_session: AsyncSession) -> None:
     assert (await _decide(db_session, c, two, "include")).status_code == 200
     await add_ruling(db_session, three, MANAGER, "include")
 
-    after = (await _get(db_session, a, _queue_path(project_id))).json()["data"]
-    listed = {item["assignment_id"] for item in after["items"]}
-    assert listed.isdisjoint({str(one), str(two), str(three)})
-    assert (after["awaiting_me"], after["awaiting_others"]) == (22, 1)
-    assert after["exclusion_reasons"] == REASONS
-    assert after["items"][0]["article"]["title"] == "Screening article"
+    data = (await _get(db_session, a, _records_path(project_id))).json()["data"]
+    after = {row["assignment_id"]: row["status"] for row in data["rows"]}
+    assert list(after) == order
+    assert (after[str(one)], after[str(two)], after[str(three)]) == (
+        "waiting",
+        "included",
+        "included",
+    )
+    assert [s for s in after.values() if s == "to_screen"] == ["to_screen"] * 22
+    assert data["exclusion_reasons"] == REASONS
+    assert data["rows"][0]["title"] == "Screening article"
 
 
-async def test_queue_requires_reviewer_role(db_session: AsyncSession) -> None:
-    project_id, _, _, _ = await _project(db_session, rc=1)
+async def test_viewer_reads_records_with_nothing_to_screen(db_session: AsyncSession) -> None:
+    project_id, _, _, (assignment,) = await _project(db_session, rc=1)
     viewer = await add_member(db_session, project_id, "viewer")
 
-    assert (await _get(db_session, viewer, _queue_path(project_id))).status_code == 403
+    response = await _get(db_session, viewer, _records_path(project_id))
+
+    assert response.status_code == 200
+    assert await _statuses(db_session, viewer, project_id) == {str(assignment): "in_review"}

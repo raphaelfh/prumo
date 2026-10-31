@@ -280,6 +280,56 @@ RETIRED: tuple[Retired, ...] = (
         "current run resolver",
         "dead under the one-live-run index (0045): the live tier holds one run",
     ),
+    Retired(
+        "fetchScreeningQueue",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "fetchConflicts",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "get_screening_queue",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "get_screening_conflicts",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "count_awaiting_me",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "queue_page",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "ScreeningQueueItem",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "ScreeningConflictItem",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "ScreeningQueueRead",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
+    Retired(
+        "ScreeningConflictsRead",
+        "screening workspace S1",
+        "the queue/conflicts reads were replaced by GET /screening/records",
+    ),
 )
 
 # Where a LIVE reference could sit. Everything else — migrations, docs, this

@@ -2870,54 +2870,6 @@
         "title": "ApiResponse[ScreeningConfigRead]",
         "type": "object"
       },
-      "ApiResponse_ScreeningConflictsRead_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScreeningConflictsRead"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ScreeningConflictsRead]",
-        "type": "object"
-      },
       "ApiResponse_ScreeningEnrollResult_": {
         "properties": {
           "data": {
@@ -2964,54 +2916,6 @@
           "ok"
         ],
         "title": "ApiResponse[ScreeningEnrollResult]",
-        "type": "object"
-      },
-      "ApiResponse_ScreeningQueueRead_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScreeningQueueRead"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ScreeningQueueRead]",
         "type": "object"
       },
       "ApiResponse_ScreeningRecordsRead_": {
@@ -11863,58 +11767,6 @@
         "title": "ScreeningConfigUpdate",
         "type": "object"
       },
-      "ScreeningConflictItem": {
-        "description": "One unruled conflict with every reviewer's current decision.",
-        "properties": {
-          "article": {
-            "$ref": "#/components/schemas/ScreeningArticle"
-          },
-          "assignment_id": {
-            "format": "uuid",
-            "title": "Assignment Id",
-            "type": "string"
-          },
-          "decisions": {
-            "items": {
-              "$ref": "#/components/schemas/PeerDecisionRead"
-            },
-            "title": "Decisions",
-            "type": "array"
-          }
-        },
-        "required": [
-          "assignment_id",
-          "article",
-          "decisions"
-        ],
-        "title": "ScreeningConflictItem",
-        "type": "object"
-      },
-      "ScreeningConflictsRead": {
-        "description": "The project's unruled conflicts, and the protocol reasons an override may cite.",
-        "properties": {
-          "exclusion_reasons": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Exclusion Reasons",
-            "type": "array"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ScreeningConflictItem"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items",
-          "exclusion_reasons"
-        ],
-        "title": "ScreeningConflictsRead",
-        "type": "object"
-      },
       "ScreeningDecisionCreate": {
         "additionalProperties": false,
         "description": "One reviewer decision; an exclusion reason only on ``exclude``.",
@@ -12099,59 +11951,6 @@
           "reasons_differ"
         ],
         "title": "ScreeningOutcomeRead",
-        "type": "object"
-      },
-      "ScreeningQueueItem": {
-        "properties": {
-          "article": {
-            "$ref": "#/components/schemas/ScreeningArticle"
-          },
-          "assignment_id": {
-            "format": "uuid",
-            "title": "Assignment Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "assignment_id",
-          "article"
-        ],
-        "title": "ScreeningQueueItem",
-        "type": "object"
-      },
-      "ScreeningQueueRead": {
-        "description": "The caller's next records to screen, with the counts around them.",
-        "properties": {
-          "awaiting_me": {
-            "title": "Awaiting Me",
-            "type": "integer"
-          },
-          "awaiting_others": {
-            "title": "Awaiting Others",
-            "type": "integer"
-          },
-          "exclusion_reasons": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Exclusion Reasons",
-            "type": "array"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ScreeningQueueItem"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items",
-          "awaiting_me",
-          "awaiting_others",
-          "exclusion_reasons"
-        ],
-        "title": "ScreeningQueueRead",
         "type": "object"
       },
       "ScreeningRecordRow": {
@@ -18889,57 +18688,6 @@
         ]
       }
     },
-    "/api/v1/projects/{project_id}/screening/conflicts": {
-      "get": {
-        "operationId": "get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ScreeningConflictsRead_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "403": {
-            "description": "Manager or consensus role required"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Get Screening Conflicts",
-        "tags": [
-          "screening"
-        ]
-      }
-    },
     "/api/v1/projects/{project_id}/screening/enroll": {
       "post": {
         "operationId": "enroll_screening_api_v1_projects__project_id__screening_enroll_post",
@@ -19008,63 +18756,9 @@
         ]
       }
     },
-    "/api/v1/projects/{project_id}/screening/queue": {
-      "get": {
-        "operationId": "get_screening_queue_api_v1_projects__project_id__screening_queue_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ScreeningQueueRead_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "403": {
-            "description": "Reviewer role required"
-          },
-          "409": {
-            "description": "Screening is not set up for this project"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Get Screening Queue",
-        "tags": [
-          "screening"
-        ]
-      }
-    },
     "/api/v1/projects/{project_id}/screening/records": {
       "get": {
-        "description": "Every article of the project in one phase with the caller's blind-safe status.\n\nReplaces the queue read: one row per article, in queue order, never a peer's decision.",
+        "description": "Every article of the project in one phase with the caller's blind-safe status.\n\nOne row per article, in queue order, never a peer's decision.",
         "operationId": "get_screening_records_api_v1_projects__project_id__screening_records_get",
         "parameters": [
           {

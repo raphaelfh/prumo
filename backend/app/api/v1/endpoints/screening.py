@@ -1,4 +1,4 @@
-"""Title/abstract screening: project config, enrollment, the blind records and queue, decisions, arbitration."""
+"""Title/abstract screening: project config, enrollment, the blind records, decisions, arbitration."""
 
 from __future__ import annotations
 
@@ -22,12 +22,10 @@ from app.schemas.screening import (
     ScreeningAssignmentRead,
     ScreeningConfigRead,
     ScreeningConfigUpdate,
-    ScreeningConflictsRead,
     ScreeningDecisionCreate,
     ScreeningEnrollRequest,
     ScreeningEnrollResult,
     ScreeningPhase,
-    ScreeningQueueRead,
     ScreeningRecordsRead,
 )
 from app.services.article_read_service import ArticleNotFoundError
@@ -121,29 +119,10 @@ async def get_screening_records(
 ) -> ApiResponse[ScreeningRecordsRead]:
     """Every article of the project in one phase with the caller's blind-safe status.
 
-    Replaces the queue read: one row per article, in queue order, never a peer's decision.
+    One row per article, in queue order, never a peer's decision.
     """
     records = await ScreeningReviewService(db).records(project_id, user_sub, phase)
     return ApiResponse.success(records, trace_id=getattr(request.state, "trace_id", None))
-
-
-@router.get(
-    "/projects/{project_id}/screening/queue",
-    responses={
-        403: {"description": "Reviewer role required"},
-        409: {"description": "Screening is not set up for this project"},
-    },
-)
-@limiter.limit("120/minute")
-async def get_screening_queue(
-    request: Request,
-    project_id: UUID,
-    db: DbSession,
-    user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[ScreeningQueueRead]:
-    await ensure_project_reviewer(db, project_id, user_sub)
-    queue = await ScreeningReviewService(db).queue(project_id, user_sub)
-    return ApiResponse.success(queue, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.get(
@@ -202,22 +181,6 @@ async def post_screening_decision(
         ) from exc
     await db.commit()
     return ApiResponse.success(assignment, trace_id=getattr(request.state, "trace_id", None))
-
-
-@router.get(
-    "/projects/{project_id}/screening/conflicts",
-    responses={403: {"description": "Manager or consensus role required"}},
-)
-@limiter.limit("60/minute")
-async def get_screening_conflicts(
-    request: Request,
-    project_id: UUID,
-    db: DbSession,
-    user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[ScreeningConflictsRead]:
-    await ensure_project_arbitrator(db, project_id, user_sub)
-    conflicts = await ScreeningReviewService(db).conflicts(project_id, user_sub)
-    return ApiResponse.success(conflicts, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.post(

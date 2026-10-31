@@ -1,4 +1,4 @@
-"""Blind title/abstract review: the records, the queue, one record, decisions, conflicts and rulings.
+"""Blind title/abstract review: the records, one record, decisions and rulings.
 
 ``assignment_states`` is THE one place that loads and derives assignment state;
 the review, arbitration and PRISMA reads all call it. Another reviewer's
@@ -32,14 +32,10 @@ from app.schemas.screening import (
     ScreeningArticle,
     ScreeningAssignmentRead,
     ScreeningAssignmentRef,
-    ScreeningConflictItem,
-    ScreeningConflictsRead,
     ScreeningDecisionCreate,
     ScreeningDecisionRead,
     ScreeningOutcomeRead,
     ScreeningPhase,
-    ScreeningQueueItem,
-    ScreeningQueueRead,
     ScreeningRecordRow,
     ScreeningRecordsRead,
 )
@@ -270,37 +266,6 @@ class ScreeningReviewService:
             ],
         )
 
-    async def queue(self, project_id: UUID, reviewer_id: UUID) -> ScreeningQueueRead:
-        reviewer_count = await self._reviewer_count(project_id)
-        if reviewer_count is None:
-            raise _not_configured()
-        page = await self.screening.queue_page(
-            project_id=project_id, reviewer_id=reviewer_id, reviewer_count=reviewer_count
-        )
-        awaiting_me = await self.screening.count_awaiting_me(
-            project_id=project_id, reviewer_id=reviewer_id, reviewer_count=reviewer_count
-        )
-        snapshots = await assignment_states(
-            self.db, project_id=project_id, reviewer_count=reviewer_count
-        )
-        awaiting_others = sum(
-            1
-            for snapshot in snapshots.values()
-            if snapshot.state.outcome is None and snapshot.seats(reviewer_id)
-        )
-        return ScreeningQueueRead(
-            items=[
-                ScreeningQueueItem(
-                    assignment_id=assignment_id,
-                    article=ScreeningArticle.model_validate(article, from_attributes=True),
-                )
-                for assignment_id, article in page
-            ],
-            awaiting_me=awaiting_me,
-            awaiting_others=awaiting_others,
-            exclusion_reasons=await load_exclusion_reasons(self.db, project_id),
-        )
-
     async def get_assignment(self, assignment_id: UUID, viewer_id: UUID) -> ScreeningAssignmentRead:
         ref = await get_assignment_ref(self.db, assignment_id)
         reviewer_count = await self._reviewer_count(ref.project_id)
@@ -345,47 +310,6 @@ class ScreeningReviewService:
             assignment_id, reviewer_id, body.decision, body.exclusion_reason, body.rationale
         )
         return await self._read(ref.project_id, assignment_id, reviewer_id, reviewer_count)
-
-    async def conflicts(self, project_id: UUID, viewer_id: UUID) -> ScreeningConflictsRead:
-        """Unruled conflicts in queue order, each with every reviewer's current decision.
-
-        Records the caller reviewed are excluded: a reviewer never arbitrates
-        their own record.
-        """
-        reviewer_count = await self._reviewer_count(project_id)
-        roles = await screening_roles(self.db, project_id, viewer_id)
-        snapshots = await assignment_states(
-            self.db, project_id=project_id, reviewer_count=reviewer_count
-        )
-        in_conflict = {
-            assignment_id: snapshot
-            for assignment_id, snapshot in snapshots.items()
-            if snapshot.state.phase == "conflict"
-            and reveals_peers(
-                snapshot.state,
-                seated=snapshot.seats(viewer_id),
-                is_arbitrator=roles.can_arbitrate,
-            )
-        }
-        items: list[ScreeningConflictItem] = []
-        if in_conflict:
-            articles = await self.screening.assignments_with_articles(
-                project_id=project_id, assignment_ids=list(in_conflict)
-            )
-            names = await profile_names(
-                self.db, {d.reviewer_id for s in in_conflict.values() for d in s.decisions}
-            )
-            items = [
-                ScreeningConflictItem(
-                    assignment_id=assignment_id,
-                    article=ScreeningArticle.model_validate(article, from_attributes=True),
-                    decisions=[_peer_read(d, names) for d in in_conflict[assignment_id].decisions],
-                )
-                for assignment_id, article in articles
-            ]
-        return ScreeningConflictsRead(
-            items=items, exclusion_reasons=await load_exclusion_reasons(self.db, project_id)
-        )
 
     async def arbitrate(
         self, assignment_id: UUID, arbitrator_id: UUID, body: ScreeningArbitrationCreate
