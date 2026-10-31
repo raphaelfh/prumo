@@ -1,5 +1,5 @@
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {renderHook, waitFor} from '@testing-library/react';
+import {act, renderHook, waitFor} from '@testing-library/react';
 import {http, HttpResponse} from 'msw';
 import type {ReactNode} from 'react';
 import {describe, expect, it, vi} from 'vitest';
@@ -78,10 +78,12 @@ describe('useScreeningRecords', () => {
 
     const hook = renderHook(() => useScreeningRecords('p1', 'title_abstract', false), {wrapper: wrapper()});
 
-    // Give a would-be request time to land.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(calls).toBe(0);
+    // An enabled query is already `fetching` once mount effects flush; a
+    // disabled one stays idle and never reaches the handler.
+    await act(async () => {});
     expect(hook.result.current.fetchStatus).toBe('idle');
+    expect(hook.result.current.isPending).toBe(true);
+    expect(calls).toBe(0);
   });
 
   it('surfaces a 409 envelope as an error carrying its code', async () => {

@@ -41,6 +41,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
+import {screeningKeys} from '@/lib/query-keys/screening';
 import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
 import {
     fetchArticleFiles,
@@ -62,7 +63,7 @@ beforeEach(() => {
 });
 
 /** Renders add mode, types a title, and stages one PDF through the picker. */
-async function stageOnePdf(onDismiss = vi.fn(), onComplete = vi.fn()) {
+async function stageOnePdf(onDismiss = vi.fn(), onComplete = vi.fn(), query = createQueryWrapper()) {
     const user = userEvent.setup();
     render(
         <MemoryRouter>
@@ -73,7 +74,7 @@ async function stageOnePdf(onDismiss = vi.fn(), onComplete = vi.fn()) {
                 onComplete={onComplete}
             />
         </MemoryRouter>,
-        {wrapper: createQueryWrapper().wrapper},
+        {wrapper: query.wrapper},
     );
 
     await user.type(screen.getByLabelText(/titleRequired/), 'A staged study');
@@ -140,6 +141,30 @@ describe('ArticleForm — staged files', () => {
         expect(vi.mocked(uploadArticleFile).mock.calls[1][0]).toEqual(
             expect.objectContaining({articleId: 'srv-partial'}),
         );
+    });
+
+    // `has_pdf` on a screening row is read from the uploaded files: refetching
+    // the screening reads before the uploads land would cache a stale `false`.
+    it('invalidates the screening reads only after the staged uploads settle', async () => {
+        vi.mocked(insertArticle).mockResolvedValue({ok: true, data: {id: 'srv-pdf'}} as never);
+        let finishUpload: (value: unknown) => void = () => {};
+        vi.mocked(uploadArticleFile).mockReturnValue(
+            new Promise((resolve) => {
+                finishUpload = resolve;
+            }) as never,
+        );
+        const query = createQueryWrapper();
+        const invalidate = vi.spyOn(query.queryClient, 'invalidateQueries');
+        const {user, onComplete} = await stageOnePdf(vi.fn(), vi.fn(), query);
+
+        await user.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => expect(uploadArticleFile).toHaveBeenCalledTimes(1));
+        expect(invalidate).not.toHaveBeenCalledWith({queryKey: screeningKeys.project('proj-SENTINEL')});
+
+        finishUpload({ok: true, data: undefined});
+        await waitFor(() => expect(onComplete).toHaveBeenCalled());
+        expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project('proj-SENTINEL')});
     });
 
     it('attempts no upload when the article could not be created', async () => {

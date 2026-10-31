@@ -56,7 +56,8 @@ export function useEnrollArticles(projectId: string) {
       if (!result.ok) throw result.error;
       return result.data;
     },
-    onSuccess: () => {
+    // A refusal means the counts moved under the caller: refetch them too.
+    onSettled: () => {
       void queryClient.invalidateQueries({queryKey: screeningKeys.project(projectId)});
     },
   });

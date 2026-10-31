@@ -551,11 +551,11 @@ export function ArticleForm({
       }
       savedArticleId = targetId;
     }
-    // The row is written (created or updated): every screening read of the project shows it.
-    void invalidateScreening(queryClient, projectId);
-
     // Phase two. Only files that have not landed yet are retried.
     const failedIds = await uploadStagedFiles(savedArticleId);
+    // The row is written (created or updated) and its uploads settled, so the
+    // screening reads refetch with a fresh `has_pdf`.
+    void invalidateScreening(queryClient, projectId);
 
     setSaving(false);
 
