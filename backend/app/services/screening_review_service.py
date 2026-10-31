@@ -1,4 +1,4 @@
-"""Blind title/abstract review: the queue, one record, decisions, conflicts and rulings.
+"""Blind title/abstract review: the records, the queue, one record, decisions, conflicts and rulings.
 
 ``assignment_states`` is THE one place that loads and derives assignment state;
 the review, arbitration and PRISMA reads all call it. Another reviewer's
@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.screening import ScreeningArbitration, ScreeningDecision
 from app.repositories.project_repository import ProjectRepository
-from app.repositories.screening_repository import ScreeningRepository
+from app.repositories.screening_repository import RecordSource, ScreeningRepository
 from app.schemas.common import ApiErrorCode
 from app.schemas.screening import (
     PeerDecisionRead,
@@ -37,12 +37,19 @@ from app.schemas.screening import (
     ScreeningDecisionCreate,
     ScreeningDecisionRead,
     ScreeningOutcomeRead,
+    ScreeningPhase,
     ScreeningQueueItem,
     ScreeningQueueRead,
+    ScreeningRecordRow,
+    ScreeningRecordsRead,
 )
 from app.services.profile_names import profile_names
-from app.services.project_ai_context import load_exclusion_reasons
-from app.services.screening_config_service import reviewer_count_of, screening_roles
+from app.services.project_ai_context import load_exclusion_reasons, load_inclusion_criteria
+from app.services.screening_config_service import (
+    ScreeningRoles,
+    reviewer_count_of,
+    screening_roles,
+)
 from app.services.screening_errors import ScreeningSelfArbitrationError, ScreeningStateError
 from app.services.screening_outcome import (
     AssignmentState,
@@ -50,6 +57,7 @@ from app.services.screening_outcome import (
     CurrentRuling,
     caller_status,
     derive_state,
+    record_status,
     reveals_peers,
 )
 
@@ -179,6 +187,50 @@ def _peer_read(decision: CurrentDecision, names: dict[UUID, str | None]) -> Peer
     )
 
 
+def _record_row(
+    rank: int,
+    source: RecordSource,
+    snapshot: AssignmentSnapshot | None,
+    viewer_id: UUID,
+    roles: ScreeningRoles,
+) -> ScreeningRecordRow:
+    """One records-list row; nothing of another reviewer leaves here but the outcome."""
+    mine = (
+        next((d for d in snapshot.decisions if d.reviewer_id == viewer_id), None)
+        if snapshot is not None
+        else None
+    )
+    outcome = snapshot.state.outcome if snapshot is not None else None
+    return ScreeningRecordRow(
+        article_id=source.article_id,
+        assignment_id=source.assignment_id if snapshot is not None else None,
+        queue_rank=rank,
+        title=source.title,
+        first_author=source.authors[0] if source.authors else None,
+        publication_year=source.publication_year,
+        journal_title=source.journal_title,
+        pmid=source.pmid,
+        doi=source.doi,
+        ingestion_source=source.ingestion_source,
+        has_pdf=source.has_pdf,
+        status=(
+            "not_enrolled"
+            if snapshot is None
+            else record_status(
+                snapshot.state,
+                seated=snapshot.seats(viewer_id),
+                is_arbitrator=roles.can_arbitrate,
+                can_review=roles.can_review,
+            )
+        ),
+        my_decision=mine.decision if mine is not None else None,
+        my_exclusion_reason=mine.exclusion_reason if mine is not None else None,
+        outcome=outcome.decision if outcome is not None else None,
+        outcome_exclusion_reason=outcome.exclusion_reason if outcome is not None else None,
+        outcome_kind=outcome.kind if outcome is not None else None,
+    )
+
+
 class ScreeningReviewService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -188,6 +240,35 @@ class ScreeningReviewService:
     async def _reviewer_count(self, project_id: UUID) -> int | None:
         project = await self.projects.get_by_id(project_id)
         return reviewer_count_of(project.settings if project else None)
+
+    async def records(
+        self, project_id: UUID, viewer_id: UUID, phase: ScreeningPhase
+    ) -> ScreeningRecordsRead:
+        """Every article of the project in ``phase``, in queue order, as ``viewer_id`` may see it."""
+        reviewer_count = await self._reviewer_count(project_id)
+        if reviewer_count is None:
+            raise _not_configured()
+        snapshots = await assignment_states(
+            self.db, project_id=project_id, reviewer_count=reviewer_count
+        )
+        roles = await screening_roles(self.db, project_id, viewer_id)
+        sources = await self.screening.record_rows(project_id=project_id)
+        return ScreeningRecordsRead(
+            phase=phase,
+            reviewer_count=reviewer_count,
+            inclusion_criteria=await load_inclusion_criteria(self.db, project_id),
+            exclusion_reasons=await load_exclusion_reasons(self.db, project_id),
+            rows=[
+                _record_row(
+                    rank,
+                    source,
+                    snapshots.get(source.assignment_id) if source.assignment_id else None,
+                    viewer_id,
+                    roles,
+                )
+                for rank, source in enumerate(sources)
+            ],
+        )
 
     async def queue(self, project_id: UUID, reviewer_id: UUID) -> ScreeningQueueRead:
         reviewer_count = await self._reviewer_count(project_id)

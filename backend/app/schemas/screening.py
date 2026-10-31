@@ -1,4 +1,4 @@
-"""Title/abstract screening: config, enrollment, queue, decisions and arbitration. snake_case on the wire."""
+"""Title/abstract screening: config, enrollment, records, queue, decisions and arbitration. snake_case on the wire."""
 
 from datetime import datetime
 from typing import Literal, Self
@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ScreeningDecisionValue = Literal["include", "exclude", "maybe"]
 ScreeningOutcomeKind = Literal["solo", "consensus", "arbitrated"]
 ScreeningCallerStatus = Literal["awaiting_me", "awaiting_others", "conflict", "decided"]
+ScreeningPhase = Literal["title_abstract"]
+ScreeningRecordStatus = Literal[
+    "not_enrolled", "to_screen", "waiting", "in_review", "conflict", "included", "excluded", "maybe"
+]
 
 MAX_ENROLL_ARTICLES = 10_000
 
@@ -24,6 +28,7 @@ class ScreeningConfigRead(BaseModel):
     can_manage: bool
     can_review: bool
     can_arbitrate: bool
+    exclusion_reasons: list[str]
 
 
 class ScreeningConfigUpdate(BaseModel):
@@ -76,6 +81,43 @@ class ScreeningQueueRead(BaseModel):
     awaiting_me: int
     awaiting_others: int
     exclusion_reasons: list[str]
+
+
+class ScreeningRecordRow(BaseModel):
+    """One project article in a screening phase as the caller may see it.
+
+    No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
+    when the article is not enrolled; the ``outcome*`` fields are set only once
+    the record has an outcome.
+    """
+
+    article_id: UUID
+    assignment_id: UUID | None
+    queue_rank: int
+    title: str
+    first_author: str | None
+    publication_year: int | None
+    journal_title: str | None
+    pmid: str | None
+    doi: str | None
+    ingestion_source: str | None
+    has_pdf: bool
+    status: ScreeningRecordStatus
+    my_decision: ScreeningDecisionValue | None
+    my_exclusion_reason: str | None
+    outcome: ScreeningDecisionValue | None
+    outcome_exclusion_reason: str | None
+    outcome_kind: ScreeningOutcomeKind | None
+
+
+class ScreeningRecordsRead(BaseModel):
+    """Every article of the project in one phase, in queue order, with the protocol criteria."""
+
+    phase: ScreeningPhase
+    reviewer_count: int
+    inclusion_criteria: list[str]
+    exclusion_reasons: list[str]
+    rows: list[ScreeningRecordRow]
 
 
 class ScreeningDecisionCreate(BaseModel):

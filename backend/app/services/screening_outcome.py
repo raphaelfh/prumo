@@ -2,7 +2,8 @@
 
 Nothing here touches the database. ``derive_state`` turns the current decisions
 and the latest ruling into a phase and an outcome; ``caller_status`` and
-``reveals_peers`` decide what one caller is told about it. ``reveals_peers`` is
+``reveals_peers`` decide what one caller is told about it; ``record_status``
+is the records list's reading of ``caller_status``. ``reveals_peers`` is
 THE blind-review rule: every read that could show another reviewer's decision
 asks it.
 """
@@ -19,6 +20,7 @@ from app.schemas.screening import (
     ScreeningCallerStatus,
     ScreeningDecisionValue,
     ScreeningOutcomeKind,
+    ScreeningRecordStatus,
 )
 
 
@@ -109,6 +111,37 @@ def caller_status(
     if state.phase == "conflict":
         return "conflict" if is_arbitrator and not seated else "awaiting_others"
     return "awaiting_me" if can_review and not seated else "awaiting_others"
+
+
+_DECIDED_STATUS: dict[ScreeningDecisionValue, ScreeningRecordStatus] = {
+    "include": "included",
+    "exclude": "excluded",
+    "maybe": "maybe",
+}
+
+
+def record_status(
+    state: AssignmentState,
+    *,
+    seated: bool,
+    is_arbitrator: bool,
+    can_review: bool,
+) -> ScreeningRecordStatus:
+    """The records-list status of an enrolled record for one caller, through ``caller_status``.
+
+    ``awaiting_others`` splits on the seat rule: ``waiting`` for a caller who
+    decided, ``in_review`` for anyone else, so a conflict never shows to a
+    reviewer as anything but those two.
+    """
+    status = caller_status(state, seated=seated, is_arbitrator=is_arbitrator, can_review=can_review)
+    if status == "decided":
+        assert state.outcome is not None  # caller_status answers decided only with an outcome
+        return _DECIDED_STATUS[state.outcome.decision]
+    if status == "awaiting_me":
+        return "to_screen"
+    if status == "conflict":
+        return "conflict"
+    return "waiting" if seated else "in_review"
 
 
 def reveals_peers(state: AssignmentState, *, seated: bool, is_arbitrator: bool) -> bool:

@@ -3014,6 +3014,54 @@
         "title": "ApiResponse[ScreeningQueueRead]",
         "type": "object"
       },
+      "ApiResponse_ScreeningRecordsRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningRecordsRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ScreeningRecordsRead]",
+        "type": "object"
+      },
       "ApiResponse_SectionDeleteResponse_": {
         "properties": {
           "data": {
@@ -11753,6 +11801,13 @@
             "title": "Enrolled",
             "type": "integer"
           },
+          "exclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion Reasons",
+            "type": "array"
+          },
           "not_enrolled": {
             "title": "Not Enrolled",
             "type": "integer"
@@ -11785,7 +11840,8 @@
           "not_enrolled",
           "can_manage",
           "can_review",
-          "can_arbitrate"
+          "can_arbitrate",
+          "exclusion_reasons"
         ],
         "title": "ScreeningConfigRead",
         "type": "object"
@@ -12096,6 +12152,255 @@
           "exclusion_reasons"
         ],
         "title": "ScreeningQueueRead",
+        "type": "object"
+      },
+      "ScreeningRecordRow": {
+        "description": "One project article in a screening phase as the caller may see it.\n\nNo abstract: the panel reads the assignment. ``assignment_id`` is ``None``\nwhen the article is not enrolled; the ``outcome*`` fields are set only once\nthe record has an outcome.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "assignment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Id"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "first_author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Author"
+          },
+          "has_pdf": {
+            "title": "Has Pdf",
+            "type": "boolean"
+          },
+          "ingestion_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Source"
+          },
+          "journal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Title"
+          },
+          "my_decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Decision"
+          },
+          "my_exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Exclusion Reason"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "outcome_exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Exclusion Reason"
+          },
+          "outcome_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "solo",
+                  "consensus",
+                  "arbitrated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Kind"
+          },
+          "pmid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pmid"
+          },
+          "publication_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Year"
+          },
+          "queue_rank": {
+            "title": "Queue Rank",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "not_enrolled",
+              "to_screen",
+              "waiting",
+              "in_review",
+              "conflict",
+              "included",
+              "excluded",
+              "maybe"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "assignment_id",
+          "queue_rank",
+          "title",
+          "first_author",
+          "publication_year",
+          "journal_title",
+          "pmid",
+          "doi",
+          "ingestion_source",
+          "has_pdf",
+          "status",
+          "my_decision",
+          "my_exclusion_reason",
+          "outcome",
+          "outcome_exclusion_reason",
+          "outcome_kind"
+        ],
+        "title": "ScreeningRecordRow",
+        "type": "object"
+      },
+      "ScreeningRecordsRead": {
+        "description": "Every article of the project in one phase, in queue order, with the protocol criteria.",
+        "properties": {
+          "exclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion Reasons",
+            "type": "array"
+          },
+          "inclusion_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Inclusion Criteria",
+            "type": "array"
+          },
+          "phase": {
+            "const": "title_abstract",
+            "title": "Phase",
+            "type": "string"
+          },
+          "reviewer_count": {
+            "title": "Reviewer Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ScreeningRecordRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "phase",
+          "reviewer_count",
+          "inclusion_criteria",
+          "exclusion_reasons",
+          "rows"
+        ],
+        "title": "ScreeningRecordsRead",
         "type": "object"
       },
       "SectionCreateRequest": {
@@ -18752,6 +19057,68 @@
           }
         ],
         "summary": "Get Screening Queue",
+        "tags": [
+          "screening"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/screening/records": {
+      "get": {
+        "description": "Every article of the project in one phase with the caller's blind-safe status.\n\nReplaces the queue read: one row per article, in queue order, never a peer's decision.",
+        "operationId": "get_screening_records_api_v1_projects__project_id__screening_records_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "phase",
+            "required": true,
+            "schema": {
+              "const": "title_abstract",
+              "title": "Phase",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningRecordsRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Screening is not set up for this project"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Screening Records",
         "tags": [
           "screening"
         ]

@@ -40,6 +40,7 @@ function config(overrides: Partial<ConfigRead> = {}): ConfigRead {
     can_manage: true,
     can_review: false,
     enrolled: 0,
+    exclusion_reasons: [],
     not_enrolled: 0,
     reviewer_capable: 2,
     reviewer_count: null,

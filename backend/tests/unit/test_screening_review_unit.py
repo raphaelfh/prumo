@@ -109,6 +109,7 @@ def test_reason_only_on_exclude() -> None:
         "assignments_with_articles",
         "queue_page",
         "count_awaiting_me",
+        "record_rows",
     ],
 )
 def test_screening_reads_require_a_project_scope(method: str) -> None:

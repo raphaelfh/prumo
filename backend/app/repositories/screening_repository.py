@@ -11,6 +11,7 @@ behind ``screening_review_service.owned_decisions``.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from uuid import UUID
 
@@ -20,7 +21,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute
 
-from app.models.article import Article
+from app.models.article import Article, ArticleFile
 from app.models.screening import (
     SCREENING_PHASE,
     ScreeningArbitration,
@@ -61,6 +62,22 @@ _S = TypeVar("_S", bound=Select[Any])
 def _narrowed(stmt: _S, column: QueryableAttribute[UUID], ids: Sequence[UUID] | None) -> _S:
     """Narrow a project-scoped read to ``ids``; ``None`` keeps the whole project."""
     return stmt if ids is None else stmt.where(column.in_(ids))
+
+
+@dataclass(frozen=True, slots=True)
+class RecordSource:
+    """One project article with its title/abstract assignment, if any (never the abstract)."""
+
+    article_id: UUID
+    assignment_id: UUID | None
+    title: str
+    authors: list[str] | None
+    publication_year: int | None
+    journal_title: str | None
+    pmid: str | None
+    doi: str | None
+    ingestion_source: str | None
+    has_pdf: bool
 
 
 class ScreeningRepository:
@@ -184,6 +201,36 @@ class ScreeningRepository:
             .order_by(*_QUEUE_ORDER)
         )
         return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
+
+    async def record_rows(self, *, project_id: UUID) -> list[RecordSource]:
+        """Every article of the project, enrolled first in queue order, then by creation."""
+        has_pdf = exists().where(
+            ArticleFile.article_id == Article.id, ArticleFile.file_role == "MAIN"
+        )
+        stmt = (
+            select(
+                Article.id,
+                ScreeningAssignment.id,
+                Article.title,
+                Article.authors,
+                Article.publication_year,
+                Article.journal_title,
+                Article.pmid,
+                Article.doi,
+                Article.ingestion_source,
+                has_pdf,
+            )
+            .select_from(Article)
+            .outerjoin(
+                ScreeningAssignment,
+                and_(ARTICLE_STILL_IN_PROJECT, ScreeningAssignment.phase == SCREENING_PHASE),
+            )
+            .where(Article.project_id == project_id)
+            .order_by(
+                ScreeningAssignment.id.is_(None), *_QUEUE_ORDER, Article.created_at, Article.id
+            )
+        )
+        return [RecordSource(*row) for row in (await self.db.execute(stmt)).all()]
 
     def _awaiting(
         self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int

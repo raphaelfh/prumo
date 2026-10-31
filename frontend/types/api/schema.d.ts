@@ -1205,6 +1205,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/screening/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Screening Records
+         * @description Every article of the project in one phase with the caller's blind-safe status.
+         *
+         *     Replaces the queue read: one row per article, in queue order, never a peer's decision.
+         */
+        get: operations["get_screening_records_api_v1_projects__project_id__screening_records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates": {
         parameters: {
             query?: never;
@@ -3296,6 +3318,23 @@ export interface components {
         ApiResponse_ScreeningQueueRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ScreeningQueueRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ScreeningRecordsRead] */
+        ApiResponse_ScreeningRecordsRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ScreeningRecordsRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -7242,6 +7281,8 @@ export interface components {
             can_review: boolean;
             /** Enrolled */
             enrolled: number;
+            /** Exclusion Reasons */
+            exclusion_reasons: string[];
             /** Not Enrolled */
             not_enrolled: number;
             /** Reviewer Capable */
@@ -7374,6 +7415,75 @@ export interface components {
             exclusion_reasons: string[];
             /** Items */
             items: components["schemas"]["ScreeningQueueItem"][];
+        };
+        /**
+         * ScreeningRecordRow
+         * @description One project article in a screening phase as the caller may see it.
+         *
+         *     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
+         *     when the article is not enrolled; the ``outcome*`` fields are set only once
+         *     the record has an outcome.
+         */
+        ScreeningRecordRow: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Assignment Id */
+            assignment_id: string | null;
+            /** Doi */
+            doi: string | null;
+            /** First Author */
+            first_author: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /** Ingestion Source */
+            ingestion_source: string | null;
+            /** Journal Title */
+            journal_title: string | null;
+            /** My Decision */
+            my_decision: ("include" | "exclude" | "maybe") | null;
+            /** My Exclusion Reason */
+            my_exclusion_reason: string | null;
+            /** Outcome */
+            outcome: ("include" | "exclude" | "maybe") | null;
+            /** Outcome Exclusion Reason */
+            outcome_exclusion_reason: string | null;
+            /** Outcome Kind */
+            outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /** Pmid */
+            pmid: string | null;
+            /** Publication Year */
+            publication_year: number | null;
+            /** Queue Rank */
+            queue_rank: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe";
+            /** Title */
+            title: string;
+        };
+        /**
+         * ScreeningRecordsRead
+         * @description Every article of the project in one phase, in queue order, with the protocol criteria.
+         */
+        ScreeningRecordsRead: {
+            /** Exclusion Reasons */
+            exclusion_reasons: string[];
+            /** Inclusion Criteria */
+            inclusion_criteria: string[];
+            /**
+             * Phase
+             * @constant
+             */
+            phase: "title_abstract";
+            /** Reviewer Count */
+            reviewer_count: number;
+            /** Rows */
+            rows: components["schemas"]["ScreeningRecordRow"][];
         };
         /**
          * SectionCreateRequest
@@ -11218,6 +11328,46 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Screening is not set up for this project */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_screening_records_api_v1_projects__project_id__screening_records_get: {
+        parameters: {
+            query: {
+                phase: "title_abstract";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScreeningRecordsRead_"];
+                };
             };
             /** @description Screening is not set up for this project */
             409: {

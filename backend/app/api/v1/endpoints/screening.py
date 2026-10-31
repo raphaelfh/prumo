@@ -1,10 +1,11 @@
-"""Title/abstract screening: project config, enrollment, the blind queue, decisions, arbitration."""
+"""Title/abstract screening: project config, enrollment, the blind records and queue, decisions, arbitration."""
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.deps.scope import load_assignment_for_member
 from app.api.deps.security import (
@@ -25,7 +26,9 @@ from app.schemas.screening import (
     ScreeningDecisionCreate,
     ScreeningEnrollRequest,
     ScreeningEnrollResult,
+    ScreeningPhase,
     ScreeningQueueRead,
+    ScreeningRecordsRead,
 )
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.screening_config_service import ProjectNotFoundError, ScreeningConfigService
@@ -102,6 +105,26 @@ async def enroll_screening(
         ) from exc
     await db.commit()
     return ApiResponse.success(result, trace_id=getattr(request.state, "trace_id", None))
+
+
+@router.get(
+    "/projects/{project_id}/screening/records",
+    responses={409: {"description": "Screening is not set up for this project"}},
+)
+@limiter.limit("120/minute")
+async def get_screening_records(
+    request: Request,
+    project_id: UUID,
+    phase: Annotated[ScreeningPhase, Query()],
+    db: DbSession,
+    user_sub: UUID = Depends(require_project_scope),
+) -> ApiResponse[ScreeningRecordsRead]:
+    """Every article of the project in one phase with the caller's blind-safe status.
+
+    Replaces the queue read: one row per article, in queue order, never a peer's decision.
+    """
+    records = await ScreeningReviewService(db).records(project_id, user_sub, phase)
+    return ApiResponse.success(records, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.get(
