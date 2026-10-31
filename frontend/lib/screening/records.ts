@@ -26,8 +26,9 @@ export function statusCounts(rows: Row[]): Record<StatusView, number> {
   return counts;
 }
 
-export function visibleStatusViews(counts: Record<StatusView, number>): StatusView[] {
-  return STATUS_VIEWS.filter((view) => !(HIDDEN_AT_ZERO.has(view) && counts[view] === 0));
+/** `active` stays listed at 0: the last conflict ruled must not hide the view the user is in. */
+export function visibleStatusViews(counts: Record<StatusView, number>, active?: StatusView): StatusView[] {
+  return STATUS_VIEWS.filter((view) => view === active || !(HIDDEN_AT_ZERO.has(view) && counts[view] === 0));
 }
 
 type Roles = {can_manage: boolean; can_review: boolean; can_arbitrate: boolean};
@@ -47,8 +48,6 @@ export function defaultStatusView(roles: Roles, counts: Record<StatusView, numbe
   if (roles.can_review) return 'to_screen';
   return 'all';
 }
-
-export type RecordFilterId = 'title' | 'authors' | 'journal' | 'year' | 'my_decision' | 'exclusion_reason' | 'source';
 
 type FilterValue = FilterValues[string] | undefined;
 

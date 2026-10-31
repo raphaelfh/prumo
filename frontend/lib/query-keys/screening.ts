@@ -17,8 +17,6 @@ export const screeningKeys = {
   config: (projectId: string) => [...screeningKeys.project(projectId), 'config'] as const,
   importRun: (projectId: string, syncRunId: string) =>
     [...screeningKeys.project(projectId), 'import-run', syncRunId] as const,
-  queue: (projectId: string) => [...screeningKeys.project(projectId), 'queue'] as const,
-  conflicts: (projectId: string) => [...screeningKeys.project(projectId), 'conflicts'] as const,
   records: (projectId: string, phase?: ScreeningPhase) =>
     phase
       ? ([...screeningKeys.project(projectId), 'records', phase] as const)

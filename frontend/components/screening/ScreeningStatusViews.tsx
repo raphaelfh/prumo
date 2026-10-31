@@ -1,7 +1,7 @@
 /**
  * The status views as a segmented tablist (`SectionViewSwitcher`'s classes):
  * each tab reads "Label N"; a view at 0 stays, muted, unless it is one of
- * `HIDDEN_AT_ZERO`.
+ * `HIDDEN_AT_ZERO` and not the active view.
  */
 import {t} from '@/lib/copy';
 import {visibleStatusViews, type StatusView} from '@/lib/screening/records';
@@ -26,7 +26,7 @@ export function ScreeningStatusViews({counts, status, onStatusChange}: Screening
       aria-label={t('screening', 'statusViewsLabel')}
       className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md bg-muted/40 p-0.5"
     >
-      {visibleStatusViews(counts).map((view) => {
+      {visibleStatusViews(counts, status).map((view) => {
         const active = view === status;
         const empty = counts[view] === 0;
         return (

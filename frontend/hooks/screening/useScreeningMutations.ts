@@ -1,10 +1,8 @@
 /**
- * The two screening writes. A decision removes the record from the cached
- * queue at once (optimistic advance), restores the snapshot on failure, and on
- * settle refetches the whole screening family and the record. A ruling settles
- * the same way: a stale or no-longer-in-conflict 409 reloads the lists the
- * same way a success does. Counts and outcomes are server-computed, never
- * patched beyond the advance.
+ * The two screening writes. Each settles by refetching the whole screening
+ * family and the record: a decision, a ruling, or a stale / no-longer-in-
+ * conflict 409 all reload the same way. Counts, statuses and outcomes are
+ * server-computed, so they are refetched, never patched.
  */
 import {useMutation, useQueryClient} from '@tanstack/react-query';
 
@@ -15,7 +13,6 @@ import {
   type ScreeningArbitrationCreate,
   type ScreeningAssignmentRead,
   type ScreeningDecisionCreate,
-  type ScreeningQueueRead,
 } from '@/services/screeningService';
 
 interface DecideVariables {
@@ -25,27 +22,11 @@ interface DecideVariables {
 
 export function useDecide(projectId: string) {
   const queryClient = useQueryClient();
-  const queueKey = screeningKeys.queue(projectId);
-  return useMutation<ScreeningAssignmentRead, Error, DecideVariables, {previous?: ScreeningQueueRead}>({
+  return useMutation<ScreeningAssignmentRead, Error, DecideVariables>({
     mutationFn: async ({assignmentId, body}) => {
       const result = await submitDecision(assignmentId, body);
       if (!result.ok) throw result.error;
       return result.data;
-    },
-    onMutate: async ({assignmentId}) => {
-      await queryClient.cancelQueries({queryKey: queueKey});
-      const previous = queryClient.getQueryData<ScreeningQueueRead>(queueKey);
-      if (previous?.items.some((i) => i.assignment_id === assignmentId)) {
-        queryClient.setQueryData<ScreeningQueueRead>(queueKey, {
-          ...previous,
-          items: previous.items.filter((i) => i.assignment_id !== assignmentId),
-          awaiting_me: Math.max(0, previous.awaiting_me - 1),
-        });
-      }
-      return {previous};
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(queueKey, context.previous);
     },
     onSettled: (_data, _error, {assignmentId}) => {
       void queryClient.invalidateQueries({queryKey: screeningKeys.project(projectId)});

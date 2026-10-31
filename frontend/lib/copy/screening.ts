@@ -4,8 +4,19 @@ export const screening = {
   loading: 'Loading screening…',
   loadErrorTitle: 'Could not load screening',
 
+  // Sub-views and the Settings sub-view
+  tabTitleAbstract: 'Title/abstract',
+  tabSettings: 'Settings',
+  notConfiguredManagerTitle: 'Screening is not set up',
+  openSettings: 'Open Settings',
+  settingsReviewersTitle: 'Reviewers per article — title/abstract',
+  settingsReviewersLocked: 'Locked after the first title/abstract decision',
+  settingsReasonsTitle: 'Exclusion reasons',
+  settingsReasonsEmpty: 'The protocol lists no exclusion reasons',
+  editInProtocol: 'Edit in protocol',
+  managerOnlyError: 'Only project managers can do this',
+
   // Reviewers-per-record setup
-  configureTitle: 'Reviewers per record',
   configureDescription: 'Reviewers screen blind. When they disagree, an arbitrator decides.',
   reviewerCountOne: '1 reviewer',
   reviewerCountMany: '{{n}} reviewers',
@@ -17,11 +28,7 @@ export const screening = {
   notConfiguredMember: 'A project manager chooses how many reviewers screen each record.',
 
   // Enrollment
-  nothingEnrolledTitle: 'No records to screen',
-  nothingEnrolledManager: "Enroll the project's articles to start title and abstract screening.",
-  nothingEnrolledMember: 'A project manager enrolls articles for screening.',
   enrollAll: 'Enroll all articles',
-  nothingToEnroll: 'Add or import articles first',
   enrolledToast: '{{n}} articles enrolled',
   enrollNew: 'Enroll {{n}} new',
 
@@ -66,14 +73,7 @@ export const screening = {
     'The import ran out of time. Records imported so far are kept; import the same file again to retry the rest.',
   importRunNotFound: 'This import is no longer available.',
 
-  // Header summary
-  summaryEnrolled: '{{n}} enrolled',
-  summaryNotEnrolled: '{{n}} not enrolled',
-  summaryReviewerOne: '1 reviewer per record',
-  summaryReviewers: '{{n}} reviewers per record',
-  viewerNotice: 'You can follow screening here. Only reviewers screen records.',
-
-  // Queue
+  // Decisions
   decisionInclude: 'Include',
   decisionExclude: 'Exclude',
   decisionMaybe: 'Maybe',
@@ -81,12 +81,6 @@ export const screening = {
   reasonsTitle: 'Exclusion reason',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',
   noAbstract: 'No abstract available',
-  remainingForYou: '{{n}} left for you',
-  nextRecordAnnouncement: 'Next record: {{title}}',
-  waitingTitle: 'Waiting on other reviewers',
-  waitingBody: '{{n}} records you screened are waiting for other reviewers or an arbitrator.',
-  doneTitle: 'All done',
-  doneBody: 'There is nothing left for you to screen.',
 
   // Title/abstract workspace
   panelToggle: 'Toggle the record panel',
@@ -113,12 +107,7 @@ export const screening = {
   peerUnnamed: 'Another reviewer',
 
   // Conflicts and arbitration
-  tabQueue: 'Screen',
-  tabConflictsCount: 'Conflicts ({{n}})',
-  conflictsEmptyTitle: 'No conflicts to resolve',
-  conflictsEmptyBody: 'Records where reviewers disagree appear here.',
   useDecisionOf: "Use {{name}}'s decision",
-  unnamedReviewer: 'A reviewer',
   decideDifferently: 'Decide differently',
   rulingNote: 'Note for the record (optional)',
   rulingSaved: 'Conflict resolved',

@@ -107,6 +107,14 @@ describe('visibleStatusViews', () => {
     expect(views).not.toContain('not_enrolled');
     expect(views[0]).toBe('all');
   });
+
+  it('keeps the active view at zero, in its usual place', () => {
+    const counts = zeroCounts();
+    const views = visibleStatusViews(counts, 'conflict');
+    expect(views).toContain('conflict');
+    expect(views).not.toContain('not_enrolled');
+    expect(views.indexOf('conflict')).toBe(STATUS_VIEWS.indexOf('conflict'));
+  });
 });
 
 describe('isReadOnly', () => {

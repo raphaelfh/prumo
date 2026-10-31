@@ -234,6 +234,13 @@ describe('ScreeningRecordList', () => {
     expect(listedTitles()).toEqual(titlesOf(R1, R2));
   });
 
+  it('keeps the active Conflict view visible at 0', () => {
+    renderList({read: records([R1, R2, R3]), initialStatus: 'conflict'});
+    const tab = screen.getByRole('tab', {name: 'Reviewers disagree 0'});
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('No records in this view')).toBeInTheDocument();
+  });
+
   it('lists "No records in this view" for a view with 0', () => {
     renderList({read: records([R1, R2, R3]), initialStatus: 'maybe'});
     expect(screen.getByText('No records in this view')).toBeInTheDocument();

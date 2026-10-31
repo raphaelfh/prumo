@@ -1,71 +1,95 @@
 /**
- * The project's Screening tab. One config read drives a state machine,
- * checked in order: loading → load error → not configured → nothing enrolled
- * → running. Managers act in each state; members get a notice saying who
- * acts. Once configured, one header (with the one PubMed import) sits above
- * both later states, so enrolling never unmounts an open import. While
- * running, a reviewer gets the queue and an arbitrator the conflicts list (a
- * tab beside the queue when they also review).
+ * The project's Screening tab (spec §4, §4.6): the config read gates every
+ * sub-view. While it is pending or errored the tab shows the loading / error
+ * state and never touches the URL. Once it has succeeded:
+ * - `?screeningTab=settings` without `can_manage` is redirected to
+ *   `title_abstract` (replace, no toast);
+ * - a manager with no `?screeningTab` and no config lands on Settings (first
+ *   run, replace).
+ * Title/abstract without a config shows the toolbar, then "not set up";
+ * otherwise the workspace. `?assignment=` is stripped by the workspace.
  */
-import {useState} from 'react';
+import {useEffect} from 'react';
+import {useSearchParams} from 'react-router';
 
 import {ErrorState} from '@/components/patterns/ErrorState';
-import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
+import {Button} from '@/components/ui/button';
 import {useScreeningConfig} from '@/hooks/screening/useScreeningConfig';
-import {useScreeningConflicts} from '@/hooks/screening/useScreeningConflicts';
 import {t} from '@/lib/copy';
+import {isReadOnly} from '@/lib/screening/records';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningConfigRead} from '@/services/screeningService';
 
-import {ConflictsPanel} from './ConflictsPanel';
-import {ScreeningConfigForm} from './ScreeningConfigForm';
 import {LoadingState, Notice} from './ScreeningParts';
-import {ScreeningHeader} from './ScreeningHeader';
-import {ScreeningQueue} from './ScreeningQueue';
-import {EnrollAllButton} from './ScreeningToolbarActions';
+import {ScreeningSettings} from './ScreeningSettings';
+import {PubMedImportButton} from './ScreeningToolbarActions';
+import {TitleAbstractWorkspace} from './TitleAbstractWorkspace';
 
-/** The arbitrator's running view: the conflicts list, beside the queue when they also review. */
-function ArbitratorWorkspace({projectId, canReview}: {projectId: string; canReview: boolean}) {
-  const [tab, setTab] = useState(canReview ? 'queue' : 'conflicts');
-  const conflicts = useScreeningConflicts(projectId, true);
-  const count = conflicts.data ? String(conflicts.data.items.length) : '…';
-  return (
-    <Tabs value={tab} onValueChange={setTab}>
-      <TabsList className="mx-4 mt-3 self-start">
-        {canReview && <TabsTrigger value="queue">{t('screening', 'tabQueue')}</TabsTrigger>}
-        <TabsTrigger value="conflicts">{t('screening', 'tabConflictsCount').replace('{{n}}', count)}</TabsTrigger>
-      </TabsList>
-      {canReview && (
-        <TabsContent value="queue" className="mt-0">
-          <ScreeningQueue projectId={projectId} />
-        </TabsContent>
-      )}
-      <TabsContent value="conflicts" className="mt-0">
-        <ConflictsPanel projectId={projectId} />
-      </TabsContent>
-    </Tabs>
-  );
+const TAB_PARAM = 'screeningTab';
+
+/** The URL change the loaded config demands, or null. */
+function requiredTab(config: ScreeningConfigRead, tab: string | null): string | null {
+  if (tab === 'settings' && !config.can_manage) return 'title_abstract';
+  if (tab === null && config.reviewer_count === null && config.can_manage) return 'settings';
+  return null;
 }
 
-function NothingEnrolled({projectId, config}: {projectId: string; config: ScreeningConfigRead}) {
-  if (!config.can_manage) {
-    return <Notice title={t('screening', 'nothingEnrolledTitle')} body={t('screening', 'nothingEnrolledMember')} />;
-  }
-  const nothingToEnroll = config.not_enrolled === 0;
+function NotSetUp({
+  projectId,
+  config,
+  onOpenSettings,
+}: {
+  projectId: string;
+  config: ScreeningConfigRead;
+  onOpenSettings: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-foreground">{t('screening', 'nothingEnrolledTitle')}</h2>
-        <p className="max-w-sm text-[13px] text-muted-foreground">{t('screening', 'nothingEnrolledManager')}</p>
+    <div className="flex flex-col gap-2 p-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {!isReadOnly(config) && (
+          <PubMedImportButton projectId={projectId} canManage={config.can_manage} className="shrink-0" />
+        )}
       </div>
-      <EnrollAllButton projectId={projectId} size="default" label={t('screening', 'enrollAll')} disabled={nothingToEnroll} />
-      {nothingToEnroll && <p className="text-xs text-muted-foreground">{t('screening', 'nothingToEnroll')}</p>}
+      {config.can_manage ? (
+        <Notice title={t('screening', 'notConfiguredManagerTitle')} body={t('screening', 'configureDescription')}>
+          <Button size="sm" onClick={onOpenSettings}>
+            {t('screening', 'openSettings')}
+          </Button>
+        </Notice>
+      ) : (
+        <Notice title={t('screening', 'notConfiguredTitle')} body={t('screening', 'notConfiguredMember')} />
+      )}
     </div>
   );
 }
 
 export function ScreeningTab({projectId}: {projectId: string}) {
   const query = useScreeningConfig(projectId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get(TAB_PARAM);
+  const redirectTo = query.isSuccess ? requiredTab(query.data, tabParam) : null;
+
+  const setTab = (value: string) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set(TAB_PARAM, value);
+        return next;
+      },
+      {replace: true},
+    );
+
+  useEffect(() => {
+    if (redirectTo === null) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set(TAB_PARAM, redirectTo);
+        return next;
+      },
+      {replace: true},
+    );
+  }, [redirectTo, setSearchParams]);
 
   if (query.isPending) return <LoadingState />;
   if (query.isError) {
@@ -79,32 +103,13 @@ export function ScreeningTab({projectId}: {projectId: string}) {
   }
 
   const config = query.data;
+  const tab = redirectTo ?? tabParam;
 
-  if (config.reviewer_count === null) {
-    return config.can_manage ? (
-      <div className="p-2">
-        <ScreeningConfigForm projectId={projectId} config={config} />
-      </div>
-    ) : (
-      <Notice title={t('screening', 'notConfiguredTitle')} body={t('screening', 'notConfiguredMember')} />
-    );
+  if (tab === 'settings' && config.can_manage) {
+    return <ScreeningSettings projectId={projectId} config={config} />;
   }
-
-  const isViewer = !config.can_review && !config.can_arbitrate;
-  return (
-    <div className="flex flex-col">
-      <ScreeningHeader projectId={projectId} config={config} />
-      {config.enrolled === 0 ? (
-        <NothingEnrolled projectId={projectId} config={config} />
-      ) : config.can_arbitrate ? (
-        <ArbitratorWorkspace projectId={projectId} canReview={config.can_review} />
-      ) : config.can_review ? (
-        <ScreeningQueue projectId={projectId} />
-      ) : (
-        isViewer && (
-          <p className="px-4 py-12 text-center text-[13px] text-muted-foreground">{t('screening', 'viewerNotice')}</p>
-        )
-      )}
-    </div>
-  );
+  if (config.reviewer_count === null) {
+    return <NotSetUp projectId={projectId} config={config} onOpenSettings={() => setTab('settings')} />;
+  }
+  return <TitleAbstractWorkspace projectId={projectId} config={config} />;
 }
