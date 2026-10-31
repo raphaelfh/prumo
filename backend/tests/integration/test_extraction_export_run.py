@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from openpyxl import load_workbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AuthorizationError, NotFoundError, ValidationError
-from app.services.exports.extraction.run import ExportRequest, authorize_export
+from app.services.exports.extraction.run import (
+    EmptyExportError,
+    ExportRequest,
+    authorize_export,
+    build_export,
+)
 from app.services.exports.extraction.workbook import ExportShape
 from app.services.extraction_export_service import ExportMode
 from tests.integration.conftest import SEED
@@ -83,3 +90,26 @@ async def test_authorize_checks_membership_before_ownership(db_session: AsyncSes
 
 async def test_owner_passes(db_session: AsyncSession) -> None:
     await authorize_export(db_session, _req(), user_id=str(SEED.primary_profile))
+
+
+async def test_build_export_refuses_an_empty_complete_export(db_session: AsyncSession) -> None:
+    await db_session.execute(
+        text("DELETE FROM public.extraction_runs WHERE project_id = :p AND article_id = :a"),
+        {"p": str(SEED.primary_project), "a": str(SEED.primary_article)},
+    )
+    with pytest.raises(EmptyExportError) as exc:
+        await build_export(
+            db_session, _req(mode=ExportMode.CONSENSUS), user_id=str(SEED.primary_profile)
+        )
+    assert exc.value.code == "EMPTY_ELIGIBLE_ARTICLES"
+    assert exc.value.message.startswith("EMPTY_ELIGIBLE_ARTICLES: ")
+
+
+async def test_dictionary_export_with_no_articles_builds(db_session: AsyncSession) -> None:
+    file = await build_export(
+        db_session,
+        _req(mode=ExportMode.CONSENSUS, article_ids=(), shape=ExportShape.DICTIONARY),
+        user_id=str(SEED.primary_profile),
+    )
+    assert file.filename.endswith(".xlsx") and "_consensus_" in file.filename
+    assert load_workbook(io.BytesIO(file.content)).sheetnames[0] == "README"
