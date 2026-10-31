@@ -82,9 +82,14 @@ class TestExtractionExportRequestDefaults:
 
 
 class TestExtractionExportRequestArticleIds:
-    def test_empty_list_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            ExtractionExportRequest(template_id=uuid4(), article_ids=[])
+    @pytest.mark.parametrize("shape", ["complete", "publication"])
+    def test_empty_list_rejected(self, shape: str) -> None:
+        with pytest.raises(ValidationError, match="unless shape=dictionary"):
+            ExtractionExportRequest(template_id=uuid4(), article_ids=[], shape=shape)
+
+    def test_empty_list_accepted_for_dictionary(self) -> None:
+        req = ExtractionExportRequest(template_id=uuid4(), article_ids=[], shape="dictionary")
+        assert req.article_ids == []
 
     def test_single_item_accepted(self) -> None:
         req = ExtractionExportRequest(template_id=uuid4(), article_ids=[uuid4()])
