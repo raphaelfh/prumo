@@ -553,7 +553,7 @@ export type RecordFilterId = /* S1's */ | 'pdf';           // values 'attached' 
 //   sortRecords status order gains not_retrieved after excluded; progress().decided counts not_retrieved;
 export function myDecisionValuesFor(phase: ScreeningPhase): readonly string[]; // TA include/exclude/maybe/none; FT include/exclude/not_retrieved/none
 export const EXCLUDED_REPORT_CSV_COLUMNS = ['title','first_author','publication_year','journal_title','pmid','doi','outcome_exclusion_reason'] as const;
-export function excludedReportsCsv(rows: ScreeningRecordRow[]): string; // status 'excluded' only; same RFC 4180 rules as recordsToCsv
+export function excludedReportsCsv(rows: ScreeningRecordRow[]): string; // status 'excluded' only; built on S1's CSV writer (`recordsToCsv`'s quoting + its CSV-injection guard, Task 6 of S1) — no second writer
 // RECORD_CSV_COLUMNS: the 20 wire fields
 
 // keymap.ts
