@@ -4825,7 +4825,7 @@ export interface components {
             anonymize_reviewer_names: boolean;
             /**
              * Article Ids
-             * @description Candidate article ids (resolved by the caller per article_scope).
+             * @description Candidate article ids (resolved by the caller per article_scope). May be empty only when shape=dictionary.
              */
             article_ids: string[];
             /**

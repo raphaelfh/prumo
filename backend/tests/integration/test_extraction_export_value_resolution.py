@@ -13,7 +13,6 @@ or a double-wrapped one leaked into the cell as a Python-repr ``dict``.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -155,7 +154,6 @@ async def test_consensus_value_map_resolves_unit_and_other(
     service = ExtractionExportService(
         db=db_session,
         user_id=str(profile_id),
-        storage=MagicMock(),
     )
     layout = await service.resolve_layout(
         project_id=project_id,

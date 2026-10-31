@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.services.exports.extraction.ai_metadata import build_ai_metadata
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles
 from app.services.extraction_export_service import (
     AIProposalRow,
     ExportLayout,
@@ -51,13 +52,22 @@ def _proposal(**over: object) -> AIProposalRow:
 
 
 def test_returns_none_when_toggled_off() -> None:
-    assert build_ai_metadata(_layout(include_ai_metadata=False)) is None
+    layout = _layout(include_ai_metadata=False)
+    assert (
+        build_ai_metadata(
+            layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        )
+        is None
+    )
 
 
 def test_header_and_placeholder_when_no_rows() -> None:
-    spec = build_ai_metadata(_layout(include_ai_metadata=True))
+    layout = _layout(include_ai_metadata=True)
+    spec = build_ai_metadata(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec is not None
-    assert spec.title == "AI metadata"
+    assert spec.title == "AI proposals"
     assert spec.rows[0][0].value == "Article"
     assert spec.rows[0][4].value == "AI proposed value"
     # "Model used" now at 0-based index 10; "Final value used" shifted to 12.
@@ -67,7 +77,10 @@ def test_header_and_placeholder_when_no_rows() -> None:
 
 
 def test_one_row_per_proposal_in_canonical_order() -> None:
-    spec = build_ai_metadata(_layout(include_ai_metadata=True, rows=(_proposal(),)))
+    layout = _layout(include_ai_metadata=True, rows=(_proposal(),))
+    spec = build_ai_metadata(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec is not None
     row = spec.rows[1]
     assert row[0].value == "Gaca, 2011"
@@ -87,7 +100,10 @@ def test_one_row_per_proposal_in_canonical_order() -> None:
 
 def test_model_used_empty_string_when_not_set() -> None:
     """model_used defaults to empty string when the run has no parameters["model"]."""
-    spec = build_ai_metadata(_layout(include_ai_metadata=True, rows=(_proposal(model_used=""),)))
+    layout = _layout(include_ai_metadata=True, rows=(_proposal(model_used=""),))
+    spec = build_ai_metadata(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec is not None
     row = spec.rows[1]
     assert row[10].value == ""

@@ -49,13 +49,11 @@ from app.services.extraction_export_service import (
 
 
 def _make_service(user_id: str | None = None) -> ExtractionExportService:
-    """Return a service wired to a no-op async session and storage."""
+    """Return a service wired to a no-op async session."""
     db = AsyncMock()
-    storage = MagicMock()
     return ExtractionExportService(
         db=db,
         user_id=user_id or str(uuid4()),
-        storage=storage,
     )
 
 

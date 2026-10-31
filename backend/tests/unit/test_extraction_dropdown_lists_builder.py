@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.dropdown_lists import build_dropdown_lists
+from app.services.exports.extraction.workbook import ExportShape, allocate_titles
 from app.services.extraction_export_service import (
     AllowedValue,
     ExportLayout,
@@ -53,7 +54,10 @@ def test_dropdown_lists_one_column_per_select_field():
         # a non-select field with no allowed_values must NOT appear:
         _entry("Free text", ExtractionFieldType.TEXT, []),
     )
-    spec = build_dropdown_lists(_layout(entries))
+    layout = _layout(entries)
+    spec = build_dropdown_lists(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
     assert spec is not None
     header = [c.value for c in spec.rows[0]]
     assert header == ["Study design", "Outcomes"]
@@ -68,4 +72,10 @@ def test_dropdown_lists_one_column_per_select_field():
 
 def test_dropdown_lists_returns_none_when_no_allowed_values():
     entries = (_entry("Free text", ExtractionFieldType.TEXT, []),)
-    assert build_dropdown_lists(_layout(entries)) is None
+    layout = _layout(entries)
+    assert (
+        build_dropdown_lists(
+            layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        )
+        is None
+    )

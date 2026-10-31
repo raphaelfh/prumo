@@ -28,7 +28,9 @@ app/infrastructure/parsing/docling_parser.py:attribute:table_structure_options
 app/llm/registry.py:function:provider_ids
 app/repositories/article_repository.py:attribute:last_synced_at
 app/services/article_file_service.py:attribute:extraction_error
+app/services/exports/extraction/sheet_spec.py:attribute:data_type
 app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
+app/services/exports/extraction/sheet_spec.py:attribute:quotePrefix
 app/services/exports/extraction/sheet_spec.py:attribute:tabColor
 app/services/extraction_export_service.py:variable:ai_proposed_value
 app/services/extraction_export_service.py:variable:article_label

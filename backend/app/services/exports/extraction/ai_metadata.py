@@ -1,4 +1,4 @@
-"""Optional AI-metadata sheet sub-builder (FR-036 – FR-040).
+"""Optional AI proposals sheet sub-builder (FR-036 – FR-040).
 
 One flat-tabular row per AI proposal — what the model proposed vs. what
 was actually used, plus confidence, rationale, evidence, and the
@@ -16,10 +16,14 @@ the front-matter ``generated_at`` convention).
 from __future__ import annotations
 
 from dataclasses import astuple
+from typing import TYPE_CHECKING
 
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, CellValue, SheetSpec
 from app.services.exports.value_envelope import format_export_scalar
 from app.services.extraction_export_service import AIProposalRow, ExportLayout
+
+if TYPE_CHECKING:
+    from app.services.exports.extraction.workbook import SheetTitles
 
 #: Column headers in FR-037 order — lockstep with ``AIProposalRow`` field
 #: order (``astuple`` below relies on that contract).
@@ -51,9 +55,10 @@ _COL_WIDTH = 22.0
 _NO_ROWS_PLACEHOLDER = "(No AI proposals recorded for the selected articles.)"
 
 
-def build_ai_metadata(layout: ExportLayout) -> SheetSpec | None:
-    """Build the optional AI-metadata sheet, or ``None`` when toggled off."""
-    if not layout.include_ai_metadata:
+def build_ai_metadata(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
+    """Build the optional AI proposals sheet, or ``None`` when its role is absent."""
+    title = titles.fixed.get("ai_proposals")
+    if title is None:
         return None
 
     rows: list[tuple[Cell, ...]] = [tuple(Cell(label, _HEADER_STYLE) for label in _HEADERS)]
@@ -72,7 +77,7 @@ def build_ai_metadata(layout: ExportLayout) -> SheetSpec | None:
         rows.append((Cell(_NO_ROWS_PLACEHOLDER),))
 
     return SheetSpec(
-        title="AI metadata",
+        title=title,
         rows=tuple(rows),
         column_widths=tuple(_COL_WIDTH for _ in _HEADERS),
     )

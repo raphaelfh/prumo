@@ -60,7 +60,6 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
     svc = ExtractionExportService(
         db=_StubDB(_StubVersion(schema)),  # type: ignore[arg-type]
         user_id=str(uuid4()),
-        storage=None,  # type: ignore[arg-type]
     )
     sections = await svc._load_sections(uuid4())
 
@@ -111,7 +110,6 @@ async def test_load_sections_carries_entry_label_and_defaults_it() -> None:
     svc = ExtractionExportService(
         db=_StubDB(_StubVersion(schema)),  # type: ignore[arg-type]
         user_id=str(uuid4()),
-        storage=None,  # type: ignore[arg-type]
     )
     sections = await svc._load_sections(uuid4())
 

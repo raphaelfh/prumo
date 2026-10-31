@@ -7,11 +7,14 @@ layout's value_map (resolve_value ran upstream); never re-handles envelopes.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
 from app.services.extraction_export_service import ExportLayout, ExportMode
 from app.services.value_semantics import ABSENT_REASON_LABELS
+
+if TYPE_CHECKING:
+    from app.services.exports.extraction.workbook import SheetTitles
 
 _HEADER_STYLE = CellStyle(bold=True, fill="EEEEEE")
 _RECORD_COL = "Record"
@@ -92,11 +95,12 @@ def _appraisal_overall(verdicts: tuple[Any, ...]) -> Any:
     return worst if worst_rank >= 0 else None
 
 
-def build_appraisal_summary(layout: ExportLayout) -> SheetSpec | None:
+def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
     """Build the conditional appraisal-summary sheet (§7).
 
-    Returns None when the exported template carries no appraisal layer
-    (``layout.appraisal is None``) — the workbook orchestrator then omits
+    Returns None when ``allocate_titles`` left the role out because the
+    exported template carries no appraisal layer (``layout.appraisal is
+    None``) — the workbook orchestrator then omits
     sheet #k+1 and any risk-of-bias section still renders as a tidy table.
 
     Mode-aware Overall columns (§7):
@@ -106,8 +110,9 @@ def build_appraisal_summary(layout: ExportLayout) -> SheetSpec | None:
         reviewer, in ``layout.reviewers`` order (mirrors the matrix
         reviewer-axis fan-out), keyed by ``AppraisalRow.per_reviewer_overall``.
     """
+    title = titles.fixed.get("appraisal_summary")
     appraisal = layout.appraisal
-    if appraisal is None:
+    if title is None or appraisal is None:
         return None
 
     domain_labels = appraisal.domain_labels
@@ -153,7 +158,7 @@ def build_appraisal_summary(layout: ExportLayout) -> SheetSpec | None:
     overall_cols = len(derived_labels) if derived_labels else 1
     domain_and_overall = len(domain_labels) + overall_cols + len(reviewer_overall_cols)
     return SheetSpec(
-        title="Appraisal summary",
+        title=title,
         rows=tuple(rows),
         freeze="B2",
         column_widths=(28.0,) + (16.0,) * domain_and_overall,

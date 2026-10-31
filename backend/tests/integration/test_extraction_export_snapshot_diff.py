@@ -153,11 +153,7 @@ async def test_obsolete_field_reported_when_run_pinned_to_older_version(
         version_id=older.id,
         entries={},
     )
-    svc = ExtractionExportService(
-        db=db_session,
-        user_id=str(uuid4()),
-        storage=None,  # type: ignore[arg-type]
-    )
+    svc = ExtractionExportService(db=db_session, user_id=str(uuid4()))
     out = await svc._compute_obsolete_fields_per_article(
         articles=(article,),
         anchor_field_ids={UUID(kept_fid)},  # anchor has only the kept field

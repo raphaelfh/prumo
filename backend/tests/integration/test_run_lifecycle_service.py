@@ -1494,11 +1494,7 @@ async def test_qa_single_user_export_not_blank_after_advance(
         run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
     )
 
-    export = ExtractionExportService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=None,  # type: ignore[arg-type]
-    )
+    export = ExtractionExportService(db=db_session, user_id=str(profile_id))
     value_map = await export._build_single_user_value_map(
         run_ids=[run_id],
         reviewer_id=profile_id,
