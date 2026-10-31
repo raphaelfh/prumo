@@ -20,8 +20,9 @@ import type {ScreeningConfigRead} from '@/services/screeningService';
 import {ConflictsPanel} from './ConflictsPanel';
 import {ScreeningConfigForm} from './ScreeningConfigForm';
 import {LoadingState, Notice} from './ScreeningParts';
-import {EnrollAllButton, ScreeningHeader} from './ScreeningHeader';
+import {ScreeningHeader} from './ScreeningHeader';
 import {ScreeningQueue} from './ScreeningQueue';
+import {EnrollAllButton} from './ScreeningToolbarActions';
 
 /** The arbitrator's running view: the conflicts list, beside the queue when they also review. */
 function ArbitratorWorkspace({projectId, canReview}: {projectId: string; canReview: boolean}) {

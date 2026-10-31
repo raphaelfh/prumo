@@ -88,6 +88,13 @@ export const screening = {
   doneTitle: 'All done',
   doneBody: 'There is nothing left for you to screen.',
 
+  // Title/abstract workspace
+  panelToggle: 'Toggle the record panel',
+  notInPhase: 'This article is not in this phase',
+  startScreening: 'Start screening',
+  noArticlesTitle: 'No articles yet',
+  noArticlesBody: 'Import articles to start screening.',
+
   // Record panel
   panelPlaceholderTitle: 'Select a record',
   panelPlaceholderBody: 'Pick a row to screen it here.',
