@@ -116,6 +116,13 @@ def _style_to_kwargs(
     return font, alignment, fill
 
 
+def _clean(value: CellValue) -> CellValue:
+    """Strip characters XML 1.0 forbids; openpyxl raises on them otherwise."""
+    if isinstance(value, str):
+        return ILLEGAL_CHARACTERS_RE.sub("", value)
+    return value
+
+
 def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
     """Render a SheetSpec onto an existing (empty) worksheet."""
     ws.title = spec.title
@@ -144,7 +151,12 @@ def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
             if (r_idx, c_idx) in merged_non_anchor:
                 target = ws.cell(row=r_idx, column=c_idx)
             else:
-                target = ws.cell(row=r_idx, column=c_idx, value=cell.value)
+                value = _clean(cell.value)
+                target = ws.cell(row=r_idx, column=c_idx, value=value)
+                if isinstance(value, str) and value.startswith("="):
+                    # Written as text, never a formula (injection/readback).
+                    target.data_type = "s"
+                    target.quotePrefix = True
             if cell.style is not None:
                 font, alignment, fill = _style_to_kwargs(cell.style)
                 if font is not None:
