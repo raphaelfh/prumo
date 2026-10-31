@@ -92,8 +92,6 @@ frontend/lib/copy/qa.ts:configToggleEnabling
 frontend/lib/copy/qa.ts:interfaceDesc
 frontend/lib/copy/qa.ts:interfaceTitle
 frontend/lib/copy/qa.ts:loadArticlesError
-frontend/lib/copy/qa.ts:noArticlesDesc
-frontend/lib/copy/qa.ts:noArticlesTitle
 frontend/lib/copy/qa.ts:noAuthors
 frontend/lib/copy/qa.ts:noTemplatesDesc
 frontend/lib/copy/qa.ts:publishedState
