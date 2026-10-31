@@ -26,7 +26,10 @@ from app.models.extraction import (
     ExtractionFieldType,
 )
 from app.services.exports.descriptors import ValueKey, value_key
-from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
+from app.services.exports.extraction_scope_marking import (
+    mark_out_of_scope_values,
+    reader_instance_ids,
+)
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
@@ -544,3 +547,29 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
         )
 
     assert seen["raters"] == ((reviewer if expected_primary == "reviewer" else None),)
+
+
+def test_reader_instance_ids_follows_the_walk() -> None:
+    many = ExtractionCardinality.MANY
+    g = _section(uuid4(), "groups", (), cardinality=many)  # fieldless MANY, owns items
+    items = replace(
+        _section(uuid4(), "items", (_field(uuid4(), "x"),), cardinality=many),
+        parent_entity_type_id=g.entity_type_id,
+    )
+    empty = _section(uuid4(), "empty", (), cardinality=many)  # fieldless subtree
+    e1, p1, p2, x1 = uuid4(), uuid4(), uuid4(), uuid4()
+    art = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="A",
+        run_id=uuid4(),
+        version_id=None,
+        entries={
+            (g.entity_type_id, None): (e1,),
+            (items.entity_type_id, e1): (p1, p2),
+            (empty.entity_type_id, None): (x1,),
+        },
+    )
+    secs = (g, items, empty)
+    assert reader_instance_ids(g, art, secs) == (e1,)
+    assert reader_instance_ids(items, art, secs) == (p1, p2)
+    assert reader_instance_ids(empty, art, secs) == ()

@@ -23,12 +23,17 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from app.models.extraction import ExtractionCardinality
 from app.services.derived_judgment_service import (
     out_of_scope_sections,
     scope_classifier_coordinate,
 )
-from app.services.exports.descriptors import ValueKey, all_instances_of, root_instance, value_key
+from app.services.exports.descriptors import (
+    ValueKey,
+    all_instances_of,
+    root_instance,
+    value_key,
+    walk_sections,
+)
 from app.services.exports.values import ExportValue
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
@@ -74,14 +79,15 @@ def article_values_by_coord(
 def reader_instance_ids(
     section: SectionDescriptor,
     article: ArticleDescriptor,
+    sections: Sequence[SectionDescriptor],
 ) -> tuple[UUID, ...]:
     """The instance ids the matrix and tidy builders read for this section.
 
     Every instance of the section across its parents, which is what a
-    records-as-rows sheet wants. A field-less repeating group contributes
-    nothing: it is the axis, not a record.
+    records-as-rows sheet wants, when the rule-2 walk keeps the section;
+    nothing when it skips it (a fieldless subtree).
     """
-    if section.cardinality is ExtractionCardinality.MANY and not section.fields:
+    if section not in walk_sections(sections):
         return ()
     return all_instances_of(article, section.entity_type_id)
 
@@ -142,7 +148,7 @@ def mark_out_of_scope_values(
             for section in sections:
                 if section.name not in out_of_scope or section.name == classifier[0]:
                     continue
-                for instance_id in reader_instance_ids(section, article):
+                for instance_id in reader_instance_ids(section, article, sections):
                     for section_field in section.fields:
                         key = value_key(run_id, instance_id, section_field.field_id, rater)
                         existing = value_map.get(key)

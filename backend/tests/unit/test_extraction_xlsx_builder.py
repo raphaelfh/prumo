@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 from datetime import UTC, datetime
+from itertools import count
 from uuid import UUID, uuid4
 
 import pytest
@@ -47,6 +48,11 @@ def _ev(field: FieldDescriptor, raw: object) -> ExportValue:
     return to_export_value({"value": raw}, field, {})
 
 
+#: Authored order: the rule-2 walk orders siblings by ``(sort_order, id)``,
+#: so a shared default would order them by random uuid.
+_SORT_ORDER = count()
+
+
 def _section(
     label: str,
     fields: list[FieldDescriptor] | None = None,
@@ -61,6 +67,7 @@ def _section(
         parent_entity_type_id=parent,
         fields=f,
         cardinality=cardinality,
+        sort_order=next(_SORT_ORDER),
     )
 
 

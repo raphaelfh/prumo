@@ -10,18 +10,26 @@ section's instance is found by walking its ancestor chain — not by index.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import uuid4
 
-from app.models.extraction import ExtractionCardinality
+from app.models.extraction import ExtractionCardinality, ExtractionFieldType
 from app.services.exports.descriptors import (
     EntryColumn,
     all_instances_of,
     build_columns,
     instance_for,
+    instance_in_record,
     iter_records,
+    level_of,
     root_instance,
+    walk_sections,
 )
-from app.services.extraction_export_service import ArticleDescriptor, SectionDescriptor
+from app.services.extraction_export_service import (
+    ArticleDescriptor,
+    FieldDescriptor,
+    SectionDescriptor,
+)
 
 
 def _sec(eid, *, parent=None, many=False, order=0):
@@ -300,3 +308,62 @@ def test_records_for_a_nested_group_name_both_levels() -> None:
         (p2, ("Model 1", "Predictor 2")),
         (p3, ("Model 2", "Predictor 1")),
     )
+
+
+def _fielded(s):
+    return replace(
+        s,
+        fields=(
+            FieldDescriptor(
+                field_id=uuid4(), label="x", type=ExtractionFieldType.TEXT, allowed_values=()
+            ),
+        ),
+    )
+
+
+def test_walk_is_depth_first_and_drops_only_fieldless_subtrees() -> None:
+    g = _sec(uuid4(), many=True, order=0)
+    items = _fielded(_sec(uuid4(), parent=g.entity_type_id, many=True, order=2))
+    empty = _sec(uuid4(), order=1)
+    flat = _fielded(_sec(uuid4(), order=3))
+    assert [s.entity_type_id for s in walk_sections((flat, empty, items, g))] == [
+        g.entity_type_id,
+        items.entity_type_id,
+        flat.entity_type_id,
+    ]
+
+
+def test_walk_terminates_on_a_parent_cycle() -> None:
+    a_id, b_id = uuid4(), uuid4()
+    a = _fielded(_sec(a_id, parent=b_id, many=True))
+    b = _fielded(_sec(b_id, parent=a_id, many=True))
+    assert walk_sections((a, b)) == ()
+
+
+def test_level_of_is_the_nearest_repeating_self_or_ancestor() -> None:
+    g = _sec(uuid4(), many=True)
+    child = _sec(uuid4(), parent=g.entity_type_id)
+    root = _sec(uuid4())
+    secs = (g, child, root)
+    assert (level_of(g, secs), level_of(child, secs), level_of(root, secs)) == (
+        g.entity_type_id,
+        g.entity_type_id,
+        None,
+    )
+
+
+def test_instance_in_record_walks_two_singleton_steps() -> None:
+    """Review Focus 2: MANY > fieldless ONE > fielded ONE."""
+    g = _sec(uuid4(), many=True)
+    mid = _sec(uuid4(), parent=g.entity_type_id)
+    leaf = _sec(uuid4(), parent=mid.entity_type_id)
+    e1, m1, l1 = uuid4(), uuid4(), uuid4()
+    art = _article(
+        {
+            (g.entity_type_id, None): (e1,),
+            (mid.entity_type_id, e1): (m1,),
+            (leaf.entity_type_id, m1): (l1,),
+        }
+    )
+    assert instance_in_record(leaf, art, e1, (g, mid, leaf)) == l1
+    assert instance_in_record(g, art, e1, (g, mid, leaf)) == e1

@@ -58,7 +58,7 @@ async def test_load_export_sections_reads_active_version_snapshot(
         assert not hasattr(s, "role")
     # This fixture's template is root sections only, so only the root edge
     # is assertable here; the nested edge is covered by the unit tests over
-    # `_ancestry` and by test_extraction_export_many_cardinality_fanout.
+    # `ancestry` and by test_extraction_export_many_cardinality_fanout.
     assert any(s.parent_entity_type_id is None for s in sections)
     # Field metadata threads through (label + field_id present on every field).
     a_field = next((f for s in sections for f in s.fields), None)

@@ -431,3 +431,34 @@ def test_matrix_module_has_no_legacy_builder_dependency() -> None:
         if isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     assert "app.services.exports.extraction_xlsx_builder" not in imported
+
+
+def test_matrix_bands_a_fieldless_group_that_owns_fields() -> None:
+    """Rule 2: a fieldless MANY is skipped only when no descendant has fields."""
+    groups = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Groups",
+        parent_entity_type_id=None,
+        fields=(),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    items = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Items",
+        parent_entity_type_id=groups.entity_type_id,
+        fields=(_spec_field("Name", ExtractionFieldType.TEXT),),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    e1, i1 = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Smith, 2020",
+        run_id=uuid4(),
+        version_id=None,
+        entries={(groups.entity_type_id, None): (e1,), (items.entity_type_id, e1): (i1,)},
+    )
+    ws = _render_matrix(_spec_layout(sections=(groups, items), articles=(article,)))
+    bands = [
+        v for r in range(2, ws.max_row + 1) if isinstance(v := ws.cell(row=r, column=1).value, str)
+    ]
+    assert bands == ["1. Groups", "2. Items"]

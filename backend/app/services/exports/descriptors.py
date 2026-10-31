@@ -259,7 +259,7 @@ def _stem(section: SectionDescriptor) -> str:
     return section.entry_label.title() if section.entry_label else section.label
 
 
-def _ancestry(
+def ancestry(
     section: SectionDescriptor, sections: Sequence[SectionDescriptor]
 ) -> list[SectionDescriptor]:
     """``section`` and its ancestors, root first."""
@@ -277,6 +277,70 @@ def _ancestry(
         )
     chain.reverse()
     return chain
+
+
+def walk_sections(sections: Sequence[SectionDescriptor]) -> tuple[SectionDescriptor, ...]:
+    """Rule 2: the sections in depth-first preorder from the roots.
+
+    Siblings follow ``_children_of``. A section is dropped only when neither
+    it nor any descendant has fields, so a fieldless group that owns fielded
+    children stays. ``seen`` is the cycle guard (see ``_expand``): a section
+    on a parent cycle is never reached from a root, so it is never walked.
+    """
+    seen: set[UUID] = set()
+
+    def visit(section: SectionDescriptor) -> list[SectionDescriptor]:
+        if section.entity_type_id in seen:
+            return []
+        seen.add(section.entity_type_id)
+        below = [
+            s for child in _children_of(sections, section.entity_type_id) for s in visit(child)
+        ]
+        if not section.fields and not below:
+            return []
+        return [section, *below]
+
+    return tuple(s for root in _children_of(sections, None) for s in visit(root))
+
+
+def level_of(section: SectionDescriptor, sections: Sequence[SectionDescriptor]) -> UUID | None:
+    """Rule 1: the nearest repeating section at or above ``section``.
+
+    ``None`` is the root level, Articles: a ``one`` section with no repeating
+    ancestor joins it.
+    """
+    return next(
+        (s.entity_type_id for s in reversed(ancestry(section, sections)) if _repeats(s)),
+        None,
+    )
+
+
+def instance_in_record(
+    section: SectionDescriptor,
+    article: ArticleDescriptor,
+    record_id: UUID | None,
+    sections: Sequence[SectionDescriptor],
+) -> UUID | None:
+    """The instance of ``section`` inside one record of its level.
+
+    ``record_id`` is the level instance (``None`` at the root level). Every
+    step below the level is a ``one`` section by rule 1, so each step takes
+    the first instance under the previous one.
+    """
+    chain = ancestry(section, sections)
+    level = level_of(section, sections)
+    start = 0
+    instance_id = record_id
+    if level is not None:
+        if record_id is None:
+            return None
+        start = next(i for i, s in enumerate(chain) if s.entity_type_id == level) + 1
+    for step in chain[start:]:
+        ids = article.entries.get((step.entity_type_id, instance_id), ())
+        if not ids:
+            return None
+        instance_id = ids[0]
+    return instance_id
 
 
 def iter_records(
@@ -297,7 +361,7 @@ def iter_records(
     child sheet, six of them empty.
     """
     records: list[tuple[UUID | None, tuple[str, ...]]] = [(None, ())]
-    for level in _ancestry(section, sections):
+    for level in ancestry(section, sections):
         grown: list[tuple[UUID | None, tuple[str, ...]]] = []
         for parent_instance_id, parts in records:
             ids = article.entries.get((level.entity_type_id, parent_instance_id), ())
