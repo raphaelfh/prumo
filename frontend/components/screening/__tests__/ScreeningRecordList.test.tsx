@@ -133,6 +133,7 @@ interface HostProps {
   onOpenRow?: (row: Row) => void;
   onFiltersChange?: () => void;
   onVisibleRowsChange?: (rows: Row[]) => void;
+  initialChecked?: ReadonlySet<string>;
 }
 
 function Host({
@@ -144,9 +145,10 @@ function Host({
   onOpenRow = noop,
   onFiltersChange = noop,
   onVisibleRowsChange,
+  initialChecked = NO_KEPT,
 }: HostProps) {
   const [status, setStatus] = useState<StatusView>(initialStatus);
-  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const [checked, setChecked] = useState<ReadonlySet<string>>(initialChecked);
   return (
     <ScreeningRecordList
       projectId="p1"
@@ -351,6 +353,29 @@ describe('ScreeningRecordList', () => {
     expect(screen.getByLabelText('Source')).toBeInTheDocument();
   });
 
+  it('cmd+A in the To screen view checks only the visible rows', async () => {
+    const user = userEvent.setup();
+    renderList({initialStatus: 'to_screen'});
+    expect(listedTitles()).toEqual(titlesOf(R1, R2));
+    await user.keyboard('{Meta>}a{/Meta}');
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+  });
+
+  it('cmd+A under a search checks only the visible rows of the status view', async () => {
+    const user = userEvent.setup();
+    renderList({initialStatus: 'to_screen'});
+    await user.type(screen.getByPlaceholderText(/search/i), R1.title);
+    expect(listedTitles()).toEqual(titlesOf(R1));
+    await user.click(document.body);
+    await user.keyboard('{Meta>}a{/Meta}');
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+  });
+
+  it('"N selected" ignores a checked id no longer in the rows', () => {
+    renderList({initialChecked: new Set([R1.article_id, 'gone-article'])});
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+  });
+
   it('a viewer gets no write controls', async () => {
     const user = userEvent.setup();
     renderList({cfg: VIEWER});
@@ -460,6 +485,7 @@ describe('ScreeningRecordList', () => {
       URL.createObjectURL = createObjectURL;
       URL.revokeObjectURL = revokeObjectURL;
       createObjectURL.mockClear();
+      revokeObjectURL.mockClear();
     });
     afterEach(() => {
       URL.createObjectURL = originals.create;
@@ -484,6 +510,23 @@ describe('ScreeningRecordList', () => {
       expect(lines).toHaveLength(3);
       expect(lines[1].startsWith(`${R2.article_id},`)).toBe(true);
       expect(lines[2].startsWith(`${R6.article_id},`)).toBe(true);
+      click.mockRestore();
+    });
+
+    it('revokes the object URL only after the click has returned', async () => {
+      const user = userEvent.setup();
+      let revokedBeforeNextTask: number | null = null;
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+        queueMicrotask(() => {
+          revokedBeforeNextTask = revokeObjectURL.mock.calls.length;
+        });
+      });
+      renderList();
+      await check(user, R2);
+      await user.click(screen.getByRole('button', {name: 'Export selected'}));
+
+      await vi.waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:records'));
+      expect(revokedBeforeNextTask).toBe(0);
       click.mockRestore();
     });
   });

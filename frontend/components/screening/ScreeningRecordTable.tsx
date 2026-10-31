@@ -185,7 +185,8 @@ function downloadCsv(rows: ScreeningRecordRow[]) {
   anchor.href = url;
   anchor.download = 'screening-records.csv';
   anchor.click();
-  URL.revokeObjectURL(url);
+  // Revoking synchronously can cancel the download in Safari and Firefox.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 interface RecordBulkBarProps {
@@ -215,7 +216,7 @@ export function RecordBulkBar({projectId, rows, checkedIds, canManage, onChecked
   return (
     <>
       <span className="text-[11px] font-medium tabular-nums text-foreground">
-        {t('screening', 'selectedCount').replace('{{n}}', String(checkedIds.size))}
+        {t('screening', 'selectedCount').replace('{{n}}', String(checkedRows.length))}
       </span>
       {canManage && (
         <Button size="xs" variant="ghost" onClick={enrollSelected} disabled={enrollIds.length === 0 || enroll.isPending}>

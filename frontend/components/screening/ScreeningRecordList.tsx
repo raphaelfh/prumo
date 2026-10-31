@@ -170,13 +170,16 @@ export function ScreeningRecordList({
     changeFilters(next);
   };
 
+  // ⌘A selects what the user can see (spec §4.4): status view + search + filters.
+  const selectVisible = () => onCheckedChange(new Set(visible.map((row) => row.article_id)));
+
   useListKeyboardShortcuts({
     searchInputRef,
     setFilterPopoverOpen,
     filterPopoverOpen,
     hasActiveFilters,
-    selectAll: () => onCheckedChange(new Set(read.rows.map((row) => row.article_id))),
-    selectFiltered: () => onCheckedChange(new Set(visible.map((row) => row.article_id))),
+    selectAll: selectVisible,
+    selectFiltered: selectVisible,
   });
 
   const {decided, enrolled, myLeft} = progress(read.rows);
