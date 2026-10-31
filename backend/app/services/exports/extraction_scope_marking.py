@@ -2,7 +2,8 @@
 
 A section the article's own study-type classification takes out of play used
 to export as a BLANK cell while the run view showed a "Not applicable" badge.
-This module stamps that state onto the typed ``value_map`` ONCE, in
+This module marks that state on the typed ``value_map`` ONCE (empty cells are
+stamped, recorded answers are kept and flagged ``out_of_scope``), in
 ``resolve_layout``, before any sheet builder reads it — so the matrix, the
 per-section tidy tables and the appraisal summary all inherit the correction
 without receiving the rules and without a signature change. The rules are
@@ -18,6 +19,7 @@ descriptor types are annotations only, and the slots arrive as raters.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -92,25 +94,29 @@ def mark_out_of_scope_values(
     raters: Sequence[UUID | None],
     value_map: dict[ValueKey, ExportValue],
 ) -> None:
-    """Stamp "Not applicable" on the cells an article's own scope takes out of play.
+    """Mark the cells an article's own scope takes out of play.
 
-    It WRITES the canonical reader keys rather than rewriting existing entries.
+    An EMPTY cell gets the "Not applicable" stamp; a cell holding a recorded
+    answer (including a cleared one) keeps it and is flagged ``out_of_scope``.
     The cells this exists to fix are the ones nobody ever answered — an excluded
-    domain has no ``extraction_published_states`` row, so there is no entry to
-    overwrite and a rewrite-only pass would leave the blank cell blank.
+    domain has no ``extraction_published_states`` row — so the pass WRITES the
+    canonical reader keys instead of only rewriting existing entries.
+
+    Each slot in *raters* is classified by its OWN classifier answer: a
+    reviewer's sub-column is scoped by that reviewer's study type, the
+    consensus by the consensus answer. A slot with no answer excludes nothing.
 
     **This cannot double-apply.** ``scope_filtered_values`` drops entries by
     SECTION NAME, never by value, so the derived overalls discard those
     coordinates whatever the map now holds for them. And the classifier's own
-    section is never marked: ``_build_appraisal_model`` re-reads the map we just
-    wrote, so a marked classifier would answer "Not applicable" to the question
-    "which sections are out of scope?" and the exclusion would silently vanish
-    from the appraisal while the matrix still showed it. A schema is not
-    required to be sane about this; the skip makes it structural.
+    section is never marked, in any slot: ``_build_appraisal_model`` re-reads
+    the map we just wrote, so a marked classifier would answer "Not applicable"
+    to the question "which sections are out of scope?" and the exclusion would
+    silently vanish from the appraisal while the matrix still showed it. A
+    schema is not required to be sane about this; the skip makes it structural.
 
     *rules_by_article* maps ``article_id`` to the rules frozen in that
     article's pinned version; an article missing from it has no rules.
-    *raters* lists the slots to stamp; the first classifies the article.
     """
 
     for article in articles:
@@ -123,25 +129,26 @@ def mark_out_of_scope_values(
         classifier = scope_classifier_coordinate(rules)
         if classifier is None:
             continue
-        out_of_scope = out_of_scope_sections(
-            rules,
-            article_values_by_coord(
-                article=article,
-                sections=sections,
-                value_map=value_map,
-                rater=raters[0],
-            ),
-        )
-        if not out_of_scope:
-            continue
-        for section in sections:
-            if section.name not in out_of_scope or section.name == classifier[0]:
-                continue
-            for instance_id in reader_instance_ids(section, article):
-                for section_field in section.fields:
-                    for rater in raters:
+        for rater in raters:
+            out_of_scope = out_of_scope_sections(
+                rules,
+                article_values_by_coord(
+                    article=article,
+                    sections=sections,
+                    value_map=value_map,
+                    rater=rater,
+                ),
+            )
+            for section in sections:
+                if section.name not in out_of_scope or section.name == classifier[0]:
+                    continue
+                for instance_id in reader_instance_ids(section, article):
+                    for section_field in section.fields:
                         key = value_key(run_id, instance_id, section_field.field_id, rater)
-                        value_map[key] = _STAMP
+                        existing = value_map.get(key)
+                        value_map[key] = (
+                            _STAMP if existing is None else replace(existing, out_of_scope=True)
+                        )
 
 
 __all__ = [

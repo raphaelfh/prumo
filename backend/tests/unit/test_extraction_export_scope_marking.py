@@ -8,12 +8,13 @@ the schema and no builder signature changes.
 
 The cells that matter are the ones nobody ever answered: an excluded domain
 has no ``extraction_published_states`` row, hence no ``value_map`` entry to
-overwrite. The marking therefore WRITES the canonical reader keys rather than
-rewriting existing ones.
+mark. The marking therefore WRITES the canonical reader keys; a recorded answer
+is kept and flagged out_of_scope, never replaced.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -179,32 +180,89 @@ def test_leaves_in_scope_sections_and_the_classifier_alone() -> None:
     assert value_map[value_key(run, dev_i, _DEV_VERDICT)].value_text == "High"
 
 
-def test_overwrites_a_value_recorded_before_the_reclassification() -> None:
-    """Screen and workbook must agree; the run view already shows the badge."""
+def _answered(code: str) -> ExportValue:
+    return ExportValue(raw={"value": code}, status="answered", value_text=code)
+
+
+def test_keeps_a_recorded_answer_and_stamps_only_the_empty_cell() -> None:
     run, scope_i, dev_i, eval_i = uuid4(), uuid4(), uuid4(), uuid4()
     article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
-    value_map: dict[ValueKey, ExportValue] = {
-        value_key(run, scope_i, _STUDY_TYPE): _v("development_only"),
-        value_key(run, eval_i, _EVAL_VERDICT): _v("High"),
+    recorded = _answered("High")
+    value_map = {
+        value_key(run, scope_i, _STUDY_TYPE): _answered("development_only"),
+        value_key(run, eval_i, _EVAL_VERDICT): recorded,
     }
 
     _mark(value_map, articles=(article,))
 
-    assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
+    assert value_map[value_key(run, eval_i, _EVAL_VERDICT)] == replace(recorded, out_of_scope=True)
+    stamp = value_map[value_key(run, eval_i, _EVAL_SIGNALLING)]
+    assert (stamp.raw, stamp.status, stamp.absent_code, stamp.out_of_scope) == (
+        None,
+        "absent",
+        "not_applicable",
+        True,
+    )
 
 
-def test_all_users_marks_the_consensus_and_every_reviewer_sub_column() -> None:
+def test_a_cleared_value_is_recorded_not_empty() -> None:
     run, scope_i, dev_i, eval_i = uuid4(), uuid4(), uuid4(), uuid4()
     article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
-    r1, r2 = uuid4(), uuid4()
-    value_map: dict[ValueKey, ExportValue] = {
-        value_key(run, scope_i, _STUDY_TYPE): _v("development_only"),
+    cleared = ExportValue(raw={"value": None}, status="cleared")
+    value_map = {
+        value_key(run, scope_i, _STUDY_TYPE): _answered("development_only"),
+        value_key(run, eval_i, _EVAL_VERDICT): cleared,
+    }
+
+    _mark(value_map, articles=(article,))
+
+    assert value_map[value_key(run, eval_i, _EVAL_VERDICT)] == replace(cleared, out_of_scope=True)
+
+
+def test_each_rater_slot_is_scoped_by_its_own_classifier_answer() -> None:
+    run, scope_i, dev_i, eval_i, r1, r2 = (uuid4() for _ in range(6))
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    value_map = {
+        value_key(run, scope_i, _STUDY_TYPE, r1): _answered("development_only"),
+        value_key(run, scope_i, _STUDY_TYPE, r2): _answered("evaluation_only"),
     }
 
     _mark(value_map, articles=(article,), raters=(None, r1, r2))
 
-    for reviewer_slot in (None, r1, r2):
-        assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT, reviewer_slot)])
+    assert value_map[value_key(run, eval_i, _EVAL_VERDICT, r1)].out_of_scope
+    assert value_key(run, dev_i, _DEV_VERDICT, r1) not in value_map
+    assert value_map[value_key(run, dev_i, _DEV_VERDICT, r2)].out_of_scope
+    assert value_key(run, eval_i, _EVAL_VERDICT, r2) not in value_map
+    assert not any(k[3] is None and k[1] in (dev_i, eval_i) for k in value_map)
+
+
+def test_single_user_slot_is_stamped_under_the_reviewer_key() -> None:
+    run, scope_i, dev_i, eval_i, r = (uuid4() for _ in range(5))
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    value_map = {value_key(run, scope_i, _STUDY_TYPE, r): _answered("development_only")}
+
+    _mark(value_map, articles=(article,), raters=(r,))
+
+    assert value_map[value_key(run, eval_i, _EVAL_VERDICT, r)].out_of_scope
+    assert not any(k[3] is None for k in value_map)
+
+
+def test_a_reviewer_slot_never_marks_its_classifier_section() -> None:
+    run, scope_i, dev_i, eval_i, r1 = (uuid4() for _ in range(5))
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    schema = {
+        "scope_rules": {
+            "classifier": {"section": "scope", "field": "study_type"},
+            "excludes": {"development_only": ["eval_d1", "scope"]},
+        }
+    }
+    answer = _answered("development_only")
+    value_map = {value_key(run, scope_i, _STUDY_TYPE, r1): answer}
+
+    _mark(value_map, articles=(article,), raters=(None, r1), schema=schema)
+
+    assert value_map[value_key(run, scope_i, _STUDY_TYPE, r1)] == answer
+    assert value_map[value_key(run, eval_i, _EVAL_VERDICT, r1)].out_of_scope
 
 
 def test_marks_every_instance_of_a_many_cardinality_section() -> None:
@@ -424,7 +482,8 @@ def test_marking_does_not_change_the_derived_overall() -> None:
     _mark(marked, articles=(article,), schema=_DERIVED_SCHEMA, sections=_derived_sections())
     after = _derived_values(marked, article)
 
-    assert _stamped(marked[value_key(run, eval_i, _EVAL_VERDICT)])  # marking DID run
+    poison = marked[value_key(run, eval_i, _EVAL_VERDICT)]
+    assert poison.out_of_scope and poison.value_text == "High"  # marking DID run, value kept
     assert after == before
     # Non-vacuous: the in-scope overall really computes, and the out-of-scope
     # one really reports inapplicable — the poison "High" never counts either way.

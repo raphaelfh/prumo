@@ -56,6 +56,7 @@ from app.models.extraction_workflow import (
     ExtractionConsensusMode,
     ExtractionReviewerDecisionType,
 )
+from app.services.exports.descriptors import root_instance, value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
@@ -675,6 +676,15 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     # The out-of-scope "High" no longer inflates the Overall — it is excluded
     # from the worst-case rank exactly as a blank is.
     assert rows[1][-1] == "Low"
+
+    # 1b. The recorded "High" is kept in the value_map, flagged out of scope.
+    article = layout.articles[0]
+    section = next(s for s in layout.sections if s.label == fx.domain2_label)
+    rob = next(f for f in section.fields if f.label == "Risk of bias")
+    kept = layout.value_map[
+        value_key(article.run_id, root_instance(article, section.entity_type_id), rob.field_id)
+    ]
+    assert (kept.value_text, kept.out_of_scope) == ("High", True)
 
     # 2. The same correction on the per-section tidy table, for free.
     tidy = list(wb[fx.domain2_label].iter_rows(values_only=True))
