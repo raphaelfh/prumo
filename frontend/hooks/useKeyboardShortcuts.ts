@@ -8,6 +8,8 @@ import {modifierKey} from '@/lib/platform';
 type ChordBinding = {
   type: 'chord';
   key: string;
+  /** Match the physical key (`e.code`) instead of `e.key`: Shift+\ reports `e.key === '|'`. */
+  code?: string;
   mod?: boolean;
   shift?: boolean;
   handler: () => void;
@@ -35,7 +37,7 @@ interface UseKeyboardShortcutsOptions {
 const DEFAULT_SEQUENCE_TIMEOUT = 1500;
 
 /** A closed Select/listbox trigger types too: a bare letter is its typeahead. */
-function isTypingTarget(e: KeyboardEvent): boolean {
+export function isTypingTarget(e: KeyboardEvent): boolean {
   return e.composedPath().some(target => target instanceof HTMLElement && (
     target.matches('input, textarea, select, [role="combobox"], [aria-haspopup="listbox"]') || target.isContentEditable ||
     !!target.closest('[contenteditable]:not([contenteditable="false"])')
@@ -94,7 +96,7 @@ export function useKeyboardShortcuts({
       const key = e.key.toLowerCase();
       for (const b of bindingsRef.current) {
         if (b.type !== 'chord' || !!b.mod !== mod) continue;
-        if (key !== b.key.toLowerCase()) continue;
+        if (b.code ? e.code !== b.code : key !== b.key.toLowerCase()) continue;
         if (!!b.shift !== e.shiftKey) continue;
         // Mod chords bypass the input guard unless they opt out.
         if (!(b.allowInInputs ?? mod) && isTypingTarget(e)) continue;

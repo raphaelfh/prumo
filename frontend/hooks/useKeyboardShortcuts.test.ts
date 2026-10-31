@@ -142,6 +142,22 @@ describe('useKeyboardShortcuts', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('matches a chord by code when the binding names one', () => {
+    // Shift+\ reports key '|' on real keyboards; the physical code is stable.
+    const handler = vi.fn();
+    const bindings: Binding[] = [{type: 'chord', key: '\\', code: 'Backslash', mod: true, shift: true, handler}];
+    renderHook(() => useKeyboardShortcuts({bindings, enabled: true}));
+    const press = (key: string, code: string) =>
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key, code, ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+      }));
+
+    press('|', 'Backslash');
+    expect(handler).toHaveBeenCalledTimes(1);
+    press('\\', 'IntlBackslash');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it('claims a mod chord before the focused element handles the key', () => {
     // Radix skips a defaultPrevented key: a focused Select trigger opens on ⌘↵ otherwise.
     const handler = vi.fn();

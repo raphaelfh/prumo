@@ -1,6 +1,6 @@
 ---
 status: approved
-last_reviewed: 2026-10-25
+last_reviewed: 2026-10-30
 owner: '@raphaelfh'
 ---
 
@@ -182,6 +182,10 @@ PubMed CSV / pasted PMIDs
 Two migrations, one per slice: **`0094_screening_v1`** (slice A) and
 **`0095_screening_ai`** (slice B). The head on `dev` is
 `0093_batch_agent_origin`.
+
+> Amended 2026-10-30: `0095` is not reserved. Slice B takes the next free
+> number when it merges (screening workspace spec §7.1); read `0095` below as
+> that number.
 
 **Every screening table is backend-only**, like `0075`/`0076`/`0091`:
 `ENABLE ROW LEVEL SECURITY` and `REVOKE ALL ... FROM anon, authenticated`.
