@@ -355,7 +355,7 @@ async def _seed_finalized_qa_run(
     consensus_service = ExtractionConsensusService(db)
     # Published consensus value per domain. Defaults to Low/High; a caller may
     # override with a coded-disposition marker envelope to exercise the ADR-0016
-    # appraisal exclusion end-to-end (published-state → resolve_value → sheet).
+    # appraisal exclusion end-to-end (published-state → to_export_value → sheet).
     d1_consensus = domain1_consensus if domain1_consensus is not None else {"value": "Low"}
     d2_consensus = domain2_consensus if domain2_consensus is not None else {"value": "High"}
     published_values = [
@@ -588,7 +588,7 @@ async def test_qa_appraisal_marker_verdict_excluded_from_overall(
     db_session: AsyncSession,
 ) -> None:
     """ADR-0016 Phase 4, end-to-end: a coded-disposition verdict published into
-    ExtractionPublishedState survives the read + ``resolve_value`` and reaches the
+    ExtractionPublishedState survives the read + ``to_export_value`` and reaches the
     Appraisal sheet as its stable LABEL (never a dict-stringify), while the
     worst-case Overall EXCLUDES it — so a "the source is silent" verdict cannot
     silently force a most-severe Overall. Pins the DB → resolve → sheet coupling

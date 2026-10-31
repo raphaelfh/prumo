@@ -1,8 +1,8 @@
 """Appraisal-summary sub-builder (§7).
 
 Pure, no-IO. Computes a per-domain-verdict + worst-case Overall sheet for
-quality-assessment templates. Consumes already-resolved scalars from the
-layout's value_map (resolve_value ran upstream); never re-handles envelopes.
+quality-assessment templates. Verdicts arrive as ``ExportValue`` and render
+through ``display_value``; ``_appraisal_overall`` ranks the rendered labels.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
+from app.services.exports.values import display_value
 from app.services.extraction_export_service import ExportLayout, ExportMode
 from app.services.value_semantics import ABSENT_REASON_LABELS
 
@@ -41,10 +42,10 @@ _SEVERITY_RANK: tuple[str, ...] = (
 # extraction_export_service._build_appraisal_model (§7 verdict selection).
 _RISK_LABELS: frozenset[str] = frozenset(_SEVERITY_RANK)
 
-# ADR-0016 Phase 4: the resolved labels of a coded-disposition verdict, casefolded.
+# ADR-0016 Phase 4: the rendered labels of a coded-disposition verdict, casefolded.
 # `no_information` is now available on EVERY field (incl. a risk-verdict field), and
-# a marker reaches this layer already resolved by `resolve_value` to its stable
-# label. Such a verdict is EXCLUDED from the worst-case rank — a "the source is
+# a marker verdict arrives as an ExportValue that `display_value` renders to its
+# stable label. Such a verdict is EXCLUDED from the worst-case rank — a "the source is
 # silent" answer must never silently force a Critical Overall. Derived from the
 # single ABSENT_REASON_LABELS source so the exclusion can't drift from the cell.
 _DISPOSITION_LABELS_CF: frozenset[str] = frozenset(
@@ -144,7 +145,10 @@ def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetS
     rows: list[tuple[Cell, ...]] = [tuple(header_cells)]
     for row in appraisal.rows:
         cells = [Cell(row.record_label)]
-        cells.extend(Cell(v) for v in row.domain_verdicts)
+        cells.extend(
+            Cell(None if v is None else display_value(v, f))
+            for v, f in zip(row.domain_verdicts, appraisal.domain_fields, strict=True)
+        )
         if derived_labels:
             cells.extend(Cell(v) for v in row.derived_values)
         else:

@@ -1,11 +1,10 @@
 """The screen and the workbook must report the SAME overall judgments.
 
-The two callers of ``derived_judgment_service`` hand it different shapes for the
-same stored value: the run view passes the RAW jsonb envelope, while the export
-passes a value_map that ``resolve_value`` has already collapsed to a display
-label (so a marker arrives as the string ``"No information"``). A read-time
-interpretation that handles only one of those shapes makes the banner and the
-xlsx disagree in silence — which has happened once already.
+The two callers of ``derived_judgment_service`` read the same stored value
+through different seams: the run view passes the RAW jsonb envelope, while the
+export reads it back out of a value_map of ``ExportValue`` entries. A read-time
+interpretation that diverges between the two makes the banner and the xlsx
+disagree in silence — which has happened once already.
 
 This module is the guard: one value set, both paths, assert equality. It runs
 the real payload builder and the real export model builder, not a mental model
@@ -19,8 +18,9 @@ from uuid import uuid4
 
 from app.models.extraction import ExtractionFieldType
 from app.services.derived_judgment_payload import build_derived_judgments_payload
+from app.services.exports.descriptors import ValueKey, value_key
 from app.services.exports.extraction_snapshot_reader import AllowedValue
-from app.services.exports.value_envelope import resolve_value
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -124,12 +124,12 @@ def _workbook_overall(
     section_names: tuple[str, ...] = _SECTIONS,
 ) -> str | None:
     """What the Appraisal-summary sheet prints — the export model builder, fed
-    the value_map AFTER ``resolve_value`` has collapsed each envelope to a
-    display label, exactly as ``_build_*_value_map`` does upstream."""
+    the value_map of ``to_export_value`` entries, exactly as
+    ``_build_*_value_map`` builds it upstream."""
     run_id = uuid4()
     sections: list[SectionDescriptor] = []
     section_instances: dict[Any, tuple[Any, ...]] = {}
-    value_map: dict[tuple[Any, ...], Any] = {}
+    value_map: dict[ValueKey, ExportValue] = {}
     for name in section_names:
         section_id, field_id, instance_id = uuid4(), uuid4(), uuid4()
         field = FieldDescriptor(
@@ -150,9 +150,8 @@ def _workbook_overall(
         )
         section_instances[section_id] = (instance_id,)
         if name in values_by_section:
-            # The collapse to a display label is the whole point of the parity
-            # check: a marker reaches the export as "No information".
-            value_map[(run_id, instance_id, field_id)] = resolve_value(values_by_section[name])
+            raw = values_by_section[name]
+            value_map[value_key(run_id, instance_id, field_id)] = to_export_value(raw, field, {})
 
     article = ArticleDescriptor(
         article_id=uuid4(),
@@ -167,6 +166,7 @@ def _workbook_overall(
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
         rules_by_article={article.article_id: spec if spec is not None else _SPEC},
     )
     assert model is not None

@@ -2,7 +2,7 @@
 
 A section the article's own study-type classification takes out of play used
 to export as a BLANK cell while the run view showed a "Not applicable" badge.
-This module stamps that label onto the resolved ``value_map`` ONCE, in
+This module stamps that state onto the typed ``value_map`` ONCE, in
 ``resolve_layout``, before any sheet builder reads it — so the matrix, the
 per-section tidy tables and the appraisal summary all inherit the correction
 without receiving the rules and without a signature change. The rules are
@@ -12,12 +12,12 @@ Lives beside ``extraction_snapshot_reader`` rather than in
 ``exports/extraction/`` on purpose: that package's ``__init__`` imports
 ``workbook``, which imports the export service, so a service-side import of
 anything under it would close a cycle. Nothing here imports the service —
-descriptor types are annotations only, and the mode arrives as a bool.
+descriptor types are annotations only, and the slots arrive as raters.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -26,13 +26,13 @@ from app.services.derived_judgment_service import (
     out_of_scope_sections,
     scope_classifier_coordinate,
 )
-from app.services.exports.descriptors import all_instances_of, root_instance
+from app.services.exports.descriptors import ValueKey, all_instances_of, root_instance, value_key
+from app.services.exports.values import ExportValue
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 if TYPE_CHECKING:  # pragma: no cover — annotations only, no runtime import
     from app.services.extraction_export_service import (
         ArticleDescriptor,
-        ReviewerDescriptor,
         SectionDescriptor,
     )
 
@@ -40,16 +40,17 @@ if TYPE_CHECKING:  # pragma: no cover — annotations only, no runtime import
 #: written by hand: the run view renders the same words for the same state,
 #: and a copy change moves both at once.
 NOT_APPLICABLE = ABSENT_REASON_LABELS[AbsentReason.NOT_APPLICABLE.value]
+_STAMP = ExportValue(raw=None, status="absent", absent_code="not_applicable", out_of_scope=True)
 
 
 def article_values_by_coord(
     *,
     article: ArticleDescriptor,
     sections: tuple[SectionDescriptor, ...],
-    value_map: dict[tuple[Any, ...], Any],
-    is_all_users: bool,
+    value_map: dict[ValueKey, ExportValue],
+    rater: UUID | None,
 ) -> dict[tuple[str, str], Any]:
-    """``(section.name, field.name) -> value`` for one article's own run.
+    """``(section.name, field.name) -> stored value`` at ``rater``'s slot of one article's run.
 
     The projection the scope rules and the derived judgments are both resolved
     against. One helper, two callers, so the marking pass and the appraisal
@@ -59,15 +60,12 @@ def article_values_by_coord(
     values_by_coord: dict[tuple[str, str], Any] = {}
     for section in sections:
         instance_id = root_instance(article, section.entity_type_id)
+        if run_id is None or instance_id is None:
+            continue
         for section_field in section.fields:
-            key = (
-                (run_id, instance_id, section_field.field_id, None)
-                if is_all_users
-                else (run_id, instance_id, section_field.field_id)
-            )
-            raw = value_map.get(key)
-            if raw is not None:
-                values_by_coord[(section.name, section_field.name)] = raw
+            v = value_map.get(value_key(run_id, instance_id, section_field.field_id, rater))
+            if v is not None and v.raw is not None:
+                values_by_coord[(section.name, section_field.name)] = v.raw
     return values_by_coord
 
 
@@ -91,9 +89,8 @@ def mark_out_of_scope_values(
     rules_by_article: Mapping[UUID, Mapping[str, Any]],
     sections: tuple[SectionDescriptor, ...],
     articles: tuple[ArticleDescriptor, ...],
-    reviewers: tuple[ReviewerDescriptor, ...],
-    value_map: dict[tuple[Any, ...], Any],
-    is_all_users: bool,
+    raters: Sequence[UUID | None],
+    value_map: dict[ValueKey, ExportValue],
 ) -> None:
     """Stamp "Not applicable" on the cells an article's own scope takes out of play.
 
@@ -113,10 +110,8 @@ def mark_out_of_scope_values(
 
     *rules_by_article* maps ``article_id`` to the rules frozen in that
     article's pinned version; an article missing from it has no rules.
+    *raters* lists the slots to stamp; the first classifies the article.
     """
-    reviewer_slots: tuple[UUID | None, ...] = (
-        (None, *(r.reviewer_id for r in reviewers)) if is_all_users else ()
-    )
 
     for article in articles:
         run_id = article.run_id
@@ -134,7 +129,7 @@ def mark_out_of_scope_values(
                 article=article,
                 sections=sections,
                 value_map=value_map,
-                is_all_users=is_all_users,
+                rater=raters[0],
             ),
         )
         if not out_of_scope:
@@ -144,12 +139,9 @@ def mark_out_of_scope_values(
                 continue
             for instance_id in reader_instance_ids(section, article):
                 for section_field in section.fields:
-                    field_id = section_field.field_id
-                    if is_all_users:
-                        for slot in reviewer_slots:
-                            value_map[(run_id, instance_id, field_id, slot)] = NOT_APPLICABLE
-                    else:
-                        value_map[(run_id, instance_id, field_id)] = NOT_APPLICABLE
+                    for rater in raters:
+                        key = value_key(run_id, instance_id, section_field.field_id, rater)
+                        value_map[key] = _STAMP
 
 
 __all__ = [
