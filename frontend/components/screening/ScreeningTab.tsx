@@ -4,12 +4,10 @@
  * → running. Managers act in each state; members get a notice saying who
  * acts. Once configured, one header (with the one PubMed import) sits above
  * both later states, so enrolling never unmounts an open import. While
- * running, `?assignment=<id>` opens that record for
- * any member; otherwise a reviewer gets the queue and an arbitrator the
- * conflicts list (a tab beside the queue when they also review).
+ * running, a reviewer gets the queue and an arbitrator the conflicts list (a
+ * tab beside the queue when they also review).
  */
 import {useState} from 'react';
-import {useSearchParams} from 'react-router';
 
 import {ErrorState} from '@/components/patterns/ErrorState';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
@@ -19,7 +17,6 @@ import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningConfigRead} from '@/services/screeningService';
 
-import {AssignmentView} from './AssignmentView';
 import {ConflictsPanel} from './ConflictsPanel';
 import {ScreeningConfigForm} from './ScreeningConfigForm';
 import {LoadingState, Notice} from './ScreeningParts';
@@ -68,14 +65,6 @@ function NothingEnrolled({projectId, config}: {projectId: string; config: Screen
 
 export function ScreeningTab({projectId}: {projectId: string}) {
   const query = useScreeningConfig(projectId);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const assignmentId = searchParams.get('assignment');
-  const closeAssignment = () =>
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete('assignment');
-      return next;
-    });
 
   if (query.isPending) return <LoadingState />;
   if (query.isError) {
@@ -106,8 +95,6 @@ export function ScreeningTab({projectId}: {projectId: string}) {
       <ScreeningHeader projectId={projectId} config={config} />
       {config.enrolled === 0 ? (
         <NothingEnrolled projectId={projectId} config={config} />
-      ) : assignmentId ? (
-        <AssignmentView assignmentId={assignmentId} canReview={config.can_review} onBack={closeAssignment} />
       ) : config.can_arbitrate ? (
         <ArbitratorWorkspace projectId={projectId} canReview={config.can_review} />
       ) : config.can_review ? (

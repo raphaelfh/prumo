@@ -7,7 +7,8 @@
  *
  * `recorded` (a solo record's own decision) draws that button with the
  * recorded-choice ring; choosing it again does nothing, another value
- * re-decides.
+ * re-decides. A recorded exclusion re-decides through the reason list only
+ * with a reason other than `recordedReason`.
  */
 import {Check} from 'lucide-react';
 import {useEffect, useRef, useState} from 'react';
@@ -28,6 +29,8 @@ interface DecisionButtonsProps {
   phase: 'title_abstract';
   /** The caller's recorded decision on a solo record: drawn with the recorded-choice ring; pressing it again does nothing, another value re-decides. */
   recorded?: ScreeningDecisionCreate['decision'] | null;
+  /** The recorded exclusion's reason: picking it again does nothing, another reason re-decides. */
+  recordedReason?: string | null;
 }
 
 type Decision = ScreeningDecisionCreate['decision'];
@@ -38,7 +41,7 @@ const DECISIONS = [
   {decision: 'maybe', key: '3', label: 'decisionMaybe', variant: 'outline'},
 ] as const satisfies readonly {decision: Decision; key: string; label: string; variant: 'default' | 'outline'}[];
 
-export function DecisionButtons({reasons, disabled, onDecide, phase, recorded}: DecisionButtonsProps) {
+export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, recordedReason}: DecisionButtonsProps) {
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const reasonsList = useRef<HTMLOListElement>(null);
 
@@ -49,6 +52,7 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded}: 
 
   const pickReason = (reason: string) => {
     setReasonsOpen(false);
+    if (recorded === 'exclude' && reason === recordedReason) return;
     onDecide({decision: 'exclude', exclusion_reason: reason});
   };
 

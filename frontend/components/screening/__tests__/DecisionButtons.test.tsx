@@ -11,13 +11,25 @@ import type {ScreeningDecisionCreate} from '@/services/screeningService';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
-function renderButtons(recorded?: ScreeningDecisionCreate['decision'] | null) {
+function renderButtons(
+  recorded?: ScreeningDecisionCreate['decision'] | null,
+  {reasons = [], recordedReason}: {reasons?: string[]; recordedReason?: string | null} = {},
+) {
   const onDecide = vi.fn<(body: ScreeningDecisionCreate) => void>();
   render(
-    <DecisionButtons reasons={[]} disabled={false} onDecide={onDecide} phase="title_abstract" recorded={recorded} />,
+    <DecisionButtons
+      reasons={reasons}
+      disabled={false}
+      onDecide={onDecide}
+      phase="title_abstract"
+      recorded={recorded}
+      recordedReason={recordedReason}
+    />,
   );
   return onDecide;
 }
+
+const REASONS = ['Wrong population', 'Not ML'];
 
 describe('DecisionButtons', () => {
   it('draws the recorded decision with the success ring', () => {
@@ -46,6 +58,22 @@ describe('DecisionButtons', () => {
     const onDecide = renderButtons('include');
     await user.click(screen.getByRole('button', {name: /decisionInclude/}));
     fireEvent.keyDown(window, {key: '1'});
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it('re-decides a recorded exclusion with a different reason', async () => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons('exclude', {reasons: REASONS, recordedReason: 'Wrong population'});
+    await user.click(screen.getByRole('button', {name: /excludeWithReason/}));
+    await user.click(await screen.findByRole('button', {name: /Not ML/}));
+    expect(onDecide).toHaveBeenCalledWith({decision: 'exclude', exclusion_reason: 'Not ML'});
+  });
+
+  it('ignores the recorded exclusion reason', async () => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons('exclude', {reasons: REASONS, recordedReason: 'Wrong population'});
+    await user.click(screen.getByRole('button', {name: /excludeWithReason/}));
+    await user.click(await screen.findByRole('button', {name: /Wrong population/}));
     expect(onDecide).not.toHaveBeenCalled();
   });
 

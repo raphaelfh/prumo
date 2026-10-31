@@ -88,11 +88,14 @@ export const screening = {
   doneTitle: 'All done',
   doneBody: 'There is nothing left for you to screen.',
 
-  // Assignment view
-  statusAwaitingMe: 'Waiting for your decision',
-  statusAwaitingOthers: 'Waiting for other reviewers',
+  // Record panel
+  panelPlaceholderTitle: 'Select a record',
+  panelPlaceholderBody: 'Pick a row to screen it here.',
+  changedTo: 'Changed to {{decision}}',
+  reviewerLetter: 'Reviewer {{letter}}',
+  enrollOne: 'Enroll',
+  enrollManagerOnly: 'A manager enrolls articles',
   statusConflict: 'Reviewers disagree',
-  statusDecided: 'Decided',
   yourDecision: 'Your decision',
   outcomeTitle: 'Outcome',
   outcomeSolo: 'single reviewer',
@@ -101,7 +104,6 @@ export const screening = {
   reasonsDiffer: 'Reviewers gave different reasons',
   peerDecisionsTitle: 'Other reviewers',
   peerUnnamed: 'Another reviewer',
-  backToQueue: 'Back to screening',
 
   // Conflicts and arbitration
   tabQueue: 'Screen',

@@ -374,34 +374,22 @@ describe('ScreeningTab', () => {
     expect(conflictCalls).toBe(0);
   });
 
-  it('opens a record from ?assignment', async () => {
+  it('ignores ?assignment= (the record panel replaces it)', async () => {
     serveConfig(
       config({can_manage: false, can_review: false, can_arbitrate: false, reviewer_count: 2, enrolled: 3}),
     );
+    let assignmentReads = 0;
     server.use(
-      http.get(ASSIGNMENT_URL, ({params}) =>
-        ok({
-          id: params.assignmentId,
-          project_id: 'p1',
-          status: 'decided',
-          exclusion_reasons: [],
-          article: ARTICLE,
-          my_decision: null,
-          outcome: {decision: 'include', exclusion_reason: null, kind: 'solo', reasons_differ: false},
-          peer_decisions: [],
-        }),
-      ),
+      http.get(ASSIGNMENT_URL, () => {
+        assignmentReads += 1;
+        return ok({});
+      }),
     );
-    const user = userEvent.setup();
     renderTab('/projects/p1?tab=screening&assignment=a1');
-    expect(await screen.findByRole('heading', {name: 'Deep learning for sepsis'})).toBeInTheDocument();
-    expect(screen.getByText('single reviewer')).toBeInTheDocument();
-    expect(screen.queryByRole('button', {name: 'Include'})).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', {name: 'Back to screening'}));
     expect(
       await screen.findByText('You can follow screening here. Only reviewers screen records.'),
     ).toBeInTheDocument();
+    expect(assignmentReads).toBe(0);
   });
 
   it('leaves decision keys to another open dialog', async () => {
