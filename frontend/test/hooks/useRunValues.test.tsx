@@ -33,13 +33,17 @@ let fail: boolean;
 let offline: boolean;
 let gate: Promise<void> | null;
 let viewReads: number;
+let canon: (v: Record<string, unknown>) => Record<string, unknown>;
 const proposal = {id: 'p1', instanceId: 'i', fieldId: 'a', value: 'AI'};
 const row = (id: string, field: string, value: Record<string, unknown>): ReviewerDecisionResponse => ({
   id, run_id: 'run', instance_id: 'i', field_id: field, reviewer_id: 'me', value,
   decision: 'edit', proposal_record_id: null, rationale: null, created_at: `2026-09-15T00:00:${id.padStart(2, '0')}Z`,
 });
+/** A run-view proposal on coordinate `i`/`a`; `source` defaults to `ai`. */
+const aiRow = (id: string, value: unknown = 'AI', source = 'ai') => ({id, run_id: 'run', instance_id: 'i', field_id: 'a', source,
+  source_user_id: null, proposed_value: {value}, confidence_score: null, rationale: null, created_at: '2026-09-15T00:00:00Z'});
 beforeEach(() => {
-  history = []; requests = []; postedRuns = []; fail = false; offline = false; gate = null; viewReads = 0;
+  history = []; requests = []; postedRuns = []; fail = false; offline = false; gate = null; viewReads = 0; canon = v => v;
   server.use(
     http.get('*/api/v1/runs/:run/view', () => {viewReads += 1; return HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}});}),
     http.post('*/api/v1/runs/:run/decisions', async ({request, params}) => {
@@ -53,7 +57,8 @@ beforeEach(() => {
       if (body.expected_current_decision_id && body.expected_current_decision_id !== latest?.id) {
         return HttpResponse.json({ok: false, error: {code: 'DECISION_CONFLICT', message: 'Decision changed'}}, {status: 409});
       }
-      const decision = {...row(String(Math.max(0, ...history.map(item => Number(item.id))) + 1), body.field_id, body.value!), run_id: String(params.run), ...body};
+      // `canon` models the server canonicalizing the stored value (number '5' → 5).
+      const decision = {...row(String(Math.max(0, ...history.map(item => Number(item.id))) + 1), body.field_id, body.value!), run_id: String(params.run), ...body, value: canon(body.value!)};
       history.push(decision as ReviewerDecisionResponse);
       return HttpResponse.json({ok: true, data: decision});
     }),
@@ -78,8 +83,8 @@ function renderValues(initial: RunViewResponse | undefined, {user = 'me' as stri
 }
 
 /** The decision harness: run `run` in extract for caller `me`, its `current_values` from `hydrated` (field → value). */
-function setup(hydrated: Record<string, unknown> = {}, {kind = 'extraction' as Kind} = {}) {
-  const viewFor = (id: string) => makeRunView({run: {id, kind}, decisions: history,
+function setup(hydrated: Record<string, unknown> = {}, {kind = 'extraction' as Kind, proposals = [] as unknown[]} = {}) {
+  const viewFor = (id: string) => makeRunView({run: {id, kind}, decisions: history, proposals: proposals as RunViewResponse['proposals'],
     current_values: Object.entries(hydrated).map(([field, value]) => current(field, value))});
   const runs: Record<string, RunViewResponse> = {run: viewFor('run'), run2: viewFor('run2'), 'other-run': viewFor('other-run')};
   const {queryClient, wrapper} = wrapperFor();
@@ -197,9 +202,11 @@ describe('another run or caller replaces the form', () => {
 
 describe('the baseline: hydrated values are never re-written', () => {
   it.each(KINDS)('%s: a decision-backed coordinate and an accepted linked one post nothing on mount', async kind => {
-    history = [row('1', 'a', {value: 'Y'}), {...row('2', 'b', {value: 'AI'}), proposal_record_id: 'p1'}];
-    renderValues(makeRunView({run: {id: 'run', kind}, decisions: history,
-      current_values: [current('a', 'Y'), current('b', 'AI')]}), {debounceMs: 20});
+    // `c`: a typed edit that kept the AI link (head {value: 'X', link: p1}) is hydrated, not re-written.
+    history = [row('1', 'a', {value: 'Y'}), {...row('2', 'b', {value: 'AI'}), proposal_record_id: 'p1'},
+      {...row('3', 'c', {value: 'X'}), proposal_record_id: 'p1'}];
+    renderValues(makeRunView({run: {id: 'run', kind}, decisions: history, proposals: [aiRow('p1')] as RunViewResponse['proposals'],
+      current_values: [current('a', 'Y'), current('b', 'AI'), current('c', 'X')]}), {debounceMs: 20});
     // Past the debounce window, or the assertion is vacuous.
     await act(async () => {await new Promise(resolve => setTimeout(resolve, 120));});
     expect(requests).toHaveLength(0);
@@ -272,6 +279,57 @@ describe('one accept path for both kinds', () => {
     await act(async () => {await view.result.current.saveNow();});
     expect(requests.at(-1)).toMatchObject({value: {value: null}, proposal_record_id: null});
     expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBeNull();
+  });
+
+  it('a typed edit over an accepted AI value sends its id in exactly one write', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', 'X'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => [r.value, r.proposal_record_id])).toEqual([[{value: 'AI'}, 'p1'], [{value: 'X'}, 'p1']]);
+    expect(requests[1].expected_current_decision_id).toBe('1');
+    expect(view.result.current.isAccepted(proposal)).toBe(false);
+  });
+
+  it('a typed edit over an accepted AI value the server canonicalizes is written once and recorded once', async () => {
+    canon = v => (v.value === '5' ? {...v, value: 5} : v);
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', '5'));
+    await act(async () => {await view.result.current.saveNow();});
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => [r.value, r.proposal_record_id])).toEqual([[{value: 'AI'}, 'p1'], [{value: '5'}, 'p1']]);
+    expect(view.result.current.undoTarget).toMatchObject({id: '2', value: {value: 5}, proposalRecordId: 'p1'});
+  });
+
+  it('guard: accept, clear, then type sends no link', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', null));
+    await act(async () => {await view.result.current.saveNow();});
+    act(() => view.result.current.edit('a', 'Y'));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => r.proposal_record_id)).toEqual(['p1', null, null]);
+  });
+
+  it.each([
+    ['a system proposal', [aiRow('s1', 'S', 'system')]],
+    ['a proposal outside this run view', []],
+  ])('guard: a head linked to %s carries no link into a typed edit', async (_label, proposals) => {
+    history = [{...row('1', 'a', {value: 'S'}), proposal_record_id: 's1'}];
+    const view = setup({a: 'S'}, {proposals});
+    act(() => view.result.current.edit('a', 'T'));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests).toEqual([expect.objectContaining({value: {value: 'T'}, proposal_record_id: null})]);
+  });
+
+  it('a no-information marker over an accepted AI value keeps the link (D8)', async () => {
+    const view = setup({}, {proposals: [aiRow('p1')]});
+    await act(async () => {await view.result.current.acceptProposal(proposal);});
+    act(() => view.result.current.edit('a', {value: null, absent_reason: 'no_information'}));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.at(-1)).toMatchObject({value: {value: null, absent_reason: 'no_information'}, proposal_record_id: 'p1'});
   });
 });
 

@@ -20,7 +20,9 @@
  * (`expected_current_decision_id`). Typing autosaves through the debounced
  * queue (`useAutoSaveProposals`); accepting an AI proposal is an explicit
  * decision carrying `proposal_record_id`, shared by both kinds, with local
- * undo/redo. A 409 — or a 400 after the run left `extract` — freezes the
+ * undo/redo. A typed edit keeps the head's AI link: it carries the head
+ * decision's `proposal_record_id` when the draft is not cleared and that id is
+ * a `source=ai` proposal of this run view (spec 2026-10-30 §11 row 2). A 409 — or a 400 after the run left `extract` — freezes the
  * session's writes until `resumeDraftAfterConflict` re-reads authority. The
  * AI link of a coordinate is never inferred from suggestion status: it is the
  * caller's latest decision on it, when that decision still matches the value.
@@ -131,6 +133,10 @@ export function useRunValues(args: UseRunValuesArgs) {
   const lockRef = useRef(false);
   const blockedSessionsRef = useRef(new WeakSet<object>());
   const decisionsRef = useRef(decisions);
+  // The run's AI proposal ids: only these propagate from a head decision into a typed edit.
+  const aiProposalIds: ReadonlySet<string> = useMemo(
+    () => new Set((runDetail?.proposals ?? []).filter(p => p.source === 'ai').map(p => p.id)), [runDetail?.proposals]);
+  const aiIdsRef = useRef(aiProposalIds);
   const [state, setState] = useState({session, saving: false, pending: null as PendingDecision | null, conflicted: false, error: null as string | null, stack: [] as LocalDecision[], redo: [] as LocalDecision[]});
   const [confirmed, setConfirmed] = useState<{session: typeof session; rows: ReviewerDecisionResponse[]}>({session, rows: []});
   const confirmedRef = useRef(confirmed);
@@ -138,13 +144,14 @@ export function useRunValues(args: UseRunValuesArgs) {
     valuesRef.current = values;
     reviewerRef.current = currentUserId;
     decisionsRef.current = decisions;
+    aiIdsRef.current = aiProposalIds;
     if (scopeRef.current !== session) {
       scopeRef.current = session;
       stackRef.current = [];
       redoRef.current = [];
       lockRef.current = false;
     }
-  }, [session, values, currentUserId, decisions]);
+  }, [session, values, currentUserId, decisions, aiProposalIds]);
 
   const isCurrent = () => scopeRef.current === session;
   const sessionRows = (c: typeof confirmed) => (c.session === session ? c.rows : NO_DECISIONS);
@@ -235,8 +242,11 @@ export function useRunValues(args: UseRunValuesArgs) {
     if (blockedSessionsRef.current.has(session) || !currentUserId || reviewerRef.current !== currentUserId) return Promise.reject(new Error(t('extraction', 'reviewDecisionConflict')));
     const coordinate = {instanceId: params.instanceId, fieldId: params.fieldId};
     const history = latestHistory(coordinate, params.runId);
+    const head = history.at(-1);
+    const cleared = params.normalizedValue === null && !params.absentReason;
+    const link = !cleared && head?.proposal_record_id && aiIdsRef.current.has(head.proposal_record_id) ? head.proposal_record_id : null;
     const result = await appendReviewerDecision(params.runId, {
-      instance_id: params.instanceId, field_id: params.fieldId, decision: 'edit', proposal_record_id: null,
+      instance_id: params.instanceId, field_id: params.fieldId, decision: 'edit', proposal_record_id: link,
       value: params.absentReason ? {value: params.normalizedValue, absent_reason: params.absentReason} : {value: params.normalizedValue},
       ...expectedHead(history),
     });
