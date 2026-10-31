@@ -34,8 +34,6 @@ def test_formula_like_and_illegal_strings_read_back_intact() -> None:
 
 
 def test_formula_like_string_in_merged_anchor_is_text() -> None:  # Review Focus 5
-    spec = SheetSpec(
-        title="S", rows=((Cell("=x"), Cell(None)),), merges=(MergeSpan(1, 1, 1, 2),)
-    )
+    spec = SheetSpec(title="S", rows=((Cell("=x"), Cell(None)),), merges=(MergeSpan(1, 1, 1, 2),))
     ws = load_workbook(io.BytesIO(_roundtrip(spec)))["S"]
     assert ws["A1"].value == "=x" and ws["A1"].data_type == "s"
