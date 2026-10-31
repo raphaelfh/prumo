@@ -51,8 +51,8 @@ def live_assignments(project_id: UUID) -> Select[tuple[ScreeningAssignment]]:
     )
 
 
-# Queue order: oldest enrollment first, then a stable shuffle within it, so two
-# reviewers do not walk one enrollment in the same order.
+# Queue order: oldest enrollment first, then md5(assignment id) — a stable
+# shuffle within an enrollment that is the same for every reviewer.
 _QUEUE_ORDER = (ScreeningAssignment.enrolled_at, func.md5(cast(ScreeningAssignment.id, Text)))
 
 
