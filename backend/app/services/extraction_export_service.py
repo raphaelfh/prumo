@@ -115,10 +115,9 @@ class ExportMode(StrEnum):
 class FieldDescriptor:
     """One field within an entity_type (= one row on the matrix sheet).
 
-    Metadata fields (``description``/``unit``/``is_required``/``allow_other``)
-    are carried from the per-Run version snapshot (spec §5.1) and consumed by
-    the data-dictionary + value resolver. Defaulted for back-compat with
-    existing ``()``-arg call sites.
+    Metadata is carried from the version snapshot (spec §5.1) and defaulted
+    for the existing short-form call sites. ``code`` is the rule-3 field code
+    (blank until assigned); the units, key and absent codes feed the Codebook.
     """
 
     field_id: UUID
@@ -133,6 +132,10 @@ class FieldDescriptor:
     # positional/short-form call sites keep working. Used to resolve a
     # template's `derived_judgments` coordinates (§7 computed overalls).
     name: str = ""
+    code: str = ""
+    allowed_units: tuple[str, ...] = ()
+    is_entity_key: bool = False
+    allowed_absent_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -878,6 +881,9 @@ class ExtractionExportService(LoggerMixin):
                         is_required=f.is_required,
                         allow_other=f.allow_other,
                         name=f.name,
+                        allowed_units=f.allowed_units,
+                        is_entity_key=f.is_entity_key,
+                        allowed_absent_codes=f.allowed_absent_codes,
                     )
                     for f in s.fields
                 ),

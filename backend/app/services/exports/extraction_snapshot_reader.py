@@ -32,6 +32,7 @@ from app.models.extraction import (
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.services.extraction_snapshot import entity_types_for_version
+from app.services.value_semantics import AbsentReason
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,10 @@ class SnapshotField:
     is_required: bool
     allow_other: bool
     sort_order: int
+    allowed_units: tuple[str, ...] = ()
+    is_entity_key: bool = False
+    # Coded absent markers the field allows, in ``AbsentReason`` order.
+    allowed_absent_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,7 +124,29 @@ def _field_from_view(view: RunViewField) -> SnapshotField:
         is_required=view.is_required,
         allow_other=view.allow_other,
         sort_order=view.sort_order,
+        allowed_units=_unit_strings(view.allowed_units),
+        is_entity_key=view.is_entity_key,
+        allowed_absent_codes=_absent_codes(view),
     )
+
+
+def _unit_strings(allowed_units: object) -> tuple[str, ...]:
+    """The string units of a list; any other stored shape reads as none."""
+    if not isinstance(allowed_units, list):
+        return ()
+    return tuple(u for u in allowed_units if isinstance(u, str))
+
+
+_ABSENT_FLAGS: dict[AbsentReason, str] = {
+    AbsentReason.NO_INFORMATION: "allows_no_information",
+    AbsentReason.NOT_APPLICABLE: "allows_not_applicable",
+    AbsentReason.NOT_EVALUATED: "allows_not_evaluated",
+}
+
+
+def _absent_codes(view: RunViewField) -> tuple[str, ...]:
+    """The absent codes a field opts into, in ``AbsentReason`` order."""
+    return tuple(r.value for r in AbsentReason if getattr(view, _ABSENT_FLAGS[r]))
 
 
 def _normalize_allowed_values(raw: Any) -> tuple[AllowedValue, ...]:

@@ -52,6 +52,10 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
                         "sort_order": 0,
                         "llm_description": "extract dose",
                         "allow_other": True,
+                        "allowed_units": ["mg", "g"],
+                        "is_entity_key": True,
+                        "allows_not_evaluated": True,
+                        "allows_no_information": False,
                     }
                 ],
             }
@@ -75,6 +79,10 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
     assert f.description == "Dose given"
     assert f.is_required is True
     assert f.allow_other is True
+    assert f.allowed_units == ("mg", "g")
+    assert f.is_entity_key is True
+    assert f.allowed_absent_codes == ("not_evaluated",)
+    assert f.code == ""
 
 
 @pytest.mark.asyncio
