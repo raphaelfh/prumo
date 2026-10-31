@@ -145,3 +145,15 @@ def test_unexpected_shapes_are_nonconforming_json():
 def test_number_without_unit_renders_bare():
     f = _field(ExtractionFieldType.NUMBER)
     assert display_value(to_export_value({"value": 3.5}, f, {}), f) == 3.5
+
+
+@pytest.mark.parametrize("payload", [10**400, "9" * 400])
+def test_oversized_number_is_nonconforming(payload):
+    v = to_export_value({"value": payload}, _field(ExtractionFieldType.NUMBER), {})
+    assert (v.status, v.value_num, v.value_text) == ("nonconforming", None, str(payload))
+
+
+@pytest.mark.parametrize("ftype", [ExtractionFieldType.TEXT, ExtractionFieldType.DATE])
+def test_bool_in_a_text_or_date_field_is_nonconforming(ftype):
+    v = to_export_value({"value": True}, _field(ftype), {})
+    assert (v.status, v.value_text) == ("nonconforming", "True")

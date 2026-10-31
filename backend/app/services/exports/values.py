@@ -89,18 +89,25 @@ def build_option_labels(active: Sequence[SectionDescriptor]) -> OptionLabels:
     }
 
 
+def _is_finite(num: int | float) -> bool:
+    try:
+        return math.isfinite(num)
+    except OverflowError:  # an int too large for a float
+        return False
+
+
 def _parse_finite_number(payload: Any) -> int | float | None:
     if isinstance(payload, bool):
         return None
     if isinstance(payload, (int, float)):
-        return payload if math.isfinite(payload) else None
+        return payload if _is_finite(payload) else None
     if isinstance(payload, str):
         for parse in (int, float):
             try:
                 num = parse(payload)
             except ValueError:
                 continue
-            return num if math.isfinite(num) else None
+            return num if _is_finite(num) else None
     return None
 
 
@@ -172,7 +179,7 @@ def to_export_value(
             return _nonconforming(raw, payload)
         return ExportValue(raw=raw, status="answered", value_num=num, unit=peeled.unit)
     if ftype in (ExtractionFieldType.TEXT, ExtractionFieldType.DATE):
-        if isinstance(payload, (str, int, float)):
+        if isinstance(payload, (str, int, float)) and not isinstance(payload, bool):
             return ExportValue(raw=raw, status="answered", value_text=str(payload))
     elif ftype is ExtractionFieldType.BOOLEAN:
         if isinstance(payload, bool):
