@@ -20,7 +20,10 @@
  * (`expected_current_decision_id`). Typing autosaves through the debounced
  * queue (`useAutoSaveProposals`); accepting an AI proposal is an explicit
  * decision carrying `proposal_record_id`, shared by both kinds, with local
- * undo/redo. A 409 — or a 400 after the run left `extract` — freezes the
+ * undo/redo. A typed edit keeps the head's AI link: it carries the head
+ * decision's `proposal_record_id` when the draft is not cleared (`isCleared`)
+ * and that id is a `source=ai` proposal of this run view (spec 2026-10-30 §11
+ * row 2). A 409 — or a 400 after the run left `extract` — freezes the
  * session's writes until `resumeDraftAfterConflict` re-reads authority. The
  * AI link of a coordinate is never inferred from suggestion status: it is the
  * caller's latest decision on it, when that decision still matches the value.
@@ -32,6 +35,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAutoSaveProposals } from '@/hooks/runs/useAutoSaveProposals';
 import { runsKeys, type ReviewerDecisionResponse, type RunViewResponse } from '@/hooks/runs/types';
 import { ApiError } from '@/integrations/api/client';
+import { isEmptyValue } from '@/lib/ai-extraction/valueParser';
 import { t } from '@/lib/copy';
 import { acceptedProposal, mergeConfirmedRows, reversalPayload, reviewerCoordinateHistory, reviewerHistoriesByCoord } from '@/lib/extraction/proposalDecisionState';
 import { currentValuesToValuesMap, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
@@ -42,6 +46,16 @@ import { coordKey, parseCoordKey, type Coord } from '@/lib/runs/coord';
 import { decisionMatchesVersion, stableStringify } from '@/lib/runs/valueEquality';
 import { appendReviewerDecision, type WriteProposalParams } from '@/services/extractionRunService';
 import { fetchRunView } from '@/services/runLifecycleService';
+
+/** A draft that holds no answer: empty by the shared oracle (a no-information marker is filled), a
+ * blank unit number (`{value: '', unit}`), or a multiselect with no code selected and no other text. */
+function isCleared(draft: unknown): boolean {
+  if (isEmptyValue(draft)) return true;
+  const blank = (items: unknown) => Array.isArray(items) && items.every(item => !item);
+  if (Array.isArray(draft)) return blank(draft);
+  const choice = draft as {selected?: unknown; other_texts?: unknown} | null;
+  return !!choice && typeof choice === 'object' && blank(choice.selected) && blank(choice.other_texts);
+}
 
 /** An AI proposal the caller accepts (or, when it is the accepted one, reverses). */
 export interface RunValueProposal extends Coord {
@@ -62,8 +76,13 @@ export interface UseRunValuesArgs {
 
 /** `conflict`: the review authority disagrees (409, moved head, run left extract); `failed`: anything else. */
 type Outcome = 'saved' | 'conflict' | 'failed';
-/** `value`/`proposalRecordId` are the action itself, so an undone action can be redone verbatim. */
-interface LocalDecision extends Coord { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown>; value: Record<string, unknown>; proposalRecordId: string | null }
+/** `value`/`proposalRecordId` are the action itself, so an undone action can be redone verbatim;
+ * `predecessor`/`predecessorLink` are what undo restores. */
+interface LocalDecision extends Coord { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown>; predecessorLink: string | null; value: Record<string, unknown>; proposalRecordId: string | null }
+/** The head a local action replaced: its id, value and AI link. */
+type Prior = {id: string | null; value: Record<string, unknown>; link: string | null};
+const priorOf = (history: readonly ReviewerDecisionResponse[]): Prior =>
+  ({id: history.at(-1)?.id ?? null, value: history.at(-1)?.value ?? {value: null}, link: history.at(-1)?.proposal_record_id ?? null});
 /** The in-flight decision; `proposalId` is null for undo/redo. */
 interface PendingDecision extends Coord { proposalId: string | null }
 /** The form: its values, the server map they were hydrated from, and the coordinates the last hydration added. */
@@ -131,6 +150,10 @@ export function useRunValues(args: UseRunValuesArgs) {
   const lockRef = useRef(false);
   const blockedSessionsRef = useRef(new WeakSet<object>());
   const decisionsRef = useRef(decisions);
+  // The run's AI proposal ids: only these propagate from a head decision into a typed edit.
+  const aiProposalIds: ReadonlySet<string> = useMemo(
+    () => new Set((runDetail?.proposals ?? []).filter(p => p.source === 'ai').map(p => p.id)), [runDetail?.proposals]);
+  const aiIdsRef = useRef(aiProposalIds);
   const [state, setState] = useState({session, saving: false, pending: null as PendingDecision | null, conflicted: false, error: null as string | null, stack: [] as LocalDecision[], redo: [] as LocalDecision[]});
   const [confirmed, setConfirmed] = useState<{session: typeof session; rows: ReviewerDecisionResponse[]}>({session, rows: []});
   const confirmedRef = useRef(confirmed);
@@ -138,13 +161,14 @@ export function useRunValues(args: UseRunValuesArgs) {
     valuesRef.current = values;
     reviewerRef.current = currentUserId;
     decisionsRef.current = decisions;
+    aiIdsRef.current = aiProposalIds;
     if (scopeRef.current !== session) {
       scopeRef.current = session;
       stackRef.current = [];
       redoRef.current = [];
       lockRef.current = false;
     }
-  }, [session, values, currentUserId, decisions]);
+  }, [session, values, currentUserId, decisions, aiProposalIds]);
 
   const isCurrent = () => scopeRef.current === session;
   const sessionRows = (c: typeof confirmed) => (c.session === session ? c.rows : NO_DECISIONS);
@@ -190,11 +214,11 @@ export function useRunValues(args: UseRunValuesArgs) {
   };
 
   // Confirmed rows are merged locally: a write never invalidates the run view.
-  const record = (decision: ReviewerDecisionResponse, predecessor: Record<string, unknown>, undoable: boolean, predecessorId: string | null = null, redone = false) => {
+  const record = (decision: ReviewerDecisionResponse, prior: Prior, undoable: boolean, redone = false) => {
     if (!isCurrent()) return;
     setRows([...sessionRows(confirmedRef.current), decision]);
-    if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id, predecessorId, predecessor,
-      value: decision.value ?? {value: null}, proposalRecordId: decision.proposal_record_id ?? null});
+    if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id,
+      predecessorId: prior.id, predecessor: prior.value, predecessorLink: prior.link, value: decision.value ?? {value: null}, proposalRecordId: decision.proposal_record_id ?? null});
     // A new action forks the history: what was undone before it can no longer be redone.
     if (undoable && !redone) redoRef.current = [];
     setState(prev => ({...prev, session, stack: [...stackRef.current], redo: [...redoRef.current]}));
@@ -230,13 +254,15 @@ export function useRunValues(args: UseRunValuesArgs) {
     return 'conflict';
   };
 
-  const writeValue = async (params: WriteProposalParams): Promise<void> => {
+  const writeValue = async (params: WriteProposalParams): Promise<string | null> => {
     // A lifecycle flush belongs to its captured run, even after navigation.
     if (blockedSessionsRef.current.has(session) || !currentUserId || reviewerRef.current !== currentUserId) return Promise.reject(new Error(t('extraction', 'reviewDecisionConflict')));
     const coordinate = {instanceId: params.instanceId, fieldId: params.fieldId};
     const history = latestHistory(coordinate, params.runId);
+    const head = history.at(-1);
+    const link = !isCleared(params.draft) && head?.proposal_record_id && aiIdsRef.current.has(head.proposal_record_id) ? head.proposal_record_id : null;
     const result = await appendReviewerDecision(params.runId, {
-      instance_id: params.instanceId, field_id: params.fieldId, decision: 'edit', proposal_record_id: null,
+      instance_id: params.instanceId, field_id: params.fieldId, decision: 'edit', proposal_record_id: link,
       value: params.absentReason ? {value: params.normalizedValue, absent_reason: params.absentReason} : {value: params.normalizedValue},
       ...expectedHead(history),
     });
@@ -244,7 +270,8 @@ export function useRunValues(args: UseRunValuesArgs) {
       await settleFailure(result.error, coordinate);
       return Promise.reject(result.error);
     }
-    record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
+    record(result.data, priorOf(history), true);
+    return acceptedProposal([result.data], params.draft);
   };
 
   const autosave = useAutoSaveProposals({
@@ -292,12 +319,11 @@ export function useRunValues(args: UseRunValuesArgs) {
         decisionMatchesVersion(history.at(-1)?.value, proposal.value);
       const result = await appendReviewerDecision(runId!, {
         instance_id: proposal.instanceId, field_id: proposal.fieldId, decision: 'edit',
-        proposal_record_id: reverse ? null : proposal.id,
-        value: reverse ? reversalPayload(history) : toConsensusValueEnvelope(proposal.value),
+        ...(reverse ? reversalPayload(history) : {value: toConsensusValueEnvelope(proposal.value), proposal_record_id: proposal.id}),
         ...expectedHead(history),
       });
       if (!result.ok) { outcome = await settleFailure(result.error, proposal); return; }
-      record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
+      record(result.data, priorOf(history), true);
       reconcile(proposal, result.data, draft);
       outcome = 'saved';
     });
@@ -336,18 +362,18 @@ export function useRunValues(args: UseRunValuesArgs) {
     });
   };
 
-  const undoLatestLocalDecision = (): Promise<boolean> => replayLocal(stackRef, entry => ({value: entry.predecessor, proposal_record_id: null}), (entry, decision) => {
+  const undoLatestLocalDecision = (): Promise<boolean> => replayLocal(stackRef, entry => ({value: entry.predecessor, proposal_record_id: entry.predecessorLink}), (entry, decision) => {
     // The compensating edit becomes the expected head for the preceding
     // local action on this coordinate; it is not itself an undoable action.
     const previous = [...stackRef.current].reverse().find(item => item.instanceId === entry.instanceId && item.fieldId === entry.fieldId);
     if (previous && previous.expectedId === entry.predecessorId) previous.expectedId = decision.id;
     redoRef.current.push({...entry, expectedId: decision.id});
-    record(decision, entry.predecessor, false);
+    record(decision, {id: null, value: entry.predecessor, link: entry.predecessorLink}, false);
   });
 
   /** Re-applies the latest undone action, link included, on top of its compensating edit. */
   const redoLatestLocalDecision = (): Promise<boolean> => replayLocal(redoRef, entry => ({value: entry.value, proposal_record_id: entry.proposalRecordId}),
-    (entry, decision) => record(decision, entry.predecessor, true, entry.expectedId, true));
+    (entry, decision) => record(decision, {id: entry.expectedId, value: entry.predecessor, link: entry.predecessorLink}, true, true));
 
   /** Explicitly resume the retained draft after refreshing current authority.
    * This does not rebase an undo entry onto an external decision. */

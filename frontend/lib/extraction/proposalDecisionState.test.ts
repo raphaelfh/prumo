@@ -45,10 +45,10 @@ describe('durable proposal decisions', () => {
   });
   it.each([{value: {value: 4, unit: 'mg'}}, {value: ['A', 'B']},
     {value: null, absent_reason: 'no_information'}, {value: false}])('restores the full typed predecessor %j', value => {
-    expect(reversalPayload([row('a', value), row('b', {value: 'B'})])).toEqual(value);
+    expect(reversalPayload([row('a', value), row('b', {value: 'B'})])).toEqual({value, proposal_record_id: 'a'});
   });
   it('first acceptance reverses to unresolved', () => {
-    expect(reversalPayload([row('a', {value: 'A'})])).toEqual({value: null});
+    expect(reversalPayload([row('a', {value: 'A'})])).toEqual({value: {value: null}, proposal_record_id: null});
   });
   it('requires latest reviewer link and typed equality, including units', () => {
     const latest = row('older-proposal', {value: {value: 4, unit: 'mg'}});
