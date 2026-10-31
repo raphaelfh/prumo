@@ -6427,12 +6427,11 @@
             "type": "boolean"
           },
           "article_ids": {
-            "description": "Candidate article ids (resolved by the caller per article_scope).",
+            "description": "Candidate article ids (resolved by the caller per article_scope). May be empty only when shape=dictionary.",
             "items": {
               "format": "uuid",
               "type": "string"
             },
-            "minItems": 1,
             "title": "Article Ids",
             "type": "array"
           },

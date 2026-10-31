@@ -68,7 +68,7 @@ async def test_obsolete_fields_are_run_only_fields_absent_from_anchor() -> None:
     }
     db = _StubDB({run_version: _StubVersion(run_schema)})
 
-    svc = ExtractionExportService(db=db, user_id=str(uuid4()), storage=None)  # type: ignore[arg-type]
+    svc = ExtractionExportService(db=db, user_id=str(uuid4()))
 
     article = ArticleDescriptor(
         article_id=uuid4(),
@@ -90,7 +90,7 @@ async def test_no_obsolete_fields_when_run_matches_anchor() -> None:
     run_version = uuid4()
     run_schema = {"entity_types": [_et(str(uuid4()), [_f(fid, "Kept")])]}
     db = _StubDB({run_version: _StubVersion(run_schema)})
-    svc = ExtractionExportService(db=db, user_id=str(uuid4()), storage=None)  # type: ignore[arg-type]
+    svc = ExtractionExportService(db=db, user_id=str(uuid4()))
     article = ArticleDescriptor(
         article_id=uuid4(),
         header_label="X",

@@ -17,7 +17,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -117,38 +117,29 @@ def _open(data: bytes):
 
 
 def test_build_workbook_returns_valid_xlsx_bytes():
-    data = build_workbook(_layout())
+    data = build_workbook(_layout(), ExportShape.COMPLETE, include_matrix=True)
     assert isinstance(data, bytes)
     assert data[:4] == b"PK\x03\x04"
     wb = _open(data)
     # §4 order: README (absorbs the old Notes sheet) → Summary → matrix →
     # Data dictionary. The empty layout has no sections (no tidy tables) and
     # an empty data dictionary (no Dropdown lists sheet).
-    assert wb.sheetnames == ["README", "Summary", "CHARMS", "Data dictionary"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Data dictionary"]
 
 
 def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
-    data = build_workbook(_layout(include_ai_metadata=True))
+    data = build_workbook(
+        _layout(include_ai_metadata=True), ExportShape.COMPLETE, include_matrix=True
+    )
     wb = _open(data)
-    # AI metadata is the trailing optional sheet, appended after the §4 specs.
+    # AI proposals is the trailing optional sheet, appended after the §4 specs.
     assert wb.sheetnames == [
         "README",
         "Summary",
-        "CHARMS",
+        "Matrix",
         "Data dictionary",
-        "AI metadata",
+        "AI proposals",
     ]
-
-
-def test_sheet_name_is_sanitised_for_openpyxl_constraints():
-    data = build_workbook(_layout(template_name="Bad/Name?:With*Forbidden[chars]"))
-    wb = _open(data)
-    # The matrix sheet (named from the template) is the only one derived from
-    # the unsafe template name; the fixed sheets (README/Summary/...) are safe.
-    main = next(s for s in wb.sheetnames if s.startswith("BadName"))
-    assert len(main) <= 31
-    for forbidden in r"[]:*?/\\":
-        assert forbidden not in main
 
 
 # ----------------------------------------------------------------------
@@ -170,9 +161,11 @@ def test_single_article_single_section_single_field_consensus():
             sections=(section,),
             articles=(article,),
             value_map={(article.run_id, inst_id, field_id): "Existing registry"},
-        )
+        ),
+        ExportShape.COMPLETE,
+        include_matrix=True,
     )
-    ws = _open(data)["CHARMS"]
+    ws = _open(data)["Matrix"]
 
     # Row 1 = headers; row 2 = section name; row 3 = field row
     assert ws.cell(row=1, column=1).value == "Section"
@@ -223,9 +216,11 @@ def test_multi_instance_article_repeats_study_section_values():
                 (article.run_id, model_inst_a, model_fid): "Logistic regression",
                 (article.run_id, model_inst_b, model_fid): "Cox model",
             },
-        )
+        ),
+        ExportShape.COMPLETE,
+        include_matrix=True,
     )
-    ws = _open(data)["CHARMS"]
+    ws = _open(data)["Matrix"]
 
     # Header row: article "Gaca, 2011" spans 2 sub-columns (merged).
     assert ws.cell(row=1, column=3).value == "Gaca, 2011"
@@ -266,8 +261,10 @@ def test_section_header_rows_have_bold_font_and_grey_fill():
     f = _field("Source", ExtractionFieldType.TEXT)
     section = _section("Source of data", [f])
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: uuid4()})
-    data = build_workbook(_layout(sections=(section,), articles=(article,)))
-    ws = _open(data)["CHARMS"]
+    data = build_workbook(
+        _layout(sections=(section,), articles=(article,)), ExportShape.COMPLETE, include_matrix=True
+    )
+    ws = _open(data)["Matrix"]
 
     section_cell = ws.cell(row=2, column=1)
     assert section_cell.value == "1. Source of data"
@@ -307,9 +304,11 @@ def test_format_cell_per_field_type(ftype, raw_value, expected):
             sections=(section,),
             articles=(article,),
             value_map={(article.run_id, inst, section.fields[0].field_id): raw_value},
-        )
+        ),
+        ExportShape.COMPLETE,
+        include_matrix=True,
     )
-    ws = _open(data)["CHARMS"]
+    ws = _open(data)["Matrix"]
     assert ws.cell(row=3, column=3).value == expected
 
 
@@ -318,8 +317,10 @@ def test_none_value_renders_blank_cell():
     section = _section("S", [f])
     article = _article("X", study_instances={section.entity_type_id: uuid4()})
     # No value in value_map → cell is blank.
-    data = build_workbook(_layout(sections=(section,), articles=(article,)))
-    ws = _open(data)["CHARMS"]
+    data = build_workbook(
+        _layout(sections=(section,), articles=(article,)), ExportShape.COMPLETE, include_matrix=True
+    )
+    ws = _open(data)["Matrix"]
     assert ws.cell(row=3, column=3).value is None
 
 
@@ -348,7 +349,7 @@ def test_summary_sheet_lists_omitted_articles_by_stage():
         notes=notes,
         value_map={},
     )
-    data = build_workbook(layout)
+    data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
     rows = [list(row) for row in _open(data)["Summary"].iter_rows(values_only=True)]
     flat = " ".join(str(c) for row in rows for c in row if c)
     assert "Articles omitted" in flat
@@ -357,8 +358,10 @@ def test_summary_sheet_lists_omitted_articles_by_stage():
 
 
 def test_ai_metadata_sheet_emits_placeholder_when_no_rows():
-    data = build_workbook(_layout(include_ai_metadata=True))
-    ws = _open(data)["AI metadata"]
+    data = build_workbook(
+        _layout(include_ai_metadata=True), ExportShape.COMPLETE, include_matrix=True
+    )
+    ws = _open(data)["AI proposals"]
     # Header row plus 1 placeholder row.
     assert ws.cell(row=1, column=1).value == "Article"
     assert ws.cell(row=2, column=1).value == "(No AI proposals recorded for the selected articles.)"
@@ -406,8 +409,8 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
             (article.run_id, inst_id, field_id, reviewer_b_id): "RCT",
         },
     )
-    data = build_workbook(layout)
-    ws = _open(data)["CHARMS"]
+    data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
+    ws = _open(data)["Matrix"]
 
     # Row 1 article header spans 3 sub-columns (Consensus + Alice + Bob).
     assert ws.cell(row=1, column=3).value == "Gaca, 2011"
@@ -462,8 +465,8 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
         value_map=base.value_map,
         ai_proposal_rows=(proposal,),
     )
-    data = build_workbook(layout)
-    ws = _open(data)["AI metadata"]
+    data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
+    ws = _open(data)["AI proposals"]
     # Row 2: the proposal. Columns in FR-037 order.
     assert ws.cell(row=2, column=1).value == "Gaca, 2011"
     assert ws.cell(row=2, column=2).value == "1. Source of data"
@@ -517,7 +520,7 @@ def test_ai_metadata_value_columns_render_via_shared_helper():
         value_map=base.value_map,
         ai_proposal_rows=(proposal,),
     )
-    ws = _open(build_workbook(layout))["AI metadata"]
+    ws = _open(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))["AI proposals"]
     # E2 = "AI proposed value" (col 5), M2 = "Final value used" (col 13, shifted +1).
     assert ws.cell(row=2, column=5).value == "5 mg"
     assert ws.cell(row=2, column=13).value == "Yes"
@@ -587,7 +590,6 @@ def test_workbook_emits_sheets_in_section4_order():
         generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         article_count=1,
         record_count=1,
-        contents=("README", "Summary"),
         legend=(),
         caveats=(),
         obsolete_fields_per_article={},
@@ -634,11 +636,13 @@ def test_workbook_emits_sheets_in_section4_order():
         data_dictionary=(dict_entry,),
         tidy_tables=(tidy,),
     )
-    wb = load_workbook(io.BytesIO(build_workbook(layout)))
+    wb = load_workbook(
+        io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
     assert wb.sheetnames == [
         "README",
         "Summary",
-        "CHARMS",
+        "Matrix",
         "Study characteristics",
         "Data dictionary",
         "Dropdown lists",
@@ -665,9 +669,13 @@ def test_workbook_emits_appraisal_sheet_after_tidy_tables() -> None:
         ),
     )
     layout_with = _layout(appraisal=appraisal)
-    wb = load_workbook(io.BytesIO(build_workbook(layout_with)))
-    assert "Appraisal summary" in wb.sheetnames
+    wb = load_workbook(
+        io.BytesIO(build_workbook(layout_with, ExportShape.COMPLETE, include_matrix=True))
+    )
+    assert "Appraisal" in wb.sheetnames
 
     layout_without = _layout(appraisal=None)
-    wb2 = load_workbook(io.BytesIO(build_workbook(layout_without)))
-    assert "Appraisal summary" not in wb2.sheetnames
+    wb2 = load_workbook(
+        io.BytesIO(build_workbook(layout_without, ExportShape.COMPLETE, include_matrix=True))
+    )
+    assert "Appraisal" not in wb2.sheetnames

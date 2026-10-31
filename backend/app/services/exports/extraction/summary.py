@@ -9,6 +9,7 @@ no DB, no openpyxl.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.services.exports.descriptors import (
@@ -22,6 +23,9 @@ from app.services.extraction_export_service import (
     ExportLayout,
     ExportMode,
 )
+
+if TYPE_CHECKING:
+    from app.services.exports.extraction.workbook import SheetTitles
 
 _HEADER = CellStyle(bold=True, fill="EEEEEE")
 
@@ -87,7 +91,7 @@ def _record_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
     return rows
 
 
-def build_summary(layout: ExportLayout) -> SheetSpec:
+def build_summary(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     rows: list[tuple[Cell, ...]] = [tuple(Cell(h, _HEADER) for h in _HEADERS)]
     rows.extend(_record_rows(layout))
 
@@ -98,7 +102,7 @@ def build_summary(layout: ExportLayout) -> SheetSpec:
             rows.append((Cell(f"stage={stage}"), Cell(count)))
 
     return SheetSpec(
-        title="Summary",
+        title=titles.fixed["summary"],
         rows=tuple(rows),
         column_widths=(36.0, 10.0, 14.0, 14.0, 14.0),
         freeze="A2",

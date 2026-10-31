@@ -18,7 +18,6 @@ export builds. The existing unit determinism test
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -174,9 +173,7 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
     )
     await db_session.flush()
 
-    service = ExtractionExportService(
-        db=db_session, user_id=str(profile_id), storage=MagicMock(), trace_id="t"
-    )
+    service = ExtractionExportService(db=db_session, user_id=str(profile_id), trace_id="t")
     article = ArticleDescriptor(
         article_id=article_id,
         header_label="Article",

@@ -12,8 +12,6 @@ See post-merge review 2026-06-21.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +23,7 @@ pytestmark = pytest.mark.asyncio
 
 
 def _service(db: AsyncSession) -> ExtractionExportService:
-    return ExtractionExportService(db=db, user_id=str(SEED.primary_profile), storage=MagicMock())
+    return ExtractionExportService(db=db, user_id=str(SEED.primary_profile))
 
 
 async def test_template_load_rejects_cross_project_template(db_session: AsyncSession) -> None:
