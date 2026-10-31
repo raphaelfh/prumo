@@ -21,8 +21,9 @@
  * queue (`useAutoSaveProposals`); accepting an AI proposal is an explicit
  * decision carrying `proposal_record_id`, shared by both kinds, with local
  * undo/redo. A typed edit keeps the head's AI link: it carries the head
- * decision's `proposal_record_id` when the draft is not cleared and that id is
- * a `source=ai` proposal of this run view (spec 2026-10-30 §11 row 2). A 409 — or a 400 after the run left `extract` — freezes the
+ * decision's `proposal_record_id` when the draft is not cleared (`isCleared`)
+ * and that id is a `source=ai` proposal of this run view (spec 2026-10-30 §11
+ * row 2). A 409 — or a 400 after the run left `extract` — freezes the
  * session's writes until `resumeDraftAfterConflict` re-reads authority. The
  * AI link of a coordinate is never inferred from suggestion status: it is the
  * caller's latest decision on it, when that decision still matches the value.
@@ -34,6 +35,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAutoSaveProposals } from '@/hooks/runs/useAutoSaveProposals';
 import { runsKeys, type ReviewerDecisionResponse, type RunViewResponse } from '@/hooks/runs/types';
 import { ApiError } from '@/integrations/api/client';
+import { isEmptyValue } from '@/lib/ai-extraction/valueParser';
 import { t } from '@/lib/copy';
 import { acceptedProposal, mergeConfirmedRows, reversalPayload, reviewerCoordinateHistory, reviewerHistoriesByCoord } from '@/lib/extraction/proposalDecisionState';
 import { currentValuesToValuesMap, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
@@ -44,6 +46,16 @@ import { coordKey, parseCoordKey, type Coord } from '@/lib/runs/coord';
 import { decisionMatchesVersion, stableStringify } from '@/lib/runs/valueEquality';
 import { appendReviewerDecision, type WriteProposalParams } from '@/services/extractionRunService';
 import { fetchRunView } from '@/services/runLifecycleService';
+
+/** A draft that holds no answer: empty by the shared oracle (a no-information marker is filled), a
+ * blank unit number (`{value: '', unit}`), or a multiselect with no code selected and no other text. */
+function isCleared(draft: unknown): boolean {
+  if (isEmptyValue(draft)) return true;
+  const blank = (items: unknown) => Array.isArray(items) && items.every(item => !item);
+  if (Array.isArray(draft)) return blank(draft);
+  const choice = draft as {selected?: unknown; other_texts?: unknown} | null;
+  return !!choice && typeof choice === 'object' && blank(choice.selected) && blank(choice.other_texts);
+}
 
 /** An AI proposal the caller accepts (or, when it is the accepted one, reverses). */
 export interface RunValueProposal extends Coord {
@@ -248,8 +260,7 @@ export function useRunValues(args: UseRunValuesArgs) {
     const coordinate = {instanceId: params.instanceId, fieldId: params.fieldId};
     const history = latestHistory(coordinate, params.runId);
     const head = history.at(-1);
-    const cleared = params.normalizedValue === null && !params.absentReason;
-    const link = !cleared && head?.proposal_record_id && aiIdsRef.current.has(head.proposal_record_id) ? head.proposal_record_id : null;
+    const link = !isCleared(params.draft) && head?.proposal_record_id && aiIdsRef.current.has(head.proposal_record_id) ? head.proposal_record_id : null;
     const result = await appendReviewerDecision(params.runId, {
       instance_id: params.instanceId, field_id: params.fieldId, decision: 'edit', proposal_record_id: link,
       value: params.absentReason ? {value: params.normalizedValue, absent_reason: params.absentReason} : {value: params.normalizedValue},

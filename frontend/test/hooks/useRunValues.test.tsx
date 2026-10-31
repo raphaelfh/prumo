@@ -314,6 +314,22 @@ describe('one accept path for both kinds', () => {
   });
 
   it.each([
+    ['a unit number', {value: 5, unit: 'mg'}, {value: '', unit: 'mg'}, {value: '7', unit: 'mg'}],
+    ['a multiselect', ['B'], [], ['C']],
+    ['a multiselect with other', {selected: ['B'], other_texts: []}, {selected: [], other_texts: ['']}, {selected: ['C'], other_texts: []}],
+  ])('guard: accept, clear %s, then type sends no link', async (_label, accepted, cleared, typed) => {
+    const view = setup({}, {proposals: [aiRow('p1', accepted)]});
+    await act(async () => {await view.result.current.acceptProposal({...proposal, value: accepted});});
+    act(() => view.result.current.edit('a', cleared));
+    await act(async () => {await view.result.current.saveNow();});
+    act(() => view.result.current.edit('a', typed));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests.map(r => [r.value, r.proposal_record_id])).toEqual([
+      [{value: accepted}, 'p1'], [{value: cleared}, null], [{value: typed}, null],
+    ]);
+  });
+
+  it.each([
     ['a system proposal', [aiRow('s1', 'S', 'system')]],
     ['a proposal outside this run view', []],
   ])('guard: a head linked to %s carries no link into a typed edit', async (_label, proposals) => {
