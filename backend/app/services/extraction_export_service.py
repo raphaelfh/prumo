@@ -55,7 +55,7 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
-from app.schemas.extraction_run import RunViewEntityType
+from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.services.current_run import CurrentRunResolver
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
@@ -333,6 +333,10 @@ class ExportLayout:
     cells: Mapping[ValueKey, CellRecord] = field(default_factory=dict)
     # One project map, in Member-letter order: rater id -> label (§6, D4).
     rater_labels: Mapping[UUID, str] = field(default_factory=dict)
+    # version_id -> field_id -> the run's pinned field; canonical equality reads it.
+    pinned_fields: Mapping[UUID, Mapping[UUID, RunViewField]] = field(default_factory=dict)
+    # (article_id, instance_id, field_id) with a source=ai proposal in ANY run (§7).
+    ai_proposed: frozenset[tuple[UUID, UUID, UUID]] = frozenset()
 
 
 # ----------------------------------------------------------------------
@@ -541,6 +545,7 @@ class ExtractionExportService(LoggerMixin):
         version_ids = {a.version_id for a in articles if a.version_id is not None}
         rules_by_version = await pinned_template_rules(self.db, version_ids) if version_ids else {}
         rules_by_article = {a.article_id: rules_by_version.get(a.version_id, {}) for a in articles}
+        pinned_fields = {v.version_id: v.run_view_fields for v in (active, *pinned)}
 
         # §5 scope fidelity, applied BEFORE the level sheets, the AI rows and
         # the appraisal read the map, so all three inherit it for free.
@@ -550,6 +555,17 @@ class ExtractionExportService(LoggerMixin):
             articles=tuple(articles),
             raters=(primary, *(r.reviewer_id for r in reviewers)),
             value_map=value_map,
+            # A narrow version (D5) is not loaded, so its articles stay unfiltered.
+            pinned_field_ids={
+                a.article_id: frozenset(pinned_fields[a.version_id])
+                for a in articles
+                if a.version_id in pinned_fields
+            },
+        )
+        ai_proposed = await self._load_ai_proposed(
+            project_id=project_id,
+            template_id=template_id,
+            article_ids=[a.article_id for a in articles],
         )
 
         ai_rows: tuple[AIProposalRow, ...] = ()
@@ -605,6 +621,8 @@ class ExtractionExportService(LoggerMixin):
             raters_by_run=raters_by_run,
             cells=cells,
             rater_labels=rater_labels,
+            pinned_fields=pinned_fields,
+            ai_proposed=ai_proposed,
         )
 
     # ------------------------------------------------------------------
@@ -870,6 +888,29 @@ class ExtractionExportService(LoggerMixin):
         )
         return tuple((await self.db.execute(stmt)).scalars().all())
 
+    async def _load_ai_proposed(
+        self, *, project_id: UUID, template_id: UUID, article_ids: list[UUID]
+    ) -> frozenset[tuple[UUID, UUID, UUID]]:
+        """Coordinates with a source=ai proposal in any run of the article (§7)."""
+        if not article_ids:
+            return frozenset()
+        stmt = (
+            select(
+                ExtractionRun.article_id,
+                ExtractionProposalRecord.instance_id,
+                ExtractionProposalRecord.field_id,
+            )
+            .join(ExtractionRun, ExtractionRun.id == ExtractionProposalRecord.run_id)
+            .where(
+                ExtractionRun.project_id == project_id,
+                ExtractionRun.template_id == template_id,
+                ExtractionRun.article_id.in_(article_ids),
+                ExtractionProposalRecord.source == "ai",
+            )
+            .distinct()
+        )
+        return frozenset((await self.db.execute(stmt)).tuples().all())
+
     async def _load_pinned_versions(
         self, *, template_id: UUID, versions: Sequence[ExtractionTemplateVersion]
     ) -> tuple[VersionSections, ...]:
@@ -884,6 +925,7 @@ class ExtractionExportService(LoggerMixin):
                     version_id=v.id,
                     version_label=v.version,
                     sections=self._sections_from_views(views),
+                    run_view_fields={f.id: f for et in views for f in et.fields},
                 )
             )
         return tuple(loaded)

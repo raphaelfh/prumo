@@ -98,7 +98,7 @@ def _every_sheet_layout() -> ExportLayout:
         generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={value_key(article.run_id, instance_id, _FIELD_ID): _tv("Low")},
         codebook=build_codebook_entries(
-            VersionSections(uuid4(), 1, (section,)), (), build_option_labels((section,))
+            VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
         ),
         appraisal=AppraisalModel(
             domain_section_ids=(_SECTION_ID,),

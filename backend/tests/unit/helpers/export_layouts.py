@@ -86,7 +86,7 @@ def make_layout(
     **over: Any,
 ) -> ExportLayout:
     labels = over.pop("option_labels", None) or build_option_labels(sections, [])
-    codebook = build_codebook_entries(VersionSections(uuid4(), 1, tuple(sections)), (), labels)
+    codebook = build_codebook_entries(VersionSections(uuid4(), 1, tuple(sections), {}), (), labels)
     codes = {e.field_id: e.field_code for e in codebook}
     fields: dict[str, Any] = {
         "project_name": "Test Project",

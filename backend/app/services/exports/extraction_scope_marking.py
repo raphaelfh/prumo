@@ -99,6 +99,7 @@ def mark_out_of_scope_values(
     articles: tuple[ArticleDescriptor, ...],
     raters: Sequence[UUID | None],
     value_map: dict[ValueKey, ExportValue],
+    pinned_field_ids: Mapping[UUID, frozenset[UUID]],
 ) -> None:
     """Mark the cells an article's own scope takes out of play.
 
@@ -123,6 +124,11 @@ def mark_out_of_scope_values(
 
     *rules_by_article* maps ``article_id`` to the rules frozen in that
     article's pinned version; an article missing from it has no rules.
+
+    *pinned_field_ids* maps ``article_id`` to the field ids of the version its
+    run pins: a field outside it was never asked of that run, so it is neither
+    stamped nor flagged. An article missing from it (a narrow legacy version,
+    D5) is not filtered.
     """
 
     for article in articles:
@@ -130,6 +136,7 @@ def mark_out_of_scope_values(
         if run_id is None:
             continue
         rules = rules_by_article.get(article.article_id, {})
+        pinned = pinned_field_ids.get(article.article_id)
         # A version without scope rules skips the article before any
         # projection is built — an extraction export does the work it did before.
         classifier = scope_classifier_coordinate(rules)
@@ -150,6 +157,8 @@ def mark_out_of_scope_values(
                     continue
                 for instance_id in reader_instance_ids(section, article, sections):
                     for section_field in section.fields:
+                        if pinned is not None and section_field.field_id not in pinned:
+                            continue
                         key = value_key(run_id, instance_id, section_field.field_id, rater)
                         existing = value_map.get(key)
                         value_map[key] = (

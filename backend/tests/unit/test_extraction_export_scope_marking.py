@@ -148,6 +148,7 @@ def _mark(
     raters: tuple[UUID | None, ...] = (None,),
     schema: Any = None,
     sections: tuple[SectionDescriptor, ...] | None = None,
+    pinned_field_ids: dict[UUID, frozenset[UUID]] | None = None,
 ) -> None:
     mark_out_of_scope_values(
         rules_by_article={a.article_id: _SCHEMA if schema is None else schema for a in articles},
@@ -155,6 +156,7 @@ def _mark(
         articles=articles,
         raters=raters,
         value_map=value_map,
+        pinned_field_ids={} if pinned_field_ids is None else pinned_field_ids,
     )
 
 
@@ -171,6 +173,44 @@ def test_marks_a_cell_that_was_never_answered() -> None:
 
     assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
     assert _stamped(value_map[value_key(run, eval_i, _EVAL_SIGNALLING)])
+
+
+def test_no_stamp_for_field_missing_from_pinned_version() -> None:
+    """A field the article's pinned version lacks was never asked of that run:
+    no stamp, and a recorded value there is left as it is."""
+    run, scope_i, dev_i, eval_i = uuid4(), uuid4(), uuid4(), uuid4()
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    unpinned_answer = _answered("x")
+    value_map: dict[ValueKey, ExportValue] = {
+        value_key(run, scope_i, _STUDY_TYPE): _v("development_only"),
+        value_key(run, eval_i, _EVAL_SIGNALLING): unpinned_answer,
+    }
+
+    _mark(
+        value_map,
+        articles=(article,),
+        pinned_field_ids={article.article_id: frozenset({_STUDY_TYPE, _EVAL_VERDICT})},
+    )
+
+    assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
+    assert value_map[value_key(run, eval_i, _EVAL_SIGNALLING)] is unpinned_answer
+
+
+def test_no_stamp_for_unpinned_field_on_an_empty_cell() -> None:
+    run, scope_i, dev_i, eval_i = uuid4(), uuid4(), uuid4(), uuid4()
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    value_map: dict[ValueKey, ExportValue] = {
+        value_key(run, scope_i, _STUDY_TYPE): _v("development_only"),
+    }
+
+    _mark(
+        value_map,
+        articles=(article,),
+        pinned_field_ids={article.article_id: frozenset({_STUDY_TYPE, _EVAL_VERDICT})},
+    )
+
+    assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
+    assert value_key(run, eval_i, _EVAL_SIGNALLING) not in value_map
 
 
 def test_leaves_in_scope_sections_and_the_classifier_alone() -> None:
@@ -327,6 +367,7 @@ def test_each_article_is_marked_by_its_own_rules() -> None:
         articles=(article_a, article_b),
         raters=(None,),
         value_map=value_map,
+        pinned_field_ids={},
     )
 
     assert _stamped(value_map[value_key(run_a, eval_a, _EVAL_VERDICT)])
@@ -533,7 +574,7 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
     monkeypatch.setattr(
         service,
         "_load_pinned_versions",
-        AsyncMock(return_value=(VersionSections(uuid4(), 1, ()),)),
+        AsyncMock(return_value=(VersionSections(uuid4(), 1, (), {}),)),
     )
     monkeypatch.setattr(service, "_load_article_refs", AsyncMock(return_value={}))
     monkeypatch.setattr(

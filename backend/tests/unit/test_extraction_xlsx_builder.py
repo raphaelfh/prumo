@@ -581,7 +581,7 @@ def test_workbook_emits_sheets_in_section4_order():
         entries={(eid, None): (inst,)},
     )
     codebook = build_codebook_entries(
-        VersionSections(uuid4(), 1, (section,)), (), build_option_labels((section,))
+        VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
     )
     layout = ExportLayout(
         project_name="P",

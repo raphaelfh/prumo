@@ -398,3 +398,112 @@ async def test_non_manager_layout_pseudonymises_others(db_session: AsyncSession)
 
     assert layout.rater_labels[SEED.reviewer_profile] == "Integration Reviewer"
     assert re.fullmatch(r"Member [A-Z]+", layout.rater_labels[SEED.primary_profile])
+
+
+# ----------------------------------------------------------------------
+# Pinned fields and AI facts (Task 6)
+# ----------------------------------------------------------------------
+
+
+async def _single_user_layout(db: AsyncSession):
+    return await _svc(db).resolve_layout(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        mode=ExportMode.SINGLE_USER,
+        article_ids=[SEED.primary_article],
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+        reviewer_id=SEED.primary_profile,
+    )
+
+
+async def test_ai_proposed_spans_every_run_of_the_article(db_session: AsyncSession) -> None:
+    """An AI proposal in a run a reopen replaced still marks the coordinate."""
+    run = await _extract_run(db_session)
+    await _ai_proposal(db_session, run.id, 42)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs SET stage = 'finalized', status = 'completed' "
+            "WHERE id = :rid"
+        ),
+        {"rid": str(run.id)},
+    )
+    await db_session.flush()
+    await db_session.refresh(run)
+    child, created = await RunLifecycleService(db_session).reopen_run(
+        run_id=run.id, user_id=SEED.primary_profile
+    )
+    assert created and child.id != run.id
+    await _decide(db_session, child.id, SEED.primary_profile, "edit", value={"value": 7})
+
+    layout = await _single_user_layout(db_session)
+
+    assert [a.run_id for a in layout.articles] == [child.id]
+    assert (SEED.primary_article, _INST, _FIELD) in layout.ai_proposed
+
+
+async def test_ai_proposed_ignores_non_ai_proposals(db_session: AsyncSession) -> None:
+    run = await _extract_run(db_session)
+    await _decide(db_session, run.id, SEED.primary_profile, "edit", value={"value": 7})
+
+    ai_proposed = await _svc(db_session)._load_ai_proposed(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[SEED.primary_article],
+    )
+    assert (SEED.primary_article, _INST, _FIELD) not in ai_proposed
+
+    await _ai_proposal(db_session, run.id, 42)
+    ai_proposed = await _svc(db_session)._load_ai_proposed(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        article_ids=[SEED.primary_article],
+    )
+    assert (SEED.primary_article, _INST, _FIELD) in ai_proposed
+
+
+async def test_pinned_fields_reuse_the_single_version_load(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R14: pinned fields come from the one snapshot read per version."""
+    from app.models.extraction_versioning import ExtractionTemplateVersion
+    from app.services import extraction_export_service as svc_module
+
+    active_vid = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    older = ExtractionTemplateVersion(
+        project_template_id=SEED.primary_template,
+        version=9001,
+        is_active=False,
+        published_by=SEED.primary_profile,
+        schema_=await build_template_version_snapshot(db_session, SEED.primary_template),
+    )
+    db_session.add(older)
+    await db_session.flush()
+    run = await _extract_run(db_session)
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET version_id = :vid WHERE id = :rid"),
+        {"vid": str(older.id), "rid": str(run.id)},
+    )
+    calls: list[UUID] = []
+    real = svc_module.entity_types_for_version
+
+    async def _spy(db: AsyncSession, *, version_id: UUID, template_id: UUID):
+        calls.append(version_id)
+        return await real(db, version_id=version_id, template_id=template_id)
+
+    monkeypatch.setattr(svc_module, "entity_types_for_version", _spy)
+
+    layout = await _single_user_layout(db_session)
+
+    assert set(layout.pinned_fields) == {active_vid, older.id}
+    assert len(calls) == 2
+    assert _FIELD in layout.pinned_fields[older.id]
+    assert layout.pinned_fields[older.id][_FIELD].id == _FIELD
