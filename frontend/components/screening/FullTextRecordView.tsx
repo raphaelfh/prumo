@@ -38,8 +38,8 @@ export interface FullTextRecordViewProps {
   maximized: boolean;
   /** `isReadOnly(config)`: no attach. */
   readOnly: boolean;
-  /** `FullTextDecisionPane`, the ruling form, or the read-only details. */
-  decisionPane: ReactNode;
+  /** `FullTextDecisionPane`, the ruling form, the read-only details, or null when there is nothing to show. */
+  decisionPane: ReactNode | null;
 }
 
 export function FullTextRecordView({projectId, row, read, maximized, readOnly, decisionPane}: FullTextRecordViewProps) {
@@ -111,9 +111,15 @@ export function FullTextRecordView({projectId, row, read, maximized, readOnly, d
           </div>
         )}
       </div>
-      <div className="max-h-[50%] shrink-0 overflow-y-auto border-t border-border/40 bg-background px-4 py-3">
-        {decisionPane}
-      </div>
+      {decisionPane !== null && (
+        // The strip's own hairline replaces the first section's.
+        <div
+          data-testid="ft-decision-pane"
+          className="flex max-h-[50%] shrink-0 flex-col gap-4 overflow-y-auto border-t border-border/40 bg-background px-4 py-3 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0"
+        >
+          {decisionPane}
+        </div>
+      )}
     </div>
   );
 }

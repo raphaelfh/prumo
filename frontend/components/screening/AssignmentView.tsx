@@ -224,11 +224,9 @@ export function AssignmentView({
       />
     ) : canRule ? (
       ruling
-    ) : (
-      <div className="flex flex-col gap-4">
-        <AssignmentDecisions read={read} />
-      </div>
-    );
+    ) : read.my_decision || read.outcome || read.peer_decisions.length > 0 ? (
+      <AssignmentDecisions read={read} />
+    ) : null;
     return (
       <FullTextRecordView
         projectId={read.project_id}

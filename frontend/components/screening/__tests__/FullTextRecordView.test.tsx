@@ -250,6 +250,24 @@ describe('FullTextRecordView (docked)', () => {
     expect(screen.queryByRole('button', {name: /Include/})).toBeNull();
   });
 
+  it('renders no decision strip for a viewer with nothing to show', async () => {
+    serve(assignment({status: 'awaiting_others'}), {current: []});
+    renderPanel({config: config({can_review: false, can_manage: false, can_arbitrate: false})});
+
+    expect(await screen.findByRole('button', {name: 'PDF'})).toBeInTheDocument();
+    expect(screen.queryByTestId('ft-decision-pane')).toBeNull();
+  });
+
+  it('renders the decision strip for a viewer with an outcome to read', async () => {
+    serve(
+      assignment({status: 'decided', outcome: {decision: 'include', exclusion_reason: null, kind: 'consensus', reasons_differ: false}}),
+      {current: []},
+    );
+    renderPanel({config: config({can_review: false, can_manage: false, can_arbitrate: false})});
+
+    expect(await screen.findByTestId('ft-decision-pane')).toHaveTextContent('Include');
+  });
+
   it('attaching a PDF refreshes the row and the panel', async () => {
     const files = {current: [] as unknown[]};
     serve(assignment(), files);
