@@ -58,7 +58,10 @@ async def get_screening_config(
     "/projects/{project_id}/screening/config",
     responses={
         404: {"description": "Project not found"},
-        409: {"description": "Config frozen by a decision, or fewer reviewers than requested"},
+        409: {
+            "description": "Config frozen by a decision (or by a record sent to full text), "
+            "or fewer reviewers than requested"
+        },
     },
 )
 @limiter.limit("30/minute")
@@ -70,9 +73,7 @@ async def put_screening_config(
     user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[ScreeningConfigRead]:
     try:
-        config = await ScreeningConfigService(db).set_reviewer_count(
-            project_id, user_sub, body.reviewer_count
-        )
+        config = await ScreeningConfigService(db).set_config(project_id, user_sub, body)
     except ProjectNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
@@ -83,7 +84,13 @@ async def put_screening_config(
 
 @router.post(
     "/projects/{project_id}/screening/enroll",
-    responses={404: {"description": "An article is not in this project"}},
+    responses={
+        404: {"description": "An article is not in this project"},
+        409: {
+            "description": "Full-text screening is not set up, or the protocol has no exclusion reasons"
+        },
+        422: {"description": "Article ids given when sending records to full text"},
+    },
 )
 @limiter.limit("10/minute")
 async def enroll_screening(
@@ -95,11 +102,18 @@ async def enroll_screening(
 ) -> ApiResponse[ScreeningEnrollResult]:
     try:
         result = await ScreeningConfigService(db).enroll(
-            project_id, user_sub, body.article_ids if body else None
+            project_id,
+            user_sub,
+            body.article_ids if body else None,
+            body.phase if body else "title_abstract",
         )
     except ArticleNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Article not found"
+        ) from exc
+    except ProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
         ) from exc
     await db.commit()
     return ApiResponse.success(result, trace_id=getattr(request.state, "trace_id", None))

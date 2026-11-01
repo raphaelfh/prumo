@@ -139,6 +139,25 @@ class ScreeningRepository:
         )
         return bool((await self.db.execute(stmt)).scalar_one())
 
+    async def has_assignment(
+        self, *, project_id: UUID, phase: AssignmentPhase, article_id: UUID | None = None
+    ) -> bool:
+        """Any ``phase`` assignment in the project (of ``article_id`` when given), moved articles included."""
+        stmt = select(
+            exists().where(
+                ScreeningAssignment.project_id == project_id,
+                ScreeningAssignment.phase == phase,
+                *([] if article_id is None else [ScreeningAssignment.article_id == article_id]),
+            )
+        )
+        return bool((await self.db.execute(stmt)).scalar_one())
+
+    async def assigned_article_ids(self, *, project_id: UUID, phase: AssignmentPhase) -> set[UUID]:
+        stmt = select(ScreeningAssignment.article_id).where(
+            ScreeningAssignment.project_id == project_id, ScreeningAssignment.phase == phase
+        )
+        return set((await self.db.execute(stmt)).scalars().all())
+
     async def get_assignment(self, assignment_id: UUID) -> ScreeningAssignment | None:
         """The by-id guard's lookup; nothing else resolves an assignment by id alone."""
         stmt = select(ScreeningAssignment).where(ScreeningAssignment.id == assignment_id)

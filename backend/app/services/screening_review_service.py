@@ -22,7 +22,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.screening import ScreeningArbitration, ScreeningDecision
+from app.models.screening import (
+    FULL_TEXT,
+    TITLE_ABSTRACT,
+    ScreeningArbitration,
+    ScreeningDecision,
+)
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import RecordSource, ScreeningRepository
 from app.schemas.common import ApiErrorCode
@@ -157,6 +162,31 @@ async def assignment_states(
         )
         snapshots[assignment_id] = AssignmentSnapshot(assignment_id, current, ruling, state)
     return snapshots
+
+
+async def full_text_candidates(
+    db: AsyncSession, *, project_id: UUID, ta_reviewer_count: int | None
+) -> list[UUID]:
+    """Article ids whose TA outcome is include or maybe and that have no FT assignment, in TA queue order."""
+    if ta_reviewer_count is None:
+        return []
+    repo = ScreeningRepository(db)
+    snapshots = await assignment_states(
+        db, project_id=project_id, phase=TITLE_ABSTRACT, reviewer_count=ta_reviewer_count
+    )
+    sendable = [
+        assignment_id
+        for assignment_id, snapshot in snapshots.items()
+        if snapshot.state.outcome is not None
+        and snapshot.state.outcome.decision in ("include", "maybe")
+    ]
+    if not sendable:
+        return []
+    sent = await repo.assigned_article_ids(project_id=project_id, phase=FULL_TEXT)
+    queue = await repo.assignments_with_articles(
+        project_id=project_id, phase=TITLE_ABSTRACT, assignment_ids=sendable
+    )
+    return [article.id for _, article in queue if article.id not in sent]
 
 
 def _not_configured() -> ScreeningStateError:

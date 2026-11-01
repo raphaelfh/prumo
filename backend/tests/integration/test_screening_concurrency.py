@@ -15,9 +15,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.project import Project
-from app.models.screening import ScreeningDecision
+from app.models.screening import ScreeningAssignment, ScreeningDecision
+from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import ScreeningRepository
-from app.schemas.screening import ScreeningDecisionCreate
+from app.schemas.screening import ScreeningConfigUpdate, ScreeningDecisionCreate
 from app.services.screening_config_service import ScreeningConfigService
 from app.services.screening_errors import ScreeningStateError
 from app.services.screening_outcome import Outcome
@@ -132,7 +133,9 @@ async def test_reviewer_count_change_racing_the_first_decision_is_frozen(
             await decided.wait()
             async with session_factory() as s2:
                 try:
-                    await ScreeningConfigService(s2).set_reviewer_count(project_id, MANAGER, 1)
+                    await ScreeningConfigService(s2).set_config(
+                        project_id, MANAGER, ScreeningConfigUpdate(reviewer_count=1)
+                    )
                     await s2.commit()
                 except ScreeningStateError as exc:
                     recorded.append(exc.code)
@@ -272,3 +275,85 @@ async def test_latest_ruling_is_the_last_committed_not_the_first_started(
             await first.commit()
 
         assert await _latest_ruling_of(session_factory, project_id, assignment) == "include"
+
+
+@contextlib.asynccontextmanager
+async def _sendable(factory: Factory) -> AsyncIterator[UUID]:
+    """A committed project with two solo-included articles, full text on and protocol reasons set."""
+    async with _screening(factory, reviewers=1, reviewer_count=1) as (project_id, (r,), first):
+        async with factory() as s:
+            second_article = await make_screening_article(s, project_id)
+            (second,) = await enroll_articles(s, project_id, [second_article], by=MANAGER)
+            await set_reviewer_count(s, project_id, 1, key="full_text_reviewer_count")
+            await s.execute(
+                text(
+                    "UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb) WHERE id = :p"
+                ),
+                {"e": '{"exclusion": ["Wrong population"]}', "p": str(project_id)},
+            )
+            await s.commit()
+        await _decide(factory, first, r)
+        await _decide(factory, second, r)
+        yield project_id
+
+
+async def _send(factory: Factory, project_id: UUID):
+    async with factory() as s:
+        result = await ScreeningConfigService(s).enroll(project_id, MANAGER, None, "full_text")
+        await s.commit()
+        return result
+
+
+async def _full_text_rows(factory: Factory, project_id: UUID) -> int:
+    async with factory() as s:
+        stmt = (
+            select(func.count())
+            .select_from(ScreeningAssignment)
+            .where(
+                ScreeningAssignment.project_id == project_id,
+                ScreeningAssignment.phase == "full_text",
+            )
+        )
+        return int((await s.execute(stmt)).scalar_one())
+
+
+async def test_two_sends_enroll_once(session_factory: Factory) -> None:
+    """The project lock serializes sends: the second sees the first's rows and has nothing to send."""
+    async with _sendable(session_factory) as project_id:
+        first, second = await asyncio.gather(
+            _send(session_factory, project_id), _send(session_factory, project_id)
+        )
+
+        assert sorted((first.enrolled, second.enrolled)) == [0, 2]
+        assert first.already_enrolled == second.already_enrolled == 0
+        assert await _full_text_rows(session_factory, project_id) == 2
+
+
+async def test_full_text_enroll_and_config_serialize(session_factory: Factory) -> None:
+    """A send parked behind a config change that turns full text off is refused, not half-applied."""
+    async with _sendable(session_factory) as project_id:
+        locked = asyncio.Event()
+        saw_waiter: list[bool] = []
+
+        async def turn_off() -> None:
+            async with session_factory() as s1:
+                await ProjectRepository(s1).update_settings_key(
+                    project_id,
+                    "screening",
+                    lambda old: {k: v for k, v in old.items() if k != "full_text_reviewer_count"},
+                )
+                locked.set()
+                saw_waiter.append(await _wait_for_a_lock_waiter(session_factory))
+                await s1.commit()
+
+        async def send() -> None:
+            await locked.wait()
+            await _send(session_factory, project_id)
+
+        results = await asyncio.gather(turn_off(), send(), return_exceptions=True)
+
+        assert saw_waiter == [True]
+        assert results[0] is None
+        assert isinstance(results[1], ScreeningStateError)
+        assert results[1].code == "SCREENING_NOT_CONFIGURED"
+        assert await _full_text_rows(session_factory, project_id) == 0

@@ -146,8 +146,13 @@ async def move_article(db: AsyncSession, article_id: UUID, to_project: UUID) -> 
     )
 
 
-async def set_reviewer_count(db: AsyncSession, project_id: UUID, n: int) -> None:
-    """Write ``settings["screening"]`` through the one settings writer."""
+async def set_reviewer_count(
+    db: AsyncSession, project_id: UUID, n: int, *, key: str = "reviewer_count"
+) -> None:
+    """Write ``settings["screening"][key]`` through the one settings writer.
+
+    ``key="full_text_reviewer_count"`` sets the full-text phase's count.
+    """
     await ProjectRepository(db).update_settings_key(
-        project_id, "screening", lambda old: {**(old or {}), "reviewer_count": n}
+        project_id, "screening", lambda old: {**(old or {}), key: n}
     )

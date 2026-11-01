@@ -11712,6 +11712,29 @@
             "title": "Exclusion Reasons",
             "type": "array"
           },
+          "full_text_count_locked": {
+            "title": "Full Text Count Locked",
+            "type": "boolean"
+          },
+          "full_text_enrolled": {
+            "title": "Full Text Enrolled",
+            "type": "integer"
+          },
+          "full_text_ready": {
+            "title": "Full Text Ready",
+            "type": "integer"
+          },
+          "full_text_reviewer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Text Reviewer Count"
+          },
           "not_enrolled": {
             "title": "Not Enrolled",
             "type": "integer"
@@ -11739,6 +11762,10 @@
         "required": [
           "reviewer_count",
           "reviewer_count_locked",
+          "full_text_reviewer_count",
+          "full_text_count_locked",
+          "full_text_ready",
+          "full_text_enrolled",
           "reviewer_capable",
           "enrolled",
           "not_enrolled",
@@ -11752,8 +11779,21 @@
       },
       "ScreeningConfigUpdate": {
         "additionalProperties": false,
-        "description": "Reviewers per record (1 to 3).",
+        "description": "Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off.",
         "properties": {
+          "full_text_reviewer_count": {
+            "anyOf": [
+              {
+                "maximum": 3.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Text Reviewer Count"
+          },
           "reviewer_count": {
             "maximum": 3.0,
             "minimum": 1.0,
@@ -11867,7 +11907,7 @@
       },
       "ScreeningEnrollRequest": {
         "additionalProperties": false,
-        "description": "Articles to enroll; omit ``article_ids`` to enroll every article of the project.",
+        "description": "Articles to enroll; omit ``article_ids`` to enroll every article of the project.\n\n``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.",
         "properties": {
           "article_ids": {
             "anyOf": [
@@ -11885,6 +11925,15 @@
               }
             ],
             "title": "Article Ids"
+          },
+          "phase": {
+            "default": "title_abstract",
+            "enum": [
+              "title_abstract",
+              "full_text"
+            ],
+            "title": "Phase",
+            "type": "string"
           }
         },
         "title": "ScreeningEnrollRequest",
@@ -18664,7 +18713,7 @@
             "description": "Project not found"
           },
           "409": {
-            "description": "Config frozen by a decision, or fewer reviewers than requested"
+            "description": "Config frozen by a decision (or by a record sent to full text), or fewer reviewers than requested"
           },
           "422": {
             "content": {
@@ -18734,15 +18783,11 @@
           "404": {
             "description": "An article is not in this project"
           },
+          "409": {
+            "description": "Full-text screening is not set up, or the protocol has no exclusion reasons"
+          },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "Article ids given when sending records to full text"
           }
         },
         "security": [

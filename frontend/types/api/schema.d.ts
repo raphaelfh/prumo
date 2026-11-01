@@ -7215,6 +7215,14 @@ export interface components {
             enrolled: number;
             /** Exclusion Reasons */
             exclusion_reasons: string[];
+            /** Full Text Count Locked */
+            full_text_count_locked: boolean;
+            /** Full Text Enrolled */
+            full_text_enrolled: number;
+            /** Full Text Ready */
+            full_text_ready: number;
+            /** Full Text Reviewer Count */
+            full_text_reviewer_count: number | null;
             /** Not Enrolled */
             not_enrolled: number;
             /** Reviewer Capable */
@@ -7226,9 +7234,11 @@ export interface components {
         };
         /**
          * ScreeningConfigUpdate
-         * @description Reviewers per record (1 to 3).
+         * @description Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off.
          */
         ScreeningConfigUpdate: {
+            /** Full Text Reviewer Count */
+            full_text_reviewer_count?: number | null;
             /** Reviewer Count */
             reviewer_count: number;
         };
@@ -7272,10 +7282,18 @@ export interface components {
         /**
          * ScreeningEnrollRequest
          * @description Articles to enroll; omit ``article_ids`` to enroll every article of the project.
+         *
+         *     ``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.
          */
         ScreeningEnrollRequest: {
             /** Article Ids */
             article_ids?: string[] | null;
+            /**
+             * Phase
+             * @default title_abstract
+             * @enum {string}
+             */
+            phase: "title_abstract" | "full_text";
         };
         /** ScreeningEnrollResult */
         ScreeningEnrollResult: {
@@ -11089,7 +11107,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Config frozen by a decision, or fewer reviewers than requested */
+            /** @description Config frozen by a decision (or by a record sent to full text), or fewer reviewers than requested */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11138,14 +11156,19 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Full-text screening is not set up, or the protocol has no exclusion reasons */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Article ids given when sending records to full text */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };

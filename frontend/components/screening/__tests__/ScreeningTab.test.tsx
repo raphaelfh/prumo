@@ -44,6 +44,10 @@ function config(overrides: Partial<ConfigRead> = {}): ConfigRead {
     reviewer_capable: 2,
     reviewer_count: null,
     reviewer_count_locked: false,
+    full_text_reviewer_count: null,
+    full_text_count_locked: false,
+    full_text_ready: 0,
+    full_text_enrolled: 0,
     ...overrides,
   };
 }

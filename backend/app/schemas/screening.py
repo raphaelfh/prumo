@@ -24,6 +24,10 @@ class ScreeningConfigRead(BaseModel):
 
     reviewer_count: int | None
     reviewer_count_locked: bool
+    full_text_reviewer_count: int | None  # None = title/abstract only
+    full_text_count_locked: bool  # a full-text assignment exists
+    full_text_ready: int  # include/maybe outcomes not yet sent to full text
+    full_text_enrolled: int
     reviewer_capable: int
     enrolled: int
     not_enrolled: int
@@ -34,21 +38,32 @@ class ScreeningConfigRead(BaseModel):
 
 
 class ScreeningConfigUpdate(BaseModel):
-    """Reviewers per record (1 to 3)."""
+    """Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off."""
 
     model_config = ConfigDict(extra="forbid")
 
     reviewer_count: int = Field(ge=1, le=3)
+    full_text_reviewer_count: int | None = Field(default=None, ge=1, le=3)
 
 
 class ScreeningEnrollRequest(BaseModel):
-    """Articles to enroll; omit ``article_ids`` to enroll every article of the project."""
+    """Articles to enroll; omit ``article_ids`` to enroll every article of the project.
+
+    ``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
+    phase: AssignmentPhase = "title_abstract"
     article_ids: list[UUID] | None = Field(
         default=None, min_length=1, max_length=MAX_ENROLL_ARTICLES
     )
+
+    @model_validator(mode="after")
+    def _full_text_derives_its_ids(self) -> Self:
+        if self.phase == "full_text" and self.article_ids is not None:
+            raise ValueError("article_ids is not accepted when sending records to full text")
+        return self
 
 
 class ScreeningEnrollResult(BaseModel):
