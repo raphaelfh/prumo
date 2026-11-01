@@ -141,7 +141,7 @@ def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
     for article in layout.articles:
         models_per_article = _article_fanout_count(article=article, layout=layout)
         span = models_per_article * len(reviewer_axis)
-        grid[(1, col_cursor)] = (article.header_label, _HEADER_STYLE)
+        grid[(1, col_cursor)] = (article.article_label, _HEADER_STYLE)
         first = col_cursor
         last = col_cursor + span - 1
         if span > 1:

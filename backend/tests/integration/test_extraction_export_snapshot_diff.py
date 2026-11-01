@@ -148,7 +148,7 @@ async def test_obsolete_field_reported_when_run_pinned_to_older_version(
 
     article = ArticleDescriptor(
         article_id=UUID(str(article_id)),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=older.id,
         entries={},

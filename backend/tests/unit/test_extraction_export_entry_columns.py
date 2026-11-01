@@ -47,7 +47,7 @@ def _sec(eid, *, parent=None, many=False, order=0):
 def _article(entries):
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=None,
         entries=entries,

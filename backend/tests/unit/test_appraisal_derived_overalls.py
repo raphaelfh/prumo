@@ -203,7 +203,7 @@ def _section(name: str, label: str, field_name: str) -> tuple[SectionDescriptor,
 def _article(run_id: Any, section_instances: dict[Any, tuple[Any, ...]]) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Art 1",
+        article_label="Art 1",
         run_id=run_id,
         version_id=None,
         entries={(sid, None): ids for sid, ids in section_instances.items()},

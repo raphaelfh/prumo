@@ -72,7 +72,7 @@ async def test_obsolete_fields_are_run_only_fields_absent_from_anchor() -> None:
 
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=run_version,
         entries={},
@@ -93,7 +93,7 @@ async def test_no_obsolete_fields_when_run_matches_anchor() -> None:
     svc = ExtractionExportService(db=db, user_id=str(uuid4()))
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="X",
+        article_label="X",
         run_id=uuid4(),
         version_id=run_version,
         entries={},

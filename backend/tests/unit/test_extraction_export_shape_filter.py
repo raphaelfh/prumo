@@ -85,7 +85,7 @@ def _every_sheet_layout() -> ExportLayout:
     instance_id = uuid4()
     article = ArticleDescriptor(
         article_id=_ARTICLE_ID,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=None,
         entries={(_SECTION_ID, None): (instance_id,)},

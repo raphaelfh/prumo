@@ -129,7 +129,7 @@ def _article(
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={
@@ -347,7 +347,7 @@ def test_an_unclassified_article_is_untouched() -> None:
 def test_an_article_with_no_run_is_skipped() -> None:
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="No run",
+        article_label="No run",
         run_id=None,
         version_id=None,
         entries={},
@@ -526,6 +526,7 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
     )
     monkeypatch.setattr(service, "_resolve_project_name", AsyncMock(return_value="P"))
     monkeypatch.setattr(service, "_load_sections", AsyncMock(return_value=()))
+    monkeypatch.setattr(service, "_load_article_refs", AsyncMock(return_value={}))
     monkeypatch.setattr(
         service, "_resolve_articles_for_single_user", AsyncMock(return_value=((), {}))
     )
@@ -560,7 +561,7 @@ def test_reader_instance_ids_follows_the_walk() -> None:
     e1, p1, p2, x1 = uuid4(), uuid4(), uuid4(), uuid4()
     art = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=uuid4(),
         version_id=None,
         entries={

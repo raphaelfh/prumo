@@ -80,7 +80,7 @@ def _article(
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label=header,
+        article_label=header,
         run_id=run_id if run_id is not None else uuid4(),
         version_id=None,
         # Fan the one-instance-per-section shorthand out to the ordered
@@ -584,7 +584,7 @@ def test_workbook_emits_sheets_in_section4_order():
     run = uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(eid, None): (inst,)},

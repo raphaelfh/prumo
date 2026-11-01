@@ -198,6 +198,8 @@ async def test_many_cardinality_section_keeps_all_instances(
         template_id=ctx.template_id,
         project_id=ctx.project_id,
         candidate_ids=[ctx.article_id],
+        refs={},
+        version_numbers={},
     )
     assert len(descriptors) == 1
     section_instances = descriptors[0].entries[(ctx.many_entity_type_id, None)]

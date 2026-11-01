@@ -12,7 +12,7 @@ def test_article_descriptor_carries_version_id_and_ordered_instances() -> None:
     i1, i2, i3 = uuid4(), uuid4(), uuid4()
     a = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=uuid4(),
         entries={(section_a, None): (i1, i2, i3)},

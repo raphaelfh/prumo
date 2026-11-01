@@ -68,7 +68,7 @@ def test_one_cardinality_section_is_one_row_per_article():
     run = uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(study.entity_type_id, None): (inst,)},
@@ -95,7 +95,7 @@ def test_tidy_cell_reads_the_given_rater_slot():
     reviewer = uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(study.entity_type_id, None): (inst,)},
@@ -116,7 +116,7 @@ def test_many_cardinality_section_fans_out_per_instance():
     m_a, m_b = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(model.entity_type_id, None): (m_a, m_b)},

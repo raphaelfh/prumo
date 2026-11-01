@@ -35,11 +35,11 @@ from app.services.exports.descriptors import value_key
 from app.services.exports.values import display_value, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
+    ArticleRef,
     ExportMode,
     ExtractionExportService,
     FieldDescriptor,
     SectionDescriptor,
-    _build_header_label,
     _infer_reviewer_outcome,
     _letter_for,
     _short_id,
@@ -414,7 +414,7 @@ class TestResolveArticlesForConsensus:
 
     Mocking strategy: mock svc.db.execute (for run queries), then also
     mock the helper methods _load_instances_for_runs,
-    _load_entity_type_role_map, and _load_article_headers to return
+    _load_entity_type_role_map, and pass ``refs`` to return
     controlled data so we isolate the filtering logic.
     """
 
@@ -426,6 +426,8 @@ class TestResolveArticlesForConsensus:
             template_id=uuid4(),
             project_id=uuid4(),
             candidate_ids=[],
+            refs={},
+            version_numbers={},
         )
         assert articles == []
         assert omitted == {}
@@ -450,14 +452,16 @@ class TestResolveArticlesForConsensus:
         # Mock the three helpers called after filtering
         svc._load_instances_for_runs = AsyncMock(return_value={run1.id: [], run2.id: []})
         svc._load_entity_type_role_map = AsyncMock(return_value={})
-        svc._load_article_headers = AsyncMock(
-            return_value={aid1: "Author1, 2021", aid2: "Author2, 2022"}
-        )
 
         articles, omitted = await svc._resolve_articles_for_consensus(
             template_id=template_id,
             project_id=project_id,
             candidate_ids=[aid1, aid2],
+            refs={
+                aid1: ArticleRef("Author1 2021", None, None),
+                aid2: ArticleRef("Author2 2022", None, None),
+            },
+            version_numbers={},
         )
 
         assert len(articles) == 2
@@ -483,16 +487,18 @@ class TestResolveArticlesForConsensus:
         svc.db.execute = AsyncMock(return_value=_scalars_result([run_fin, run_rev, run_prop]))
         svc._load_instances_for_runs = AsyncMock(return_value={run_fin.id: []})
         svc._load_entity_type_role_map = AsyncMock(return_value={})
-        svc._load_article_headers = AsyncMock(return_value={aid_fin: "Smith, 2020"})
 
         articles, omitted = await svc._resolve_articles_for_consensus(
             template_id=template_id,
             project_id=project_id,
             candidate_ids=[aid_fin, aid_rev, aid_prop],
+            refs={aid_fin: ArticleRef("Smith 2020", None, None)},
+            version_numbers={},
         )
 
         assert len(articles) == 1
         assert articles[0].article_id == aid_fin
+        assert articles[0].article_label == "Smith 2020"
         assert omitted[ExtractionRunStage.CONSENSUS.value] == 1
         assert omitted[ExtractionRunStage.EXTRACT.value] == 1
 
@@ -510,12 +516,13 @@ class TestResolveArticlesForConsensus:
         svc.db.execute = AsyncMock(return_value=_scalars_result([run]))
         svc._load_instances_for_runs = AsyncMock(return_value={run.id: []})
         svc._load_entity_type_role_map = AsyncMock(return_value={})
-        svc._load_article_headers = AsyncMock(return_value={aid_exists: "Jones, 2019"})
 
         articles, omitted = await svc._resolve_articles_for_consensus(
             template_id=template_id,
             project_id=project_id,
             candidate_ids=[aid_exists, aid_missing],
+            refs={aid_exists: ArticleRef("Jones 2019", None, None)},
+            version_numbers={},
         )
 
         assert len(articles) == 1
@@ -542,12 +549,13 @@ class TestResolveArticlesForConsensus:
         svc._load_instances_for_runs = AsyncMock(
             return_value={run.id: [inst_study, inst_model1, inst_model2]}
         )
-        svc._load_article_headers = AsyncMock(return_value={aid: "Test, 2023"})
 
         articles, omitted = await svc._resolve_articles_for_consensus(
             template_id=template_id,
             project_id=project_id,
             candidate_ids=[aid],
+            refs={aid: ArticleRef("Test 2023", None, None)},
+            version_numbers={},
         )
 
         assert len(articles) == 1
@@ -774,7 +782,7 @@ class TestLoadAiProposalRows:
     ) -> ArticleDescriptor:
         return ArticleDescriptor(
             article_id=article_id or uuid4(),
-            header_label="Test Article",
+            article_label="Test Article",
             run_id=run_id or uuid4(),
             version_id=None,
             # Fan the one-instance-per-section shorthand out to the ordered
@@ -792,7 +800,7 @@ class TestLoadAiProposalRows:
         articles = (
             ArticleDescriptor(
                 article_id=uuid4(),
-                header_label="No Run",
+                article_label="No Run",
                 run_id=None,
                 version_id=None,
                 entries={},
@@ -1620,57 +1628,6 @@ class TestListEligibleReviewersForPicker:
 
 
 # ===========================================================================
-# Pure helpers: _build_header_label
-# ===========================================================================
-
-
-class TestBuildHeaderLabel:
-    """Unit tests for the FR-012 article header label builder."""
-
-    def test_author_with_year_comma_format(self):
-        """'Smith, John' author + year → 'Smith, 2021'."""
-        result = _build_header_label("Title", ["Smith, John"], 2021, uuid4())
-        assert result == "Smith, 2021"
-
-    def test_author_with_year_space_format(self):
-        """'John Smith' author (no comma) → 'Smith, 2021'."""
-        result = _build_header_label("Title", ["John Smith"], 2021, uuid4())
-        assert result == "Smith, 2021"
-
-    def test_author_without_year_returns_surname(self):
-        """Author with no year → just the surname."""
-        result = _build_header_label("Title", ["Jones, Alice"], None, uuid4())
-        assert result == "Jones"
-
-    def test_empty_author_falls_through_to_title(self):
-        """Empty author string → falls through to title[:60]."""
-        result = _build_header_label("A Good Title", [""], 2020, uuid4())
-        assert result == "A Good Title"
-
-    def test_no_authors_uses_title(self):
-        """No authors list → uses title[:60]."""
-        result = _build_header_label("My Title", None, 2020, uuid4())
-        assert result == "My Title"
-
-    def test_title_truncated_to_60_chars(self):
-        """Title longer than 60 chars is truncated."""
-        long_title = "A" * 80
-        result = _build_header_label(long_title, None, None, uuid4())
-        assert result == "A" * 60
-
-    def test_no_authors_no_title_uses_short_id(self):
-        """No authors, no title → short UUID prefix."""
-        article_id = UUID("12345678-abcd-4000-8000-000000000000")
-        result = _build_header_label(None, None, None, article_id)
-        assert result == "12345678"
-
-    def test_empty_authors_list_falls_through_to_title(self):
-        """Empty authors list (not None) → falls through to title."""
-        result = _build_header_label("Fallback Title", [], None, uuid4())
-        assert result == "Fallback Title"
-
-
-# ===========================================================================
 # Pure helpers: _short_id and _letter_for
 # ===========================================================================
 
@@ -1930,6 +1887,7 @@ class TestResolveLayoutAiTarget:
         svc._load_active_template_version = AsyncMock(return_value=(template, version))
         svc._resolve_project_name = AsyncMock(return_value="Project")
         svc._load_sections = AsyncMock(return_value=())
+        svc._load_article_refs = AsyncMock(return_value={})
         svc._resolve_articles_for_consensus = AsyncMock(return_value=([], {}))
         svc._build_consensus_value_map = AsyncMock(return_value={})
         svc._resolve_articles_for_single_user = AsyncMock(return_value=([], {}))
@@ -2031,34 +1989,6 @@ class TestLoadInstancesForRuns:
 
 
 # ===========================================================================
-# Service: _load_entity_type_role_map
-# ===========================================================================
-
-
-class TestLoadArticleHeaders:
-    @pytest.mark.asyncio
-    async def test_empty_article_ids_returns_empty(self):
-        """Empty list → no DB call, returns {}."""
-        svc = _make_service()
-        result = await svc._load_article_headers([])
-        assert result == {}
-        svc.db.execute.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_builds_headers_from_db_rows(self):
-        """DB rows → header labels built via _build_header_label."""
-        svc = _make_service()
-        aid = uuid4()
-
-        svc.db.execute = AsyncMock(
-            return_value=_rows_result([(aid, "A Title", ["Smith, John"], 2022)])
-        )
-
-        result = await svc._load_article_headers([aid])
-        assert result[aid] == "Smith, 2022"
-
-
-# ===========================================================================
 # Service: _resolve_articles_for_single_user
 # ===========================================================================
 
@@ -2078,6 +2008,8 @@ class TestResolveArticlesForSingleUser:
             project_id=uuid4(),
             candidate_ids=[],
             reviewer_id=uuid4(),
+            refs={},
+            version_numbers={},
         )
         assert articles == []
         assert omitted == {}
@@ -2095,6 +2027,8 @@ class TestResolveArticlesForSingleUser:
             project_id=uuid4(),
             candidate_ids=candidate_ids,
             reviewer_id=uuid4(),
+            refs={},
+            version_numbers={},
         )
 
         assert articles == []
@@ -2121,6 +2055,8 @@ class TestResolveArticlesForSingleUser:
             project_id=uuid4(),
             candidate_ids=[aid],
             reviewer_id=reviewer_id,
+            refs={},
+            version_numbers={},
         )
         assert articles == []
         assert omitted.get("cancelled") == 1
@@ -2146,6 +2082,8 @@ class TestResolveArticlesForSingleUser:
             project_id=uuid4(),
             candidate_ids=[aid],
             reviewer_id=reviewer_id,
+            refs={},
+            version_numbers={},
         )
         assert articles == []
         assert omitted.get("no_decisions_from_reviewer") == 1
@@ -2168,13 +2106,14 @@ class TestResolveArticlesForSingleUser:
 
         svc._load_instances_for_runs = AsyncMock(return_value={run.id: []})
         svc._load_entity_type_role_map = AsyncMock(return_value={})
-        svc._load_article_headers = AsyncMock(return_value={aid: "Author, 2020"})
 
         articles, omitted = await svc._resolve_articles_for_single_user(
             template_id=uuid4(),
             project_id=uuid4(),
             candidate_ids=[aid],
             reviewer_id=reviewer_id,
+            refs={aid: ArticleRef("Author 2020", None, None)},
+            version_numbers={},
         )
         assert len(articles) == 1
         assert articles[0].article_id == aid
@@ -2302,7 +2241,11 @@ class TestResolveArticlesForAllUsers:
     async def test_empty_candidate_ids_returns_empty(self):
         svc = _make_service()
         articles, omitted = await svc._resolve_articles_for_all_users(
-            template_id=uuid4(), project_id=uuid4(), candidate_ids=[]
+            template_id=uuid4(),
+            project_id=uuid4(),
+            candidate_ids=[],
+            refs={},
+            version_numbers={},
         )
         assert articles == []
         assert omitted == {}
@@ -2323,6 +2266,8 @@ class TestResolveArticlesForAllUsers:
             template_id=uuid4(),
             project_id=uuid4(),
             candidate_ids=[aid1, aid2, aid3],
+            refs={},
+            version_numbers={},
         )
         assert articles == []
         assert omitted[ExtractionRunStage.CANCELLED.value] == 1
@@ -2341,12 +2286,13 @@ class TestResolveArticlesForAllUsers:
         svc.db.execute = AsyncMock(return_value=_scalars_result([run1, run2]))
         svc._load_instances_for_runs = AsyncMock(return_value={run1.id: [], run2.id: []})
         svc._load_entity_type_role_map = AsyncMock(return_value={})
-        svc._load_article_headers = AsyncMock(return_value={aid1: "A1, 2021", aid2: "A2, 2022"})
 
         articles, omitted = await svc._resolve_articles_for_all_users(
             template_id=uuid4(),
             project_id=uuid4(),
             candidate_ids=[aid1, aid2],
+            refs={aid1: ArticleRef("A1 2021", None, None), aid2: ArticleRef("A2 2022", None, None)},
+            version_numbers={},
         )
         assert len(articles) == 2
         assert omitted == {}
@@ -2443,7 +2389,7 @@ class TestAiProposalRowsModelInstances:
         # Article with 2 model_instances
         article = ArticleDescriptor(
             article_id=article_id,
-            header_label="Test Article",
+            article_label="Test Article",
             run_id=run_id,
             version_id=None,
             entries={(entity_type_id, None): (model_instance_id1, model_instance_id2)},

@@ -47,7 +47,7 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
     articles = tuple(
         ArticleDescriptor(
             article_id=uuid4(),
-            header_label=f"Art {i}",
+            article_label=f"Art {i}",
             run_id=uuid4(),
             version_id=None,
             entries={(sec_id, None): (uuid4(),)},

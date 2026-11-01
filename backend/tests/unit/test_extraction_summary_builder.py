@@ -72,7 +72,7 @@ def test_summary_one_row_per_article_with_completeness():
     run = uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(section.entity_type_id, None): (inst,)},
@@ -109,7 +109,7 @@ def test_summary_has_an_article_row_then_one_row_per_entry():
     m_a, m_b = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={
@@ -161,7 +161,7 @@ def test_an_entry_row_counts_only_its_own_subtree():
     run, m_a, m_b, c_a, c_b = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={
@@ -212,7 +212,7 @@ def test_completeness_counts_markers_and_stamps_not_cleared_values() -> None:
     run, inst = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(section.entity_type_id, None): (inst,)},
@@ -244,7 +244,7 @@ def test_single_user_completeness_reads_the_reviewer_slot() -> None:
     run, inst = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run,
         version_id=None,
         entries={(section.entity_type_id, None): (inst,)},

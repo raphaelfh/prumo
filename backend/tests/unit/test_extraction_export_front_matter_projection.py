@@ -57,7 +57,7 @@ def test_front_matter_assembles_counts_and_obsolete() -> None:
     aid = uuid4()
     article = ArticleDescriptor(
         article_id=aid,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run,
         version_id=None,
         entries={(study.entity_type_id, None): (inst,)},

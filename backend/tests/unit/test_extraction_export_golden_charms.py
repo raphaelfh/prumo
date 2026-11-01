@@ -114,7 +114,7 @@ class _Charms:
                 entries[(child, entry)] = (self.child_instances[(entry, child)],)
         return ArticleDescriptor(
             article_id=uuid4(),
-            header_label="Gaca, 2011",
+            article_label="Gaca, 2011",
             run_id=self.run_id,
             version_id=None,
             entries=entries,

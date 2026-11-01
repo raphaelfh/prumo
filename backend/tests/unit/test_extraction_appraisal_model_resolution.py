@@ -84,7 +84,7 @@ def test_build_appraisal_model_consensus_rollup() -> None:
     aid = uuid.uuid4()
     article = ArticleDescriptor(
         article_id=aid,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(d1.entity_type_id, None): (inst1,), (d2.entity_type_id, None): (inst2,)},
@@ -127,7 +127,7 @@ def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
     inst1, inst2, aid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     article = ArticleDescriptor(
         article_id=aid,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(d1.entity_type_id, None): (inst1,), (d2.entity_type_id, None): (inst2,)},
@@ -185,7 +185,7 @@ def test_build_appraisal_model_all_users_per_reviewer() -> None:
     )
     article = ArticleDescriptor(
         article_id=aid,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(d1.entity_type_id, None): (inst1,)},
@@ -258,7 +258,7 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
     run_id, inst, aid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     article = ArticleDescriptor(
         article_id=aid,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(sid, None): (inst,)},
@@ -349,7 +349,7 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
     )
     article = ArticleDescriptor(
         article_id=uuid.uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(judgment.entity_type_id, None): (uuid.uuid4(),)},
@@ -397,7 +397,7 @@ def test_overall_ranks_coded_verdicts_by_label() -> None:
     run_id, i1, i2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     article = ArticleDescriptor(
         article_id=uuid.uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(d1.entity_type_id, None): (i1,), (d2.entity_type_id, None): (i2,)},
@@ -428,7 +428,7 @@ def test_single_user_verdicts_read_the_reviewer_slot() -> None:
     run_id, i1, r = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     article = ArticleDescriptor(
         article_id=uuid.uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(d1.entity_type_id, None): (i1,)},

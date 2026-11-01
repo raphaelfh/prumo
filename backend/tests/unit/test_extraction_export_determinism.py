@@ -99,7 +99,7 @@ def _fixed_layout() -> ExportLayout:
     )
     article = ArticleDescriptor(
         article_id=_ARTICLE_ID,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=_RUN_ID,
         version_id=None,
         entries={(_SECTION_ID, None): (_INST_ID,)},
@@ -291,7 +291,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode(
     )
     article = ArticleDescriptor(
         article_id=article_id,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(entity_type_id, None): (inst_id,)},
@@ -412,7 +412,7 @@ def test_column_guard_boundary() -> None:
         articles = tuple(
             ArticleDescriptor(
                 article_id=uuid4(),
-                header_label=f"a{i}",
+                article_label=f"a{i}",
                 run_id=uuid4(),
                 version_id=None,
                 # One cardinality=one study section ⇒ a single data column
@@ -515,7 +515,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
     articles = tuple(
         ArticleDescriptor(
             article_id=uuid4(),
-            header_label=f"A{i}",
+            article_label=f"A{i}",
             run_id=uuid4(),
             version_id=uuid4(),
             entries={(sec_id, None): tuple(uuid4() for _ in range(subcols_each))},
@@ -659,7 +659,7 @@ def _tied_appraisal_inputs():
     inst1, inst2 = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(sid1, None): (inst1,), (sid2, None): (inst2,)},

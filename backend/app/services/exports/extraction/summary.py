@@ -68,7 +68,7 @@ def _completeness(
 
 def _row(article: ArticleDescriptor, label: str, filled: int, total: int) -> tuple[Cell, ...]:
     pct = f"{(filled / total * 100):.0f}%" if total else ""
-    return (Cell(article.header_label), Cell(label), Cell(filled), Cell(total), Cell(pct))
+    return (Cell(article.article_label), Cell(label), Cell(filled), Cell(total), Cell(pct))
 
 
 def _record_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:

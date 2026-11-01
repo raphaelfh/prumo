@@ -58,6 +58,7 @@ from app.services.derived_judgment_service import (
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
+from app.services.entity_key import key_of
 from app.services.exports.ai_proposal_projection import (
     load_evidence_summaries,
     proposal_model_used,
@@ -162,6 +163,15 @@ class SectionDescriptor:
     entry_label: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ArticleRef:
+    """An article's project-scoped "Surname Year" label (D2 suffixed) and ids."""
+
+    label: str
+    doi: str | None
+    pmid: str | None
+
+
 @dataclass(frozen=True)
 class ArticleDescriptor:
     """One article column (or N adjacent columns when multi-instance).
@@ -174,9 +184,12 @@ class ArticleDescriptor:
     """
 
     article_id: UUID
-    header_label: str
+    article_label: str
     run_id: UUID | None
     version_id: UUID | None
+    doi: str | None = None
+    pmid: str | None = None
+    template_version: int | None = None
     # (entity_type_id, parent_instance_id) → ORDERED instance ids; read in exports/descriptors.py.
     entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = field(default_factory=dict)
     # Keyed instance id -> trimmed label (rule 6).
@@ -476,6 +489,8 @@ class ExtractionExportService(LoggerMixin):
         }
         labels = build_option_labels(sections)
         primary = primary_rater(mode, reviewer_id)
+        refs = await self._load_article_refs(project_id=project_id)
+        version_numbers = {version.id: version.version}
         reviewers: tuple[ReviewerDescriptor, ...] = ()
 
         if mode is ExportMode.CONSENSUS:
@@ -483,6 +498,8 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
+                refs=refs,
+                version_numbers=version_numbers,
             )
             value_map = await self._build_consensus_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -497,6 +514,8 @@ class ExtractionExportService(LoggerMixin):
                 project_id=project_id,
                 candidate_ids=article_ids,
                 reviewer_id=reviewer_id,
+                refs=refs,
+                version_numbers=version_numbers,
             )
             value_map = await self._build_single_user_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -509,6 +528,8 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
+                refs=refs,
+                version_numbers=version_numbers,
             )
             reviewers = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -770,7 +791,7 @@ class ExtractionExportService(LoggerMixin):
             rows.append(
                 AppraisalRow(
                     article_id=article.article_id,
-                    record_label=article.header_label,
+                    record_label=article.article_label,
                     domain_verdicts=tuple(verdicts[primary]),
                     overall=_overall(verdicts[primary]),
                     per_reviewer_overall=per_reviewer_overall,
@@ -937,6 +958,8 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick finalized articles + collect omitted-stage counts (FR-013).
 
@@ -967,12 +990,12 @@ class ExtractionExportService(LoggerMixin):
         if not kept_articles:
             return [], omitted
 
-        # Bulk-fetch instances for the kept runs to compute model fan-out
-        # and study-section instance ids in one round-trip.
         descriptors = await self._build_article_descriptors(
             article_ids=kept_articles,
             runs_by_article=runs_by_article,
             kept_run_ids=kept_run_ids,
+            refs=refs,
+            version_numbers=version_numbers,
         )
 
         return descriptors, omitted
@@ -983,33 +1006,34 @@ class ExtractionExportService(LoggerMixin):
         article_ids: list[UUID],
         runs_by_article: dict[UUID, ExtractionRun],
         kept_run_ids: list[UUID],
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
     ) -> list[ArticleDescriptor]:
-        """Turn an article's instances into its column descriptor.
-
-        Was three byte-identical copies — consensus, single-user and
-        all-users each partitioned instances by role inline.
-
-        ``entries`` takes EVERY instance, containers included: a container
-        instance carries no values of its own, which is why the role
-        partition dropped it, but it is the parent key its children are
-        grouped under and the axis the sheet fans out on.
-
-        The role map that partition needed is gone with it — one fewer query
-        per export, on all three paths.
-        """
+        """One descriptor per article. ``entries`` takes EVERY instance,
+        containers included: a container is the parent key its children are
+        grouped under. A keyed instance carries its trimmed label (rule 6)."""
         instances_by_run = await self._load_instances_for_runs(kept_run_ids)
-        headers = await self._load_article_headers(article_ids)
-
-        return [
-            ArticleDescriptor(
-                article_id=aid,
-                header_label=headers.get(aid) or _short_id(aid),
-                run_id=runs_by_article[aid].id,
-                version_id=runs_by_article[aid].version_id,
-                entries=build_entries(instances_by_run.get(runs_by_article[aid].id, [])),
+        out: list[ArticleDescriptor] = []
+        for aid in article_ids:
+            run = runs_by_article[aid]
+            insts = instances_by_run.get(run.id, [])
+            ref = refs.get(aid)
+            out.append(
+                ArticleDescriptor(
+                    article_id=aid,
+                    article_label=ref.label if ref else _short_id(aid),
+                    run_id=run.id,
+                    version_id=run.version_id,
+                    doi=ref.doi if ref else None,
+                    pmid=ref.pmid if ref else None,
+                    template_version=version_numbers.get(run.version_id),
+                    entries=build_entries(insts),
+                    keyed_labels={
+                        i.id: (i.label or "").strip() for i in insts if key_of(i) is not None
+                    },
+                )
             )
-            for aid in article_ids
-        ]
+        return out
 
     async def _load_instances_for_runs(
         self,
@@ -1018,10 +1042,7 @@ class ExtractionExportService(LoggerMixin):
         """Load all instances for a set of runs, grouped by run_id."""
         if not run_ids:
             return {}
-        # ExtractionInstance has no run_id column; instances are scoped
-        # by (article_id, template_id). We resolve via the Run set:
-        # load the runs once to know (article_id, template_id) pairs,
-        # then bulk-fetch matching instances.
+        # Instances have no run_id: resolve each run's (article, template) pair first.
         runs = (
             (await self.db.execute(select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))))
             .scalars()
@@ -1058,13 +1079,9 @@ class ExtractionExportService(LoggerMixin):
 
         return {r.id: by_article.get(r.article_id, []) for r in runs}
 
-    async def _load_article_headers(
-        self,
-        article_ids: list[UUID],
-    ) -> dict[UUID, str]:
-        """Build the FR-012 header label: ``First-author, year`` → title → id."""
-        if not article_ids:
-            return {}
+    async def _load_article_refs(self, *, project_id: UUID) -> dict[UUID, ArticleRef]:
+        """Every project article's "Surname Year" label (D2) and ids, in one
+        project-scoped query: suffixes depend on the whole project, not the export."""
         rows = (
             await self.db.execute(
                 select(
@@ -1072,13 +1089,16 @@ class ExtractionExportService(LoggerMixin):
                     Article.title,
                     Article.authors,
                     Article.publication_year,
-                ).where(Article.id.in_(article_ids))
+                    Article.created_at,
+                    Article.doi,
+                    Article.pmid,
+                ).where(Article.project_id == project_id)
             )
         ).all()
-        headers: dict[UUID, str] = {}
-        for aid, title, authors, year in rows:
-            headers[aid] = _build_header_label(title, authors, year, aid)
-        return headers
+        labels = _suffix_labels(
+            [(aid, _base_label(t, au, y, aid), created) for aid, t, au, y, created, _, _ in rows]
+        )
+        return {row[0]: ArticleRef(labels[row[0]], row[5], row[6]) for row in rows}
 
     async def _build_consensus_value_map(
         self,
@@ -1119,6 +1139,8 @@ class ExtractionExportService(LoggerMixin):
         project_id: UUID,
         candidate_ids: list[UUID],
         reviewer_id: UUID,
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick articles where the target reviewer has ≥ 1 non-reject decision (FR-014).
 
@@ -1185,6 +1207,8 @@ class ExtractionExportService(LoggerMixin):
             article_ids=kept_article_ids,
             runs_by_article=runs_by_article,
             kept_run_ids=kept_run_ids,
+            refs=refs,
+            version_numbers=version_numbers,
         )
         return descriptors, omitted
 
@@ -1354,13 +1378,11 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
-        """Pick finalized + in-review articles for All-users mode.
-
-        Both `consensus` and `finalized` runs contribute reviewer columns;
-        plus consensus and earlier-stage runs may contribute reviewer
-        sub-columns (the reviewer-axis column is empty for pre-review runs).
-        """
+        """Pick consensus + finalized articles for All-users mode; earlier
+        and cancelled runs are omitted with their stage."""
         if not candidate_ids:
             return [], {}
 
@@ -1394,6 +1416,8 @@ class ExtractionExportService(LoggerMixin):
             article_ids=kept_article_ids,
             runs_by_article=runs_by_article,
             kept_run_ids=kept_run_ids,
+            refs=refs,
+            version_numbers=version_numbers,
         )
         return descriptors, omitted
 
@@ -1761,7 +1785,7 @@ class ExtractionExportService(LoggerMixin):
             final = value_map.get(value_key(rid, iid, fid, primary_rater(mode, target_reviewer_id)))
             evidence_text, evidence_pages = evidence_by_pid.get(pid, ("", ""))
             row = AIProposalRow(
-                article_label=article.header_label,
+                article_label=article.article_label,
                 section_label=section_label,
                 instance_index=instance_index_by_id.get(iid, 1),
                 field_label=field_label_by_id.get(fid, "(unknown field)"),
@@ -1964,7 +1988,7 @@ def _build_tidy_tables(
                         article=article,
                         instance_id=instance_id,
                         record_label=" — ".join(
-                            (article.header_label, *(label for _, label in chain))
+                            (article.article_label, *(label for _, label in chain))
                         ),
                         value_map=value_map,
                         rater=rater,
@@ -2040,46 +2064,19 @@ def _infer_reviewer_outcome(
     return "not selected" if decisions else "pending"
 
 
-#: Lowercase surname particles (nobiliary / patronymic prefixes). When a
-#: surname token sequence ends in "<particle...> <Capitalized>", the
-#: particle(s) are part of the surname (e.g. "De Feo", "van der Berg").
-_SURNAME_PARTICLES = frozenset(
-    {
-        "de",
-        "del",
-        "della",
-        "der",
-        "den",
-        "da",
-        "das",
-        "dos",
-        "di",
-        "du",
-        "van",
-        "von",
-        "la",
-        "le",
-        "lo",
-        "ter",
-        "ten",
-        "af",
-        "av",
-        "bin",
-        "ibn",
-        "al",
-    }
-)
+#: Lowercase surname particles: a trailing "<particle...> <Name>" run is all
+#: surname ("De Feo", "van der Berg").
+# fmt: off
+_SURNAME_PARTICLES = frozenset({
+    "de", "del", "della", "der", "den", "da", "das", "dos", "di", "du", "van", "von",
+    "la", "le", "lo", "ter", "ten", "af", "av", "bin", "ibn", "al",
+})
+# fmt: on
 
 
 def _extract_surname(first_author: str) -> str:
-    """Extract a publication-style surname, preserving compound particles.
-
-    * ``"Smith, John"``      → ``"Smith"`` (text before the comma is the
-      surname already).
-    * ``"Carlo De Feo"``     → ``"De Feo"`` (trailing particle+name run).
-    * ``"van der Berg"``     → ``"van der Berg"``.
-    * ``"Gaca"`` / ``"Andrew Gaca"`` → ``"Gaca"``.
-    """
+    """Publication-style surname keeping particles: "Carlo De Feo" → "De Feo";
+    "van der Berg, Anna" → "van der Berg" (the text before a comma)."""
     cleaned = first_author.strip()
     if not cleaned:
         return ""
@@ -2101,26 +2098,30 @@ def _extract_surname(first_author: str) -> str:
     return " ".join(surname_tokens)
 
 
-def _build_header_label(
+def _base_label(
     title: str | None,
     authors: list[str] | None,
     year: int | None,
     article_id: UUID,
 ) -> str:
-    """Compute the article column header per FR-012 fallback chain.
+    """The label "Surname Year" (particle-aware), else the surname, else
+    ``title[:60]``, else the short id."""
+    surname = _extract_surname(authors[0] or "") if authors else ""
+    if surname:
+        return f"{surname} {year}" if year is not None else surname
+    return title[:60] if title else _short_id(article_id)
 
-    Surname extraction is particle-aware so compound surnames survive
-    (e.g. "Carlo De Feo" → "De Feo, 2012", not "Feo, 2012").
-    """
-    if authors:
-        surname = _extract_surname(authors[0] or "")
-        if surname and year is not None:
-            return f"{surname}, {year}"
-        if surname:
-            return surname
-    if title:
-        return title[:60]
-    return _short_id(article_id)
+
+def _suffix_labels(rows: Sequence[tuple[UUID, str, datetime]]) -> dict[UUID, str]:
+    """D2: in ``(created_at, id)`` order the first of a label keeps it bare;
+    later ones append ``b``, ``c``, … so a label is stable once it appears."""
+    seen: dict[str, int] = {}
+    out: dict[UUID, str] = {}
+    for aid, label, _ in sorted(rows, key=lambda r: (r[2], str(r[0]))):
+        n = seen.get(label, 0)
+        seen[label] = n + 1
+        out[aid] = label + _letter_for(n).lower() if n else label
+    return out
 
 
 def _short_id(value: UUID) -> str:

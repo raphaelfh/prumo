@@ -58,7 +58,7 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
     articles = tuple(
         ArticleDescriptor(
             article_id=uuid4(),
-            header_label=f"A{i}",
+            article_label=f"A{i}",
             run_id=uuid4(),
             version_id=uuid4(),
             entries={(sec_id, None): tuple(uuid4() for _ in range(n_subcols_each))},

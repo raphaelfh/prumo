@@ -77,7 +77,7 @@ def _child(field_id):
 def _article(entries, run_id):
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries=entries,
