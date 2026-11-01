@@ -121,6 +121,7 @@ Advisory, ruled not adopted:
 41. Ruling: hiding Attach for a viewer stays UI-only — the file-confirm route (`article_files.py:39-55`, `ensure_project_member`) predates S3 and serves Articles; tightening it is its own change — a viewer can attach a PDF through the API, as today. Follow-up noted in the PR.
 42. Ruling: PRISMA computes `full_text_ready` through `full_text_candidates` (one more TA `assignment_states` pass, three queries) rather than threading its snapshots — one helper, one derivation; PRISMA is not a hot path — a few ms per PRISMA read.
 43. Ruling: refuted finding (FT enroll vs TA re-decide TOCTOU) — the refuters showed the project-row locks already serialize them; Task 4's `test_title_abstract_re_decide_and_full_text_send_serialize` pins it — none.
+44. Ruling: an unknown `?status=` is rewritten (`replace:true`) in both phases, not FT only — one shared `ScreeningWorkspace` path; TA silently fell back before — a TA URL with a stale status gets rewritten (harmless).
 
 ## Composition with S2 (deduplication)
 
@@ -216,6 +217,12 @@ git -C "$WT" commit -m "feat(screening): add the full-text phase to the schema a
 
 ---
 
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `record_rows`/`assignment_states` are already hard-filtered to TA via the `SCREENING_PHASE` constant (`screening_repository.py:49,:99,:226`); the service ignores its `phase` arg (`screening_review_service.py:240-252`). Replace the constant with the phase argument — no TA behaviour change.
+- `ScreeningReviewService._reviewer_count(project_id)` (`:236-238`, used by `get_assignment`) gains `phase` and is passed `ref.phase`.
+- No `has_main_pdf` exists (S2 not merged). The MAIN-file `exists()` is inline in `record_rows` (`:207-209`); leave it there in T1.
+
 ### Task 2: Shell and PDF primitives (frontend, S3b-1)
 
 **Depends on:** S1 merged. **Parallel with:** Tasks 1, 3–6 (no backend file, no generated type, no `lib/copy/screening.ts`).
@@ -286,6 +293,14 @@ git -C "$WT" commit -m "feat(articles): extract the documents body, nested RunSp
 ```
 
 ---
+
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `ArticleForm.tsx:555-558` already calls `invalidateScreening` after `uploadStagedFiles`; add only `articleKeys.files(savedArticleId)` next to `:558` (not inside the loop at `:589`).
+- `ArticleFileUploadDialogNew.tsx:341-363` success branches run inside a `setFiles(updater)`; StrictMode runs updaters twice — compute the outcome outside the updater, then invalidate once.
+- `mainOnly` filters on camelCase `f.fileRole === 'MAIN'` (generated `ArticleFileListItem`).
+- There is no `frontend/components/articles/__tests__/`. New tests go in `frontend/test/components/` (`ArticleDocumentsBody.test.tsx`, `ArticleFileUploadDialogNew.test.tsx`); existing suites are `frontend/test/components/ArticleSidePanel{,.identity}.test.tsx`; add the `filesError` case to `frontend/test/hooks/useArticleDocuments.test.tsx`. Run command includes these paths.
+- `useKeyboardShortcuts` chords already support `code`; `ListDetailSplitShell` binds `code:'Backslash'` (`:89`) — the `RunSplitShell` change is one field.
 
 ### Task 3: Config and full-text enroll (backend, S3a1-2)
 
@@ -364,6 +379,12 @@ git -C "$WT" commit -m "feat(screening): full-text setting with its lock and the
 
 ---
 
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- Existing unit tests patch `set_reviewer_count` (`test_screening_config_unit.py:53,110,115`), assert a 3-arg `enroll` (`:131,:138`) and build `ScreeningConfigRead` literally in `_config()` (`:36`) — update them for `set_config`, the phase arg and the 4 new FT read fields.
+- S1's `ScreeningConfigService.enroll` takes no project lock (`:118-133`) and S2 is not in the tree: FT enroll adds the first `lock_for_update` on the project. If S2 lands first with its own enroll lock, keep one acquisition (whoever merges second dedupes).
+- Race tests reuse `_wait_for_a_lock_waiter(factory)` (`test_screening_concurrency.py:166`).
+
 ### Task 4: Full-text decision rules (backend, S3a2-1)
 
 **Depends on:** Task 3.
@@ -420,6 +441,10 @@ git -C "$WT" commit -m "feat(screening): full-text decision rules, not retrieved
 
 ---
 
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- Race tests reuse `_wait_for_a_lock_waiter(factory)` (`test_screening_concurrency.py:166`).
+
 ### Task 5: Full-text records read and seed (backend, S3a2-2)
 
 **Depends on:** Task 4.
@@ -471,6 +496,12 @@ git -C "$WT" commit -m "feat(screening): full-text records read and a full-text 
 ```
 
 ---
+
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `seed_screening.main()` is sync around `asyncio.run(_run())`; `StorageAdapter.upload(bucket, path, data, content_type)` is async (`seed_screening.py:161-175`, `infrastructure/storage/base.py:41`). Upload the seed PDF inside `_run` after `session.commit()`, bucket `articles`; the unit test patches `_run`'s collaborators.
+- `build` reads `dict(article_id → assignment id)` over every assignment with no phase filter (`seed_screening.py:113-118`): filter that query to `TITLE_ABSTRACT`.
+- If the FT branch needs the MAIN-PDF predicate again, extract the inline `exists()` from `record_rows` into one private helper `_has_main_pdf()` in `screening_repository.py` and use it in both branches (S2 may later replace it with its `has_main_pdf`).
 
 ### Task 6: PRISMA reports box (backend + rename, S3a2-3)
 
@@ -530,6 +561,10 @@ git -C "$WT" commit -m "feat(prisma): the full-text reports box and title/abstra
 ```
 
 ---
+
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `prismaNotRetrieved` is at `frontend/lib/copy/screening.ts:127` (not `:128`).
 
 ### Task 7: Vocabulary, keymap, decision buttons, error map (frontend, S3b-2)
 
@@ -592,6 +627,13 @@ git -C "$WT" commit -m "feat(screening): full-text vocabulary, keymap and decisi
 ```
 
 ---
+
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `STATUS_VIEWS` consumers: `statusCounts` (`records.ts:22`), `visibleStatusViews` (`:30`), `ScreeningStatusViews.tsx:29` (props `{counts,status,onStatusChange}`), `TitleAbstractWorkspace.tsx:42,70` (`isStatusView`), `records.test.ts`. Add `phase` to `statusCounts`, `visibleStatusViews` and `ScreeningStatusViews` (Modify `frontend/components/screening/ScreeningStatusViews.tsx` + its test); T9 passes the phase from the workspace.
+- `csvField` is private (`records.ts:207`) and `recordsToCsv` is fixed to `RECORD_CSV_COLUMNS`: extract `toCsv(columns, rows)` carrying the formula-injection guard; `recordsToCsv` and `excludedReportsCsv` both call it.
+- My-decision filter options are hard-coded in `ScreeningRecordList.tsx:73-79` (`filterFields`): have `filterFields` read `myDecisionValuesFor(phase)` (Modify `ScreeningRecordList.tsx`; phase prop threaded in T9).
+- Error copy keys follow S1's `err*` prefix (`copy/screening.ts:188-195`): `errPhaseAdvanced`, `errDecisionNotInPhase`, `errReasonRequired`.
 
 ### Task 8: Full-text panel (frontend, S3b-3)
 
@@ -666,6 +708,13 @@ git -C "$WT" commit -m "feat(screening): full-text panel with the PDF beside the
 
 ---
 
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `usePdfPanel` compact is below `sm` (`hooks/usePdfPanel.ts:28-36`, cf. `useRunReader.ts:24`): use `compact: useIsNarrow()`; `useIsBelowDesktop` only picks the never-`RunSplitShell` branch.
+- `ConflictRulingForm` hard-codes `phase="title_abstract"` on its override `DecisionButtons` (`ConflictRulingForm.tsx:102-106`): add a `phase` prop (Modify `ConflictRulingForm.tsx` + test).
+- `DecisionButtons` takes `disabled` (`:44`), not `busy`: `FullTextDecisionPane` maps `busy` → `disabled`.
+- Reuse `ScreeningParts.tsx` (`Notice`, `LoadingState`, `decisionLabel`, `RecordAbstract`, `RecordBody`) and `ConflictRulingForm`'s note pattern (zod `NOTE_MAX=2000`, `rulingNote` copy, `:25-27`) for the FT note.
+
 ### Task 9: Full-text workspace, switcher, Send to full text (frontend, S3b-4)
 
 **Depends on:** Task 8.
@@ -718,6 +767,14 @@ git -C "$WT" commit -m "feat(screening): full-text sub-view with Send to full te
 
 ---
 
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `git mv` all three: `TitleAbstractWorkspace.test.tsx` → `ScreeningWorkspace.test.tsx`, `TitleAbstractWorkspace.keyboard.test.tsx` → `ScreeningWorkspace.keyboard.test.tsx`, `titleAbstractWorkspace.fixtures.tsx` → `screeningWorkspace.fixtures.tsx`; update `ScreeningRecordList.window.test.tsx`'s import. `ToolbarOnly`/`SkeletonRows` move with the file.
+- `useEnrollArticles`/`enrollArticles` already take the generated `ScreeningEnrollRequest` (`useScreeningConfig.ts:51-63`, `screeningService.ts:50-62`): regenerate types only; drop them from Files.
+- Workspace hard-codes `useScreeningRecords(…,'title_abstract', config.reviewer_count !== null)` (`:99`) and default view `config.enrolled === 0 ? 'all'` (`~:120`): make both phase-aware (`full_text_reviewer_count`, `full_text_enrolled`).
+- Ruling 44: an unknown `?status=` is rewritten with `replace:true` in BOTH phases (one shared workspace path; TA adopts the rewrite).
+- `RecordBulkBar` (`ScreeningRecordTable.tsx:244`) renders Enroll for managers: gate it to TA. Export the private `downloadCsv` (`:225`) for `ExportExcludedReportsButton`.
+
 ### Task 10: Settings (full text) and the PRISMA panel (frontend, S3b-5)
 
 **Depends on:** Task 9.
@@ -753,6 +810,10 @@ git -C "$WT" commit -m "feat(screening): full-text settings and the PRISMA repor
 
 ---
 
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `useSetScreeningConfig` already posts `ScreeningConfigUpdate` (`useScreeningConfig.ts:37-49`): regenerate types only; drop it from Files.
+
 ### Task 11: E2E full-text step and fixtures (S3b-6)
 
 **Depends on:** Task 10.
@@ -774,6 +835,11 @@ git -C "$WT" commit -m "test(screening): end-to-end full-text step" -m "Co-Autho
 ```
 
 ---
+
+
+**Post-S1 amendments (GO-build re-check vs 9bc01d4e — override the text above where they differ):**
+- `fixtureArticlePdfKey` already takes `articleId` (`article-pdf.ts:48`); only `ensureArticlePdfBytes()` gains `articleId` (`:58`; callers `pdf-viewer-page-sync.ui.e2e.ts:85`, `articles-side-panel.ui.e2e.ts:24`).
+- `ensure-fixtures.ts` already loops `SCREENING_ARTICLES` (`:199-200`): drop it from Files. `screening.ts` `ABSTRACTS` (keyed by article id) needs a Gamma entry; `RECORD_TITLE` (`screening.ui.e2e.ts:34`) must match the record used.
 
 ### Task 12: Slice verification and design review
 
