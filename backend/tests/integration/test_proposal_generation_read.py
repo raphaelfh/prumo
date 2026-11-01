@@ -232,7 +232,7 @@ async def test_identity_comes_from_authorized_attempt_owner(
 
 
 async def test_export_projects_original_proposal_model(db_session):
-    from tests.integration.test_extraction_export_ai_outcome import _ai_metadata_rows
+    from tests.integration.test_extraction_export_ai_proposals import _ai_metadata_rows
 
     (rid, iid, fid, _, _), proposal = await _generation(db_session)
     run = await db_session.get(ExtractionRun, rid)
@@ -242,11 +242,12 @@ async def test_export_projects_original_proposal_model(db_session):
         run=run,
         profile_id=SEED.primary_profile,
         article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
         entity_type_id=SEED.primary_entity_type,
         instance_id=iid,
         field_id=fid,
     )
-    assert rows[0].model_used == "original-model"
+    assert rows[0].engine.model == "original-model"
     proposal.generation_snapshot = None
     proposal.provenance = {"model": "legacy-row-model"}
     await db_session.flush()
@@ -255,11 +256,12 @@ async def test_export_projects_original_proposal_model(db_session):
         run=run,
         profile_id=SEED.primary_profile,
         article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
         entity_type_id=SEED.primary_entity_type,
         instance_id=iid,
         field_id=fid,
     )
-    assert rows[0].model_used == "legacy-row-model"
+    assert rows[0].engine.model == "legacy-row-model"
 
 
 async def test_history_authorizes_each_run_before_owner_names(db_session):

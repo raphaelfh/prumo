@@ -124,6 +124,7 @@ async def test_load_pinned_versions_maps_snapshot_metadata() -> None:
     assert f.is_entity_key is True
     assert f.allowed_absent_codes == ("not_evaluated",)
     assert f.code == ""
+    assert set(loaded.run_view_fields) == {f.field_id}
 
 
 @pytest.mark.asyncio
@@ -173,3 +174,5 @@ async def test_load_pinned_versions_reads_each_version_once(monkeypatch) -> None
     assert calls.await_count == 2
     assert [v.version_label for v in out] == [2, 1]
     assert [v.version_id for v in out] == [v2.id, v1.id]
+    assert set(out[0].run_view_fields) == {f.field_id for s in out[0].sections for f in s.fields}
+    assert len(out[0].run_view_fields) == 1

@@ -1,77 +1,49 @@
-"""Integration coverage for the AI-metadata ``Reviewer outcome`` logic.
+"""Integration coverage for the AI proposals sheet loader (§7, D6).
 
 These tests exercise ``ExtractionExportService._load_ai_proposal_rows``
-against the real local Supabase Postgres (RLS, CHECK constraints,
-composite FKs) for the FR-037 outcome-inference corrections shipped in
-Phase S2:
+against the real local Supabase Postgres:
 
-* **A2** — a multi-reviewer disagreement (one ``accept_proposal`` on the
-  AI proposal, one ``reject`` of it by a *different* reviewer) must
-  resolve to ``"accepted"``; the reject of one reviewer cannot mask the
-  accept of another.
-* **A3** — in SINGLE_USER mode the ``Reviewer outcome`` column reflects
-  the *target* reviewer's decision only (the query is scoped to
-  ``target_reviewer_id``), and ``Final value used`` reflects the same
-  reviewer's value map (blank/None for a reject).
-* **A4** — a latest AI proposal that is *touched but not selected* by a
-  terminal decision (an accept of a sibling proposal on the same key)
-  reports ``"not selected"``, never ``"pending"``.
-* **A5** — evidence renders numeric-sorted, deduped pages (so ``"2"`` <
-  ``"10"``) and a deduped, page-ordered ``evidence_text``.
-* **A7** — Only immutable proposal facts may supply the exported model.
-  Legacy rows never borrow mutable run metadata or request parameters.
-
-The sibling file ``test_extraction_export_ai_outcome_ordering.py`` (the
-A6 ``id``-tiebreak determinism guard) ships separately on PR #291; this
-file owns the A2/A3/A4/A5 behaviours. Setup mirrors the run / instance /
-proposal / decision insertion and ``project_id`` scoping used in
-``test_extraction_export_value_resolution.py`` and
-``test_extraction_manual_only_flow.py``.
+* the row set: every ``source=ai`` proposal of the current runs, plus a
+  ``source=ai`` proposal an in-scope decision links to in an earlier run;
+* evidence renders numeric-sorted, deduped pages (so ``"2"`` < ``"10"``)
+  and a deduped, page-ordered quote, only when AI detail is requested;
+* only immutable proposal facts may supply the exported engine. Legacy rows
+  never borrow mutable run metadata or request parameters;
+* the loader never reads the snapshot's prompt payload.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionFieldType,
     ExtractionRun,
-    TemplateKind,
+    ExtractionRunStage,
 )
-from app.models.extraction_workflow import (
-    ExtractionProposalRecord,
-    ExtractionProposalSource,
-    ExtractionReviewerDecision,
-    ExtractionReviewerDecisionType,
-    ExtractionReviewerState,
-)
+from app.models.extraction_workflow import ExtractionProposalRecord, ExtractionProposalSource
+from app.services.exports.ai_proposal_projection import EngineFacts
 from app.services.extraction_export_service import (
     AIProposalRow,
     ArticleDescriptor,
     ExportMode,
-    ExtractionExportService,
     FieldDescriptor,
-    SectionDescriptor,
 )
-from app.services.hitl_session_service import HITLSessionService
-from tests.integration.conftest import SEED
+from app.services.extraction_review_service import ExtractionReviewService
+from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED, land_ai_proposal
+from tests.integration.helpers.export_fixtures import export_service, make_run
 
 pytestmark = pytest.mark.asyncio
 
-# Fixed, hand-picked proposal ids and a shared timestamp. These tests
-# deliberately avoid relying on the AI-proposal ``id`` tiebreak for
-# equal ``created_at`` (that ordering is owned by PR #291 and is not on
-# this branch): every case keeps a single AI proposal per key, so the
-# lone AI row is unambiguously the latest AI proposal regardless of id.
 _SHARED_TS = datetime(2026, 1, 1, tzinfo=UTC)
-_ID_LOW = UUID("00000000-0000-4000-8000-000000000000")
-_ID_HIGH = UUID("ffffffff-ffff-4fff-8fff-ffffffffffff")
 
 
 async def _coord(
@@ -122,30 +94,6 @@ async def _coord(
     )
 
 
-async def _make_run(
-    db: AsyncSession, *, project_id: UUID, article_id: UUID, template_id: UUID, profile_id: UUID
-) -> ExtractionRun:
-    """Create a fresh PROPOSAL run for the coord (clearing leaked runs
-    first; the test's rolled-back session undoes both)."""
-    await db.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
-    )
-    session = await HITLSessionService(db).open_or_resume(
-        kind=TemplateKind.EXTRACTION,
-        project_id=project_id,
-        article_id=article_id,
-        user_id=profile_id,
-        project_template_id=template_id,
-    )
-    run = await db.get(ExtractionRun, session.run_id)
-    assert run is not None
-    return run
-
-
 def _ai_proposal(
     *,
     proposal_id: UUID,
@@ -166,76 +114,6 @@ def _ai_proposal(
     )
 
 
-def _human_proposal(
-    *,
-    proposal_id: UUID,
-    run_id: UUID,
-    instance_id: UUID,
-    field_id: UUID,
-    source_user_id: UUID,
-    value: object,
-    created_at: datetime = _SHARED_TS,
-) -> ExtractionProposalRecord:
-    return ExtractionProposalRecord(
-        id=proposal_id,
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN.value,
-        source_user_id=source_user_id,
-        proposed_value={"value": value},
-        created_at=created_at,
-    )
-
-
-async def _record_decision(
-    db: AsyncSession,
-    *,
-    run_id: UUID,
-    instance_id: UUID,
-    field_id: UUID,
-    reviewer_id: UUID,
-    decision: ExtractionReviewerDecisionType,
-    proposal_record_id: UUID | None = None,
-    value: dict[str, object] | None = None,
-) -> ExtractionReviewerDecision:
-    """Insert a reviewer decision + the matching ``current_decision_id``
-    state pointer for one reviewer on one (run, instance, field) coord.
-
-    The composite FK ``(run_id, current_decision_id)`` requires the
-    decision and state to agree on ``run_id``; we flush the decision
-    first so its id is available for the state pointer.
-    """
-    dec = ExtractionReviewerDecision(
-        id=uuid4(),
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=reviewer_id,
-        decision=decision.value,
-        proposal_record_id=proposal_record_id,
-        value=value,
-    )
-    db.add(dec)
-    await db.flush()
-    db.add(
-        ExtractionReviewerState(
-            id=uuid4(),
-            run_id=run_id,
-            reviewer_id=reviewer_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            current_decision_id=dec.id,
-        )
-    )
-    await db.flush()
-    return dec
-
-
-def _service(db: AsyncSession, *, profile_id: UUID) -> ExtractionExportService:
-    return ExtractionExportService(db=db, user_id=str(profile_id), trace_id="t")
-
-
 def _article(
     *, article_id: UUID, run_id: UUID, entity_type_id: UUID, instance_id: UUID
 ) -> ArticleDescriptor:
@@ -248,267 +126,10 @@ def _article(
     )
 
 
-def _section(*, entity_type_id: UUID, field_id: UUID) -> SectionDescriptor:
-    return SectionDescriptor(
-        entity_type_id=entity_type_id,
-        label="Section",
-        parent_entity_type_id=None,
-        fields=(
-            FieldDescriptor(
-                field_id=field_id,
-                label="Field",
-                type=ExtractionFieldType.TEXT,
-                allowed_values=(),
-            ),
-        ),
+def _field(field_id: UUID) -> FieldDescriptor:
+    return FieldDescriptor(
+        field_id=field_id, label="Field", type=ExtractionFieldType.TEXT, allowed_values=()
     )
-
-
-async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
-    db_session: AsyncSession,
-) -> None:
-    """A2 — one reviewer accepts the AI proposal, another rejects it.
-
-    The single ``AIProposalRow`` must report ``"accepted"``: an exact
-    ``accept_proposal`` on this proposal_id outranks any blanket
-    ``reject`` from a different reviewer. Pre-fix, the reject (evaluated
-    before the superseded/accept precedence and across all reviewers)
-    masked the accept.
-    """
-    coord = await _coord(db_session)
-    if coord is None:
-        pytest.skip("dev DB not seeded with an extraction instance")
-    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
-
-    run = await _make_run(
-        db_session,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        profile_id=profile_id,
-    )
-    proposal_id = uuid4()
-    db_session.add(
-        _ai_proposal(
-            proposal_id=proposal_id,
-            run_id=run.id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value="AI-VALUE",
-        )
-    )
-    await db_session.flush()
-
-    # Two distinct reviewers on the same coord: target accepts, other rejects.
-    reviewer_accept = profile_id
-    # Seeded reviewer of the same project — distinct from the manager.
-    reviewer_reject = SEED.reviewer_profile
-    await _record_decision(
-        db_session,
-        run_id=run.id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=reviewer_accept,
-        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=proposal_id,
-    )
-    await _record_decision(
-        db_session,
-        run_id=run.id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=UUID(str(reviewer_reject)),
-        decision=ExtractionReviewerDecisionType.REJECT,
-    )
-
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run.id,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
-        labels={},
-    )
-    assert len(rows) == 1
-    assert rows[0].reviewer_outcome == "accepted"
-
-    await db_session.rollback()
-
-
-async def test_ai_outcome_single_user_scoped_to_target(
-    db_session: AsyncSession,
-) -> None:
-    """A3 — SINGLE_USER outcome + final value reflect the target reviewer.
-
-    Target reviewer rejects the AI proposal; a different reviewer accepts
-    it. With ``mode=SINGLE_USER, target_reviewer_id=<target>`` the
-    decision query is scoped to the target, so the outcome is
-    ``"rejected"`` (not ``"accepted"``) and ``final_value_used`` is the
-    single-user value map's entry for the coord — None for a reject.
-    """
-    coord = await _coord(db_session)
-    if coord is None:
-        pytest.skip("dev DB not seeded with an extraction instance")
-    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
-
-    run = await _make_run(
-        db_session,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        profile_id=profile_id,
-    )
-    proposal_id = uuid4()
-    db_session.add(
-        _ai_proposal(
-            proposal_id=proposal_id,
-            run_id=run.id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value="AI-VALUE",
-        )
-    )
-    await db_session.flush()
-
-    target_reviewer = profile_id
-    # Seeded reviewer of the same project — distinct from the manager.
-    other_reviewer = SEED.reviewer_profile
-    await _record_decision(
-        db_session,
-        run_id=run.id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=target_reviewer,
-        decision=ExtractionReviewerDecisionType.REJECT,
-    )
-    await _record_decision(
-        db_session,
-        run_id=run.id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=UUID(str(other_reviewer)),
-        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=proposal_id,
-    )
-
-    # Single-user value map: the target rejected, so there is no value for
-    # the coord — ``final_value_used`` must come out None (blank cell).
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run.id,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.SINGLE_USER,
-        target_reviewer_id=target_reviewer,
-        labels={},
-    )
-    assert len(rows) == 1
-    assert rows[0].reviewer_outcome == "rejected"
-    assert rows[0].final_value_used is None
-
-    await db_session.rollback()
-
-
-async def test_ai_outcome_not_selected_when_terminal_decision_exists(
-    db_session: AsyncSession,
-) -> None:
-    """A4 — the latest AI proposal, reviewed but not chosen, is
-    ``"not selected"`` (never ``"pending"``).
-
-    A reviewer accepts a *sibling* (human) proposal on the same key, so a
-    terminal decision exists on the key while the AI proposal itself was
-    not the accepted one. The AI row is therefore touched-but-not-chosen
-    and must report ``"not selected"`` rather than the unreviewed
-    ``"pending"``.
-
-    The sibling is a ``human`` proposal (not a second AI row) so this
-    case does not depend on the AI-proposal ``id`` tiebreak (owned by
-    PR #291, not on this branch): the single AI proposal is
-    unambiguously the latest AI proposal for the key.
-    """
-    coord = await _coord(db_session)
-    if coord is None:
-        pytest.skip("dev DB not seeded with an extraction instance")
-    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
-
-    run = await _make_run(
-        db_session,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-        profile_id=profile_id,
-    )
-    ai_id = _ID_HIGH
-    sibling_human_id = _ID_LOW
-    db_session.add_all(
-        [
-            _human_proposal(
-                proposal_id=sibling_human_id,
-                run_id=run.id,
-                instance_id=instance_id,
-                field_id=field_id,
-                source_user_id=profile_id,
-                value="HUMAN-SIBLING",
-            ),
-            _ai_proposal(
-                proposal_id=ai_id,
-                run_id=run.id,
-                instance_id=instance_id,
-                field_id=field_id,
-                value="LATEST-AI",
-            ),
-        ]
-    )
-    await db_session.flush()
-
-    # Accept the SIBLING human proposal — the AI proposal on the same key
-    # is touched-but-not-selected (a different proposal was accepted).
-    await _record_decision(
-        db_session,
-        run_id=run.id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=profile_id,
-        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=sibling_human_id,
-    )
-
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run.id,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
-        labels={},
-    )
-    # Only the AI proposal produces a row (source='ai' filter).
-    assert len(rows) == 1
-    assert rows[0].ai_proposed_value == "LATEST-AI"
-    assert rows[0].reviewer_outcome == "not selected"
-    # Never 'pending' once the key has a terminal decision.
-    assert rows[0].reviewer_outcome != "pending"
-
-    await db_session.rollback()
 
 
 async def test_ai_evidence_ordered_and_deduped(
@@ -528,7 +149,7 @@ async def test_ai_evidence_ordered_and_deduped(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -570,31 +191,39 @@ async def test_ai_evidence_ordered_and_deduped(
         )
     await db_session.flush()
 
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run.id,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
-        labels={},
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
     )
     assert len(rows) == 1
     row = rows[0]
     # Numeric, deduped page rendering — "2" before "10", not lexicographic.
-    assert row.evidence_pages == "2, 9, 10"
+    assert row.page == "2, 9, 10"
     # Text deduped and in page order.
-    assert row.evidence_text == "two | nine | ten"
+    assert row.evidence_quote == "two | nine | ten"
+
+    bare = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        with_evidence=False,
+    )
+    assert (bare[0].evidence_quote, bare[0].page) == ("", "")
 
 
 # ----------------------------------------------------------------------
-# A7 — the "Model used" column (FR-037 col 11).
+# A7 — the provider / model / prompt_version columns.
 #
 # Every assertion below exists to keep ONE untrusted value out of a
 # published export. ``run.parameters`` is client-supplied: the
@@ -625,12 +254,15 @@ async def _ai_metadata_rows(
     run: ExtractionRun,
     profile_id: UUID,
     article_id: UUID,
+    template_id: UUID,
     entity_type_id: UUID,
     instance_id: UUID,
     field_id: UUID,
+    with_evidence: bool = True,
 ) -> tuple[AIProposalRow, ...]:
-    """AI-metadata rows for one single-section, single-proposal run."""
-    return await _service(db, profile_id=profile_id)._load_ai_proposal_rows(
+    """AI proposals rows for one single-section run, no decisions in scope."""
+    return await export_service(db, profile_id=profile_id)._load_ai_proposal_rows(
+        template_id=template_id,
         articles=(
             _article(
                 article_id=article_id,
@@ -639,15 +271,14 @@ async def _ai_metadata_rows(
                 instance_id=instance_id,
             ),
         ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
+        cells={},
+        fields={field_id: _field(field_id)},
         labels={},
+        with_evidence=with_evidence,
     )
 
 
-async def test_model_used_ignores_mutable_run_provenance_and_forgeable_parameters(
+async def test_engine_ignores_mutable_run_provenance_and_forgeable_parameters(
     db_session: AsyncSession,
 ) -> None:
     """Legacy proposal engine remains unavailable despite mutable run metadata."""
@@ -656,7 +287,7 @@ async def test_model_used_ignores_mutable_run_provenance_and_forgeable_parameter
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -683,16 +314,16 @@ async def test_model_used_ignores_mutable_run_provenance_and_forgeable_parameter
         run=run,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == ""
-    assert "FORGED" not in rows[0].model_used
+    assert rows[0].engine == EngineFacts("", "", "")
 
 
-async def test_model_used_unavailable_without_per_proposal_facts_for_hitl_run(
+async def test_engine_unavailable_without_per_proposal_facts_for_hitl_run(
     db_session: AsyncSession,
 ) -> None:
     """Legacy proposal engine remains unavailable despite mutable run metadata."""
@@ -701,7 +332,7 @@ async def test_model_used_unavailable_without_per_proposal_facts_for_hitl_run(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -728,15 +359,16 @@ async def test_model_used_unavailable_without_per_proposal_facts_for_hitl_run(
         run=run,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == ""
+    assert rows[0].engine.model == ""
 
 
-async def test_model_used_never_guesses_from_sibling_section_candidates(
+async def test_engine_never_guesses_from_sibling_section_candidates(
     db_session: AsyncSession,
 ) -> None:
     """Legacy proposal engine remains unavailable despite mutable run metadata."""
@@ -745,7 +377,7 @@ async def test_model_used_never_guesses_from_sibling_section_candidates(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -773,15 +405,16 @@ async def test_model_used_never_guesses_from_sibling_section_candidates(
         run=run,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == ""
+    assert rows[0].engine.model == ""
 
 
-async def test_model_used_never_borrows_flat_run_snapshot(
+async def test_engine_never_borrows_flat_run_snapshot(
     db_session: AsyncSession,
 ) -> None:
     """Legacy proposal engine remains unavailable despite mutable run metadata."""
@@ -790,7 +423,7 @@ async def test_model_used_never_borrows_flat_run_snapshot(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -817,15 +450,16 @@ async def test_model_used_never_borrows_flat_run_snapshot(
         run=run,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == ""
+    assert rows[0].engine.model == ""
 
 
-async def test_model_used_never_falls_back_to_parameters_for_legacy_rows(
+async def test_engine_never_falls_back_to_parameters_for_legacy_rows(
     db_session: AsyncSession,
 ) -> None:
     """Legacy proposal engine remains unavailable despite mutable run metadata."""
@@ -835,7 +469,7 @@ async def test_model_used_never_falls_back_to_parameters_for_legacy_rows(
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
     # Run A — legacy parameters, and explicitly no provenance.
-    run_a = await _make_run(
+    run_a = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -900,29 +534,31 @@ async def test_model_used_never_falls_back_to_parameters_for_legacy_rows(
         run=run_a,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows_a) == 1
-    assert rows_a[0].model_used == ""
+    assert rows_a[0].engine.model == ""
 
     rows_b = await _ai_metadata_rows(
         db_session,
         run=run_b,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows_b) == 1
-    assert rows_b[0].model_used == ""
+    assert rows_b[0].engine.model == ""
 
     await db_session.rollback()
 
 
-async def test_model_used_empty_when_neither_provenance_nor_parameters(
+async def test_engine_empty_when_neither_provenance_nor_parameters(
     db_session: AsyncSession,
 ) -> None:
     """A7e — nothing recorded anywhere yields ``""``, never a default engine.
@@ -936,7 +572,7 @@ async def test_model_used_empty_when_neither_provenance_nor_parameters(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -963,12 +599,13 @@ async def test_model_used_empty_when_neither_provenance_nor_parameters(
         run=run,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == ""
+    assert rows[0].engine.model == ""
 
 
 async def test_annotated_proposal_exports_the_value_not_the_verification_sibling(
@@ -983,7 +620,7 @@ async def test_annotated_proposal_exports_the_value_not_the_verification_sibling
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -1008,9 +645,198 @@ async def test_annotated_proposal_exports_the_value_not_the_verification_sibling
         run=run,
         profile_id=profile_id,
         article_id=article_id,
+        template_id=template_id,
         entity_type_id=entity_type_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].ai_proposed_value == "annotated"
+    assert rows[0].value.value_text == "annotated"
+
+
+# ----------------------------------------------------------------------
+# Row set and the prompt payload (§7, Review Focus 5)
+# ----------------------------------------------------------------------
+
+
+async def _extract_run(db: AsyncSession) -> ExtractionRun:
+    run = await make_run(
+        db,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
+        profile_id=SEED.primary_profile,
+    )
+    if run.stage == ExtractionRunStage.PENDING.value:
+        await RunLifecycleService(db).advance_stage(
+            run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=SEED.primary_profile
+        )
+    return run
+
+
+async def _single_user_ai_layout(db: AsyncSession):
+    return await export_service(db, profile_id=SEED.primary_profile).resolve_layout(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        mode=ExportMode.SINGLE_USER,
+        article_ids=[SEED.primary_article],
+        include_ai_metadata=True,
+        anonymize_reviewer_names=False,
+        reviewer_id=SEED.primary_profile,
+    )
+
+
+async def test_cross_run_ai_proposal_appears_with_its_keys(db_session: AsyncSession) -> None:
+    """A reopen leaves the AI proposal in run1; run2's decision links to it."""
+    inst, fid = SEED.primary_instance, SEED.primary_field
+    run1 = await _extract_run(db_session)
+    old_pid = (
+        await land_ai_proposal(
+            db_session, run_id=run1.id, instance_id=inst, field_id=fid,
+            proposed_value={"value": 42},
+        )
+    ).id  # fmt: skip
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs SET stage = 'finalized', status = 'completed' "
+            "WHERE id = :rid"
+        ),
+        {"rid": str(run1.id)},
+    )
+    await db_session.flush()
+    await db_session.refresh(run1)
+    run2, created = await RunLifecycleService(db_session).reopen_run(
+        run_id=run1.id, user_id=SEED.primary_profile
+    )
+    assert created and run2.id != run1.id
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run2.id, instance_id=inst, field_id=fid, reviewer_id=SEED.primary_profile,
+        decision="edit", value={"value": 42}, proposal_record_id=old_pid,
+    )  # fmt: skip
+
+    layout = await _single_user_ai_layout(db_session)
+
+    assert [a.run_id for a in layout.articles] == [run2.id]
+    keys = {
+        (r.article_id, r.instance_id, r.field_id, r.ai_proposal_id) for r in layout.ai_proposal_rows
+    }
+    assert (SEED.primary_article, inst, fid, old_pid) in keys
+
+
+async def test_rows_are_loaded_without_ai_detail(db_session: AsyncSession) -> None:
+    """The README's AI-tools table reads the rows; evidence waits for AI detail."""
+    run = await _extract_run(db_session)
+    pid = (
+        await land_ai_proposal(
+            db_session, run_id=run.id, instance_id=SEED.primary_instance,
+            field_id=SEED.primary_field, proposed_value={"value": 42},
+        )
+    ).id  # fmt: skip
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id, instance_id=SEED.primary_instance, field_id=SEED.primary_field,
+        reviewer_id=SEED.primary_profile, decision="edit", value={"value": 7},
+    )  # fmt: skip
+
+    layout = await export_service(db_session, profile_id=SEED.primary_profile).resolve_layout(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        mode=ExportMode.SINGLE_USER,
+        article_ids=[SEED.primary_article],
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+        reviewer_id=SEED.primary_profile,
+    )
+
+    assert [r.ai_proposal_id for r in layout.ai_proposal_rows] == [pid]
+
+
+async def test_loader_ignores_non_ai_proposals(db_session: AsyncSession) -> None:
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+    run = await make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    db_session.add(
+        ExtractionProposalRecord(
+            id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.HUMAN.value,
+            source_user_id=profile_id,
+            proposed_value={"value": "typed"},
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert rows == ()
+
+
+async def test_loader_does_not_select_prompt_text(db_session: AsyncSession) -> None:
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+    run = await make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    db_session.add(
+        _ai_proposal(
+            proposal_id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value",
+        )
+    )
+    await db_session.flush()
+    statements: list[str] = []
+
+    def listener(_conn, _cursor, statement, _params, _context, _many) -> None:
+        statements.append(statement)
+
+    conn = (await db_session.connection()).sync_connection
+    event.listen(conn, "before_cursor_execute", listener)
+    try:
+        rows = await _ai_metadata_rows(
+            db_session,
+            run=run,
+            profile_id=profile_id,
+            article_id=article_id,
+            template_id=template_id,
+            entity_type_id=entity_type_id,
+            instance_id=instance_id,
+            field_id=field_id,
+        )
+    finally:
+        event.remove(conn, "before_cursor_execute", listener)
+
+    assert len(rows) == 1
+    reads = [
+        stmt[max(0, m.start() - 60) : m.end() + 3]
+        for stmt in statements
+        for m in re.finditer(r"\.generation_snapshot\b", stmt)
+    ]
+    assert reads, "precondition: the loader read the snapshot column"
+    # Every read of the column strips the prompt payload or only tests its type.
+    assert all(r.endswith(" - ") or "jsonb_typeof(" in r for r in reads), reads

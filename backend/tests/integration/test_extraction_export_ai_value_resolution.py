@@ -1,6 +1,6 @@
-"""Integration: AI-metadata value columns resolve envelopes (A1).
+"""Integration: the AI proposals value columns resolve envelopes (A1, D6).
 
-The 'AI proposed value' column must surface number+unit/other scalars,
+The ``value`` column must surface the number and ``unit`` its own column,
 never a Python-repr dict (the reported AI-metadata bug).
 
 ``_load_ai_proposal_rows`` read ``ExtractionProposalRecord.proposed_value``
@@ -8,8 +8,7 @@ through the too-narrow ``_unwrap_value`` (single-key ``{"value": ...}``
 only), so a real double-wrapped number+unit envelope leaked into the
 'AI proposed value' cell as a ``dict``. This drives a real AI proposal
 record through to a FINALIZED run and asserts the column carries the
-resolved scalar. ``final_value_used`` already comes resolved from the
-consensus value_map (prior task), and must likewise never be a dict.
+resolved scalar.
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ from app.models.extraction_workflow import (
     ExtractionConsensusMode,
     ExtractionProposalSource,
 )
+from app.services.exports.values import machine_value
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
 from app.services.hitl_session_service import HITLSessionService
@@ -37,9 +37,8 @@ pytestmark = pytest.mark.asyncio
 async def test_ai_proposed_value_resolves_number_unit(
     db_session: AsyncSession,
 ) -> None:
-    """The 'AI proposed value' column surfaces '5 mg' from the real
-    double-wrapped number+unit envelope, never a dict; 'Final value
-    used' is likewise a resolved scalar."""
+    """The ``value`` / ``unit`` columns surface ``5`` / ``mg`` from the real
+    double-wrapped number+unit envelope, never a dict."""
     if (
         await db_session.execute(
             text("SELECT 1 FROM public.profiles WHERE id = :id"),
@@ -54,7 +53,6 @@ async def test_ai_proposed_value_resolves_number_unit(
     profile_id = SEED.primary_profile
     instance_id = SEED.primary_instance
     number_field_id = SEED.primary_field  # seeded 'number' field "Sample Size"
-    number_field_label = "Sample Size"
 
     # Fresh run so this test owns the FINALIZED state (the surrounding
     # suite leaks runs in other stages via committed HTTP calls).
@@ -98,7 +96,6 @@ async def test_ai_proposed_value_resolves_number_unit(
         user_id=profile_id,
     )
 
-    # Publish the consensus value so final_value_used is populated.
     _consensus, published = await ExtractionConsensusService(db_session).record_consensus(
         run_id=run_id,
         instance_id=instance_id,
@@ -137,10 +134,9 @@ async def test_ai_proposed_value_resolves_number_unit(
 
     rows = layout.ai_proposal_rows
     assert rows, "expected at least one AI proposal row"
-    target = next(r for r in rows if r.field_label == number_field_label)
-    assert target.ai_proposed_value == "5 mg"
+    target = next(r for r in rows if r.field_id == number_field_id)
+    assert (machine_value(target.value), target.value.unit) == (5, "mg")
     for r in rows:
-        assert not isinstance(r.ai_proposed_value, dict)
-        assert not isinstance(r.final_value_used, dict)
+        assert not isinstance(machine_value(r.value), dict)
 
     await db_session.rollback()

@@ -144,6 +144,32 @@ async def test_status_other_users_failed_job_does_not_leak_error(
 
 
 @pytest.mark.asyncio
+async def test_status_own_failed_job_carries_the_export_too_large_code(
+    client: AsyncClient,
+) -> None:
+    """The owner of an over-budget export reads the stable code in ``error``."""
+    from app.services.exports.extraction.run import ExportTooLargeError
+
+    mock_result = MagicMock()
+    mock_result.state = "FAILURE"
+    mock_result.result = ExportTooLargeError("EXPORT_TOO_LARGE: 9 cells")
+
+    with (
+        patch("celery.result.AsyncResult", return_value=mock_result),
+        patch(
+            "app.api.v1.endpoints.extraction_export._lookup_export_owner",
+            return_value=CALLER_USER_ID,
+        ),
+    ):
+        res = await client.get(_status_url(str(uuid4()), str(uuid4())))
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["data"]["status"] == "failed"
+    assert body["data"]["error"].startswith("EXPORT_TOO_LARGE: ")
+
+
+@pytest.mark.asyncio
 async def test_status_own_pending_job_returns_pending(
     client: AsyncClient,
 ) -> None:

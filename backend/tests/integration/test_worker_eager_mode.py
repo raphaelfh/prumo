@@ -163,6 +163,30 @@ def test_export_extraction_task_fails_with_a_coded_message_when_empty() -> None:
     fake_storage.upload.assert_not_awaited()
 
 
+def test_task_fails_without_retry_on_export_too_large() -> None:
+    from app.services.exports.extraction.run import ExportTooLargeError
+    from app.worker.tasks.extraction_export_tasks import export_extraction_task
+
+    session = _FakeAsyncSession()
+    fake_storage = _fake_export_storage()
+
+    with (
+        patch(
+            "app.services.exports.extraction.run.build_export",
+            new=AsyncMock(side_effect=ExportTooLargeError("EXPORT_TOO_LARGE: 9 cells")),
+        ) as build_export,
+        patch("app.core.factories.create_storage_adapter", return_value=fake_storage),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+    ):
+        res = export_extraction_task.apply(kwargs=_export_kwargs(), throw=False)
+
+    assert res.state == "FAILURE"
+    assert str(res.result).startswith("EXPORT_TOO_LARGE: ")
+    build_export.assert_awaited_once()
+    fake_storage.upload.assert_not_awaited()
+
+
 # ----------------------------------------------------------------------
 # 2. export_tasks.export_articles_task
 # ----------------------------------------------------------------------

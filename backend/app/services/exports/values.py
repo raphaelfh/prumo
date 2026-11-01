@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from app.models.extraction import ExtractionFieldType
-from app.services.value_contract import is_envelope
+from app.services.value_contract import ValueContractError, canonicalize_value, is_envelope
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
     strip_verification,
@@ -26,6 +26,7 @@ from app.services.value_semantics import (
 )
 
 if TYPE_CHECKING:
+    from app.schemas.extraction_run import RunViewField
     from app.services.exports.extraction.sheet_spec import CellValue
     from app.services.extraction_export_service import FieldDescriptor, SectionDescriptor
 
@@ -64,6 +65,47 @@ def peel_envelope(raw: Any) -> PeeledValue:
         if unit is None and isinstance(raw.get("unit"), str) and raw["unit"]:
             unit = raw["unit"]
         raw = raw["value"]
+
+
+def _peeled_form(raw: Any) -> dict[str, Any]:
+    p = peel_envelope(raw)
+    form = {"value": p.value, "unit": p.unit, "absent_reason": p.absent_reason}
+    return {k: v for k, v in form.items() if v is not None}
+
+
+def _canonical_form(raw: Any, field: RunViewField) -> dict[str, Any]:
+    """``canonicalize_value`` with a multiselect's codes sorted (set semantics)."""
+    canonical = canonicalize_value(raw, field)
+    value = canonical.get("value")
+    if isinstance(value, list):
+        canonical["value"] = sorted(value)
+    elif isinstance(value, dict) and isinstance(value.get("selected"), list):
+        canonical["value"] = {**value, "selected": sorted(value["selected"])}
+    return canonical
+
+
+def canonical_keys(raws: Sequence[Any], pinned_field: RunViewField | None) -> tuple[str, ...]:
+    """One comparison key per raw value, canonicalized against the run's pinned field.
+
+    N-ary on purpose: if ANY value breaks the pinned contract, or the pinned
+    field is unknown (a narrow legacy version), EVERY value falls back to its
+    peeled raw form, so the two sides of a comparison are always encoded alike.
+    ``verification`` is ignored; an absent marker compares by its code.
+    """
+    clean = [strip_verification(raw) for raw in raws]
+    forms: list[dict[str, Any]] | None = None
+    if pinned_field is not None:
+        try:
+            forms = [_canonical_form(raw, pinned_field) for raw in clean]
+        except ValueContractError:
+            forms = None
+    if forms is None:
+        forms = [_peeled_form(raw) for raw in clean]
+    return tuple(json.dumps(f, sort_keys=True, default=str) for f in forms)
+
+
+def canonical_equal(a: Any, b: Any, pinned_field: RunViewField | None) -> bool:
+    return len(set(canonical_keys((a, b), pinned_field))) == 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +240,18 @@ def to_export_value(
         if selected is not None:
             return selected
     return _nonconforming(raw, payload)
+
+
+#: Statuses whose typed value a machine column carries.
+MACHINE_STATUSES: tuple[ExportStatus, ...] = ("answered", "nonconforming")
+
+
+def machine_value(v: ExportValue) -> CellValue:
+    """The machine scalar: the first of ``value_num``, ``value_bool``, ``value_text``
+    for an answered or nonconforming value in scope, else ``None``."""
+    if v.status not in MACHINE_STATUSES or v.out_of_scope:
+        return None
+    return next((x for x in (v.value_num, v.value_bool, v.value_text) if x is not None), None)
 
 
 def display_value(v: ExportValue, field: FieldDescriptor) -> CellValue:

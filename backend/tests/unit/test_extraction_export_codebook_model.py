@@ -53,8 +53,8 @@ def _sel(fid: UUID, name: str, *options: tuple[str, str]) -> FieldDescriptor:
 def test_active_field_keeps_bare_code_and_clashing_removed_field_is_suffixed():
     sec_id = uuid4()
     a, b = uuid4(), uuid4()
-    active = VersionSections(uuid4(), 2, (_s(sec_id, "participants", _f(a, "age")),))
-    v1 = VersionSections(uuid4(), 1, (_s(sec_id, "participants", _f(b, "age")),))
+    active = VersionSections(uuid4(), 2, (_s(sec_id, "participants", _f(a, "age")),), {})
+    v1 = VersionSections(uuid4(), 1, (_s(sec_id, "participants", _f(b, "age")),), {})
     codes = {e.field_id: e.field_code for e in build_codebook_entries(active, (v1,), {})}
     assert codes == {a: "participants.age", b: f"participants.age__{_short(b)}"}
 
@@ -78,6 +78,7 @@ def test_field_code_clashes_list_each_shared_bare_code():  # D1 README input
         uuid4(),
         1,
         (_s(uuid4(), "dup", _f(a, "x"), order=0), _s(uuid4(), "dup", _f(b, "x"), order=1)),
+        {},
     )
     entries = build_codebook_entries(active, (), {})
     assert field_code_clashes(entries) == (("dup.x", ("dup.x", f"dup.x__{_short(b)}")),)
@@ -85,9 +86,9 @@ def test_field_code_clashes_list_each_shared_bare_code():  # D1 README input
 
 def test_removed_section_field_has_no_section_id_and_lists_its_versions():
     gone = uuid4()
-    active = VersionSections(uuid4(), 3, ())
-    v1 = VersionSections(uuid4(), 1, (_s(uuid4(), "old", _f(gone, "x", label="Old")),))
-    v2 = VersionSections(uuid4(), 2, (_s(uuid4(), "old", _f(gone, "x", label="Newer")),))
+    active = VersionSections(uuid4(), 3, (), {})
+    v1 = VersionSections(uuid4(), 1, (_s(uuid4(), "old", _f(gone, "x", label="Old")),), {})
+    v2 = VersionSections(uuid4(), 2, (_s(uuid4(), "old", _f(gone, "x", label="Newer")),), {})
     (e,) = build_codebook_entries(active, (v2, v1), {})
     assert (e.section_id, e.in_current_version, e.versions, e.field_label) == (
         None,
@@ -99,8 +100,8 @@ def test_removed_section_field_has_no_section_id_and_lists_its_versions():
 
 def test_active_entry_reads_section_and_metadata_from_the_active_tree():
     fid, sid = uuid4(), uuid4()
-    active = VersionSections(uuid4(), 2, (_s(sid, "s", _f(fid, "x", label="Now")),))
-    v1 = VersionSections(uuid4(), 1, (_s(sid, "s", _f(fid, "x", label="Then")),))
+    active = VersionSections(uuid4(), 2, (_s(sid, "s", _f(fid, "x", label="Now")),), {})
+    v1 = VersionSections(uuid4(), 1, (_s(sid, "s", _f(fid, "x", label="Then")),), {})
     (e,) = build_codebook_entries(active, (v1,), {})
     assert (e.section_id, e.section_code, e.field_label, e.in_current_version, e.versions) == (
         sid,
@@ -114,9 +115,9 @@ def test_active_entry_reads_section_and_metadata_from_the_active_tree():
 def test_renamed_option_gives_one_row_labelled_from_active():
     fid, sid = uuid4(), uuid4()
     active = VersionSections(
-        uuid4(), 2, (_s(sid, "s", _sel(fid, "smoking", ("None", "None reported"))),)
+        uuid4(), 2, (_s(sid, "s", _sel(fid, "smoking", ("None", "None reported"))),), {}
     )
-    v1 = VersionSections(uuid4(), 1, (_s(sid, "s", _sel(fid, "smoking", ("None", "No"))),))
+    v1 = VersionSections(uuid4(), 1, (_s(sid, "s", _sel(fid, "smoking", ("None", "No"))),), {})
     (e,) = build_codebook_entries(
         active, (v1,), build_option_labels(active.sections, [v1.sections])
     )
@@ -125,8 +126,8 @@ def test_renamed_option_gives_one_row_labelled_from_active():
 
 def test_option_dropped_from_active_keeps_a_non_current_row():
     fid, sid = uuid4(), uuid4()
-    active = VersionSections(uuid4(), 2, (_s(sid, "s", _sel(fid, "c", ("A", "A"))),))
-    v1 = VersionSections(uuid4(), 1, (_s(sid, "s", _sel(fid, "c", ("A", "A"), ("B", "Bee"))),))
+    active = VersionSections(uuid4(), 2, (_s(sid, "s", _sel(fid, "c", ("A", "A"))),), {})
+    v1 = VersionSections(uuid4(), 1, (_s(sid, "s", _sel(fid, "c", ("A", "A"), ("B", "Bee"))),), {})
     (e,) = build_codebook_entries(
         active, (v1,), build_option_labels(active.sections, [v1.sections])
     )

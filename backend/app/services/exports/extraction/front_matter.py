@@ -2,8 +2,9 @@
 
 Pure: consumes an ``ExportLayout`` and returns a ``SheetSpec``. Template
 identity, a contents list (the allocated sheet titles), the legend, value
-counts by status (primary slot only), the Codebook's clashes and skipped
-versions, the rule notes and the caveats. No UUIDs anywhere.
+counts by status and origin (primary slot only), the Codebook's clashes and
+skipped versions, the AI tools, what each origin can tell (§7), percent
+agreement (with Verification), the rule notes and the caveats. No UUIDs anywhere.
 """
 
 from __future__ import annotations
@@ -13,7 +14,13 @@ from typing import TYPE_CHECKING, get_args
 
 from app.services.exports.codebook_model import field_code_clashes
 from app.services.exports.descriptors import count_level_records, primary_rater
+from app.services.exports.extraction.data_sheet import (
+    LINEAGE_EXACT_SINCE,
+    Origin,
+    origin_counts,
+)
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, CellValue, SheetSpec
+from app.services.exports.extraction.verification import agreement
 from app.services.exports.values import ExportStatus
 from app.services.extraction_export_service import ExportLayout, ExportMode
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
@@ -55,9 +62,18 @@ _CAVEATS: tuple[str, ...] = (
     "article_id is a report, not a study: companion reports must be collated by hand.",
     "Stored numbers drop trailing zeros.",
     "Appraisal domains are detected by a risk-of-bias label vocabulary.",
-    "Reviewer outcomes labelled 'best-effort' rely on heuristics; the data "
-    "model does not preserve the exact AI-proposal to edited-value lineage.",
+    "Member letters can shift after a run reopen or an entry delete.",
 )
+
+# §7: what each origin can and cannot tell.
+_LINEAGE: tuple[str, ...] = (
+    "ai_accepted is exact in every period: the value is linked to an AI proposal and equal to it.",
+    f"Before {LINEAGE_EXACT_SINCE.isoformat()}, a value typed over an AI suggestion "
+    "was saved unlinked: it reads human with ai_proposed=true.",
+    "An unlinked re-save of the AI value also reads human.",
+    "After a run reopen, the AI chain of the earlier run is not traced.",
+)
+_NOT_RECORDED = "not recorded"
 
 _MODE_LABELS: dict[ExportMode, str] = {
     ExportMode.CONSENSUS: "Consensus",
@@ -84,8 +100,31 @@ def _value_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
     rows = _block("Values by status")
     rows.extend((Cell(s), Cell(by_status[s])) for s in get_args(ExportStatus))
     rows.append(())
-    rows.append(_kv("Values outside any level sheet", outside))
+    rows.append(_kv("Values only in Data", outside))
+    rows.extend(_block("Values by origin"))
+    counts = origin_counts(layout)
+    rows.extend((Cell(o), Cell(counts.get(o, 0))) for o in get_args(Origin))
     return rows
+
+
+def _ai_tool_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
+    """Proposal counts per (provider, model, prompt version) of the in-scope AI proposals."""
+    tools = Counter(
+        tuple(fact or _NOT_RECORDED for fact in (e.provider, e.model, e.prompt_version))
+        for e in (r.engine for r in layout.ai_proposal_rows)
+    )
+    rows = _block("AI tools")
+    rows.append(
+        tuple(Cell(h, _TITLE) for h in ("Provider", "Model", "Prompt version", "Proposals"))
+    )
+    rows.extend((*(Cell(f) for f in tool), Cell(n)) for tool, n in sorted(tools.items()))
+    return rows
+
+
+def _agreement_row(layout: ExportLayout) -> tuple[Cell, ...]:
+    equal, rated = agreement(layout)
+    share = f"{100 * equal / rated:.1f}%" if rated else "n/a"
+    return _kv("Percent agreement", f"{share} ({equal} of {rated} rows with n_raters ≥ 2)")
 
 
 def _codebook_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
@@ -128,6 +167,14 @@ def build_front_matter(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
 
     rows.extend(_value_rows(layout))
     rows.extend(_codebook_rows(layout))
+    rows.extend(_ai_tool_rows(layout))
+    if "verification" in titles.fixed:
+        rows.append(())
+        rows.append(_agreement_row(layout))
+        rows.append((Cell(""), Cell("all_equal rows divided by rows with n_raters ≥ 2.", _WRAP)))
+
+    rows.extend(_block("Lineage"))
+    rows.extend((Cell(""), Cell(line, _WRAP)) for line in _LINEAGE)
 
     rows.extend(_block("Notes"))
     rows.extend((Cell(""), Cell(note, _WRAP)) for note in (*_NOTES, *layout.appraisal_notes))

@@ -21,6 +21,7 @@ from app.models.extraction import ExtractionFieldType
 from app.services.exports.descriptors import walk_sections
 
 if TYPE_CHECKING:
+    from app.schemas.extraction_run import RunViewField
     from app.services.exports.values import OptionLabels
     from app.services.extraction_export_service import FieldDescriptor, SectionDescriptor
 
@@ -32,6 +33,7 @@ class VersionSections:
     version_id: UUID
     version_label: int  # ExtractionTemplateVersion.version
     sections: tuple[SectionDescriptor, ...]
+    run_view_fields: Mapping[UUID, RunViewField]
 
 
 @dataclass(frozen=True, slots=True)

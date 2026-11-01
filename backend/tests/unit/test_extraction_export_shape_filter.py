@@ -98,7 +98,7 @@ def _every_sheet_layout() -> ExportLayout:
         generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={value_key(article.run_id, instance_id, _FIELD_ID): _tv("Low")},
         codebook=build_codebook_entries(
-            VersionSections(uuid4(), 1, (section,)), (), build_option_labels((section,))
+            VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
         ),
         appraisal=AppraisalModel(
             domain_section_ids=(_SECTION_ID,),
@@ -128,6 +128,7 @@ def test_complete_emits_every_sheet() -> None:
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "AI proposals",
         "Appraisal",
         "Codebook",
@@ -176,8 +177,7 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
         ("appraisal_summary", "build_appraisal_summary", one),
         ("codebook", "build_codebook", one),
         ("options", "build_options", one),
-        # The role id is ``ai_proposals``; the module keeps its name until PR5.
-        ("ai_proposals", "build_ai_metadata", one),
+        ("ai_proposals", "build_ai_proposals", one),
     ):
         monkeypatch.setattr(workbook_module, fn_name, _spy(role, result))
     monkeypatch.setattr(workbook_module, "build_level_tables", _spy("level_tables", []))

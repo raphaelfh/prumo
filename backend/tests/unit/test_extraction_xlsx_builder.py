@@ -134,10 +134,10 @@ def test_build_workbook_returns_valid_xlsx_bytes():
     wb = _open(data)
     # §3 order: README → Summary → Matrix → Articles → Codebook. The empty
     # layout has no repeating level and no coded option (no Options sheet).
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Codebook"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data", "Codebook"]
 
 
-def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
+def test_build_workbook_includes_ai_proposals_sheet_when_toggled():
     data = build_workbook(
         _layout(include_ai_metadata=True), ExportShape.COMPLETE, include_matrix=True
     )
@@ -148,6 +148,7 @@ def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "AI proposals",
         "Codebook",
     ]
@@ -367,14 +368,14 @@ def test_summary_sheet_lists_each_omitted_article():
     assert ("Jones 2019", "no_run", None, None, None) in rows
 
 
-def test_ai_metadata_sheet_emits_placeholder_when_no_rows():
+def test_ai_proposals_sheet_is_header_only_when_no_rows():
     data = build_workbook(
         _layout(include_ai_metadata=True), ExportShape.COMPLETE, include_matrix=True
     )
     ws = _open(data)["AI proposals"]
-    # Header row plus 1 placeholder row.
-    assert ws.cell(row=1, column=1).value == "Article"
-    assert ws.cell(row=2, column=1).value == "(No AI proposals recorded for the selected articles.)"
+    assert ws.max_row == 1
+    assert ws.cell(row=1, column=1).value == "article_id"
+    assert ws.cell(row=1, column=14).value == "page"
 
 
 def test_all_users_mode_fans_out_reviewer_subcolumns():
@@ -442,98 +443,46 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
     assert ws.cell(row=field_row, column=5).value == "RCT"
 
 
-def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
-    """One row per AI proposal, columns in FR-037 order."""
-    from app.services.extraction_export_service import AIProposalRow, ExportLayout
+def test_ai_proposals_sheet_writes_typed_cells():
+    """The written cells keep their types: a numeric value, its unit, a float confidence."""
+    from dataclasses import replace
+
+    from app.services.exports.ai_proposal_projection import EngineFacts
+    from app.services.exports.values import ExportValue
+    from app.services.extraction_export_service import AIProposalRow
 
     proposal = AIProposalRow(
-        article_label="Gaca, 2011",
-        section_label="1. Source of data",
-        instance_index=1,
-        field_label="1.1 Source of data",
-        ai_proposed_value="Existing registry",
+        article_id=uuid4(),
+        instance_id=uuid4(),
+        field_id=uuid4(),
+        ai_proposal_id=uuid4(),
+        created_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
+        engine=EngineFacts("openai", "gpt-4o-mini", "v1"),
+        value=ExportValue(raw=None, status="answered", value_num=5, unit="mg"),
         confidence=0.93,
         rationale="LLM reasoning here",
-        evidence_text="Patients were enrolled from the registry.",
-        evidence_pages="4",
-        proposed_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
-        model_used="gpt-4o-mini",
-        reviewer_outcome="accepted",
-        final_value_used="Existing registry",
+        evidence_quote="Patients were enrolled from the registry.",
+        page="4",
     )
-    base = _layout(include_ai_metadata=True)
-    layout = ExportLayout(
-        project_name=base.project_name,
-        template_name=base.template_name,
-        template_version=base.template_version,
-        sections=base.sections,
-        articles=base.articles,
-        reviewers=base.reviewers,
-        mode=base.mode,
-        include_ai_metadata=True,
-        anonymize_reviewer_names=base.anonymize_reviewer_names,
-        generated_at=base.generated_at,
-        value_map=base.value_map,
-        ai_proposal_rows=(proposal,),
-    )
-    data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
-    ws = _open(data)["AI proposals"]
-    # Row 2: the proposal. Columns in FR-037 order.
-    assert ws.cell(row=2, column=1).value == "Gaca, 2011"
-    assert ws.cell(row=2, column=2).value == "1. Source of data"
-    assert ws.cell(row=2, column=3).value == 1
-    assert ws.cell(row=2, column=4).value == "1.1 Source of data"
-    assert ws.cell(row=2, column=5).value == "Existing registry"
-    assert ws.cell(row=2, column=6).value == 0.93
-    assert ws.cell(row=2, column=7).value == "LLM reasoning here"
-    assert ws.cell(row=2, column=8).value == "Patients were enrolled from the registry."
-    assert ws.cell(row=2, column=9).value == "4"
-    # column 10: timestamp; column 11: model_used (NEW); column 12: reviewer outcome (shifted)
-    assert ws.cell(row=2, column=10).value is not None
-    assert ws.cell(row=2, column=11).value == "gpt-4o-mini"
-    assert ws.cell(row=2, column=12).value == "accepted"
-    assert ws.cell(row=2, column=13).value == "Existing registry"
-
-
-def test_ai_metadata_value_columns_pass_rendered_values_through():
-    """The 'AI proposed value' (E) and 'Final value used' (M) columns carry
-    values the loader already rendered — number+unit / Yes survive intact."""
-    from app.services.extraction_export_service import AIProposalRow, ExportLayout
-
-    proposal = AIProposalRow(
-        article_label="Gaca, 2011",
-        section_label="1. Source of data",
-        instance_index=1,
-        field_label="1.1 Dose",
-        ai_proposed_value="5 mg",
-        confidence=0.8,
-        rationale="reason",
-        evidence_text="evidence",
-        evidence_pages="2",
-        proposed_at=datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC),
-        model_used="gpt-4o",
-        reviewer_outcome="accepted",
-        final_value_used="Yes",
-    )
-    base = _layout(include_ai_metadata=True)
-    layout = ExportLayout(
-        project_name=base.project_name,
-        template_name=base.template_name,
-        template_version=base.template_version,
-        sections=base.sections,
-        articles=base.articles,
-        reviewers=base.reviewers,
-        mode=base.mode,
-        include_ai_metadata=True,
-        anonymize_reviewer_names=base.anonymize_reviewer_names,
-        generated_at=base.generated_at,
-        value_map=base.value_map,
-        ai_proposal_rows=(proposal,),
-    )
+    layout = replace(_layout(include_ai_metadata=True), ai_proposal_rows=(proposal,))
     ws = _open(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))["AI proposals"]
-    # E2 = "AI proposed value" (col 5), M2 = "Final value used" (col 13, shifted +1).
-    assert ws.cell(row=2, column=5).value == "5 mg"
-    assert ws.cell(row=2, column=13).value == "Yes"
+    row = [c.value for c in ws[2]]
+    assert row == [
+        str(proposal.article_id),
+        str(proposal.instance_id),
+        str(proposal.field_id),
+        None,
+        str(proposal.ai_proposal_id),
+        "openai",
+        "gpt-4o-mini",
+        "v1",
+        5,
+        "mg",
+        0.93,
+        "LLM reasoning here",
+        "Patients were enrolled from the registry.",
+        "4",
+    ]
 
 
 def test_workbook_emits_sheets_in_section4_order():
@@ -581,7 +530,7 @@ def test_workbook_emits_sheets_in_section4_order():
         entries={(eid, None): (inst,)},
     )
     codebook = build_codebook_entries(
-        VersionSections(uuid4(), 1, (section,)), (), build_option_labels((section,))
+        VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
     )
     layout = ExportLayout(
         project_name="P",
@@ -605,6 +554,7 @@ def test_workbook_emits_sheets_in_section4_order():
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "Codebook",
         "Options",
     ]

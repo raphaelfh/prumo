@@ -7,7 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.extraction_export_service import _base_label, _short_id, _suffix_labels
+from app.services.exports.rater_labels import short_id
+from app.services.extraction_export_service import _base_label, _suffix_labels
 
 
 @pytest.mark.parametrize(
@@ -69,5 +70,5 @@ def test_same_created_at_breaks_ties_by_id():
 
 def test_no_title_no_author_falls_back_to_8_hex_short_id():
     aid = uuid4()
-    assert _base_label(None, None, None, aid) == _short_id(aid)
-    assert len(_short_id(aid)) == 8
+    assert _base_label(None, None, None, aid) == short_id(aid)
+    assert len(short_id(aid)) == 8
