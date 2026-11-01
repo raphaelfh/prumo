@@ -81,6 +81,12 @@ export const screening = {
   reasonsTitle: 'Exclusion reason',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',
   noAbstract: 'No abstract available',
+  pmidLabel: 'PMID',
+  doiLabel: 'DOI',
+  meshLabel: 'MeSH',
+  keywordsLabel: 'Keywords',
+  languageChipAria: 'Language: {{language}}',
+  typeChipAria: 'Article type: {{type}}',
 
   // Title/abstract workspace
   panelToggle: 'Toggle the record panel',

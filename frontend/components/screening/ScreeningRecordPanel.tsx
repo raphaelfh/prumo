@@ -13,6 +13,7 @@ import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
 
 import {AssignmentView} from './AssignmentView';
+import {RecordIdentifiers} from './RecordMeta';
 import {RecordStatusChip} from './RecordStatusChip';
 import {Notice} from './ScreeningParts';
 
@@ -32,7 +33,6 @@ function NotEnrolledBody({projectId, row, canManage}: {projectId: string; row: S
   const byline = [row.first_author, row.journal_title, row.publication_year]
     .filter((part) => part !== null && part !== '')
     .join(' · ');
-  const ids = [row.pmid && `PMID ${row.pmid}`, row.doi && `DOI ${row.doi}`].filter(Boolean).join(' · ');
 
   const enrollOne = () =>
     enroll.mutate(
@@ -52,7 +52,7 @@ function NotEnrolledBody({projectId, row, canManage}: {projectId: string; row: S
       <article className="flex min-w-0 flex-col gap-2">
         <h2 className="text-base font-semibold leading-snug text-foreground">{row.title}</h2>
         {byline && <p className="text-[13px] text-muted-foreground">{byline}</p>}
-        {ids && <p className="text-xs text-muted-foreground">{ids}</p>}
+        <RecordIdentifiers article={row} />
       </article>
       {canManage ? (
         <div>

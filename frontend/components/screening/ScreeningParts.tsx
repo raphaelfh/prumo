@@ -1,12 +1,15 @@
 /**
  * Pieces every screening surface shares: the centered notice, the busy
- * region, the record body (title, byline, abstract) and the decision labels.
+ * region, the record body (the reading column) and the decision labels.
  */
 import {useId, type ReactNode} from 'react';
 
 import {Skeleton} from '@/components/ui/skeleton';
 import {t} from '@/lib/copy';
 import type {ScreeningAssignmentRead, ScreeningDecisionCreate} from '@/services/screeningService';
+
+import {RecordChips, RecordIdentifiers, RecordTerms} from './RecordMeta';
+import {StructuredAbstract} from './StructuredAbstract';
 
 type ScreeningArticle = ScreeningAssignmentRead['article'];
 
@@ -46,29 +49,26 @@ export function decisionLabel(decision: ScreeningDecisionCreate['decision']): st
   return t('screening', DECISION_LABEL[decision]);
 }
 
-/** `authors · journal · year`, then the abstract or its absence. */
-export function RecordAbstract({article}: {article: ScreeningArticle}) {
+/**
+ * The record as read for screening, in a 68ch/15px column: chips, title,
+ * byline, identifiers, the abstract (or its absence), then MeSH and keywords.
+ */
+export function RecordBody({article}: {article: ScreeningArticle}) {
   const byline = [article.authors?.join(', '), article.journal_title, article.publication_year]
     .filter((part) => part !== null && part !== undefined && part !== '')
     .join(' · ');
   return (
-    <>
-      {byline && <p className="text-[13px] text-muted-foreground">{byline}</p>}
-      {article.abstract ? (
-        <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">{article.abstract}</p>
-      ) : (
-        <p className="text-sm italic text-muted-foreground">{t('screening', 'noAbstract')}</p>
-      )}
-    </>
-  );
-}
-
-/** The record as read for screening: title, then its byline and abstract. */
-export function RecordBody({article}: {article: ScreeningArticle}) {
-  return (
-    <article className="flex min-w-0 flex-col gap-2">
+    <article className="mx-auto flex w-full min-w-0 max-w-[68ch] flex-col gap-2 text-[15px]">
+      <RecordChips article={article} />
       <h2 className="text-base font-semibold leading-snug text-foreground">{article.title}</h2>
-      <RecordAbstract article={article} />
+      {byline && <p className="text-[13px] text-muted-foreground">{byline}</p>}
+      <RecordIdentifiers article={article} />
+      {article.abstract ? (
+        <StructuredAbstract abstract={article.abstract} />
+      ) : (
+        <p className="italic text-muted-foreground">{t('screening', 'noAbstract')}</p>
+      )}
+      <RecordTerms article={article} />
     </article>
   );
 }
