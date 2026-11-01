@@ -10,12 +10,12 @@ import type {ScreeningAssignmentRead, ScreeningDecisionCreate} from '@/services/
 
 type ScreeningArticle = ScreeningAssignmentRead['article'];
 
-export function Notice({title, body, children}: {title: string; body: string; children?: ReactNode}) {
+export function Notice({title, body, children}: {title: string; body?: string; children?: ReactNode}) {
   return (
     <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-medium text-foreground">{title}</h2>
-        <p className="max-w-sm text-[13px] text-muted-foreground">{body}</p>
+        {body && <p className="max-w-sm text-[13px] text-muted-foreground">{body}</p>}
       </div>
       {children}
     </div>

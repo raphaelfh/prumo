@@ -1,4 +1,4 @@
-/** Copy for title/abstract screening (screening v1). */
+/** Copy for screening: title/abstract and full text. */
 export const screening = {
   // Tab states
   loading: 'Loading screening…',
@@ -6,6 +6,7 @@ export const screening = {
 
   // Sub-views and the Settings sub-view
   tabTitleAbstract: 'Title/abstract',
+  tabFullText: 'Full text',
   tabSettings: 'Settings',
   notConfiguredManagerTitle: 'Screening is not set up',
   openSettings: 'Open Settings',
@@ -26,6 +27,19 @@ export const screening = {
   configSavedToast: 'Screening is set up',
   notConfiguredTitle: 'Screening is not set up yet',
   notConfiguredMember: 'A project manager chooses how many reviewers screen each record.',
+
+  // Full text: the sub-view, its empty state and "Send to full text"
+  ftOffTitle: 'Full-text screening is off',
+  ftOffManager: 'Turn it on in Settings.',
+  ftOffMember: 'A manager turns it on in Settings.',
+  ftEmptyTitle: 'No records in full text yet',
+  ftEmptyMember: 'A manager sends records to full text.',
+  sendToFullText: 'Send {{n}} to full text',
+  sentToFullText: 'Sent {{n}} to full text',
+  sendDisabledOff: 'Full-text screening is off',
+  sendDisabledReasons: 'Add exclusion reasons to the protocol first',
+  sendDisabledNone: 'No records are ready for full text',
+  exportExcludedReports: 'Export excluded reports',
 
   // Enrollment
   enrollAll: 'Enroll all articles',
@@ -186,9 +200,11 @@ export const screening = {
   columnMine: 'Mine',
   columnStatus: 'Status',
   columnReason: 'Reason',
+  columnPdf: 'PDF',
   listRecordsLabel: 'records',
   progressDecided: '{{x}} of {{n}} decided',
   progressYouLeft: 'you: {{m}} left',
+  progressToFullText: '{{k}} to full text →',
   emptyView: 'No records in this view',
   noRecordsMatch: 'No records match',
   clearFilters: 'Clear filters',

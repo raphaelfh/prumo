@@ -268,4 +268,57 @@ describe('ScreeningTab', () => {
     expect(params().has('article')).toBe(false);
     expect(assignmentReads).toBe(0);
   });
+
+  describe('full text', () => {
+    function countRecordReads() {
+      const reads = {count: 0};
+      server.use(
+        http.get(RECORDS_URL, () => {
+          reads.count += 1;
+          return ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'full_text', reviewer_count: 2, rows: []});
+        }),
+      );
+      return reads;
+    }
+
+    it('shows "Full-text screening is off" with Open Settings to a manager', async () => {
+      serveConfig(config({...MANAGER, reviewer_count: 2, enrolled: 1, full_text_reviewer_count: null}));
+      const reads = countRecordReads();
+      const user = userEvent.setup();
+      renderTab('/projects/p1?tab=screening&screeningTab=full_text');
+      expect(await screen.findByRole('heading', {name: 'Full-text screening is off'})).toBeInTheDocument();
+      expect(screen.getByText('Turn it on in Settings.')).toBeInTheDocument();
+      expect(screen.getByRole('button', {name: /to full text/})).toBeDisabled();
+      expect(reads.count).toBe(0);
+
+      await user.click(screen.getByRole('button', {name: 'Open Settings'}));
+      await waitFor(() => expect(params().get('screeningTab')).toBe('settings'));
+    });
+
+    it('shows the member "Full-text screening is off" notice', async () => {
+      serveConfig(config({reviewer_count: 2, enrolled: 1, full_text_reviewer_count: null}));
+      const reads = countRecordReads();
+      renderTab('/projects/p1?tab=screening&screeningTab=full_text');
+      expect(await screen.findByRole('heading', {name: 'Full-text screening is off'})).toBeInTheDocument();
+      expect(screen.getByText('A manager turns it on in Settings.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: 'Open Settings'})).toBeNull();
+      expect(screen.queryByRole('button', {name: /to full text/})).toBeNull();
+      expect(reads.count).toBe(0);
+    });
+
+    it('renders the full-text workspace once full text is on', async () => {
+      serveConfig(config({reviewer_count: 2, enrolled: 1, full_text_reviewer_count: 2, full_text_enrolled: 1}));
+      let phase: string | null = null;
+      server.use(
+        http.get(RECORDS_URL, ({request}) => {
+          phase = new URL(request.url).searchParams.get('phase');
+          return ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'full_text', reviewer_count: 2, rows: [ROW]});
+        }),
+      );
+      renderTab('/projects/p1?tab=screening&screeningTab=full_text');
+      expect(await screen.findByText('Deep learning for sepsis')).toBeInTheDocument();
+      expect(phase).toBe('full_text');
+      expect(screen.getByRole('tab', {name: /^Not retrieved/})).toBeInTheDocument();
+    });
+  });
 });

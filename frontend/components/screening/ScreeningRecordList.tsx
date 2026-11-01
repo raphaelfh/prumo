@@ -1,5 +1,5 @@
 /**
- * The title/abstract record list (spec §4.2, §4.6 list level): status views,
+ * The record list of one phase (spec §4.2, §4.6 list level, §7): status views,
  * the toolbar (search, filters, sort and display, the caller's actions), the
  * progress strip, the rows and the bulk bar. It owns the search / filter /
  * sort UI state; the workspace owns the status view, selection, check set and
@@ -54,6 +54,10 @@ export interface ScreeningRecordListProps {
   onVisibleRowsChange?: (rows: ScreeningRecordRow[]) => void;
   keepArticleIds: ReadonlySet<string>;
   onFiltersChange: () => void;
+  /** The panel is maximized: the list's own shortcuts (⌘F, f, ⌘A) stand down. */
+  maximized: boolean;
+  /** The progress strip's "K to full text →" link (title/abstract, full text on, K > 0). */
+  onOpenFullText?: () => void;
 }
 
 type CopyKey = keyof typeof screening;
@@ -142,12 +146,16 @@ export function ScreeningRecordList({
   onVisibleRowsChange,
   keepArticleIds,
   onFiltersChange,
+  maximized,
+  onOpenFullText,
 }: ScreeningRecordListProps) {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<FilterValues>({});
   const [sortField, setSortField] = useState<RecordSortField>('queue');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [showReason, setShowReason] = useState(false);
+  const fullText = read.phase === 'full_text';
+  // Full text is where reasons matter (PRISMA's reports excluded): on by default there.
+  const [showReason, setShowReason] = useState(fullText);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // State, not a ref: the row window reads the scroller during render.
@@ -198,6 +206,7 @@ export function ScreeningRecordList({
     hasActiveFilters,
     selectAll: selectVisible,
     selectFiltered: selectVisible,
+    enabled: !maximized,
   });
 
   const {decided, enrolled, myLeft} = progress(read.rows);
@@ -207,6 +216,8 @@ export function ScreeningRecordList({
   const progressText = canReview
     ? `${decidedText} · ${t('screening', 'progressYouLeft').replace('{{m}}', String(myLeft))}`
     : decidedText;
+  const showFullTextLink =
+    !fullText && onOpenFullText !== undefined && config.full_text_reviewer_count !== null && config.full_text_ready > 0;
 
   const sortOptions: {value: RecordSortField; label: string}[] = [
     {value: 'queue', label: t('screening', 'sortQueue')},
@@ -257,7 +268,7 @@ export function ScreeningRecordList({
                 projectId={projectId}
                 rows={read.rows}
                 checkedIds={checkedIds}
-                canManage={config.can_manage}
+                canEnroll={config.can_manage && !fullText}
                 onCheckedChange={onCheckedChange}
               />
             )}
@@ -270,7 +281,21 @@ export function ScreeningRecordList({
           clearAllLabel={t('screening', 'clearFilters')}
           removeFilterAriaLabel={(label) => t('screening', 'removeFilterAria').replace('{{label}}', label)}
         />
-        <p className="flex h-7 items-center truncate text-[11px] tabular-nums text-muted-foreground">{progressText}</p>
+        <p className="flex h-7 min-w-0 items-center gap-1 truncate text-[11px] tabular-nums text-muted-foreground">
+          <span className="truncate">{progressText}</span>
+          {showFullTextLink && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={onOpenFullText}
+                className="shrink-0 rounded-sm text-foreground underline-offset-2 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {t('screening', 'progressToFullText').replace('{{k}}', String(config.full_text_ready))}
+              </button>
+            </>
+          )}
+        </p>
       </div>
 
       {/* @container: the table drops columns on its own width (the docked panel halves it), not the viewport's. */}
@@ -285,6 +310,7 @@ export function ScreeningRecordList({
             isNarrow={isNarrow}
             showMine={canReview}
             showReason={showReason}
+            showPdf={fullText}
             activeArticleId={activeArticleId}
             cursorArticleId={cursorArticleId}
             checkedIds={checkedIds}

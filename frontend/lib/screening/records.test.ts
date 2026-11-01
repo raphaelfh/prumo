@@ -6,6 +6,7 @@ import {
   HIDDEN_AT_ZERO,
   RECORD_CSV_COLUMNS,
   defaultStatusView,
+  excludedReportsCsv,
   filterRecords,
   isReadOnly,
   myDecisionValuesFor,
@@ -447,5 +448,32 @@ describe('full-text vocabulary in the list functions', () => {
   it('counts not_retrieved as decided', () => {
     const rows = [row({status: 'not_retrieved'}), row({status: 'to_screen'})];
     expect(progress(rows).decided).toBe(1);
+  });
+});
+
+describe('excludedReportsCsv', () => {
+  it('has one row per excluded report with its reason', () => {
+    const rows = [
+      row({status: 'excluded', title: 'Out', outcome_exclusion_reason: 'Wrong outcome'}),
+      row({status: 'included', title: 'In'}),
+      row({status: 'not_retrieved', title: 'Gone'}),
+    ];
+    const lines = excludedReportsCsv(rows).split('\r\n');
+    expect(lines[0]).toBe('title,first_author,publication_year,journal_title,pmid,doi,outcome_exclusion_reason');
+    expect(lines).toHaveLength(2);
+    expect(lines[1].startsWith('Out,')).toBe(true);
+    expect(lines[1].endsWith(',Wrong outcome')).toBe(true);
+  });
+
+  it("writes an excluded title starting with = with a leading '", () => {
+    const lines = excludedReportsCsv([
+      row({status: 'excluded', title: '=HYPERLINK("x")', outcome_exclusion_reason: 'r'}),
+    ]).split('\r\n');
+    expect(lines[1].startsWith(`"'=HYPERLINK(""x"")",`)).toBe(true);
+  });
+
+  it('guards a reason starting with = too', () => {
+    const lines = excludedReportsCsv([row({status: 'excluded', title: 'T', outcome_exclusion_reason: '=cmd'})]).split('\r\n');
+    expect(lines[1].endsWith(",'=cmd")).toBe(true);
   });
 });

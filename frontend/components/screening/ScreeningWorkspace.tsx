@@ -1,10 +1,13 @@
 /**
- * The Title/abstract sub-view (spec §4, §4.1, §4.2, §4.6): the record list and
- * the docked record panel on `ListDetailSplitShell`.
+ * One screening phase's sub-view (spec §4, §4.1, §4.2, §4.6, §7): the record
+ * list and the docked record panel on `ListDetailSplitShell`. Title/abstract
+ * and full text share it; the phase picks the records read, the status views,
+ * the toolbar and the record panel.
  *
  * URL: `?article=` is the selection and `?status=` the status view (absent →
- * the role default, fixed once the first read lands); both are written with
- * replace. A legacy `?assignment=` is stripped on mount and opens nothing.
+ * the role default, fixed once the first read lands; a view the phase lacks →
+ * rewritten to that default); both are written with replace. A legacy
+ * `?assignment=` is stripped on mount and opens nothing.
  * Local: whether the panel is open, maximized (controlled for the shell), the
  * checked rows, the list cursor while the panel is closed, and the article ids
  * decided this session, which stay in the current view until the view, search
@@ -42,11 +45,18 @@ import {
   statusViewsFor,
   type StatusView,
 } from '@/lib/screening/records';
-import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
+import type {ScreeningConfigRead, ScreeningPhase, ScreeningRecordRow} from '@/services/screeningService';
 
+import {Notice} from './ScreeningParts';
 import {ScreeningRecordList} from './ScreeningRecordList';
 import {ScreeningRecordPanel} from './ScreeningRecordPanel';
-import {EnrollAllButton, PubMedImportButton, StartScreeningButton} from './ScreeningToolbarActions';
+import {
+  EnrollAllButton,
+  ExportExcludedReportsButton,
+  PubMedImportButton,
+  SendToFullTextButton,
+  StartScreeningButton,
+} from './ScreeningToolbarActions';
 
 const SKELETON_ROWS = 6;
 const PREFETCH_AHEAD = 2;
@@ -66,8 +76,8 @@ function queueAfter(rows: ScreeningRecordRow[], from: ScreeningRecordRow, decide
   return [...queue.slice(at + 1), ...queue.slice(0, Math.max(at, 0))];
 }
 
-function isStatusView(value: string | null): value is StatusView {
-  return value !== null && (statusViewsFor('title_abstract') as readonly string[]).includes(value);
+function isStatusView(phase: ScreeningPhase, value: string | null): value is StatusView {
+  return value !== null && (statusViewsFor(phase) as readonly string[]).includes(value);
 }
 
 /** The toolbar row alone, above a list-level state that has no list. */
@@ -90,13 +100,27 @@ function SkeletonRows() {
   );
 }
 
-export function TitleAbstractWorkspace({projectId, config}: {projectId: string; config: ScreeningConfigRead}) {
+export function ScreeningWorkspace({
+  projectId,
+  config,
+  phase,
+}: {
+  projectId: string;
+  config: ScreeningConfigRead;
+  phase: ScreeningPhase;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const articleId = searchParams.get('article');
   const statusParam = searchParams.get('status');
   const hasLegacyAssignment = searchParams.has('assignment');
+  const fullText = phase === 'full_text';
+  const phaseEnrolled = fullText ? config.full_text_enrolled : config.enrolled;
 
-  const records = useScreeningRecords(projectId, 'title_abstract', config.reviewer_count !== null);
+  const records = useScreeningRecords(
+    projectId,
+    phase,
+    (fullText ? config.full_text_reviewer_count : config.reviewer_count) !== null,
+  );
   const rows = records.data?.rows;
 
   const [panelOpen, setPanelOpen] = useState(() => articleId !== null);
@@ -120,9 +144,9 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
   // view under the user. Nothing enrolled → All, where the Not enrolled rows are.
   const [defaultView, setDefaultView] = useState<StatusView | null>(null);
   if (defaultView === null && rows) {
-    setDefaultView(config.enrolled === 0 ? 'all' : defaultStatusView(config, statusCounts(rows)));
+    setDefaultView(phaseEnrolled === 0 ? 'all' : defaultStatusView(config, statusCounts(rows)));
   }
-  const status: StatusView = isStatusView(statusParam) ? statusParam : (defaultView ?? 'all');
+  const status: StatusView = isStatusView(phase, statusParam) ? statusParam : (defaultView ?? 'all');
 
   const updateParams = (mutate: (params: URLSearchParams) => void) =>
     setSearchParams(
@@ -147,24 +171,38 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
   const [onNotInPhase] = useState(() => () => notInPhaseRef.current());
 
   // A client miss (initial or after a refetch): no request is made for it.
-  // One updater for both URL repairs: react-router's functional
+  // A `?status=` the phase lacks (the section switcher keeps every param, so
+  // `maybe` can arrive at full text) is rewritten to the role default.
+  // One updater for every URL repair: react-router's functional
   // `setSearchParams` reads the last render's params, so a second navigate in
   // the same commit would restore what the first one removed.
   const selectionMissing =
     rows !== undefined && articleId !== null && !rows.some((row) => row.article_id === articleId);
+  const statusFix = statusParam !== null && !isStatusView(phase, statusParam) ? defaultView : null;
   useEffect(() => {
-    if (!hasLegacyAssignment && !selectionMissing) return;
+    if (!hasLegacyAssignment && !selectionMissing && statusFix === null) return;
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.delete('assignment');
         if (selectionMissing) next.delete('article');
+        if (statusFix !== null) next.set('status', statusFix);
         return next;
       },
       {replace: true},
     );
     if (selectionMissing) toast(t('screening', 'notInPhase'));
-  }, [hasLegacyAssignment, selectionMissing, setSearchParams]);
+  }, [hasLegacyAssignment, selectionMissing, statusFix, setSearchParams]);
+
+  // Navigation, not a repair: Back returns to title/abstract.
+  const openFullText = () =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('screeningTab', 'full_text');
+      next.delete('status');
+      next.delete('article');
+      return next;
+    });
 
   const cursorArticleId = panelOpen ? articleId : listCursor;
   const selectRow = (row: ScreeningRecordRow) => {
@@ -258,7 +296,13 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
 
   const readOnly = isReadOnly(config);
   const myLeft = rows ? progress(rows).myLeft : 0;
-  const toolbarActions = (
+  const toolbarActions = fullText ? (
+    <>
+      {config.can_manage && <SendToFullTextButton projectId={projectId} config={config} />}
+      {rows && <ExportExcludedReportsButton rows={rows} />}
+      {!readOnly && myLeft > 0 && <StartScreeningButton onStart={start} />}
+    </>
+  ) : (
     <>
       {!readOnly && (
         <PubMedImportButton projectId={projectId} canManage={config.can_manage} className="shrink-0" />
@@ -285,6 +329,15 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
         />
       </ToolbarOnly>
     );
+  } else if (fullText && config.full_text_enrolled === 0) {
+    // Nothing to export or screen yet; Send sits in the notice, not twice in a toolbar too.
+    list = config.can_manage ? (
+      <Notice title={t('screening', 'ftEmptyTitle')}>
+        <SendToFullTextButton projectId={projectId} config={config} />
+      </Notice>
+    ) : (
+      <Notice title={t('screening', 'ftEmptyTitle')} body={t('screening', 'ftEmptyMember')} />
+    );
   } else if (!records.data) {
     list = (
       <ToolbarOnly actions={toolbarActions}>
@@ -305,7 +358,7 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
   } else {
     list = (
       <div className="flex h-full min-h-0 flex-col gap-2">
-        {config.enrolled === 0 && (
+        {!fullText && config.enrolled === 0 && (
           <div className="flex shrink-0 items-center gap-3 rounded-md border border-border/40 bg-muted/30 px-3 py-2 text-[13px]">
             {config.can_manage ? (
               <EnrollAllButton projectId={projectId} label={t('screening', 'enrollAll')} />
@@ -331,6 +384,8 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
             toolbarActions={toolbarActions}
             keepArticleIds={keepArticleIds}
             onFiltersChange={() => setKeepArticleIds(new Set())}
+            maximized={maximized}
+            onOpenFullText={openFullText}
           />
         </div>
       </div>
@@ -353,7 +408,7 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
             projectId={projectId}
             row={selectedRow}
             config={config}
-            phase="title_abstract"
+            phase={phase}
             maximized={maximized}
             onDecided={onDecided}
             onNotInPhase={onNotInPhase}

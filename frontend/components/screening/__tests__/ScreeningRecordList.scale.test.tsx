@@ -96,6 +96,7 @@ function List({data, status, onStatusChange}: {data: ScreeningRecordsRead; statu
       toolbarActions={null}
       keepArticleIds={EMPTY}
       onFiltersChange={noop}
+      maximized={false}
     />
   );
 }

@@ -141,6 +141,8 @@ interface HostProps {
   onFiltersChange?: () => void;
   onVisibleRowsChange?: (rows: Row[]) => void;
   initialChecked?: ReadonlySet<string>;
+  onOpenFullText?: () => void;
+  maximized?: boolean;
 }
 
 function Host({
@@ -153,6 +155,8 @@ function Host({
   onFiltersChange = noop,
   onVisibleRowsChange,
   initialChecked = NO_KEPT,
+  onOpenFullText,
+  maximized = false,
 }: HostProps) {
   const [status, setStatus] = useState<StatusView>(initialStatus);
   const [checked, setChecked] = useState<ReadonlySet<string>>(initialChecked);
@@ -178,6 +182,8 @@ function Host({
       onVisibleRowsChange={onVisibleRowsChange}
       keepArticleIds={keepArticleIds}
       onFiltersChange={onFiltersChange}
+      maximized={maximized}
+      onOpenFullText={onOpenFullText}
     />
   );
 }
@@ -416,14 +422,29 @@ describe('ScreeningRecordList', () => {
     expect(onFiltersChange).toHaveBeenCalledTimes(1);
   });
 
-  it('shows "X of N decided · you: M left" and no full-text segment', () => {
+  it('shows "X of N decided · you: M left"', () => {
     const reviewer = renderList();
     expect(screen.getByText('3 of 7 decided · you: 2 left')).toBeInTheDocument();
-    expect(screen.queryByText(/full.text/i)).toBeNull();
     reviewer.unmount();
 
     renderList({cfg: VIEWER});
     expect(screen.getByText('3 of 7 decided')).toBeInTheDocument();
+  });
+
+  it('shows "K to full text →" only when full text is on and K > 0', async () => {
+    const user = userEvent.setup();
+    const off = renderList({cfg: config({full_text_reviewer_count: null, full_text_ready: 4})});
+    expect(screen.queryByRole('button', {name: /to full text/})).toBeNull();
+    off.unmount();
+
+    const none = renderList({cfg: config({full_text_reviewer_count: 2, full_text_ready: 0})});
+    expect(screen.queryByRole('button', {name: /to full text/})).toBeNull();
+    none.unmount();
+
+    const onOpenFullText = vi.fn();
+    renderList({cfg: config({full_text_reviewer_count: 2, full_text_ready: 4}), onOpenFullText});
+    await user.click(screen.getByRole('button', {name: '4 to full text →'}));
+    expect(onOpenFullText).toHaveBeenCalledTimes(1);
   });
 
   it('marks an arbitrated outcome on its status chip', () => {

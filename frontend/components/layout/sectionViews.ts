@@ -20,6 +20,7 @@ const sectionViews: Record<string, SectionView[]> = {
   ],
   screening: [
     { value: 'title_abstract', label: t('screening', 'tabTitleAbstract'), urlParam: 'screeningTab' },
+    { value: 'full_text', label: t('screening', 'tabFullText'), urlParam: 'screeningTab' },
     { value: 'settings', label: t('screening', 'tabSettings'), urlParam: 'screeningTab', managerOnly: true },
   ],
 };

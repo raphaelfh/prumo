@@ -56,17 +56,18 @@ describe('SectionViewSwitcher', () => {
     // per container width (the hidden one is `display:none`).
     expect(screen.getByRole('button', { name: /assessment/i })).toBeInTheDocument();
   });
-  it('renders Title/abstract and Settings for a screening manager', () => {
+  it('renders Title/abstract, Full text and Settings for a screening manager', () => {
     roleMock.mockReturnValue({ isManager: true, role: 'manager', loading: false });
     renderWith('screening');
-    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'tabSettings' })).toBeInTheDocument();
+    const names = screen.getAllByRole('tab').map((tab) => tab.textContent);
+    expect(names).toEqual(['tabTitleAbstract', 'tabFullText', 'tabSettings']);
   });
 
   it('hides Settings for a screening member', () => {
     roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
     renderWith('screening');
     expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'tabFullText' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'tabSettings' })).toBeNull();
   });
 

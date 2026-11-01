@@ -7,7 +7,9 @@
  * - a manager with no `?screeningTab` and no config lands on Settings (first
  *   run, replace).
  * Title/abstract without a config shows the toolbar, then "not set up";
- * otherwise the workspace. `?assignment=` is stripped by the workspace.
+ * full text while it is off (no full-text reviewer count) shows the toolbar,
+ * then "Full-text screening is off", and reads no records. Otherwise the
+ * workspace of the phase. `?assignment=` is stripped by the workspace.
  */
 import {useEffect} from 'react';
 import {useSearchParams} from 'react-router';
@@ -22,8 +24,8 @@ import type {ScreeningConfigRead} from '@/services/screeningService';
 
 import {LoadingState, Notice} from './ScreeningParts';
 import {ScreeningSettings} from './ScreeningSettings';
-import {PubMedImportButton} from './ScreeningToolbarActions';
-import {TitleAbstractWorkspace} from './TitleAbstractWorkspace';
+import {PubMedImportButton, SendToFullTextButton} from './ScreeningToolbarActions';
+import {ScreeningWorkspace} from './ScreeningWorkspace';
 
 const TAB_PARAM = 'screeningTab';
 
@@ -32,6 +34,33 @@ function requiredTab(config: ScreeningConfigRead, tab: string | null): string | 
   if (tab === 'settings' && !config.can_manage) return 'title_abstract';
   if (tab === null && config.reviewer_count === null && config.can_manage) return 'settings';
   return null;
+}
+
+function FullTextOff({
+  projectId,
+  config,
+  onOpenSettings,
+}: {
+  projectId: string;
+  config: ScreeningConfigRead;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {config.can_manage && <SendToFullTextButton projectId={projectId} config={config} />}
+      </div>
+      {config.can_manage ? (
+        <Notice title={t('screening', 'ftOffTitle')} body={t('screening', 'ftOffManager')}>
+          <Button size="sm" onClick={onOpenSettings}>
+            {t('screening', 'openSettings')}
+          </Button>
+        </Notice>
+      ) : (
+        <Notice title={t('screening', 'ftOffTitle')} body={t('screening', 'ftOffMember')} />
+      )}
+    </div>
+  );
 }
 
 function NotSetUp({
@@ -111,5 +140,12 @@ export function ScreeningTab({projectId}: {projectId: string}) {
   if (config.reviewer_count === null) {
     return <NotSetUp projectId={projectId} config={config} onOpenSettings={() => setTab('settings')} />;
   }
-  return <TitleAbstractWorkspace projectId={projectId} config={config} />;
+  if (tab === 'full_text') {
+    if (config.full_text_reviewer_count === null) {
+      return <FullTextOff projectId={projectId} config={config} onOpenSettings={() => setTab('settings')} />;
+    }
+    // Keyed by phase: switching sub-view starts a fresh workspace (selection, view, panel).
+    return <ScreeningWorkspace key="full_text" projectId={projectId} config={config} phase="full_text" />;
+  }
+  return <ScreeningWorkspace key="title_abstract" projectId={projectId} config={config} phase="title_abstract" />;
 }

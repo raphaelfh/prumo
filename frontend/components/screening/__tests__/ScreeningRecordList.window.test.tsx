@@ -18,7 +18,7 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: {access_token: 'test-token'}}})}},
 }));
 
-import {TitleAbstractWorkspace} from '@/components/screening/TitleAbstractWorkspace';
+import {ScreeningWorkspace} from '@/components/screening/ScreeningWorkspace';
 import {HeaderActionsProvider} from '@/contexts/HeaderActionsContext';
 import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
 import {server} from '@/test/mocks/server';
@@ -115,7 +115,7 @@ function renderWorkspace() {
     <QueryClientProvider client={client}>
       <HeaderActionsProvider>
         <MemoryRouter initialEntries={['/projects/p1?tab=screening']}>
-          <TitleAbstractWorkspace projectId="p1" config={CONFIG} />
+          <ScreeningWorkspace projectId="p1" config={CONFIG} phase="title_abstract" />
         </MemoryRouter>
       </HeaderActionsProvider>
     </QueryClientProvider>,

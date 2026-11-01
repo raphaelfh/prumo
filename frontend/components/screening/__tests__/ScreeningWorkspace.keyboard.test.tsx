@@ -1,6 +1,6 @@
 /**
- * TitleAbstractWorkspace — keyboard triage, the Esc order, auto-advance and
- * next-record prefetch. Shared fixtures: ./titleAbstractWorkspace.fixtures.
+ * ScreeningWorkspace — keyboard triage, the Esc order, auto-advance and
+ * next-record prefetch. Shared fixtures: ./screeningWorkspace.fixtures.
  */
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -35,7 +35,7 @@ import {
   serveAssignments,
   serveRecords,
   titleButton,
-} from './titleAbstractWorkspace.fixtures';
+} from './screeningWorkspace.fixtures';
 
 beforeEach(() => {
   vi.mocked(toast).mockClear();
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.mocked(toast.error).mockClear();
 });
 
-describe('TitleAbstractWorkspace — keyboard', () => {
+describe('ScreeningWorkspace — keyboard', () => {
   const press = (key: string, target: Element = document.body) => fireEvent.keyDown(target, {key});
   const cursorTitle = () => document.querySelector('[data-cursor="true"]')?.querySelector('button:not([role="checkbox"])')?.textContent ?? null;
   const box = (title: string) => screen.getByRole('checkbox', {name: `Select ${title}`});
@@ -168,21 +168,25 @@ describe('TitleAbstractWorkspace — keyboard', () => {
     renderAll('/projects/p1?tab=screening&article=art1');
     await screen.findByRole('heading', {name: 'Alpha trial'});
     await user.click(box('Beta cohort'));
-    fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
-    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    // `f` belongs to the list only while it shows (Ruling 30), so the popover opens before maximizing.
     press('f');
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
 
     const escape = () => fireEvent.keyDown(document.activeElement ?? document.body, {key: 'Escape'});
     escape();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    expect(panel()).not.toBeNull();
     // Focus returns to the filter trigger, whose tooltip opens: the tooltip
     // takes its own Escape, which is not a chain step.
     expect(await screen.findByRole('tooltip')).toBeInTheDocument();
     escape();
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    expect(panel()).not.toBeNull();
+
+    fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
     expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    press('f');
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     escape();
     expect(document.querySelector('[data-maximized]')).toBeNull();
@@ -214,7 +218,7 @@ describe('TitleAbstractWorkspace — keyboard', () => {
   });
 });
 
-describe('TitleAbstractWorkspace — auto-advance', () => {
+describe('ScreeningWorkspace — auto-advance', () => {
   const DELTA = row({article_id: 'art4', assignment_id: 'a4', queue_rank: 4, title: 'Delta study'});
   const EPSILON = row({article_id: 'art5', assignment_id: 'a5', queue_rank: 5, title: 'Epsilon series'});
   const ZETA = row({article_id: 'art6', assignment_id: 'a6', queue_rank: 6, title: 'Zeta report'});
