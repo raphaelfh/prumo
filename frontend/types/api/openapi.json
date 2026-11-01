@@ -956,6 +956,102 @@
         "title": "ApiResponse[DiscardDraftResponse]",
         "type": "object"
       },
+      "ApiResponse_DuplicateVerdictsResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DuplicateVerdictsResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DuplicateVerdictsResult]",
+        "type": "object"
+      },
+      "ApiResponse_DuplicatesRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DuplicatesRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DuplicatesRead]",
+        "type": "object"
+      },
       "ApiResponse_EntryBulkDeleteResponse_": {
         "properties": {
           "data": {
@@ -5496,6 +5592,329 @@
         "title": "DownloadAttachmentResponse",
         "type": "object"
       },
+      "DuplicatePair": {
+        "description": "A candidate pair (open) or a ruled one (resolved).\n\n``kept_article_id`` is the keep order's suggestion for an open pair and the\nrecorded keeper for a resolved one. ``tier`` and ``match_label`` are\nrecomputed from today's metadata; a resolved pair that no longer matches\ncarries ``None``.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "basis": {
+            "enum": [
+              "pmid",
+              "doi",
+              "title",
+              "manual"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "decided_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Name"
+          },
+          "kept": {
+            "$ref": "#/components/schemas/DuplicateSide"
+          },
+          "kept_article_id": {
+            "format": "uuid",
+            "title": "Kept Article Id",
+            "type": "string"
+          },
+          "match_label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pmid",
+                  "doi_title",
+                  "title",
+                  "doi_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Label"
+          },
+          "removed": {
+            "$ref": "#/components/schemas/DuplicateSide"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "exact",
+                  "likely",
+                  "possible"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "duplicate",
+                  "distinct"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "article_id",
+          "kept_article_id",
+          "tier",
+          "basis",
+          "match_label",
+          "removed",
+          "kept"
+        ],
+        "title": "DuplicatePair",
+        "type": "object"
+      },
+      "DuplicateSide": {
+        "description": "One side of a pair: the fields the compare panel shows.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "has_abstract": {
+            "title": "Has Abstract",
+            "type": "boolean"
+          },
+          "has_pdf": {
+            "title": "Has Pdf",
+            "type": "boolean"
+          },
+          "has_refusing_work": {
+            "description": "Full-text or extraction work: the server refuses removing this side.",
+            "title": "Has Refusing Work",
+            "type": "boolean"
+          },
+          "has_review_work": {
+            "title": "Has Review Work",
+            "type": "boolean"
+          },
+          "ingestion_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Source"
+          },
+          "journal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Title"
+          },
+          "pmid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pmid"
+          },
+          "publication_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Year"
+          },
+          "screening_decisions": {
+            "title": "Screening Decisions",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "title",
+          "authors",
+          "publication_year",
+          "journal_title",
+          "doi",
+          "pmid",
+          "ingestion_source",
+          "has_pdf",
+          "has_abstract",
+          "screening_decisions",
+          "has_review_work",
+          "has_refusing_work"
+        ],
+        "title": "DuplicateSide",
+        "type": "object"
+      },
+      "DuplicateVerdictCreate": {
+        "additionalProperties": false,
+        "description": "One ruling: ``article_id`` is removed (or judged distinct), ``kept_article_id`` stays.\n\nThe basis is derived by the server from today's metadata, never sent.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "kept_article_id": {
+            "format": "uuid",
+            "title": "Kept Article Id",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "duplicate",
+              "distinct",
+              "cleared"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "kept_article_id",
+          "verdict"
+        ],
+        "title": "DuplicateVerdictCreate",
+        "type": "object"
+      },
+      "DuplicateVerdictsCreate": {
+        "additionalProperties": false,
+        "description": "A batch of rulings, applied in order in one transaction.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateVerdictCreate"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DuplicateVerdictsCreate",
+        "type": "object"
+      },
+      "DuplicateVerdictsResult": {
+        "description": "Rows written (skips excluded) and kept records enrolled at title/abstract.",
+        "properties": {
+          "enrolled_kept": {
+            "title": "Enrolled Kept",
+            "type": "integer"
+          },
+          "written": {
+            "title": "Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "written",
+          "enrolled_kept"
+        ],
+        "title": "DuplicateVerdictsResult",
+        "type": "object"
+      },
+      "DuplicatesRead": {
+        "description": "Open pairs (tier, then kept title) and resolved pairs (newest first).",
+        "properties": {
+          "open": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicatePair"
+            },
+            "title": "Open",
+            "type": "array"
+          },
+          "resolved": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicatePair"
+            },
+            "title": "Resolved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "open",
+          "resolved"
+        ],
+        "title": "DuplicatesRead",
+        "type": "object"
+      },
       "EligibilityCriteria": {
         "additionalProperties": false,
         "properties": {
@@ -9120,12 +9539,12 @@
             "title": "Identified Total",
             "type": "integer"
           },
-          "imported_not_enrolled": {
-            "title": "Imported Not Enrolled",
-            "type": "integer"
-          },
           "not_retrieved": {
             "title": "Not Retrieved",
+            "type": "integer"
+          },
+          "other_removed": {
+            "title": "Other Removed",
             "type": "integer"
           },
           "screened": {
@@ -9142,7 +9561,7 @@
           "identified_total",
           "duplicates_removed",
           "not_retrieved",
-          "imported_not_enrolled",
+          "other_removed",
           "screened",
           "excluded",
           "excluded_by_reason",
@@ -17689,6 +18108,123 @@
         "summary": "Update Project Details",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/duplicates": {
+      "get": {
+        "description": "Open candidate pairs and resolved pairs, each side with its compare fields.",
+        "operationId": "get_duplicates_api_v1_projects__project_id__duplicates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DuplicatesRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Only project managers review duplicates"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Duplicates",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/duplicates/verdicts": {
+      "post": {
+        "description": "Record a batch of rulings in order, in one transaction; a refusal writes nothing.",
+        "operationId": "post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateVerdictsCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DuplicateVerdictsResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "An article is not in this project"
+          },
+          "409": {
+            "description": "The record to remove has full-text or extraction work, or the record to keep was already removed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Post Duplicate Verdicts",
+        "tags": [
+          "duplicates"
         ]
       }
     },

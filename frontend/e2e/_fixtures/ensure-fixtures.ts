@@ -69,10 +69,15 @@ async function ensureMembership(projectId: string, userId: string, role: string)
   await adminInsert("project_members", [{ project_id: projectId, user_id: userId, role }]);
 }
 
-async function ensureArticle(id: string, projectId: string, title: string): Promise<void> {
+async function ensureArticle(
+  id: string,
+  projectId: string,
+  title: string,
+  extra: { pmid?: string; doi?: string; publication_year?: number } = {},
+): Promise<void> {
   const existing = await adminSelect("articles", `id=eq.${id}&select=id`);
   if (existing.length > 0) return;
-  await adminInsert("articles", [{ id, project_id: projectId, title }]);
+  await adminInsert("articles", [{ id, project_id: projectId, title, ...extra }]);
 }
 
 /** Seed an article_files row + text blocks so AI extraction (opt-in) has input. */
@@ -197,6 +202,8 @@ export async function ensureFixtures(): Promise<void> {
   await ensureMembership(F.SCREENING_PROJECT_ID, reviewerBId, "reviewer");
   await ensureMembership(F.SCREENING_PROJECT_ID, reviewerCId, "reviewer");
   for (const article of F.SCREENING_ARTICLES) {
-    await ensureArticle(article.id, F.SCREENING_PROJECT_ID, article.title);
+    await ensureArticle(article.id, F.SCREENING_PROJECT_ID, article.title, {
+      pmid: "pmid" in article ? article.pmid : undefined,
+    });
   }
 }

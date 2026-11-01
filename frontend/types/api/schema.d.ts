@@ -879,6 +879,46 @@ export interface paths {
         patch: operations["update_project_details_api_v1_projects__project_id__details_patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Duplicates
+         * @description Open candidate pairs and resolved pairs, each side with its compare fields.
+         */
+        get: operations["get_duplicates_api_v1_projects__project_id__duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/duplicates/verdicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Duplicate Verdicts
+         * @description Record a batch of rulings in order, in one transaction; a refusal writes nothing.
+         */
+        post: operations["post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extraction-export": {
         parameters: {
             query?: never;
@@ -2550,6 +2590,40 @@ export interface components {
         ApiResponse_DiscardDraftResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["DiscardDraftResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DuplicateVerdictsResult] */
+        ApiResponse_DuplicateVerdictsResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DuplicateVerdictsResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DuplicatesRead] */
+        ApiResponse_DuplicatesRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DuplicatesRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4338,6 +4412,133 @@ export interface components {
             /** Size */
             size: number;
         };
+        /**
+         * DuplicatePair
+         * @description A candidate pair (open) or a ruled one (resolved).
+         *
+         *     ``kept_article_id`` is the keep order's suggestion for an open pair and the
+         *     recorded keeper for a resolved one. ``tier`` and ``match_label`` are
+         *     recomputed from today's metadata; a resolved pair that no longer matches
+         *     carries ``None``.
+         */
+        DuplicatePair: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "pmid" | "doi" | "title" | "manual";
+            /** Created At */
+            created_at?: string | null;
+            /** Decided By Name */
+            decided_by_name?: string | null;
+            kept: components["schemas"]["DuplicateSide"];
+            /**
+             * Kept Article Id
+             * Format: uuid
+             */
+            kept_article_id: string;
+            /** Match Label */
+            match_label: ("pmid" | "doi_title" | "title" | "doi_only") | null;
+            removed: components["schemas"]["DuplicateSide"];
+            /** Tier */
+            tier: ("exact" | "likely" | "possible") | null;
+            /** Verdict */
+            verdict?: ("duplicate" | "distinct") | null;
+        };
+        /**
+         * DuplicateSide
+         * @description One side of a pair: the fields the compare panel shows.
+         */
+        DuplicateSide: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Authors */
+            authors: string[];
+            /** Doi */
+            doi: string | null;
+            /** Has Abstract */
+            has_abstract: boolean;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Has Refusing Work
+             * @description Full-text or extraction work: the server refuses removing this side.
+             */
+            has_refusing_work: boolean;
+            /** Has Review Work */
+            has_review_work: boolean;
+            /** Ingestion Source */
+            ingestion_source: string | null;
+            /** Journal Title */
+            journal_title: string | null;
+            /** Pmid */
+            pmid: string | null;
+            /** Publication Year */
+            publication_year: number | null;
+            /** Screening Decisions */
+            screening_decisions: number;
+            /** Title */
+            title: string;
+        };
+        /**
+         * DuplicateVerdictCreate
+         * @description One ruling: ``article_id`` is removed (or judged distinct), ``kept_article_id`` stays.
+         *
+         *     The basis is derived by the server from today's metadata, never sent.
+         */
+        DuplicateVerdictCreate: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /**
+             * Kept Article Id
+             * Format: uuid
+             */
+            kept_article_id: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "duplicate" | "distinct" | "cleared";
+        };
+        /**
+         * DuplicateVerdictsCreate
+         * @description A batch of rulings, applied in order in one transaction.
+         */
+        DuplicateVerdictsCreate: {
+            /** Items */
+            items: components["schemas"]["DuplicateVerdictCreate"][];
+        };
+        /**
+         * DuplicateVerdictsResult
+         * @description Rows written (skips excluded) and kept records enrolled at title/abstract.
+         */
+        DuplicateVerdictsResult: {
+            /** Enrolled Kept */
+            enrolled_kept: number;
+            /** Written */
+            written: number;
+        };
+        /**
+         * DuplicatesRead
+         * @description Open pairs (tier, then kept title) and resolved pairs (newest first).
+         */
+        DuplicatesRead: {
+            /** Open */
+            open: components["schemas"]["DuplicatePair"][];
+            /** Resolved */
+            resolved: components["schemas"]["DuplicatePair"][];
+        };
         /** EligibilityCriteria */
         EligibilityCriteria: {
             /** Exclusion */
@@ -6081,10 +6282,10 @@ export interface components {
             identified: components["schemas"]["PrismaSourceCount"][];
             /** Identified Total */
             identified_total: number;
-            /** Imported Not Enrolled */
-            imported_not_enrolled: number;
             /** Not Retrieved */
             not_retrieved: number;
+            /** Other Removed */
+            other_removed: number;
             /** Screened */
             screened: number;
             /** Sought For Retrieval */
@@ -10450,6 +10651,93 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_duplicates_api_v1_projects__project_id__duplicates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DuplicatesRead_"];
+                };
+            };
+            /** @description Only project managers review duplicates */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateVerdictsCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DuplicateVerdictsResult_"];
+                };
+            };
+            /** @description An article is not in this project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The record to remove has full-text or extraction work, or the record to keep was already removed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

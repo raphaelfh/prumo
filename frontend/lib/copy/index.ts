@@ -27,6 +27,7 @@ import {personalAccessTokens} from './personalAccessTokens';
 import {oauthConsent} from './oauthConsent';
 import {connectedApps} from './connectedApps';
 import {screening} from './screening';
+import {duplicates} from './duplicates';
 
 export {
     common,
@@ -65,6 +66,7 @@ const copy = {
     oauthConsent,
     connectedApps,
     screening,
+    duplicates,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;

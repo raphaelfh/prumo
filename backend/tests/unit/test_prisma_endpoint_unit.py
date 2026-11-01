@@ -25,7 +25,7 @@ async def test_prisma_handler_returns_counts(monkeypatch: pytest.MonkeyPatch) ->
         identified_total=3,
         duplicates_removed=0,
         not_retrieved=1,
-        imported_not_enrolled=0,
+        other_removed=0,
         screened=3,
         excluded=1,
         excluded_by_reason=[PrismaReasonCount(reason="Not ML", count=1)],

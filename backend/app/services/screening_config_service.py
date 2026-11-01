@@ -74,13 +74,14 @@ class ScreeningConfigService:
         project = await self.projects.get_by_id(project_id)
         enrolled = await self.screening.count_enrolled(project_id=project_id)
         total = await self.screening.count_project_articles(project_id=project_id)
+        removed = await self.screening.count_removed(project_id=project_id)
         roles = await screening_roles(self.db, project_id, viewer_id)
         return ScreeningConfigRead(
             reviewer_count=reviewer_count_of(project.settings if project else None),
             reviewer_count_locked=await self.screening.project_has_decision(project_id=project_id),
             reviewer_capable=await self.members.count_reviewer_capable(project_id),
             enrolled=enrolled,
-            not_enrolled=total - enrolled,
+            not_enrolled=total - enrolled - removed,
             can_manage=roles.can_manage,
             can_review=roles.can_review,
             can_arbitrate=roles.can_arbitrate,
@@ -118,14 +119,22 @@ class ScreeningConfigService:
     async def enroll(
         self, project_id: UUID, enrolled_by: UUID, article_ids: list[UUID] | None
     ) -> ScreeningEnrollResult:
-        """Enroll the given articles (or every article of the project); repeats are skipped."""
+        """Enroll the given articles (or every article of the project); repeats are skipped.
+
+        Removed duplicates are never candidates, so ``already_enrolled`` never
+        counts one. The project row lock is the verdict writer's, so a
+        concurrent merge cannot interleave with the count and the insert.
+        """
+        await self.projects.lock_for_update(project_id)
         if article_ids is not None:
-            article_ids = await owned_articles(
-                self.db, project_id=project_id, article_ids=article_ids
-            )
+            owned = await owned_articles(self.db, project_id=project_id, article_ids=article_ids)
+            removed = await self.screening.removed_among(project_id=project_id, article_ids=owned)
+            article_ids = [article_id for article_id in owned if article_id not in removed]
             candidates = len(article_ids)
         else:
-            candidates = await self.screening.count_project_articles(project_id=project_id)
+            candidates = await self.screening.count_project_articles(
+                project_id=project_id
+            ) - await self.screening.count_removed(project_id=project_id)
         enrolled = await self.screening.enroll(
             project_id=project_id, enrolled_by=enrolled_by, article_ids=article_ids
         )

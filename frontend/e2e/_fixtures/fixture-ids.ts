@@ -74,9 +74,16 @@ export const IDENTITY_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c5";
  * flow owns its project and `resetScreeningProject` wipes it before each run.
  * No template: screening needs none. */
 export const SCREENING_PROJECT_ID = "e2e00001-0000-4000-8000-000000000004";
+/** Array order is insertion order: Alpha is the oldest record, so it is the
+ * suggested keeper of the exact-PMID pair it forms with its duplicate record. */
 export const SCREENING_ARTICLES = [
-  { id: "f00dc63a-6b47-42c3-8a93-af69eb28a1c6", title: "E2E Screening Alpha" },
+  { id: "f00dc63a-6b47-42c3-8a93-af69eb28a1c6", title: "E2E Screening Alpha", pmid: "39999901" },
   { id: "f00dc63a-6b47-42c3-8a93-af69eb28a1c7", title: "E2E Screening Beta" },
+  {
+    id: "f00dc63a-6b47-42c3-8a93-af69eb28a1c8",
+    title: "E2E Screening Alpha (duplicate record)",
+    pmid: "39999901",
+  },
 ] as const;
 
 /** Fixed global-catalogue ids (match backend/app/seed.py). */

@@ -73,7 +73,7 @@ function identificationLines(counts: PrismaCountsRead): Line[] {
     {id: 'total', label: t('screening', 'prismaIdentifiedTotal'), count: counts.identified_total},
     {id: 'duplicates', label: t('screening', 'prismaDuplicates'), count: counts.duplicates_removed},
     {id: 'not-retrieved', label: t('screening', 'prismaNotRetrieved'), count: counts.not_retrieved},
-    {id: 'not-enrolled', label: t('screening', 'prismaNotEnrolled'), count: counts.imported_not_enrolled},
+    {id: 'other-removed', label: t('screening', 'prismaOtherRemoved'), count: counts.other_removed},
   ];
 }
 
@@ -110,10 +110,10 @@ export function PrismaCountsPanel({projectId}: {projectId: string}) {
   if (counts.screened === 0) {
     return (
       <Notice title={t('screening', 'prismaEmptyTitle')} body={t('screening', 'prismaEmptyBody')}>
-        {counts.imported_not_enrolled > 0 && (
+        {counts.other_removed > 0 && (
           <p className="text-[13px] text-muted-foreground">
-            <span>{t('screening', 'prismaNotEnrolled')}</span>{' '}
-            <span className="font-medium tabular-nums text-foreground">{counts.imported_not_enrolled}</span>
+            <span>{t('screening', 'prismaOtherRemoved')}</span>{' '}
+            <span className="font-medium tabular-nums text-foreground">{counts.other_removed}</span>
           </p>
         )}
       </Notice>
