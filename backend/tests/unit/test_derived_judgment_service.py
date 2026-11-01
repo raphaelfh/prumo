@@ -22,6 +22,7 @@ from app.services.derived_judgment_service import (
     excluded_field_coordinates,
     is_out_of_scope,
     is_recommendation,
+    judgment_of,
     out_of_scope_sections,
     scope_classifier_coordinate,
     scope_filtered_values,
@@ -228,25 +229,26 @@ def _sig_value(values: dict[str, Any], n_inputs: int | None = None) -> str | Non
         ("n", "High"),
         ("Unclear", "Unclear"),  # QUADAS-2 vocabulary, adoptable per §11
         (_NI, "Unclear"),  # the retired MARKER shape
-        # 2.1.0's fifth ANSWER, through both caller shapes: the run view hands
-        # over the raw envelope, the export a value `resolve_value` already
-        # collapsed — to the option's value ("NI") or, for the marker, to its
-        # label. All three land on the same contribution, which is what makes
-        # the answer's label safe to share with the marker's.
+        # 2.1.0's fifth ANSWER, stored as the option's value ("NI"), in any
+        # case, in or out of an envelope: it lands on the marker's contribution.
         ("NI", "Unclear"),
         ({"value": "ni"}, "Unclear"),  # case-insensitive, like every answer
-        ("No information", "Unclear"),
     ],
 )
 def test_signaling_answer_mapping(answer: Any, expected: str) -> None:
     assert _sig_value({"q1": answer}) == expected
 
 
-def test_signaling_accepts_both_caller_shapes() -> None:
-    """Raw envelope (run view) and resolved display label (export) agree."""
-    assert _sig_value({"q1": {"value": "pn"}}) == "High"
-    assert _sig_value({"q1": "No information"}) == "Unclear"
-    assert _sig_value({"q1": "Not applicable"}) is None  # excluded, nothing judged
+def test_a_display_label_is_not_an_absent_marker() -> None:
+    """Both callers pass raw envelopes; a resolved label is just an unknown answer."""
+    assert judgment_of("No information", no_information_as_unclear=True) is None
+    assert _sig_value({"q1": "No information"}) is None
+    assert (
+        judgment_of(
+            {"value": None, "absent_reason": "no_information"}, no_information_as_unclear=True
+        )
+        == "Unclear"
+    )
 
 
 def test_signaling_excluded_markers_drop_out() -> None:

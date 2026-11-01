@@ -8,7 +8,8 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.services.extraction_export_service import FieldDescriptor, SectionDescriptor
+from app.services.exports.descriptors import primary_rater, value_key
+from app.services.extraction_export_service import ExportMode, FieldDescriptor, SectionDescriptor
 
 
 def test_field_descriptor_carries_snapshot_metadata() -> None:
@@ -66,3 +67,11 @@ def test_section_descriptor_defaults_are_back_compat() -> None:
     assert s.cardinality is ExtractionCardinality.ONE
     assert s.sort_order == 0
     assert s.description is None
+
+
+def test_primary_rater_is_the_reviewer_only_in_single_user() -> None:
+    r = uuid4()
+    assert primary_rater(ExportMode.CONSENSUS, None) is None
+    assert primary_rater(ExportMode.ALL_USERS, None) is None
+    assert primary_rater(ExportMode.SINGLE_USER, r) == r
+    assert value_key(*(k := (uuid4(), uuid4(), uuid4()))) == (*k, None)

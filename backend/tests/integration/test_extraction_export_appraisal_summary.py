@@ -56,6 +56,7 @@ from app.models.extraction_workflow import (
     ExtractionConsensusMode,
     ExtractionReviewerDecisionType,
 )
+from app.services.exports.descriptors import root_instance, value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
@@ -355,7 +356,7 @@ async def _seed_finalized_qa_run(
     consensus_service = ExtractionConsensusService(db)
     # Published consensus value per domain. Defaults to Low/High; a caller may
     # override with a coded-disposition marker envelope to exercise the ADR-0016
-    # appraisal exclusion end-to-end (published-state → resolve_value → sheet).
+    # appraisal exclusion end-to-end (published-state → to_export_value → sheet).
     d1_consensus = domain1_consensus if domain1_consensus is not None else {"value": "Low"}
     d2_consensus = domain2_consensus if domain2_consensus is not None else {"value": "High"}
     published_values = [
@@ -472,7 +473,7 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
     assert layout.appraisal.domain_labels == (fx.domain1_label, fx.domain2_label)
     assert len(layout.appraisal.rows) == 1
     row = layout.appraisal.rows[0]
-    assert row.domain_verdicts == ("Low", "High")
+    assert tuple(v.value_text for v in row.domain_verdicts) == ("Low", "High")
     assert row.overall == "High"
     assert row.per_reviewer_overall == {}
 
@@ -588,7 +589,7 @@ async def test_qa_appraisal_marker_verdict_excluded_from_overall(
     db_session: AsyncSession,
 ) -> None:
     """ADR-0016 Phase 4, end-to-end: a coded-disposition verdict published into
-    ExtractionPublishedState survives the read + ``resolve_value`` and reaches the
+    ExtractionPublishedState survives the read + ``to_export_value`` and reaches the
     Appraisal sheet as its stable LABEL (never a dict-stringify), while the
     worst-case Overall EXCLUDES it — so a "the source is silent" verdict cannot
     silently force a most-severe Overall. Pins the DB → resolve → sheet coupling
@@ -675,6 +676,15 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     # The out-of-scope "High" no longer inflates the Overall — it is excluded
     # from the worst-case rank exactly as a blank is.
     assert rows[1][-1] == "Low"
+
+    # 1b. The recorded "High" is kept in the value_map, flagged out of scope.
+    article = layout.articles[0]
+    section = next(s for s in layout.sections if s.label == fx.domain2_label)
+    rob = next(f for f in section.fields if f.label == "Risk of bias")
+    kept = layout.value_map[
+        value_key(article.run_id, root_instance(article, section.entity_type_id), rob.field_id)
+    ]
+    assert (kept.value_text, kept.out_of_scope) == ("High", True)
 
     # 2. The same correction on the per-section tidy table, for free.
     tidy = list(wb[fx.domain2_label].iter_rows(values_only=True))

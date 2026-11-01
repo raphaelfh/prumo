@@ -2,6 +2,7 @@ import type {CSSProperties} from "react";
 import type {LucideIcon} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
+import {useQueryClient} from "@tanstack/react-query";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
@@ -23,6 +24,7 @@ import {
     fetchArticlePdfSignedUrl,
 } from "@/services/articlesService";
 import {deleteArticles} from "@/services/articleListService";
+import {invalidateScreening} from "@/lib/query-keys/screening";
 import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
 import {t} from "@/lib/copy";
 import {doiUrl} from "@/lib/doi";
@@ -273,6 +275,7 @@ export function ArticlesList({
                                  onOpenAddArticle,
                              }: ArticlesListProps) {
     const isNarrow = useIsNarrow();
+    const queryClient = useQueryClient();
     // Deleting is manager-only on the server; reviewers get no Delete control.
     const {isManager} = useProjectMemberRole(projectId);
   const [searchTerm, setSearchTerm] = useState("");
@@ -493,6 +496,7 @@ export function ArticlesList({
     }
 
       toast.success(t('articles', 'listArticleDeletedSuccess'));
+    void invalidateScreening(queryClient, projectId);
     setSelectedArticles(prev => {
       const next = new Set(prev);
       next.delete(articleId);
@@ -522,6 +526,7 @@ export function ArticlesList({
 
       toast.success(t('articles', 'listArticlesDeletedSuccess').replace('{{n}}', String(result.data.deleted)));
     setSelectedArticles(new Set());
+    void invalidateScreening(queryClient, projectId);
     onArticlesChange();
   };
 

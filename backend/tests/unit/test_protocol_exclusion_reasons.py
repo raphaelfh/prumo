@@ -1,4 +1,4 @@
-"""The protocol's exclusion reasons a screening reviewer may cite."""
+"""The protocol's exclusion reasons and inclusion criteria a screening reviewer reads."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ from typing import Any
 
 import pytest
 
-from app.services.project_ai_context import protocol_exclusion_reasons
+from app.services.project_ai_context import (
+    protocol_exclusion_reasons,
+    protocol_inclusion_criteria,
+)
 
 
 def test_reasons_in_slot_order_then_eligibility_deduplicated() -> None:
@@ -30,3 +33,17 @@ def test_reasons_in_slot_order_then_eligibility_deduplicated() -> None:
 )
 def test_no_or_junk_protocol_has_no_reasons(picots: Any, eligibility: Any) -> None:
     assert protocol_exclusion_reasons(picots, eligibility) == []
+
+
+def test_inclusion_criteria_in_slot_order_then_eligibility() -> None:
+    picots = {
+        "population": {"inclusion": ["Adults"]},
+        "outcomes": {"inclusion": ["Mortality", "Adults"]},
+    }
+    eligibility = {"inclusion": ["RCT", "Mortality"]}
+
+    assert protocol_inclusion_criteria(picots, eligibility) == ["Adults", "Mortality", "RCT"]
+
+
+def test_inclusion_criteria_empty_and_junk() -> None:
+    assert protocol_inclusion_criteria(None, "x") == []

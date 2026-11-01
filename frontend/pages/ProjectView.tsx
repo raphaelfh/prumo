@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {useParams, useSearchParams} from "react-router";
+import {useQueryClient} from "@tanstack/react-query";
 import {loadProjectById, loadProjectArticles} from "@/services/projectsService";
 import {LayoutDashboard} from "lucide-react";
 import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
@@ -16,6 +17,7 @@ import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
 import {t} from "@/lib/copy";
+import {invalidateScreening} from "@/lib/query-keys/screening";
 import type {Article} from "@/types/article";
 
 type ProjectArticle = Article;
@@ -23,6 +25,7 @@ type ProjectArticle = Article;
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
     const [searchParams, setSearchParams] = useSearchParams();
+    const queryClient = useQueryClient();
 
     // Use context for project state and navigation
   const { project, setProject: setContextProject, activeTab } = useProject();
@@ -266,6 +269,12 @@ export default function ProjectView() {
     }
   };
 
+  // An import adds articles to the project: the list and every screening read refetch.
+  const onImportComplete = () => {
+    void loadArticles();
+    void invalidateScreening(queryClient, projectId || '');
+  };
+
   return (
       <div className="h-full bg-background flex flex-col">
       <div className="flex-1 overflow-y-auto">{renderContent()}</div>
@@ -274,13 +283,13 @@ export default function ProjectView() {
               open={zoteroDialogOpen}
               onOpenChange={setZoteroDialogOpen}
               projectId={projectId || ''}
-              onImportComplete={loadArticles}
+              onImportComplete={onImportComplete}
           />
           <RISImportDialog
               open={risDialogOpen}
               onOpenChange={setRisDialogOpen}
               projectId={projectId || ''}
-              onImportComplete={loadArticles}
+              onImportComplete={onImportComplete}
           />
     </div>
   );

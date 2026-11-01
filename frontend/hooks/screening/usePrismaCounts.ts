@@ -11,8 +11,8 @@ export function usePrismaCounts(projectId: string) {
   return useQuery({
     queryKey: screeningKeys.prisma(projectId),
     enabled: Boolean(projectId),
-    // No article writer (Zotero/RIS import, manual create, delete) invalidates
-    // the screening keys: under the app's 5-minute staleTime a remount would
+    // Writes made elsewhere (a co-reviewer's decision, another session's
+    // import) never reach this cache: under the app's 5-minute staleTime a remount would
     // otherwise keep a pre-import "Imported but not enrolled" count.
     refetchOnMount: 'always',
     queryFn: async (): Promise<PrismaCountsRead> => {

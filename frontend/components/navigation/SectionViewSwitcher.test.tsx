@@ -56,4 +56,23 @@ describe('SectionViewSwitcher', () => {
     // per container width (the hidden one is `display:none`).
     expect(screen.getByRole('button', { name: /assessment/i })).toBeInTheDocument();
   });
+  it('renders Title/abstract and Settings for a screening manager', () => {
+    roleMock.mockReturnValue({ isManager: true, role: 'manager', loading: false });
+    renderWith('screening');
+    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'tabSettings' })).toBeInTheDocument();
+  });
+
+  it('hides Settings for a screening member', () => {
+    roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
+    renderWith('screening');
+    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'tabSettings' })).toBeNull();
+  });
+
+  it('labels the screening views "Screening views"', () => {
+    roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
+    renderWith('screening');
+    expect(screen.getByRole('tablist', { name: 'viewsScreeningAria' })).toBeInTheDocument();
+  });
 });

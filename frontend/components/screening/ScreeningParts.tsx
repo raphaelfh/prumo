@@ -6,9 +6,9 @@ import {useId, type ReactNode} from 'react';
 
 import {Skeleton} from '@/components/ui/skeleton';
 import {t} from '@/lib/copy';
-import type {ScreeningDecisionCreate, ScreeningQueueRead} from '@/services/screeningService';
+import type {ScreeningAssignmentRead, ScreeningDecisionCreate} from '@/services/screeningService';
 
-type ScreeningArticle = ScreeningQueueRead['items'][number]['article'];
+type ScreeningArticle = ScreeningAssignmentRead['article'];
 
 export function Notice({title, body, children}: {title: string; body: string; children?: ReactNode}) {
   return (

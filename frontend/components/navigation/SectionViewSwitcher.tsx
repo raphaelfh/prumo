@@ -17,7 +17,7 @@ export function SectionViewSwitcher() {
   const [searchParams, setSearchParams] = useSearchParams();
   const {projectId, activeSection} = useShellLocation();
   const section = activeSection ?? '';
-  const hasViews = section === 'extraction' || section === 'quality';
+  const hasViews = getSectionViews(section).length > 0;
   const { isManager } = useProjectMemberRole(hasViews ? (projectId ?? '') : '');
 
   const views = getSectionViews(section).filter((v) => !v.managerOnly || isManager);
@@ -37,7 +37,9 @@ export function SectionViewSwitcher() {
   const ariaLabel =
     section === 'quality'
       ? t('navigation', 'viewsQualityAria')
-      : t('navigation', 'viewsExtractionAria');
+      : section === 'screening'
+        ? t('navigation', 'viewsScreeningAria')
+        : t('navigation', 'viewsExtractionAria');
 
   return (
     <>

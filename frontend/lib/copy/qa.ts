@@ -14,8 +14,6 @@ export const qa = {
   noTemplatesTitle: 'No quality-assessment templates seeded',
   noTemplatesDesc:
     "Run `make db-seed` (or `python -m app.seed`) to install PROBAST, PROBAST+AI and QUADAS-2.",
-  noArticlesTitle: 'No articles in this project yet',
-  noArticlesDesc: 'Add an article first; quality assessment runs against an article + tool pair.',
   loadArticlesError: 'Failed to load articles for the quality-assessment view.',
   untitledArticle: 'Untitled article',
   tableOpenRowAria: 'Open assessment for {{title}}',

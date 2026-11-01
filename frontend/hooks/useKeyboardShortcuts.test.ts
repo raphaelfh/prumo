@@ -332,4 +332,24 @@ describe('useKeyboardShortcuts', () => {
     fireKeydown('A');
     expect(handler).toHaveBeenCalledTimes(1);
   });
+  it('yields a bare key to a focused button or link when the binding asks', () => {
+    const handler = vi.fn();
+    const bindings: Binding[] = [{type: 'chord', key: 'Enter', yieldToControls: true, handler}];
+    renderHook(() => useKeyboardShortcuts({bindings, enabled: true}));
+
+    for (const tag of ['button', 'a'] as const) {
+      const control = document.createElement(tag);
+      if (tag === 'a') control.setAttribute('href', '#x');
+      document.body.appendChild(control);
+      control.focus();
+      const event = fireKeydown('Enter', {target: control});
+      // The control's own Enter (its click) is left alone.
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(handler).not.toHaveBeenCalled();
+
+    // Precondition: the same key with nothing focused does fire.
+    fireKeydown('Enter');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });

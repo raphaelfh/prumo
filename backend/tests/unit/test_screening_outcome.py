@@ -14,6 +14,7 @@ from app.services.screening_outcome import (
     Outcome,
     caller_status,
     derive_state,
+    record_status,
     reveals_peers,
 )
 
@@ -173,3 +174,41 @@ def test_reveals_peers(
     state: AssignmentState, seated: bool, is_arbitrator: bool, revealed: bool
 ) -> None:
     assert reveals_peers(state, seated=seated, is_arbitrator=is_arbitrator) is revealed
+
+
+def _decided(decision: str) -> AssignmentState:
+    return AssignmentState("decided", Outcome("consensus", decision, None, False))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("state", "seated", "is_arbitrator", "can_review", "expected"),
+    [
+        (_decided("include"), True, False, True, "included"),
+        (_decided("exclude"), False, False, True, "excluded"),
+        (_decided("maybe"), False, False, False, "maybe"),
+        (_PENDING, False, False, True, "to_screen"),
+        (_PENDING, True, False, True, "waiting"),
+        (_PENDING, False, False, False, "in_review"),
+        (_CONFLICT, False, True, True, "conflict"),
+        (_CONFLICT, True, True, True, "waiting"),
+        (_CONFLICT, False, False, True, "in_review"),
+    ],
+    ids=[
+        "decided-include",
+        "decided-exclude",
+        "decided-maybe",
+        "pending-unseated-reviewer",
+        "pending-seated",
+        "pending-viewer",
+        "conflict-unseated-arbitrator",
+        "conflict-seated-arbitrator",
+        "conflict-unseated-non-arbitrator",
+    ],
+)
+def test_record_status(
+    state: AssignmentState, seated: bool, is_arbitrator: bool, can_review: bool, expected: str
+) -> None:
+    assert (
+        record_status(state, seated=seated, is_arbitrator=is_arbitrator, can_review=can_review)
+        == expected
+    )
