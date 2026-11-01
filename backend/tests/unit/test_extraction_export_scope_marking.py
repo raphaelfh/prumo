@@ -3,7 +3,7 @@
 A section the article's own study-type classification takes out of play used
 to export as a BLANK cell while the run view showed a "Not applicable" badge.
 The marking happens once, on ``value_map``, after the map is built and before
-the tidy / matrix / appraisal builders read it — so no sub-builder receives
+the level / matrix / appraisal builders read it — so no sub-builder receives
 the schema and no builder signature changes.
 
 The cells that matter are the ones nobody ever answered: an excluded domain
@@ -25,8 +25,12 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.codebook_model import VersionSections
 from app.services.exports.descriptors import ValueKey, value_key
-from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
+from app.services.exports.extraction_scope_marking import (
+    mark_out_of_scope_values,
+    reader_instance_ids,
+)
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
@@ -126,7 +130,7 @@ def _article(
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={
@@ -344,7 +348,7 @@ def test_an_unclassified_article_is_untouched() -> None:
 def test_an_article_with_no_run_is_skipped() -> None:
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="No run",
+        article_label="No run",
         run_id=None,
         version_id=None,
         entries={},
@@ -522,7 +526,13 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
         service, "_load_active_template_version", AsyncMock(return_value=(MagicMock(), MagicMock()))
     )
     monkeypatch.setattr(service, "_resolve_project_name", AsyncMock(return_value="P"))
-    monkeypatch.setattr(service, "_load_sections", AsyncMock(return_value=()))
+    monkeypatch.setattr(service, "_pinned_version_rows", AsyncMock(return_value=()))
+    monkeypatch.setattr(
+        service,
+        "_load_pinned_versions",
+        AsyncMock(return_value=(VersionSections(uuid4(), 1, ()),)),
+    )
+    monkeypatch.setattr(service, "_load_article_refs", AsyncMock(return_value={}))
     monkeypatch.setattr(
         service, "_resolve_articles_for_single_user", AsyncMock(return_value=((), {}))
     )
@@ -544,3 +554,29 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
         )
 
     assert seen["raters"] == ((reviewer if expected_primary == "reviewer" else None),)
+
+
+def test_reader_instance_ids_follows_the_walk() -> None:
+    many = ExtractionCardinality.MANY
+    g = _section(uuid4(), "groups", (), cardinality=many)  # fieldless MANY, owns items
+    items = replace(
+        _section(uuid4(), "items", (_field(uuid4(), "x"),), cardinality=many),
+        parent_entity_type_id=g.entity_type_id,
+    )
+    empty = _section(uuid4(), "empty", (), cardinality=many)  # fieldless subtree
+    e1, p1, p2, x1 = uuid4(), uuid4(), uuid4(), uuid4()
+    art = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label="A",
+        run_id=uuid4(),
+        version_id=None,
+        entries={
+            (g.entity_type_id, None): (e1,),
+            (items.entity_type_id, e1): (p1, p2),
+            (empty.entity_type_id, None): (x1,),
+        },
+    )
+    secs = (g, items, empty)
+    assert reader_instance_ids(g, art, secs) == (e1,)
+    assert reader_instance_ids(items, art, secs) == (p1, p2)
+    assert reader_instance_ids(empty, art, secs) == ()

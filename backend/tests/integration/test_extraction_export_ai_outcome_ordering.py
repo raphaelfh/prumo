@@ -176,7 +176,7 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
     service = ExtractionExportService(db=db_session, user_id=str(profile_id), trace_id="t")
     article = ArticleDescriptor(
         article_id=article_id,
-        header_label="Article",
+        article_label="Article",
         run_id=run.id,
         version_id=None,
         entries={(entity_type_id, None): (instance_id,)},

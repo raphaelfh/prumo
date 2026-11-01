@@ -155,7 +155,7 @@ def _workbook_overall(
 
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Art 1",
+        article_label="Art 1",
         run_id=run_id,
         version_id=None,
         entries={(sid, None): ids for sid, ids in section_instances.items()},

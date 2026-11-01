@@ -10,7 +10,6 @@ from app.services.extraction_export_service import (
     AIProposalRow,
     ExportLayout,
     ExportMode,
-    ExportNotes,
 )
 
 
@@ -25,7 +24,7 @@ def _layout(*, include_ai_metadata: bool, rows: tuple[AIProposalRow, ...] = ()) 
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=include_ai_metadata,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={},
         ai_proposal_rows=rows,
     )

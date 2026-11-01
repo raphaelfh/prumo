@@ -41,13 +41,14 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_instance import ExtractionInstance
-from app.models.extraction_versioning import TemplateKind
+from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.models.project import ProjectMemberRole
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.schemas.extraction_run import RunViewEntityType
 from app.services.current_run import CurrentRunResolver
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
@@ -58,14 +59,20 @@ from app.services.derived_judgment_service import (
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
+from app.services.entity_key import key_of
 from app.services.exports.ai_proposal_projection import (
     load_evidence_summaries,
     proposal_model_used,
 )
+from app.services.exports.codebook_model import (
+    CodebookEntry,
+    VersionSections,
+    apply_field_codes,
+    build_codebook_entries,
+)
 from app.services.exports.descriptors import (
     ValueKey,
     build_entries,
-    iter_records,
     primary_rater,
     root_instance,
     value_key,
@@ -78,6 +85,7 @@ from app.services.exports.extraction_scope_marking import (
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
+    section_from_view,
 )
 from app.services.exports.values import (
     ExportValue,
@@ -86,12 +94,15 @@ from app.services.exports.values import (
     display_value,
     to_export_value,
 )
-from app.services.extraction_snapshot import pinned_template_rules
+from app.services.extraction_snapshot import (
+    entity_types_for_version,
+    pinned_template_rules,
+    snapshot_is_narrow,
+)
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
 )
-from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
 # Enums
@@ -115,10 +126,9 @@ class ExportMode(StrEnum):
 class FieldDescriptor:
     """One field within an entity_type (= one row on the matrix sheet).
 
-    Metadata fields (``description``/``unit``/``is_required``/``allow_other``)
-    are carried from the per-Run version snapshot (spec §5.1) and consumed by
-    the data-dictionary + value resolver. Defaulted for back-compat with
-    existing ``()``-arg call sites.
+    Metadata is carried from the version snapshot (spec §5.1) and defaulted
+    for the existing short-form call sites. ``code`` is the rule-3 field code
+    (blank until assigned); the units, key and absent codes feed the Codebook.
     """
 
     field_id: UUID
@@ -133,6 +143,10 @@ class FieldDescriptor:
     # positional/short-form call sites keep working. Used to resolve a
     # template's `derived_judgments` coordinates (§7 computed overalls).
     name: str = ""
+    code: str = ""
+    allowed_units: tuple[str, ...] = ()
+    is_entity_key: bool = False
+    allowed_absent_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -159,6 +173,15 @@ class SectionDescriptor:
     entry_label: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ArticleRef:
+    """An article's project-scoped "Surname Year" label (D2 suffixed) and ids."""
+
+    label: str
+    doi: str | None
+    pmid: str | None
+
+
 @dataclass(frozen=True)
 class ArticleDescriptor:
     """One article column (or N adjacent columns when multi-instance).
@@ -166,17 +189,20 @@ class ArticleDescriptor:
     ``entries`` carries an ORDERED instance-id tuple per
     ``(entity_type, parent_instance)`` pair, so a section's instances are
     grouped under the entry that owns them rather than pooled by entity type.
-    ``version_id`` is the Run's own snapshot version, used for the per-Run
-    obsolete-field diff (§5.1).
+    ``version_id`` is the Run's own snapshot version (QA rules, ``template_version``).
     """
 
     article_id: UUID
-    header_label: str
+    article_label: str
     run_id: UUID | None
     version_id: UUID | None
-    # (entity_type_id, parent_instance_id) → ORDERED instance ids.
-    # See `exports/descriptors.py` for what reads it.
+    doi: str | None = None
+    pmid: str | None = None
+    template_version: int | None = None
+    # (entity_type_id, parent_instance_id) → ORDERED instance ids; read in exports/descriptors.py.
     entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = field(default_factory=dict)
+    # Keyed instance id -> trimmed label (rule 6).
+    keyed_labels: Mapping[UUID, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -187,36 +213,13 @@ class ReviewerDescriptor:
     display_label: str
 
 
-@dataclass
-class ExportNotes:
-    """Per-run audit info written to the ``Notes`` sheet."""
+@dataclass(frozen=True, slots=True)
+class OmittedArticle:
+    """An article left out of the export, with the Summary's reason (§4.5)."""
 
-    omitted_articles_by_stage: dict[str, int] = field(default_factory=dict)
-    obsolete_fields_per_article: dict[UUID, list[str]] = field(default_factory=dict)
-    generated_at: datetime | None = None
-
-
-@dataclass(frozen=True)
-class FrontMatter:
-    """README/Methods content (§4 #1) — absorbs the old ``Notes`` sheet.
-
-    Built service-side in ``resolve_layout`` (slice task T53) and rendered by
-    the pure ``build_front_matter`` sub-builder: template identity, export
-    provenance, the glyph/sentinel ``legend``,
-    provenance ``caveats``, and the per-Run ``obsolete_fields_per_article``
-    block lifted from ``ExportNotes`` (§5.1).
-    """
-
-    project_name: str
-    template_name: str
-    template_version: int
-    export_mode_label: str
-    generated_at: datetime
-    article_count: int
-    record_count: int
-    legend: tuple[tuple[str, str], ...]  # (glyph/sentinel, meaning)
-    caveats: tuple[str, ...]  # provenance + best-effort-outcome caveats
-    obsolete_fields_per_article: dict[UUID, tuple[str, ...]]  # activated §5.1
+    article_id: UUID
+    article_label: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -242,62 +245,6 @@ class AIProposalRow:
     model_used: str  # Immutable proposal engine, empty when unavailable
     reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
     final_value_used: Any  # None when not published
-
-
-@dataclass(frozen=True)
-class FieldDictEntry:
-    """One row of the Data dictionary / dropdown catalogue (§4 #k+2).
-
-    Flattened from the per-Run version snapshot field metadata: label, type,
-    unit, ``description`` (falling back to ``llm_description``), the ordered
-    ``allowed_values`` value+label pairs, and the ``is_required`` /
-    ``allow_other`` flags. Built service-side in ``resolve_layout`` (T51) and
-    consumed by the pure ``build_data_dictionary`` + ``build_dropdown_lists``
-    sub-builders.
-    """
-
-    field_id: UUID
-    section_label: str
-    label: str
-    type: ExtractionFieldType
-    unit: str | None
-    description: str | None  # field.description, else field.llm_description
-    allowed_values: tuple[AllowedValue, ...]  # value+label, ordered
-    is_required: bool
-    allow_other: bool
-
-
-@dataclass(frozen=True)
-class TidyRow:
-    """One record on a tidy table — one article, or one article × instance.
-
-    ``values`` are pre-resolved scalars aligned to the owning
-    ``TidyTable.column_field_ids``; ``instance_id`` is the fanned-out instance
-    for a ``MANY``-cardinality section, ``None`` for ``ONE``.
-    """
-
-    article_id: UUID
-    instance_id: UUID | None
-    record_label: str  # e.g. "Gaca, 2011" or "Gaca, 2011 — Model 2"
-    values: tuple[Any, ...]  # aligned to TidyTable.column_field_ids, resolved
-
-
-@dataclass(frozen=True)
-class TidyTable:
-    """One publication "Table 1" sheet at a section's cardinality grain (§5.3).
-
-    Built service-side in ``resolve_layout`` (slice task T52) and rendered by
-    the pure ``build_tidy_tables`` sub-builder: one records-as-rows sheet per
-    non-container section. ``cardinality`` sets the grain — ``ONE`` is one row
-    per article, ``MANY`` one row per (article × instance).
-    """
-
-    section_id: UUID
-    title: str  # section label; ``allocate_titles`` derives the sheet title
-    cardinality: ExtractionCardinality
-    column_field_ids: tuple[UUID, ...]  # ordered by sort_order
-    column_labels: tuple[str, ...]
-    rows: tuple[TidyRow, ...]
 
 
 @dataclass(frozen=True)
@@ -351,26 +298,22 @@ class ExportLayout:
     mode: ExportMode
     include_ai_metadata: bool
     anonymize_reviewer_names: bool
-    notes: ExportNotes
+    generated_at: datetime
     # ``value_key`` slots: rater None is consensus; reviewers by reviewer_id (R1).
     value_map: dict[ValueKey, ExportValue]
     # Populated only when ``include_ai_metadata`` is True (FR-036+).
     ai_proposal_rows: tuple[AIProposalRow, ...] = ()
-    # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
-    # None => the sub-builder falls back to the bare layout identity fields.
-    front_matter: FrontMatter | None = None
-    # Data-dictionary / dropdown catalogue (§4 #k+2); built in
-    # ``resolve_layout`` (T51). One ``FieldDictEntry`` per snapshot field.
-    data_dictionary: tuple[FieldDictEntry, ...] = ()
-    # Per-section publication "Table 1" sheets (§5.3); built in
-    # ``resolve_layout`` (T52). One ``TidyTable`` per non-container section.
-    tidy_tables: tuple[TidyTable, ...] = ()
-    # Per-domain risk-of-bias / appraisal roll-up with mode-aware ``Overall``
-    # (§7). None unless the exported template carries an appraisal layer
-    # (``kind == TemplateKind.QUALITY_ASSESSMENT``); ``build_appraisal_summary``
-    # returns None and the sheet is omitted when this is None.
+    omitted: tuple[OmittedArticle, ...] = ()
+    codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
+    versions: tuple[VersionSections, ...] = ()  # active first, then pinned latest-first (R14)
+    narrow_pinned_versions: tuple[int, ...] = ()  # pinned snapshots skipped as narrow (D5)
+    # Per-domain appraisal roll-up (§7). None unless a root section carries a
+    # risk-vocabulary verdict (rule 8); the sheet is then omitted.
     appraisal: AppraisalModel | None = None
+    appraisal_notes: tuple[str, ...] = ()  # rule-8 README notes
     reviewer_id: UUID | None = None  # single_user target; None in the other modes
+    # all_users: run -> reviewers with >=1 non-reject current decision (R16).
+    raters_by_run: Mapping[UUID, tuple[UUID, ...]] = field(default_factory=dict)
 
 
 # ----------------------------------------------------------------------
@@ -379,6 +322,19 @@ class ExportLayout:
 
 
 _FILENAME_SANITISE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _is_risk_verdict(field: FieldDescriptor) -> bool:
+    """A SELECT field whose option labels all belong to the risk-of-bias
+    vocabulary (rule 8); signalling questions (Y/PY/PN/N/...) do not."""
+    # Function-local import breaks the module cycle: appraisal_summary imports
+    # ExportLayout from this module at load time. The vocabulary lives there.
+    from app.services.exports.extraction.appraisal_summary import _RISK_LABELS
+
+    if field.type is not ExtractionFieldType.SELECT:
+        return False
+    labels = [av.label.strip().lower() for av in field.allowed_values if av.label.strip()]
+    return bool(labels) and all(label in _RISK_LABELS for label in labels)
 
 
 class ExtractionExportService(LoggerMixin):
@@ -465,20 +421,36 @@ class ExtractionExportService(LoggerMixin):
         """
         template, version = await self._load_active_template_version(template_id, project_id)
         project_name = await self._resolve_project_name(project_id)
-        sections = await self._load_sections(version.id)
-        data_dictionary = _build_data_dictionary(sections)
+        rows = await self._pinned_version_rows(
+            project_id=project_id, template_id=template_id, active_version_id=version.id
+        )
+        wide = [
+            r for r in rows if not snapshot_is_narrow((r.schema_ or {}).get("entity_types", []))
+        ]
+        narrow_pinned_versions = tuple(r.version for r in rows if r not in wide)  # D5
+        # ``rows`` is highest-first; the label chain and the codebook read that one order.
+        active, *pinned = await self._load_pinned_versions(
+            template_id=template_id, versions=(version, *wide)
+        )
+        labels = build_option_labels(active.sections, [v.sections for v in pinned])
+        codebook = build_codebook_entries(active, pinned, labels)
+        sections = apply_field_codes(active.sections, {e.field_id: e.field_code for e in codebook})
         fields_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
-        labels = build_option_labels(sections)
         primary = primary_rater(mode, reviewer_id)
+        refs = await self._load_article_refs(project_id=project_id)
+        version_numbers = {version.id: version.version, **{r.id: r.version for r in rows}}
         reviewers: tuple[ReviewerDescriptor, ...] = ()
+        raters_by_run: dict[UUID, tuple[UUID, ...]] = {}
 
         if mode is ExportMode.CONSENSUS:
             articles, omitted = await self._resolve_articles_for_consensus(
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
+                refs=refs,
+                version_numbers=version_numbers,
             )
             value_map = await self._build_consensus_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -493,6 +465,8 @@ class ExtractionExportService(LoggerMixin):
                 project_id=project_id,
                 candidate_ids=article_ids,
                 reviewer_id=reviewer_id,
+                refs=refs,
+                version_numbers=version_numbers,
             )
             value_map = await self._build_single_user_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -505,8 +479,10 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
+                refs=refs,
+                version_numbers=version_numbers,
             )
-            reviewers = await self._list_reviewers_for_runs(
+            reviewers, raters_by_run = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 anonymize=anonymize_reviewer_names,
             )
@@ -525,7 +501,7 @@ class ExtractionExportService(LoggerMixin):
         rules_by_version = await pinned_template_rules(self.db, version_ids) if version_ids else {}
         rules_by_article = {a.article_id: rules_by_version.get(a.version_id, {}) for a in articles}
 
-        # §5 scope fidelity, applied BEFORE the tidy tables, the AI rows and
+        # §5 scope fidelity, applied BEFORE the level sheets, the AI rows and
         # the appraisal read the map, so all three inherit it for free.
         mark_out_of_scope_values(
             rules_by_article=rules_by_article,
@@ -533,35 +509,6 @@ class ExtractionExportService(LoggerMixin):
             articles=tuple(articles),
             raters=(primary, *(r.reviewer_id for r in reviewers)),
             value_map=value_map,
-        )
-
-        anchor_field_ids = {f.field_id for s in sections for f in s.fields}
-        obsolete_fields = await self._compute_obsolete_fields_per_article(
-            articles=tuple(articles),
-            anchor_field_ids=anchor_field_ids,
-        )
-
-        # Per-section publication "Table 1" sheets (§5.3), rendered from ``value_map``.
-        tidy_tables = _build_tidy_tables(sections, tuple(articles), value_map, primary)
-
-        notes = ExportNotes(
-            omitted_articles_by_stage=omitted,
-            obsolete_fields_per_article=obsolete_fields,
-            generated_at=datetime.now(UTC),
-        )
-
-        # README/Methods projection (§4 #1): assembled from the already-computed
-        # counts and the obsolete-field block
-        # lifted from ``notes`` — no further IO.
-        front_matter = _build_front_matter(
-            project_name=project_name,
-            template_name=template.name,
-            template_version=version.version,
-            mode=mode,
-            generated_at=notes.generated_at or datetime.now(UTC),
-            articles=tuple(articles),
-            tidy_tables=tidy_tables,
-            obsolete_fields_per_article=notes.obsolete_fields_per_article,
         )
 
         ai_rows: tuple[AIProposalRow, ...] = ()
@@ -577,19 +524,17 @@ class ExtractionExportService(LoggerMixin):
                 labels=labels,
             )
 
-        # Per-domain risk-of-bias / appraisal roll-up (§7): only for QA templates.
-        # None when no domain carries a risk-label SELECT verdict field.
-        appraisal: AppraisalModel | None = None
-        if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
-            appraisal = self._build_appraisal_model(
-                rules_by_article=rules_by_article,
-                sections=sections,
-                articles=tuple(articles),
-                reviewers=reviewers,
-                value_map=value_map,
-                mode=mode,
-                reviewer_id=reviewer_id,
-            )
+        # Appraisal roll-up (§7, rule 8): detected by vocabulary at the root,
+        # whatever the template kind.
+        appraisal = self._build_appraisal_model(
+            rules_by_article=rules_by_article,
+            sections=sections,
+            articles=tuple(articles),
+            reviewers=reviewers,
+            value_map=value_map,
+            mode=mode,
+            reviewer_id=reviewer_id,
+        )
 
         return ExportLayout(
             project_name=project_name,
@@ -601,19 +546,48 @@ class ExtractionExportService(LoggerMixin):
             mode=mode,
             include_ai_metadata=include_ai_metadata,
             anonymize_reviewer_names=anonymize_reviewer_names,
-            notes=notes,
+            generated_at=datetime.now(UTC),
             value_map=value_map,
             ai_proposal_rows=ai_rows,
-            data_dictionary=data_dictionary,
-            tidy_tables=tidy_tables,
-            front_matter=front_matter,
+            codebook=codebook,
+            versions=(active, *pinned),
+            narrow_pinned_versions=narrow_pinned_versions,
+            omitted=tuple(
+                OmittedArticle(aid, refs[aid].label if aid in refs else _short_id(aid), reason)
+                for aid, reason in omitted
+            ),
             appraisal=appraisal,
+            appraisal_notes=self._appraisal_notes(
+                sections, template_kind=template.kind, appraisal=appraisal
+            ),
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
+            raters_by_run=raters_by_run,
         )
 
     # ------------------------------------------------------------------
     # Appraisal roll-up (§7) — pure, DB-free
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _appraisal_notes(
+        sections: Sequence[SectionDescriptor],
+        *,
+        template_kind: str,
+        appraisal: AppraisalModel | None,
+    ) -> tuple[str, ...]:
+        """Rule-8 README notes: skipped nested domains, and a QA template
+        whose verdict labels are outside the risk-of-bias vocabulary."""
+        notes = [
+            f"Appraisal: '{s.label}' is not at the root, so it is not an Appraisal domain."
+            for s in sections
+            if s.parent_entity_type_id is not None and any(map(_is_risk_verdict, s.fields))
+        ]
+        if template_kind == TemplateKind.QUALITY_ASSESSMENT.value and appraisal is None:
+            notes.append(
+                "Appraisal: no root section has a SELECT field whose labels all belong to the "
+                "risk-of-bias vocabulary (PROBAST, QUADAS, RoB), so there is no Appraisal sheet."
+            )
+        return tuple(notes)
 
     @staticmethod
     def _build_appraisal_model(
@@ -626,9 +600,9 @@ class ExtractionExportService(LoggerMixin):
         reviewer_id: UUID | None,
         rules_by_article: Mapping[UUID, Mapping[str, Any]] | None = None,
     ) -> AppraisalModel | None:
-        """Compute the appraisal roll-up for a quality-assessment template (§7).
+        """Compute the appraisal roll-up (§7) over the root sections (rule 8).
 
-        Each domain = one section; its verdict field = the first SELECT-typed
+        Each domain = one root section; its verdict field = the first SELECT-typed
         field in sort_order whose ``allowed_values`` are the risk-label set
         (``{Low, High, Unclear, ...}`` — the recognised severity vocabulary).
         This is NOT "the first SELECT field": signalling questions are also
@@ -645,31 +619,17 @@ class ExtractionExportService(LoggerMixin):
         primary slot; all_users -> that plus one rollup per reviewer, in order.
 
         Returns None when no domain has a risk-label-set SELECT verdict field
-        (no roll-up sheet; the sections still ship as ordinary tidy tables).
+        (no roll-up sheet; the sections still ship on their level sheets).
         """
-        # Function-local import breaks the module cycle: appraisal_summary
-        # imports ExportLayout/ExportMode from this module at load time, so a
-        # top-level import here would deadlock. The rollup vocabulary +
-        # worst-case helper live in the pure sub-builder (single source).
-        from app.services.exports.extraction.appraisal_summary import (
-            _RISK_LABELS,
-            _appraisal_overall,
-        )
+        # Function-local import breaks the module cycle (see _is_risk_verdict).
+        from app.services.exports.extraction.appraisal_summary import _appraisal_overall
 
-        # Verdict field per domain: first SELECT field in sort_order whose
-        # option labels are the recognised risk-label set (excludes signalling
-        # SELECT fields, whose answer sets differ — see _appraisal_overall's
-        # severity table for the recognised labels).
-        def _is_verdict(field: FieldDescriptor) -> bool:
-            if field.type is not ExtractionFieldType.SELECT:
-                return False
-            labels = [av.label.strip().lower() for av in field.allowed_values if av.label.strip()]
-            return bool(labels) and all(label in _RISK_LABELS for label in labels)
-
+        # Domains are root sections only (rule 8); nested ones get a README note.
         domains: list[tuple[SectionDescriptor, FieldDescriptor]] = []
-        for section in sorted(sections, key=lambda s: s.sort_order):
+        roots = (s for s in sections if s.parent_entity_type_id is None)
+        for section in sorted(roots, key=lambda s: s.sort_order):
             verdict_field = next(
-                (f for f in section.fields if _is_verdict(f)),
+                (f for f in section.fields if _is_risk_verdict(f)),
                 None,
             )
             if verdict_field is not None:
@@ -766,7 +726,7 @@ class ExtractionExportService(LoggerMixin):
             rows.append(
                 AppraisalRow(
                     article_id=article.article_id,
-                    record_label=article.header_label,
+                    record_label=article.article_label,
                     domain_verdicts=tuple(verdicts[primary]),
                     overall=_overall(verdicts[primary]),
                     per_reviewer_overall=per_reviewer_overall,
@@ -850,18 +810,46 @@ class ExtractionExportService(LoggerMixin):
             )
         return template, version
 
-    async def _load_sections(
-        self,
-        version_id: UUID,
-    ) -> tuple[SectionDescriptor, ...]:
-        """Load the column-layout sections from the ACTIVE version snapshot.
+    async def _pinned_version_rows(
+        self, *, project_id: UUID, template_id: UUID, active_version_id: UUID
+    ) -> tuple[ExtractionTemplateVersion, ...]:
+        """Every non-active version a run of this template pins, highest first."""
+        stmt = (
+            select(ExtractionTemplateVersion)
+            .join(ExtractionRun, ExtractionRun.version_id == ExtractionTemplateVersion.id)
+            .where(
+                ExtractionRun.project_id == project_id,
+                ExtractionRun.template_id == template_id,
+                ExtractionTemplateVersion.id != active_version_id,
+            )
+            .distinct()
+            .order_by(ExtractionTemplateVersion.version.desc())
+        )
+        return tuple((await self.db.execute(stmt)).scalars().all())
 
-        Snapshot-driven (spec §5.1): reads the frozen entity_types tree via
-        ``load_export_sections`` (mirrors the run-read path), not the live
-        ``extraction_entity_types`` / ``extraction_fields`` tables. Carries
-        parent + cardinality + full field metadata onto the descriptors.
-        """
-        snapshot_sections = await load_export_sections(self.db, version_id=version_id)
+    async def _load_pinned_versions(
+        self, *, template_id: UUID, versions: Sequence[ExtractionTemplateVersion]
+    ) -> tuple[VersionSections, ...]:
+        """One snapshot read per version, in input order (R14)."""
+        loaded: list[VersionSections] = []
+        for v in versions:
+            views = await entity_types_for_version(
+                self.db, version_id=v.id, template_id=template_id
+            )
+            loaded.append(
+                VersionSections(
+                    version_id=v.id,
+                    version_label=v.version,
+                    sections=self._sections_from_views(views),
+                )
+            )
+        return tuple(loaded)
+
+    @staticmethod
+    def _sections_from_views(
+        views: Sequence[RunViewEntityType],
+    ) -> tuple[SectionDescriptor, ...]:
+        """Project a snapshot tree onto the export descriptors (spec §5.1)."""
         return tuple(
             SectionDescriptor(
                 entity_type_id=s.entity_type_id,
@@ -878,6 +866,9 @@ class ExtractionExportService(LoggerMixin):
                         is_required=f.is_required,
                         allow_other=f.allow_other,
                         name=f.name,
+                        allowed_units=f.allowed_units,
+                        is_entity_key=f.is_entity_key,
+                        allowed_absent_codes=f.allowed_absent_codes,
                     )
                     for f in s.fields
                 ),
@@ -887,42 +878,8 @@ class ExtractionExportService(LoggerMixin):
                 name=s.name,
                 entry_label=s.entry_label,
             )
-            for s in snapshot_sections
+            for s in map(section_from_view, views)
         )
-
-    async def _compute_obsolete_fields_per_article(
-        self,
-        *,
-        articles: tuple[ArticleDescriptor, ...],
-        anchor_field_ids: set[UUID],
-    ) -> dict[UUID, list[str]]:
-        """Fields present on a Run's frozen snapshot but removed from the anchor.
-
-        Spec §5.1: each Run's own version snapshot is diffed by ``field_id``
-        against the active-version anchor. Surviving fields are filled
-        elsewhere; Run-only fields (removed from the anchor after the Run
-        finalized) are recorded here, labelled from the Run snapshot (the
-        anchor no longer carries the label). Empty when nothing was removed.
-        """
-        snapshot_fields_cache: dict[UUID, tuple[tuple[UUID, str], ...]] = {}
-        out: dict[UUID, list[str]] = {}
-        for article in articles:
-            version_id = article.version_id
-            if version_id is None:
-                continue
-            if version_id not in snapshot_fields_cache:
-                run_sections = await load_export_sections(self.db, version_id=version_id)
-                snapshot_fields_cache[version_id] = tuple(
-                    (f.field_id, f.label) for s in run_sections for f in s.fields
-                )
-            obsolete = [
-                label
-                for fid, label in snapshot_fields_cache[version_id]
-                if fid not in anchor_field_ids
-            ]
-            if obsolete:
-                out[article.article_id] = obsolete
-        return out
 
     async def _resolve_articles_for_consensus(
         self,
@@ -930,29 +887,31 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
-    ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
-        """Pick finalized articles + collect omitted-stage counts (FR-013).
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
+    ) -> tuple[list[ArticleDescriptor], list[tuple[UUID, str]]]:
+        """Pick finalized articles; the rest are omitted with their stage (FR-013).
 
         Each article's current run (``CurrentRunResolver``) on the exported
         template; a run's kind is its template's (composite FK), so the QA
         appraisal export (§7) takes the same finalized-run path.
         """
         if not candidate_ids:
-            return [], {}
+            return [], []
 
         runs_by_article = await CurrentRunResolver(self.db).current_by_article(
             project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-        omitted: dict[str, int] = {}
+        omitted: list[tuple[UUID, str]] = []
         kept_run_ids: list[UUID] = []
         kept_articles: list[UUID] = []
         for aid in candidate_ids:
             run = runs_by_article.get(aid)
             if run is None:
-                omitted["no_run"] = omitted.get("no_run", 0) + 1
+                omitted.append((aid, "no_run"))
                 continue
             if run.stage != ExtractionRunStage.FINALIZED.value:
-                omitted[run.stage] = omitted.get(run.stage, 0) + 1
+                omitted.append((aid, run.stage))
                 continue
             kept_articles.append(aid)
             kept_run_ids.append(run.id)
@@ -960,12 +919,12 @@ class ExtractionExportService(LoggerMixin):
         if not kept_articles:
             return [], omitted
 
-        # Bulk-fetch instances for the kept runs to compute model fan-out
-        # and study-section instance ids in one round-trip.
         descriptors = await self._build_article_descriptors(
             article_ids=kept_articles,
             runs_by_article=runs_by_article,
             kept_run_ids=kept_run_ids,
+            refs=refs,
+            version_numbers=version_numbers,
         )
 
         return descriptors, omitted
@@ -976,33 +935,34 @@ class ExtractionExportService(LoggerMixin):
         article_ids: list[UUID],
         runs_by_article: dict[UUID, ExtractionRun],
         kept_run_ids: list[UUID],
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
     ) -> list[ArticleDescriptor]:
-        """Turn an article's instances into its column descriptor.
-
-        Was three byte-identical copies — consensus, single-user and
-        all-users each partitioned instances by role inline.
-
-        ``entries`` takes EVERY instance, containers included: a container
-        instance carries no values of its own, which is why the role
-        partition dropped it, but it is the parent key its children are
-        grouped under and the axis the sheet fans out on.
-
-        The role map that partition needed is gone with it — one fewer query
-        per export, on all three paths.
-        """
+        """One descriptor per article. ``entries`` takes EVERY instance,
+        containers included: a container is the parent key its children are
+        grouped under. A keyed instance carries its trimmed label (rule 6)."""
         instances_by_run = await self._load_instances_for_runs(kept_run_ids)
-        headers = await self._load_article_headers(article_ids)
-
-        return [
-            ArticleDescriptor(
-                article_id=aid,
-                header_label=headers.get(aid) or _short_id(aid),
-                run_id=runs_by_article[aid].id,
-                version_id=runs_by_article[aid].version_id,
-                entries=build_entries(instances_by_run.get(runs_by_article[aid].id, [])),
+        out: list[ArticleDescriptor] = []
+        for aid in article_ids:
+            run = runs_by_article[aid]
+            insts = instances_by_run.get(run.id, [])
+            ref = refs.get(aid)
+            out.append(
+                ArticleDescriptor(
+                    article_id=aid,
+                    article_label=ref.label if ref else _short_id(aid),
+                    run_id=run.id,
+                    version_id=run.version_id,
+                    doi=ref.doi if ref else None,
+                    pmid=ref.pmid if ref else None,
+                    template_version=version_numbers.get(run.version_id),
+                    entries=build_entries(insts),
+                    keyed_labels={
+                        i.id: (i.label or "").strip() for i in insts if key_of(i) is not None
+                    },
+                )
             )
-            for aid in article_ids
-        ]
+        return out
 
     async def _load_instances_for_runs(
         self,
@@ -1011,10 +971,7 @@ class ExtractionExportService(LoggerMixin):
         """Load all instances for a set of runs, grouped by run_id."""
         if not run_ids:
             return {}
-        # ExtractionInstance has no run_id column; instances are scoped
-        # by (article_id, template_id). We resolve via the Run set:
-        # load the runs once to know (article_id, template_id) pairs,
-        # then bulk-fetch matching instances.
+        # Instances have no run_id: resolve each run's (article, template) pair first.
         runs = (
             (await self.db.execute(select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))))
             .scalars()
@@ -1051,13 +1008,9 @@ class ExtractionExportService(LoggerMixin):
 
         return {r.id: by_article.get(r.article_id, []) for r in runs}
 
-    async def _load_article_headers(
-        self,
-        article_ids: list[UUID],
-    ) -> dict[UUID, str]:
-        """Build the FR-012 header label: ``First-author, year`` → title → id."""
-        if not article_ids:
-            return {}
+    async def _load_article_refs(self, *, project_id: UUID) -> dict[UUID, ArticleRef]:
+        """Every project article's "Surname Year" label (D2) and ids, in one
+        project-scoped query: suffixes depend on the whole project, not the export."""
         rows = (
             await self.db.execute(
                 select(
@@ -1065,13 +1018,16 @@ class ExtractionExportService(LoggerMixin):
                     Article.title,
                     Article.authors,
                     Article.publication_year,
-                ).where(Article.id.in_(article_ids))
+                    Article.created_at,
+                    Article.doi,
+                    Article.pmid,
+                ).where(Article.project_id == project_id)
             )
         ).all()
-        headers: dict[UUID, str] = {}
-        for aid, title, authors, year in rows:
-            headers[aid] = _build_header_label(title, authors, year, aid)
-        return headers
+        labels = _suffix_labels(
+            [(aid, _base_label(t, au, y, aid), created) for aid, t, au, y, created, _, _ in rows]
+        )
+        return {row[0]: ArticleRef(labels[row[0]], row[5], row[6]) for row in rows}
 
     async def _build_consensus_value_map(
         self,
@@ -1112,7 +1068,9 @@ class ExtractionExportService(LoggerMixin):
         project_id: UUID,
         candidate_ids: list[UUID],
         reviewer_id: UUID,
-    ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
+    ) -> tuple[list[ArticleDescriptor], list[tuple[UUID, str]]]:
         """Pick articles where the target reviewer has ≥ 1 non-reject decision (FR-014).
 
         Single-user mode tolerates any non-terminal Run stage (the reviewer
@@ -1125,14 +1083,14 @@ class ExtractionExportService(LoggerMixin):
         )
 
         if not candidate_ids:
-            return [], {}
+            return [], []
 
         runs_by_article = await CurrentRunResolver(self.db).current_by_article(
             project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
 
         if not runs_by_article:
-            return [], {"no_run": len(candidate_ids)}
+            return [], [(aid, "no_run") for aid in candidate_ids]
 
         # Eligibility: at least one non-reject reviewer decision for this
         # reviewer on this run.
@@ -1153,20 +1111,18 @@ class ExtractionExportService(LoggerMixin):
         ).all()
         eligible_run_ids: set[UUID] = {row[0] for row in eligible_run_rows}
 
-        omitted: dict[str, int] = {}
+        omitted: list[tuple[UUID, str]] = []
         kept_article_ids: list[UUID] = []
         for aid in candidate_ids:
             run = runs_by_article.get(aid)
             if run is None:
-                omitted["no_run"] = omitted.get("no_run", 0) + 1
+                omitted.append((aid, "no_run"))
                 continue
             if run.stage == ExtractionRunStage.CANCELLED.value:
-                omitted["cancelled"] = omitted.get("cancelled", 0) + 1
+                omitted.append((aid, "cancelled"))
                 continue
             if run.id not in eligible_run_ids:
-                omitted["no_decisions_from_reviewer"] = (
-                    omitted.get("no_decisions_from_reviewer", 0) + 1
-                )
+                omitted.append((aid, "no_decisions_from_reviewer"))
                 continue
             kept_article_ids.append(aid)
 
@@ -1178,6 +1134,8 @@ class ExtractionExportService(LoggerMixin):
             article_ids=kept_article_ids,
             runs_by_article=runs_by_article,
             kept_run_ids=kept_run_ids,
+            refs=refs,
+            version_numbers=version_numbers,
         )
         return descriptors, omitted
 
@@ -1347,26 +1305,24 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
-    ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
-        """Pick finalized + in-review articles for All-users mode.
-
-        Both `consensus` and `finalized` runs contribute reviewer columns;
-        plus consensus and earlier-stage runs may contribute reviewer
-        sub-columns (the reviewer-axis column is empty for pre-review runs).
-        """
+        refs: Mapping[UUID, ArticleRef],
+        version_numbers: Mapping[UUID, int],
+    ) -> tuple[list[ArticleDescriptor], list[tuple[UUID, str]]]:
+        """Pick consensus + finalized articles for All-users mode; earlier
+        and cancelled runs are omitted with their stage."""
         if not candidate_ids:
-            return [], {}
+            return [], []
 
         runs_by_article = await CurrentRunResolver(self.db).current_by_article(
             project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
 
-        omitted: dict[str, int] = {}
+        omitted: list[tuple[UUID, str]] = []
         kept_article_ids: list[UUID] = []
         for aid in candidate_ids:
             run = runs_by_article.get(aid)
             if run is None:
-                omitted["no_run"] = omitted.get("no_run", 0) + 1
+                omitted.append((aid, "no_run"))
                 continue
             if run.stage in (
                 ExtractionRunStage.CANCELLED.value,
@@ -1375,7 +1331,7 @@ class ExtractionExportService(LoggerMixin):
             ):
                 # All-users wants cross-reviewer activity; pre-consensus extract
                 # runs have none worth exporting.
-                omitted[run.stage] = omitted.get(run.stage, 0) + 1
+                omitted.append((aid, run.stage))
                 continue
             kept_article_ids.append(aid)
 
@@ -1387,6 +1343,8 @@ class ExtractionExportService(LoggerMixin):
             article_ids=kept_article_ids,
             runs_by_article=runs_by_article,
             kept_run_ids=kept_run_ids,
+            refs=refs,
+            version_numbers=version_numbers,
         )
         return descriptors, omitted
 
@@ -1395,8 +1353,9 @@ class ExtractionExportService(LoggerMixin):
         *,
         run_ids: list[UUID],
         anonymize: bool,
-    ) -> tuple[ReviewerDescriptor, ...]:
-        """Distinct reviewers with ≥ 1 non-reject decision on the run set.
+    ) -> tuple[tuple[ReviewerDescriptor, ...], dict[UUID, tuple[UUID, ...]]]:
+        """Distinct reviewers with ≥ 1 non-reject decision on the run set, and
+        per run the reviewers that qualify there, in the same order (R16).
 
         Stable ordering (FR-011):
           * anonymize=False → alphabetical by display name
@@ -1410,12 +1369,13 @@ class ExtractionExportService(LoggerMixin):
         from app.models.user import Profile
 
         if not run_ids:
-            return ()
+            return (), {}
 
         rows = (
             await self.db.execute(
                 select(
                     ExtractionReviewerState.reviewer_id,
+                    ExtractionReviewerState.run_id,
                     Profile.full_name,
                     Profile.email,
                 )
@@ -1433,22 +1393,30 @@ class ExtractionExportService(LoggerMixin):
         ).all()
 
         by_id: dict[UUID, str] = {}
-        for rid, name, email in rows:
+        runs_of: dict[UUID, set[UUID]] = {}
+        for rid, run_id, name, email in rows:
             by_id.setdefault(rid, name or email or _short_id(rid))
+            runs_of.setdefault(run_id, set()).add(rid)
 
         if anonymize:
             ordered_ids = sorted(by_id.keys(), key=lambda u: str(u))
-            return tuple(
+            reviewers = tuple(
                 ReviewerDescriptor(
                     reviewer_id=rid,
                     display_label=f"Reviewer {_letter_for(idx)}",
                 )
                 for idx, rid in enumerate(ordered_ids)
             )
-        ordered = sorted(by_id.items(), key=lambda kv: kv[1].lower())
-        return tuple(
-            ReviewerDescriptor(reviewer_id=rid, display_label=label) for rid, label in ordered
-        )
+        else:
+            ordered = sorted(by_id.items(), key=lambda kv: kv[1].lower())
+            reviewers = tuple(
+                ReviewerDescriptor(reviewer_id=rid, display_label=label) for rid, label in ordered
+            )
+        by_run = {
+            run_id: tuple(r.reviewer_id for r in reviewers if r.reviewer_id in rids)
+            for run_id, rids in runs_of.items()
+        }
+        return reviewers, by_run
 
     async def _build_all_users_value_map(
         self,
@@ -1754,7 +1722,7 @@ class ExtractionExportService(LoggerMixin):
             final = value_map.get(value_key(rid, iid, fid, primary_rater(mode, target_reviewer_id)))
             evidence_text, evidence_pages = evidence_by_pid.get(pid, ("", ""))
             row = AIProposalRow(
-                article_label=article.header_label,
+                article_label=article.article_label,
                 section_label=section_label,
                 instance_index=instance_index_by_id.get(iid, 1),
                 field_label=field_label_by_id.get(fid, "(unknown field)"),
@@ -1786,196 +1754,6 @@ def _untyped_field(field_id: UUID) -> FieldDescriptor:
     return FieldDescriptor(
         field_id=field_id, label="", type=ExtractionFieldType.TEXT, allowed_values=()
     )
-
-
-# ADR-0016 Phase 4: one legend row per coded disposition, its LABEL sourced from
-# ABSENT_REASON_LABELS (the same map display_value emits into a cell) so cell and
-# legend can never drift; only the frozen descriptions live here.
-_ABSENT_REASON_DESCRIPTIONS: dict[str, str] = {
-    AbsentReason.NO_INFORMATION.value: "The source does not state this item.",
-    AbsentReason.NOT_APPLICABLE.value: "The item does not apply to this study.",
-    AbsentReason.NOT_EVALUATED.value: "The item was not assessed.",
-}
-_FRONT_MATTER_LEGEND: tuple[tuple[str, str], ...] = (
-    ("(blank)", "No value recorded, or the reviewer rejected the AI proposal."),
-    *((ABSENT_REASON_LABELS[c.value], _ABSENT_REASON_DESCRIPTIONS[c.value]) for c in AbsentReason),
-    ("Yes / No", "Boolean field rendered from its true/false value."),
-    ("; ", "Separator between multiple selected options."),
-)
-
-_FRONT_MATTER_CAVEATS: tuple[str, ...] = (
-    "Every value is a static literal baked from the resolved extraction; "
-    "this workbook contains no live formulas.",
-    "Reviewer outcomes labelled 'best-effort' rely on heuristics; the data "
-    "model does not preserve the exact AI-proposal to edited-value lineage.",
-    "Columns reflect the active template version. Fields a Run was finalized "
-    "on but later removed are listed under 'Fields removed from active template'.",
-)
-
-_MODE_LABELS: dict[ExportMode, str] = {
-    ExportMode.CONSENSUS: "Consensus",
-    ExportMode.SINGLE_USER: "Single user",
-    ExportMode.ALL_USERS: "All users",
-}
-
-
-def _build_front_matter(
-    *,
-    project_name: str,
-    template_name: str,
-    template_version: int,
-    mode: ExportMode,
-    generated_at: datetime,
-    articles: tuple[ArticleDescriptor, ...],
-    tidy_tables: tuple[TidyTable, ...],
-    obsolete_fields_per_article: dict[UUID, list[str]],
-) -> FrontMatter:
-    """Assemble the README/Methods front matter (§4 #1).
-
-    Counts, the static ``legend``/``caveats``,
-    and the per-Run ``obsolete_fields_per_article`` block (lifted from
-    ``ExportNotes``) come from already-computed inputs. ``record_count`` is the
-    total number of tidy-table rows across every section.
-    """
-    record_count = sum(len(t.rows) for t in tidy_tables)
-    return FrontMatter(
-        project_name=project_name,
-        template_name=template_name,
-        template_version=template_version,
-        export_mode_label=_MODE_LABELS.get(mode, mode.value),
-        generated_at=generated_at,
-        article_count=len(articles),
-        record_count=record_count,
-        legend=_FRONT_MATTER_LEGEND,
-        caveats=_FRONT_MATTER_CAVEATS,
-        obsolete_fields_per_article={
-            aid: tuple(labels) for aid, labels in obsolete_fields_per_article.items()
-        },
-    )
-
-
-def _build_data_dictionary(
-    sections: tuple[SectionDescriptor, ...],
-) -> tuple[FieldDictEntry, ...]:
-    """Flatten the snapshot sections into one ``FieldDictEntry`` per field (§4 #k+2).
-
-    Order follows section then field order as already resolved on the
-    descriptors (snapshot ``sort_order``). ``allowed_values`` are the snapshot's
-    (value, label) pairs, in option order. The
-    ``description`` is already the ``field.description`` (falling back to
-    ``field.llm_description``) collapsed on the descriptor at load time.
-    """
-    entries: list[FieldDictEntry] = []
-    for section in sections:
-        for field_ in section.fields:
-            entries.append(
-                FieldDictEntry(
-                    field_id=field_.field_id,
-                    section_label=section.label,
-                    label=field_.label,
-                    type=field_.type,
-                    unit=field_.unit,
-                    description=field_.description,
-                    allowed_values=field_.allowed_values,
-                    is_required=field_.is_required,
-                    allow_other=field_.allow_other,
-                )
-            )
-    return tuple(entries)
-
-
-def _tidy_value(
-    value_map: dict[ValueKey, ExportValue],
-    *,
-    run_id: UUID,
-    instance_id: UUID,
-    field: FieldDescriptor,
-    rater: UUID | None,
-) -> Any:
-    """The rendered value of one tidy-cell coordinate, read at ``rater``'s slot."""
-    v = value_map.get(value_key(run_id, instance_id, field.field_id, rater))
-    return None if v is None else display_value(v, field)
-
-
-def _tidy_row(
-    *,
-    section: SectionDescriptor,
-    article: ArticleDescriptor,
-    instance_id: UUID,
-    record_label: str,
-    value_map: dict[ValueKey, ExportValue],
-    rater: UUID | None,
-) -> TidyRow:
-    """One tidy-table record: pre-resolved values aligned to the section fields."""
-    values = tuple(
-        _tidy_value(
-            value_map,
-            run_id=article.run_id,  # type: ignore[arg-type]  # run_id checked non-None by caller
-            instance_id=instance_id,
-            field=f,
-            rater=rater,
-        )
-        for f in section.fields
-    )
-    return TidyRow(
-        article_id=article.article_id,
-        instance_id=instance_id,
-        record_label=record_label,
-        values=values,
-    )
-
-
-def _build_tidy_tables(
-    sections: tuple[SectionDescriptor, ...],
-    articles: tuple[ArticleDescriptor, ...],
-    value_map: dict[ValueKey, ExportValue],
-    rater: UUID | None,
-) -> tuple[TidyTable, ...]:
-    """One publication table per section carrying fields, at its record grain.
-
-    The record axis comes from the entry tree (``iter_records``): a row under
-    a nested group is labelled with every repeating level above it, so
-    ``{article} - {root entry} - {nested entry}`` (spec §10).
-
-    Was selected by ROLE first: a model section fanned out one row per
-    ``model_instances`` entry, and that tuple held EVERY child instance of
-    EVERY entry — so an article with two models emitted twelve rows on each
-    child sheet, six of them empty. A field-less repeating group is skipped
-    because it is the axis, not a record; one WITH fields now gets its own
-    sheet, which it never did.
-    """
-    tables: list[TidyTable] = []
-    for section in sections:
-        if not section.fields:
-            continue
-        column_field_ids = tuple(f.field_id for f in section.fields)
-        column_labels = tuple(f.label for f in section.fields)
-        rows: list[TidyRow] = []
-        for article in articles:
-            if article.run_id is None:
-                continue
-            for instance_id, label_parts in iter_records(section, article, sections):
-                rows.append(
-                    _tidy_row(
-                        section=section,
-                        article=article,
-                        instance_id=instance_id,
-                        record_label=" — ".join((article.header_label, *label_parts)),
-                        value_map=value_map,
-                        rater=rater,
-                    )
-                )
-        tables.append(
-            TidyTable(
-                section_id=section.entity_type_id,
-                title=section.label,
-                cardinality=section.cardinality,
-                column_field_ids=column_field_ids,
-                column_labels=column_labels,
-                rows=tuple(rows),
-            )
-        )
-    return tuple(tables)
 
 
 def _infer_reviewer_outcome(
@@ -2035,46 +1813,19 @@ def _infer_reviewer_outcome(
     return "not selected" if decisions else "pending"
 
 
-#: Lowercase surname particles (nobiliary / patronymic prefixes). When a
-#: surname token sequence ends in "<particle...> <Capitalized>", the
-#: particle(s) are part of the surname (e.g. "De Feo", "van der Berg").
-_SURNAME_PARTICLES = frozenset(
-    {
-        "de",
-        "del",
-        "della",
-        "der",
-        "den",
-        "da",
-        "das",
-        "dos",
-        "di",
-        "du",
-        "van",
-        "von",
-        "la",
-        "le",
-        "lo",
-        "ter",
-        "ten",
-        "af",
-        "av",
-        "bin",
-        "ibn",
-        "al",
-    }
-)
+#: Lowercase surname particles: a trailing "<particle...> <Name>" run is all
+#: surname ("De Feo", "van der Berg").
+# fmt: off
+_SURNAME_PARTICLES = frozenset({
+    "de", "del", "della", "der", "den", "da", "das", "dos", "di", "du", "van", "von",
+    "la", "le", "lo", "ter", "ten", "af", "av", "bin", "ibn", "al",
+})
+# fmt: on
 
 
 def _extract_surname(first_author: str) -> str:
-    """Extract a publication-style surname, preserving compound particles.
-
-    * ``"Smith, John"``      → ``"Smith"`` (text before the comma is the
-      surname already).
-    * ``"Carlo De Feo"``     → ``"De Feo"`` (trailing particle+name run).
-    * ``"van der Berg"``     → ``"van der Berg"``.
-    * ``"Gaca"`` / ``"Andrew Gaca"`` → ``"Gaca"``.
-    """
+    """Publication-style surname keeping particles: "Carlo De Feo" → "De Feo";
+    "van der Berg, Anna" → "van der Berg" (the text before a comma)."""
     cleaned = first_author.strip()
     if not cleaned:
         return ""
@@ -2096,26 +1847,30 @@ def _extract_surname(first_author: str) -> str:
     return " ".join(surname_tokens)
 
 
-def _build_header_label(
+def _base_label(
     title: str | None,
     authors: list[str] | None,
     year: int | None,
     article_id: UUID,
 ) -> str:
-    """Compute the article column header per FR-012 fallback chain.
+    """The label "Surname Year" (particle-aware), else the surname, else
+    ``title[:60]``, else the short id."""
+    surname = _extract_surname(authors[0] or "") if authors else ""
+    if surname:
+        return f"{surname} {year}" if year is not None else surname
+    return title[:60] if title else _short_id(article_id)
 
-    Surname extraction is particle-aware so compound surnames survive
-    (e.g. "Carlo De Feo" → "De Feo, 2012", not "Feo, 2012").
-    """
-    if authors:
-        surname = _extract_surname(authors[0] or "")
-        if surname and year is not None:
-            return f"{surname}, {year}"
-        if surname:
-            return surname
-    if title:
-        return title[:60]
-    return _short_id(article_id)
+
+def _suffix_labels(rows: Sequence[tuple[UUID, str, datetime]]) -> dict[UUID, str]:
+    """D2: in ``(created_at, id)`` order the first of a label keeps it bare;
+    later ones append ``b``, ``c``, … so a label is stable once it appears."""
+    seen: dict[str, int] = {}
+    out: dict[UUID, str] = {}
+    for aid, label, _ in sorted(rows, key=lambda r: (r[2], str(r[0]))):
+        n = seen.get(label, 0)
+        seen[label] = n + 1
+        out[aid] = label + _letter_for(n).lower() if n else label
+    return out
 
 
 def _short_id(value: UUID) -> str:
@@ -2140,7 +1895,7 @@ __all__ = [
     "ArticleDescriptor",
     "ExportLayout",
     "ExportMode",
-    "ExportNotes",
+    "OmittedArticle",
     "ExtractionExportService",
     "FieldDescriptor",
     "ReviewerDescriptor",

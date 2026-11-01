@@ -80,13 +80,18 @@ class ExportValue:
     out_of_scope: bool = False
 
 
-def build_option_labels(active: Sequence[SectionDescriptor]) -> OptionLabels:
-    return {
-        (f.field_id, av.value): av.label
-        for s in active
-        for f in s.fields
-        for av in f.allowed_values
-    }
+def build_option_labels(
+    active: Sequence[SectionDescriptor],
+    pinned_latest_first: Sequence[Sequence[SectionDescriptor]] = (),
+) -> OptionLabels:
+    """``(field_id, code) -> label``: the active label, else the latest pinned one."""
+    labels: dict[tuple[UUID, str], str] = {}
+    for version in (active, *pinned_latest_first):
+        for s in version:
+            for f in s.fields:
+                for av in f.allowed_values:
+                    labels.setdefault((f.field_id, av.value), av.label)
+    return labels
 
 
 def _is_finite(num: int | float) -> bool:

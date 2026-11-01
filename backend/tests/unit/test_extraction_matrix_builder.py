@@ -29,7 +29,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -46,7 +45,7 @@ def _layout(sections, articles, value_map):
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         value_map=value_map,
     )
 
@@ -72,7 +71,7 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
     run_id = uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(eid, None): (inst_a, inst_b)},
@@ -150,7 +149,7 @@ def _spec_layout(
         mode=mode,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map=value_map or {},
         reviewer_id=reviewer_id,
     )
@@ -168,7 +167,7 @@ def test_header_block_labels() -> None:
     run_id, inst_id, art_id = uuid4(), uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=art_id,
-        header_label="Smith, 2020",
+        article_label="Smith, 2020",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -225,7 +224,7 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     m1, m2 = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(model_id, None): (m1, m2), (study_id, None): (study_inst,)},
@@ -260,7 +259,7 @@ def test_matrix_structural_styling() -> None:
     run_id, inst_id = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -305,7 +304,7 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
     run_id, inst_id = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -342,7 +341,7 @@ def _single_field_layout(
     run_id, inst_id = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -431,3 +430,34 @@ def test_matrix_module_has_no_legacy_builder_dependency() -> None:
         if isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     assert "app.services.exports.extraction_xlsx_builder" not in imported
+
+
+def test_matrix_bands_a_fieldless_group_that_owns_fields() -> None:
+    """Rule 2: a fieldless MANY is skipped only when no descendant has fields."""
+    groups = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Groups",
+        parent_entity_type_id=None,
+        fields=(),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    items = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Items",
+        parent_entity_type_id=groups.entity_type_id,
+        fields=(_spec_field("Name", ExtractionFieldType.TEXT),),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    e1, i1 = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label="Smith, 2020",
+        run_id=uuid4(),
+        version_id=None,
+        entries={(groups.entity_type_id, None): (e1,), (items.entity_type_id, e1): (i1,)},
+    )
+    ws = _render_matrix(_spec_layout(sections=(groups, items), articles=(article,)))
+    bands = [
+        v for r in range(2, ws.max_row + 1) if isinstance(v := ws.cell(row=r, column=1).value, str)
+    ]
+    assert bands == ["1. Groups", "2. Items"]
