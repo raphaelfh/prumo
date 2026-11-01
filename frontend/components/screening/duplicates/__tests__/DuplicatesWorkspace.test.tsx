@@ -376,7 +376,7 @@ describe('DuplicatesWorkspace — verdicts', () => {
     renderWorkspace('&article=r1&kept=k1');
     await user.click(await screen.findByRole('button', {name: 'Merge, keep selected'}));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Merged', expect.anything()));
-    const {action} = vi.mocked(toast.success).mock.calls[0][1] as {action: {onClick: () => void}};
+    const {action} = vi.mocked(toast.success).mock.calls[0][1] as {action: {label: string; onClick: () => void}};
 
     await waitFor(() => expect(search().get('article')).toBe('r2'));
     await user.click(await screen.findByRole('button', {name: 'Not duplicates'}));
