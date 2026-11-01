@@ -61,7 +61,7 @@ def _completeness(
                 v = layout.value_map.get(
                     value_key(article.run_id, instance_id, field.field_id, rater)
                 )
-                if v is not None and display_value(v, field) is not None:
+                if v is not None and display_value(v, field, target="matrix") is not None:
                     filled += 1
     return filled, total
 

@@ -1,8 +1,8 @@
 """Typed export values: one projection of a stored envelope for every export surface.
 
 ``to_export_value`` classifies a stored value envelope against its field into an
-``ExportValue`` (status plus typed columns); ``display_value`` renders it as the
-matrix cell. PURE: no DB, no storage, no openpyxl. Lives directly under
+``ExportValue`` (status plus typed columns); ``display_value`` renders it as a
+matrix cell or a Publication cell (``target``). PURE: no DB, no storage, no openpyxl. Lives directly under
 ``exports/`` (not ``exports/extraction/``): that package's ``__init__`` imports
 the workbook, which imports the export service, so a runtime import from it
 closes a cycle. The descriptors are therefore TYPE_CHECKING-only.
@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 from uuid import UUID
 
 from app.models.extraction import ExtractionFieldType
@@ -254,7 +254,59 @@ def machine_value(v: ExportValue) -> CellValue:
     return next((x for x in (v.value_num, v.value_bool, v.value_text) if x is not None), None)
 
 
-def display_value(v: ExportValue, field: FieldDescriptor) -> CellValue:
+#: Publication abbreviation of each absent code (spec §4.6).
+PUBLICATION_ABSENT_CODES: Final[Mapping[str, str]] = {
+    "no_information": "NI",
+    "not_applicable": "NA",
+    "not_evaluated": "NE",
+}
+#: A recorded value outside the template's scope rule, in a Publication cell (D7).
+SCOPE_MARKER: Final[str] = "NA*"
+_SCOPE_FOOTNOTE: Final[str] = (
+    f"{SCOPE_MARKER} = Not applicable under the template's scope rule; "
+    "the recorded value is kept in the Review workbook (Data sheet)."
+)
+
+DisplayTarget = Literal["matrix", "publication"]
+
+
+def footnote_key(v: ExportValue) -> str | None:
+    """The Publication marker a cell carries, if any: an absent code's
+    abbreviation (a scope stamp included), else ``SCOPE_MARKER`` for a recorded
+    out-of-scope value; rejected and cleared values carry none."""
+    if v.status in ("rejected", "cleared"):
+        return None
+    if v.status == "absent":
+        assert v.absent_code is not None
+        return PUBLICATION_ABSENT_CODES[v.absent_code]
+    return SCOPE_MARKER if v.out_of_scope else None
+
+
+def publication_footnotes(used: Collection[str]) -> tuple[str, ...]:
+    """One footnote line per used marker, in the fixed order NI, NA, NE, NA*."""
+    lines = [
+        f"{abbr} = {ABSENT_REASON_LABELS[code]}"
+        for code, abbr in PUBLICATION_ABSENT_CODES.items()
+        if abbr in used
+    ]
+    if SCOPE_MARKER in used:
+        lines.append(_SCOPE_FOOTNOTE)
+    return tuple(lines)
+
+
+def display_value(v: ExportValue, field: FieldDescriptor, *, target: DisplayTarget) -> CellValue:
+    if target == "publication":
+        if v.status in ("rejected", "cleared"):
+            return None
+        marker = footnote_key(v)
+        if marker is not None:
+            return marker
+        if v.status == "answered" and v.value_num is not None and not field.allowed_units:
+            return v.value_num
+    return _matrix_display(v, field)
+
+
+def _matrix_display(v: ExportValue, field: FieldDescriptor) -> CellValue:
     if v.out_of_scope:
         return ABSENT_REASON_LABELS["not_applicable"]
     if v.status == "absent":

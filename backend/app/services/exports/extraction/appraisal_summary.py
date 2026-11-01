@@ -146,7 +146,7 @@ def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetS
     for row in appraisal.rows:
         cells = [Cell(row.record_label)]
         cells.extend(
-            Cell(None if v is None else display_value(v, f))
+            Cell(None if v is None else display_value(v, f, target="matrix"))
             for v, f in zip(row.domain_verdicts, appraisal.domain_fields, strict=True)
         )
         if derived_labels:

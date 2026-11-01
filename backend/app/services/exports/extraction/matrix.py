@@ -202,7 +202,10 @@ def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
                             reviewer_id=rev,
                         )
                         if value is not None:
-                            grid[(row_cursor, sub_col)] = (display_value(value, field_desc), None)
+                            grid[(row_cursor, sub_col)] = (
+                                display_value(value, field_desc, target="matrix"),
+                                None,
+                            )
             row_cursor += 1
 
     max_row = row_cursor - 1

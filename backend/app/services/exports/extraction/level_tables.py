@@ -63,7 +63,7 @@ def _field_headers(f: FieldDescriptor, publication: bool) -> list[str]:
 
 def _field_cells(v: ExportValue | None, f: FieldDescriptor, publication: bool) -> list[CellValue]:
     if publication:
-        return [None if v is None else display_value(v, f)]
+        return [None if v is None else display_value(v, f, target="matrix")]
     keep = v is not None and v.status in MACHINE_STATUSES and not v.out_of_scope
     cells: list[CellValue] = [None if v is None else machine_value(v)]
     if f.allowed_units:

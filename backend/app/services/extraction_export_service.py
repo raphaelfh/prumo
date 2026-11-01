@@ -726,7 +726,7 @@ class ExtractionExportService(LoggerMixin):
 
         def _overall(verdicts: Sequence[ExportValue | None]) -> Any:
             shown = (
-                None if v is None else display_value(v, f)
+                None if v is None else display_value(v, f, target="matrix")
                 for v, f in zip(verdicts, domain_fields, strict=True)
             )
             return _appraisal_overall(tuple(shown))
