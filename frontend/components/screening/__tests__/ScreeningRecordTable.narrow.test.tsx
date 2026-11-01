@@ -26,6 +26,9 @@ const row = (id: string, title: string): ScreeningRecordRow => ({
   publication_year: 2021,
   queue_rank: 1,
   status: 'to_screen',
+  ta_outcome: null,
+  ta_outcome_kind: null,
+  ta_reviewer_count: null,
   title,
 });
 
@@ -37,6 +40,7 @@ function renderCards(cursorArticleId: string | null) {
       isNarrow
       showMine={false}
       showReason={false}
+      showPdf={false}
       activeArticleId={null}
       cursorArticleId={cursorArticleId}
       checkedIds={new Set()}

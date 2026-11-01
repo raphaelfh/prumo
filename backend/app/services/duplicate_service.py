@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.screening import TITLE_ABSTRACT
 from app.repositories.duplicate_repository import CandidateSource, DuplicateRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import ScreeningRepository
@@ -165,7 +166,10 @@ class DuplicateService:
         if item.article_id not in enrolled or item.kept_article_id in enrolled:
             return 0
         return await ScreeningRepository(self.db).enroll(
-            project_id=project_id, enrolled_by=user_id, article_ids=[item.kept_article_id]
+            project_id=project_id,
+            enrolled_by=user_id,
+            article_ids=[item.kept_article_id],
+            phase=TITLE_ABSTRACT,
         )
 
 

@@ -12,17 +12,14 @@ then every ``not_retrieved`` decision, then every ``full_text`` assignment
 (its remaining decisions and rulings cascade). The append-only trigger lets the
 owner delete, which is the migration role.
 
-The number is provisional: it is renumbered against ``origin/dev``'s head at
-merge time.
-
-Revision ID: 0095_screening_full_text
-Revises: 0094_screening_v1
+Revision ID: 0096_screening_full_text
+Revises: 0095_article_duplicate_verdicts
 """
 
 from alembic import op
 
-revision = "0095_screening_full_text"
-down_revision = "0094_screening_v1"
+revision = "0096_screening_full_text"
+down_revision = "0095_article_duplicate_verdicts"
 branch_labels = None
 depends_on = None
 
