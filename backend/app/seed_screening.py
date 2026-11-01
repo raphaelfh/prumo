@@ -92,6 +92,22 @@ _DUPLICATE_ARTICLES = (
     ),
 )
 
+# Reading-surface states merged into ``_ARTICLES[index]``: a PubMed-style structured
+# abstract with MeSH and keywords, and a non-English trial.
+_READING: dict[int, dict[str, Any]] = {
+    1: {
+        "abstract": (
+            "BACKGROUND: Sepsis is common.\n\nMETHODS: We randomised 120 adults."
+            "\n\nRESULTS: Mortality fell.\n\nCONCLUSIONS: Early triage helps."
+        ),
+        "mesh_terms": ["Sepsis", "Humans", "Adult"],
+        "keywords": ["triage", "emergency"],
+        "article_type": "Journal Article",
+        "language": "eng",
+    },
+    3: {"article_type": "Randomized Controlled Trial", "language": "spa"},
+}
+
 
 def assert_local_database(url: str) -> None:
     """Exit unless ``url`` points at ``localhost`` or ``127.0.0.1``."""
@@ -137,8 +153,9 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
             authors=authors,
             journal_title=journal,
             publication_year=year,
+            **_READING.get(index, {}),
         )
-        for title, authors, journal, year in _ARTICLES
+        for index, (title, authors, journal, year) in enumerate(_ARTICLES)
     ]
     db.add_all(articles)
     await db.flush()
@@ -183,17 +200,17 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
     )
     assignment_of: dict[UUID, UUID] = dict(enrolled.tuples().all())
     decisions = (
-        (0, r1, "include", None),  # conflict
-        (0, r2, "exclude", "Wrong population"),
-        (1, r1, "include", None),  # consensus include
-        (1, r2, "include", None),
-        (2, r1, "exclude", "Not a primary study"),  # consensus exclude
-        (2, r2, "exclude", "Not a primary study"),
-        (3, r1, "include", None),  # one of two reviewers
+        (0, r1, "include", None, "Adults with sepsis, meets inclusion"),  # conflict
+        (0, r2, "exclude", "Wrong population", "Paediatric cohort"),
+        (1, r1, "include", None, None),  # consensus include
+        (1, r2, "include", None, None),
+        (2, r1, "exclude", "Not a primary study", None),  # consensus exclude
+        (2, r2, "exclude", "Not a primary study", None),
+        (3, r1, "include", None, None),  # one of two reviewers
     )
-    for index, reviewer, decision, reason in decisions:
+    for index, reviewer, decision, reason, rationale in decisions:
         await screening.add_decision(
-            assignment_of[articles[index].id], reviewer, decision, reason, None
+            assignment_of[articles[index].id], reviewer, decision, reason, rationale
         )
     return PROJECT_ID
 

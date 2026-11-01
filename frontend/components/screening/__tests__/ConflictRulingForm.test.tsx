@@ -24,6 +24,10 @@ const READ: ScreeningAssignmentRead = {
     journal_title: null,
     pmid: null,
     publication_year: null,
+    mesh_terms: null,
+    keywords: null,
+    article_type: null,
+    language: null,
   },
   my_decision: null,
   outcome: null,
@@ -61,6 +65,21 @@ describe('ConflictRulingForm', () => {
     expect(screen.getByText('Reviewer A')).toBeInTheDocument();
     expect(screen.getByText('Reviewer B')).toBeInTheDocument();
     expect(screen.getByText('Not ML')).toBeInTheDocument();
+    expect(screen.queryByText('Reviewer A Name')).toBeNull();
+    expect(screen.queryByText('Reviewer B Name')).toBeNull();
+  });
+
+  it("shows each reviewer's note under their label", () => {
+    const withNote: ScreeningAssignmentRead = {
+      ...READ,
+      peer_decisions: [{...READ.peer_decisions[0], rationale: 'Adults only'}, READ.peer_decisions[1]],
+    };
+    render(<ConflictRulingForm read={withNote} busy={false} onRule={vi.fn()} />);
+    const rowA = screen.getByText('Reviewer A').closest('li');
+    const rowB = screen.getByText('Reviewer B').closest('li');
+    expect(rowA).toHaveTextContent('Note: Adults only');
+    expect(rowB).not.toHaveTextContent('Note:');
+    expect(screen.getAllByText(/^Note:/)).toHaveLength(1);
     expect(screen.queryByText('Reviewer A Name')).toBeNull();
     expect(screen.queryByText('Reviewer B Name')).toBeNull();
   });

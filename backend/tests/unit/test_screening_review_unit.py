@@ -44,6 +44,10 @@ def _article() -> ScreeningArticle:
         publication_year=None,
         pmid=None,
         doi=None,
+        mesh_terms=None,
+        keywords=None,
+        article_type=None,
+        language=None,
     )
 
 

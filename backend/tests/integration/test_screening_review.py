@@ -478,3 +478,60 @@ async def test_viewer_reads_records_with_nothing_to_screen(db_session: AsyncSess
 
     assert response.status_code == 200
     assert await _statuses(db_session, viewer, project_id) == {str(assignment): "in_review"}
+
+
+async def test_assignment_read_carries_the_reading_fields(db_session: AsyncSession) -> None:
+    project_id, (reviewer,), (article_id,), (assignment,) = await _project(
+        db_session, rc=1, reviewers=1
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.articles SET mesh_terms = ARRAY['Sepsis','Humans'],"
+            " keywords = ARRAY['triage'], article_type = 'Randomized Controlled Trial',"
+            " language = 'spa' WHERE id = :aid AND project_id = :pid"
+        ),
+        {"aid": str(article_id), "pid": str(project_id)},
+    )
+
+    response = await _get(db_session, reviewer, _assignment_path(assignment))
+
+    assert response.status_code == 200, response.text
+    article = response.json()["data"]["article"]
+    assert (
+        article["mesh_terms"],
+        article["keywords"],
+        article["article_type"],
+        article["language"],
+    ) == (["Sepsis", "Humans"], ["triage"], "Randomized Controlled Trial", "spa")
+
+
+async def test_peer_note_stays_hidden_from_seated_seats(db_session: AsyncSession) -> None:
+    project_id, (a,), _, (assignment,) = await _project(db_session, rc=2, reviewers=1)
+    b = await add_member(db_session, project_id, "consensus")
+
+    posted_a = await _request(
+        db_session,
+        a,
+        "POST",
+        _decision_path(assignment),
+        {"decision": "include", "rationale": "Adults only"},
+    )
+    posted_b = await _request(
+        db_session,
+        b,
+        "POST",
+        _decision_path(assignment),
+        {"decision": "exclude", "exclusion_reason": "Not ML", "rationale": "Not a model"},
+    )
+    assert (posted_a.status_code, posted_b.status_code) == (200, 200), posted_b.text
+
+    for seat in (a, b):
+        view = (await _get(db_session, seat, _assignment_path(assignment))).json()["data"]
+        assert view["peer_decisions"] == []
+
+    manager_view = (await _get(db_session, MANAGER, _assignment_path(assignment))).json()["data"]
+    assert manager_view["status"] == "conflict"
+    assert {p["reviewer_id"]: p["rationale"] for p in manager_view["peer_decisions"]} == {
+        str(a): "Adults only",
+        str(b): "Not a model",
+    }

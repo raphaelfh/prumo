@@ -17,6 +17,7 @@ vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
 import {toast} from 'sonner';
 
+import type {ScreeningCriteria} from '@/components/screening/CriteriaPanel';
 import {ScreeningRecordPanel} from '@/components/screening/ScreeningRecordPanel';
 import {screeningKeys} from '@/lib/query-keys/screening';
 import type {ScreeningAssignmentRead, ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
@@ -103,6 +104,10 @@ function assignment(overrides: Partial<ScreeningAssignmentRead> = {}): Screening
       journal_title: 'Lancet',
       pmid: null,
       publication_year: 2021,
+      mesh_terms: null,
+      keywords: null,
+      article_type: null,
+      language: null,
     },
     my_decision: null,
     outcome: null,
@@ -125,18 +130,38 @@ function serveAssignment(read: ScreeningAssignmentRead) {
 interface RenderOptions {
   row?: ScreeningRecordRow | null;
   config?: ScreeningConfigRead;
+  criteria?: ScreeningCriteria;
+  maximized?: boolean;
 }
 
-function renderPanel({row: r = row(), config: c = config()}: RenderOptions = {}) {
+const NO_CRITERIA: ScreeningCriteria = {inclusion: [], exclusion: []};
+const CRITERIA: ScreeningCriteria = {inclusion: ['Adults'], exclusion: ['Not ML']};
+
+function renderPanel({
+  row: r = row(),
+  config: c = config(),
+  criteria = NO_CRITERIA,
+  maximized = false,
+}: RenderOptions = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
   const onDecided = vi.fn<(row: ScreeningRecordRow) => void>();
   const onNotInPhase = vi.fn<() => void>();
-  render(
+  const tree = (current: ScreeningRecordRow | null) => (
     <QueryClientProvider client={client}>
-      <ScreeningRecordPanel projectId="p1" row={r} config={c} onDecided={onDecided} onNotInPhase={onNotInPhase} />
-    </QueryClientProvider>,
+      <ScreeningRecordPanel
+        projectId="p1"
+        row={current}
+        config={c}
+        criteria={criteria}
+        maximized={maximized}
+        onDecided={onDecided}
+        onNotInPhase={onNotInPhase}
+      />
+    </QueryClientProvider>
   );
-  return {client, onDecided, onNotInPhase};
+  const view = render(tree(r));
+  const rerender = (next: ScreeningRecordRow | null) => view.rerender(tree(next));
+  return {client, onDecided, onNotInPhase, rerender};
 }
 
 beforeEach(() => {
@@ -146,8 +171,9 @@ beforeEach(() => {
 
 describe('ScreeningRecordPanel', () => {
   it('shows the placeholder with no row', () => {
-    renderPanel({row: null});
+    renderPanel({row: null, criteria: CRITERIA});
     expect(screen.getByText('Select a record')).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Criteria (2)'})).toBeNull();
     expect(screen.getByText('Pick a row to screen it here.')).toBeInTheDocument();
   });
 
@@ -348,9 +374,173 @@ describe('ScreeningRecordPanel', () => {
   });
 
   it('not enrolled: a reviewer sees metadata only', () => {
-    renderPanel({row: row({assignment_id: null, status: 'not_enrolled'})});
+    renderPanel({row: row({assignment_id: null, status: 'not_enrolled'}), criteria: CRITERIA, maximized: true});
+    expect(screen.queryByRole('complementary', {name: 'Screening criteria'})).toBeNull();
     expect(screen.getByRole('heading', {name: 'Deep learning for sepsis'})).toBeInTheDocument();
     expect(screen.queryByRole('button', {name: 'Enroll'})).toBeNull();
     expect(screen.getByText('A manager enrolls articles')).toBeInTheDocument();
+  });
+
+  it('docked shows the criteria disclosure and no rail', async () => {
+    serveAssignment(assignment());
+    renderPanel({criteria: CRITERIA});
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('complementary', {name: 'Screening criteria'})).toBeNull();
+  });
+
+  it('maximized shows the rail and no disclosure', async () => {
+    serveAssignment(assignment());
+    renderPanel({criteria: CRITERIA, maximized: true});
+    const rail = await screen.findByRole('complementary', {name: 'Screening criteria'});
+    expect(rail).toHaveTextContent('Adults');
+    expect(screen.queryByRole('button', {name: 'Criteria (2)'})).toBeNull();
+  });
+
+  it.each([
+    ['ruling', assignment({status: 'conflict', peer_decisions: [PEER_A, PEER_B]}), row({status: 'conflict'})],
+    [
+      'read-only',
+      assignment({
+        status: 'awaiting_others',
+        my_decision: {id: 'd1', decision: 'include', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+      }),
+      row({status: 'waiting', my_decision: 'include'}),
+    ],
+  ] as const)('the %s body shows the criteria too', async (_label, read, r) => {
+    serveAssignment(read);
+    renderPanel({row: r, config: config({can_arbitrate: true}), criteria: CRITERIA});
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toBeInTheDocument();
+  });
+
+  describe('reviewer note', () => {
+    function captureDecide(response: ScreeningAssignmentRead = assignment({status: 'awaiting_others'})) {
+      const bodies: unknown[] = [];
+      server.use(
+        http.post(DECIDE_URL, async ({request}) => {
+          bodies.push(await request.json());
+          return ok(response);
+        }),
+      );
+      return bodies;
+    }
+
+    async function writeNote(user: ReturnType<typeof userEvent.setup>, text: string) {
+      await user.click(await screen.findByRole('button', {name: 'Add note'}));
+      await user.type(screen.getByLabelText('Note (optional)'), text);
+    }
+
+    it('sends the note with the decision', async () => {
+      serveAssignment(assignment());
+      const bodies = captureDecide();
+      const user = userEvent.setup();
+      renderPanel();
+      await writeNote(user, 'Adults only');
+      await user.click(screen.getByRole('button', {name: /Include/}));
+      await waitFor(() => expect(bodies).toEqual([{decision: 'include', rationale: 'Adults only'}]));
+    });
+
+    it('omits rationale without a note', async () => {
+      serveAssignment(assignment());
+      const bodies = captureDecide();
+      const user = userEvent.setup();
+      renderPanel();
+      await user.click(await screen.findByRole('button', {name: /Include/}));
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).not.toHaveProperty('rationale');
+    });
+
+    it('typing 1 in the note decides nothing', async () => {
+      serveAssignment(assignment());
+      const bodies = captureDecide();
+      const user = userEvent.setup();
+      const {client} = renderPanel();
+      await writeNote(user, '1');
+      expect(screen.getByLabelText('Note (optional)')).toHaveValue('1');
+      expect(client.getMutationCache().getAll()).toHaveLength(0);
+      expect(bodies).toEqual([]);
+    });
+
+    it('resets the note when the assignment changes', async () => {
+      serveAssignment(assignment());
+      const user = userEvent.setup();
+      const {rerender} = renderPanel();
+      await writeNote(user, 'Half a thought');
+      rerender(row({assignment_id: 'a2', article_id: 'art2'}));
+      expect(await screen.findByRole('button', {name: 'Add note'})).toBeInTheDocument();
+      expect(screen.queryByLabelText('Note (optional)')).toBeNull();
+      await user.click(screen.getByRole('button', {name: 'Add note'}));
+      expect(screen.getByLabelText('Note (optional)')).toHaveValue('');
+    });
+
+    it('clears the note after a successful decision', async () => {
+      const read = assignment();
+      serveAssignment(read);
+      const bodies = captureDecide(read);
+      const user = userEvent.setup();
+      const {onDecided} = renderPanel();
+      await writeNote(user, 'Adults only');
+      await user.click(screen.getByRole('button', {name: /Include/}));
+      await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+      expect(bodies).toHaveLength(1);
+      await waitFor(() => expect(screen.queryByDisplayValue('Adults only')).toBeNull());
+    });
+
+    it.each([
+      ['  x  ', {decision: 'include', rationale: 'x'}],
+      ['   ', {decision: 'include'}],
+    ])('trims the note %j and omits a blank one', async (text, expected) => {
+      serveAssignment(assignment());
+      const bodies = captureDecide();
+      const user = userEvent.setup();
+      renderPanel();
+      await writeNote(user, text);
+      await user.click(screen.getByRole('button', {name: /Include/}));
+      await waitFor(() => expect(bodies).toEqual([expected]));
+    });
+
+    it('a viewer sees no note field', async () => {
+      serveAssignment(assignment());
+      renderPanel({config: config({can_review: false, can_manage: false, can_arbitrate: false})});
+      await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
+      expect(screen.queryByRole('button', {name: 'Add note'})).toBeNull();
+      expect(screen.queryByLabelText('Note (optional)')).toBeNull();
+    });
+
+    it('solo re-decide sends the note', async () => {
+      const decided = assignment({
+        status: 'decided',
+        my_decision: {id: 'd1', decision: 'include', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+        outcome: {decision: 'include', exclusion_reason: null, kind: 'solo', reasons_differ: false},
+      });
+      serveAssignment(decided);
+      const bodies = captureDecide(decided);
+      const user = userEvent.setup();
+      renderPanel({row: row({status: 'included', my_decision: 'include'}), config: config({reviewer_count: 1})});
+      await writeNote(user, 'Changed view');
+      await user.click(screen.getByRole('button', {name: /^Exclude(?! with)/}));
+      await waitFor(() => expect(bodies).toEqual([{decision: 'exclude', rationale: 'Changed view'}]));
+    });
+
+    it('the conflict branch has no reviewer note field', async () => {
+      serveAssignment(assignment({status: 'conflict', peer_decisions: [PEER_A, PEER_B]}));
+      renderPanel({row: row({status: 'conflict'}), config: config({can_arbitrate: true, can_manage: true})});
+      await screen.findByRole('button', {name: "Use Reviewer A's decision"});
+      expect(screen.queryByRole('button', {name: 'Add note'})).toBeNull();
+      expect(screen.queryByLabelText('Note (optional)')).toBeNull();
+    });
+
+    it("a decided record's peer list shows no notes", async () => {
+      serveAssignment(
+        assignment({
+          status: 'decided',
+          my_decision: {id: 'd1', decision: 'include', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+          outcome: {decision: 'include', exclusion_reason: null, kind: 'consensus', reasons_differ: false},
+          peer_decisions: [{...PEER_A, rationale: 'Adults only'}],
+        }),
+      );
+      renderPanel({row: row({status: 'included', my_decision: 'include'})});
+      expect(await screen.findByText('Ana Lima')).toBeInTheDocument();
+      expect(screen.queryByText(/Adults only/)).toBeNull();
+    });
   });
 });

@@ -11944,6 +11944,17 @@
             ],
             "title": "Abstract"
           },
+          "article_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Type"
+          },
           "authors": {
             "anyOf": [
               {
@@ -11985,6 +11996,45 @@
             ],
             "title": "Journal Title"
           },
+          "keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keywords"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "mesh_terms": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mesh Terms"
+          },
           "pmid": {
             "anyOf": [
               {
@@ -12020,7 +12070,11 @@
           "journal_title",
           "publication_year",
           "pmid",
-          "doi"
+          "doi",
+          "mesh_terms",
+          "keywords",
+          "article_type",
+          "language"
         ],
         "title": "ScreeningArticle",
         "type": "object"
