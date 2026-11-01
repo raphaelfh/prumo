@@ -440,6 +440,7 @@ export const extraction = {
     exportSuccessToast: 'Export downloaded.',
     exportStartedToast: 'Export started — we will notify you when it is ready.',
     exportFailedToast: 'Export failed.',
+    exportTooLarge: 'This export is too large for one file. Export fewer articles, or choose Publication tables or Codebook.',
     exportPreviewLineFmt: 'Will export {articles} articles × {fields} fields → {delivery}',
     exportPreviewLineNoFieldsFmt: 'Will export {articles} articles → {delivery}',
     exportPreviewLineDictionaryFmt: "Will export this template's codebook → {delivery}",

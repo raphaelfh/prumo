@@ -486,4 +486,39 @@ describe("HITLExportDialog", () => {
         expect(preview).not.toHaveTextContent(/3 articles/);
         expect(preview).toHaveTextContent(/codebook/i);
     });
+    it("submits a Codebook export with zero articles (§3)", async () => {
+        startExportMock.mockResolvedValueOnce({
+            kind: "sync",
+            blob: new Blob(["x"]),
+            filename: "x.xlsx",
+        });
+        const user = userEvent.setup();
+        renderDialog({currentListIds: []});
+        expect(screen.getByTestId("extraction-export-submit")).toBeDisabled();
+        await user.click(screen.getByLabelText(/^Codebook$/i));
+        expect(screen.queryByText(/No articles in scope/i)).not.toBeInTheDocument();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        await waitFor(() => expect(startExportMock).toHaveBeenCalled());
+        expect(startExportMock.mock.calls[0][1]).toMatchObject({
+            shape: "dictionary",
+            article_ids: [],
+        });
+    });
+
+    it("names a too-large export in words, not a code", async () => {
+        // Review Focus 6: the sync path surfaces ExportTooLargeError as copy.
+        startExportMock.mockRejectedValueOnce(
+            new ApiError(
+                "EXPORT_TOO_LARGE",
+                "EXPORT_TOO_LARGE: this export would write 9,000,000 cells",
+                422,
+            ),
+        );
+        const user = userEvent.setup();
+        renderDialog();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        const failures = await screen.findByTestId("extraction-export-failures");
+        expect(failures).toHaveTextContent(/too large for one file/i);
+        expect(failures).not.toHaveTextContent(/EXPORT_TOO_LARGE/);
+    });
 });
