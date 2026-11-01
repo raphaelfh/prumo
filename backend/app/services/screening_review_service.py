@@ -32,7 +32,6 @@ from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import RecordSource, ScreeningRepository
 from app.schemas.common import ApiErrorCode
 from app.schemas.screening import (
-    AssignmentPhase,
     PeerDecisionRead,
     ScreeningArbitrationCreate,
     ScreeningArticle,
@@ -52,6 +51,7 @@ from app.services.screening_outcome import (
     AssignmentState,
     CurrentDecision,
     CurrentRuling,
+    Outcome,
     caller_status,
     derive_state,
     record_status,
@@ -131,7 +131,7 @@ async def assignment_states(
     db: AsyncSession,
     *,
     project_id: UUID,
-    phase: AssignmentPhase,
+    phase: ScreeningPhase,
     reviewer_count: int | None,
     assignment_ids: Sequence[UUID] | None = None,
 ) -> dict[UUID, AssignmentSnapshot]:
@@ -192,7 +192,7 @@ async def full_text_candidates(
 
 
 def _check_decision_for_phase(
-    phase: AssignmentPhase, decision: str, exclusion_reason: str | None
+    phase: ScreeningPhase, decision: str, exclusion_reason: str | None
 ) -> None:
     """A decision the phase accepts: no ``not_retrieved`` at title/abstract, no ``maybe`` at full text."""
     if (phase == TITLE_ABSTRACT and decision == "not_retrieved") or (
@@ -244,14 +244,19 @@ def _record_row(
     snapshot: AssignmentSnapshot | None,
     viewer_id: UUID,
     roles: ScreeningRoles,
+    ta: tuple[Outcome | None, int | None] | None = None,
 ) -> ScreeningRecordRow:
-    """One records-list row; nothing of another reviewer leaves here but the outcome."""
+    """One records-list row; nothing of another reviewer leaves here but the outcome.
+
+    ``ta`` is a full-text row's title/abstract (outcome, reviewer count), else ``None``.
+    """
     mine = (
         next((d for d in snapshot.decisions if d.reviewer_id == viewer_id), None)
         if snapshot is not None
         else None
     )
     outcome = snapshot.state.outcome if snapshot is not None else None
+    ta_outcome, ta_reviewer_count = ta if ta is not None else (None, None)
     return ScreeningRecordRow(
         article_id=source.article_id,
         assignment_id=source.assignment_id if snapshot is not None else None,
@@ -279,6 +284,9 @@ def _record_row(
         outcome=outcome.decision if outcome is not None else None,
         outcome_exclusion_reason=outcome.exclusion_reason if outcome is not None else None,
         outcome_kind=outcome.kind if outcome is not None else None,
+        ta_outcome=ta_outcome.decision if ta_outcome is not None else None,
+        ta_outcome_kind=ta_outcome.kind if ta_outcome is not None else None,
+        ta_reviewer_count=ta_reviewer_count,
     )
 
 
@@ -288,7 +296,7 @@ class ScreeningReviewService:
         self.projects = ProjectRepository(db)
         self.screening = ScreeningRepository(db)
 
-    async def _reviewer_count(self, project_id: UUID, phase: AssignmentPhase) -> int | None:
+    async def _reviewer_count(self, project_id: UUID, phase: ScreeningPhase) -> int | None:
         project = await self.projects.get_by_id(project_id)
         return reviewer_count_of(project.settings if project else None, phase)
 
@@ -304,6 +312,9 @@ class ScreeningReviewService:
         )
         roles = await screening_roles(self.db, project_id, viewer_id)
         sources = await self.screening.record_rows(project_id=project_id, phase=phase)
+        ta_count, ta_outcomes = (
+            await self._title_abstract_outcomes(project_id) if phase == FULL_TEXT else (None, None)
+        )
         return ScreeningRecordsRead(
             phase=phase,
             reviewer_count=reviewer_count,
@@ -316,10 +327,29 @@ class ScreeningReviewService:
                     snapshots.get(source.assignment_id) if source.assignment_id else None,
                     viewer_id,
                     roles,
+                    None if ta_outcomes is None else (ta_outcomes.get(source.article_id), ta_count),
                 )
                 for rank, source in enumerate(sources)
             ],
         )
+
+    async def _title_abstract_outcomes(
+        self, project_id: UUID
+    ) -> tuple[int | None, dict[UUID, Outcome | None]]:
+        """The title/abstract reviewer count and each article's outcome there."""
+        count = await self._reviewer_count(project_id, TITLE_ABSTRACT)
+        if count is None:
+            return None, {}
+        snapshots = await assignment_states(
+            self.db, project_id=project_id, phase=TITLE_ABSTRACT, reviewer_count=count
+        )
+        by_article = await self.screening.live_assignment_ids_by_article(
+            project_id=project_id, phase=TITLE_ABSTRACT
+        )
+        return count, {
+            article_id: snapshots[assignment_id].state.outcome
+            for article_id, assignment_id in by_article.items()
+        }
 
     async def get_assignment(self, assignment_id: UUID, viewer_id: UUID) -> ScreeningAssignmentRead:
         ref = await get_assignment_ref(self.db, assignment_id)

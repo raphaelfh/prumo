@@ -123,6 +123,7 @@ _DECIDED_STATUS: dict[ScreeningDecisionValue, ScreeningRecordStatus] = {
     "include": "included",
     "exclude": "excluded",
     "maybe": "maybe",
+    "not_retrieved": "not_retrieved",
 }
 
 

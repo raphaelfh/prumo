@@ -29,7 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDMixin
 
-# ``Final`` keeps the literal type, so the constants satisfy ``AssignmentPhase``.
+# ``Final`` keeps the literal type, so the constants satisfy ``ScreeningPhase``.
 TITLE_ABSTRACT: Final = "title_abstract"
 FULL_TEXT: Final = "full_text"
 

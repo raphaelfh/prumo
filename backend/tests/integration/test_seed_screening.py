@@ -20,11 +20,13 @@ from tests.integration.helpers.screening_fixtures import add_member
 from tests.integration.helpers.shared_fixtures import make_project
 
 
-async def _rows(db: AsyncSession, user: UUID, project_id: UUID) -> list[dict[str, Any]]:
+async def _rows(
+    db: AsyncSession, user: UUID, project_id: UUID, phase: str = "title_abstract"
+) -> list[dict[str, Any]]:
     try:
         async with client_as(str(user), db) as client:
             response = await client.get(
-                f"/api/v1/projects/{project_id}/screening/records?phase=title_abstract"
+                f"/api/v1/projects/{project_id}/screening/records?phase={phase}"
             )
     finally:
         app.dependency_overrides.clear()
@@ -49,7 +51,7 @@ async def test_seed_builds_a_conflict_the_manager_can_rule(db_session: AsyncSess
     assert copies == 1
     manager_rows = await _rows(db_session, manager, project_id)
     counts = Counter(row["status"] for row in manager_rows)
-    assert len(manager_rows) == 12
+    assert len(manager_rows) == 14
     assert counts["conflict"] >= 1
     assert counts["to_screen"] >= 1
     assert counts["included"] >= 1
@@ -57,6 +59,27 @@ async def test_seed_builds_a_conflict_the_manager_can_rule(db_session: AsyncSess
     (conflict,) = [row for row in manager_rows if row["status"] == "conflict"]
     by_article = {row["article_id"]: row for row in await _rows(db_session, r1, project_id)}
     assert by_article[conflict["article_id"]]["status"] == "waiting"
+
+    full_text = await _rows(db_session, manager, project_id, "full_text")
+    assert len(full_text) == 3
+    assert sum(row["has_pdf"] for row in full_text) == 1
+    assert [row["status"] for row in full_text] == ["to_screen"] * 3
+    ft_by_r1 = {
+        row["article_id"]: row for row in await _rows(db_session, r1, project_id, "full_text")
+    }
+    (waiting,) = [row for row in ft_by_r1.values() if row["status"] == "waiting"]
+    assert waiting["my_exclusion_reason"] == "Wrong outcome"
+    assert await _enrolled_full_text(db_session, manager, project_id) == 3
+
+
+async def _enrolled_full_text(db: AsyncSession, user: UUID, project_id: UUID) -> int:
+    try:
+        async with client_as(str(user), db) as client:
+            response = await client.get(f"/api/v1/projects/{project_id}/screening/config")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    return int(response.json()["data"]["full_text_enrolled"])
 
 
 async def _created_at(db: AsyncSession, profile_id: UUID) -> Any:

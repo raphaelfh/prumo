@@ -7325,7 +7325,8 @@ export interface components {
          *
          *     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
          *     when the article is not enrolled; the ``outcome*`` fields are set only once
-         *     the record has an outcome.
+         *     the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
+         *     of a full-text row.
          */
         ScreeningRecordRow: {
             /**
@@ -7365,7 +7366,13 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe";
+            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe" | "not_retrieved";
+            /** Ta Outcome */
+            ta_outcome: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
+            /** Ta Outcome Kind */
+            ta_outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /** Ta Reviewer Count */
+            ta_reviewer_count: number | null;
             /** Title */
             title: string;
         };
@@ -7380,9 +7387,9 @@ export interface components {
             inclusion_criteria: string[];
             /**
              * Phase
-             * @constant
+             * @enum {string}
              */
-            phase: "title_abstract";
+            phase: "title_abstract" | "full_text";
             /** Reviewer Count */
             reviewer_count: number;
             /** Rows */
@@ -11175,7 +11182,7 @@ export interface operations {
     get_screening_records_api_v1_projects__project_id__screening_records_get: {
         parameters: {
             query: {
-                phase: "title_abstract";
+                phase: "title_abstract" | "full_text";
             };
             header?: never;
             path: {

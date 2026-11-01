@@ -17,10 +17,10 @@ from app.repositories.project_repository import ProjectMemberRepository, Project
 from app.repositories.screening_repository import ScreeningRepository
 from app.schemas.common import ApiErrorCode
 from app.schemas.screening import (
-    AssignmentPhase,
     ScreeningConfigRead,
     ScreeningConfigUpdate,
     ScreeningEnrollResult,
+    ScreeningPhase,
 )
 from app.services.article_read_service import owned_articles
 from app.services.project_ai_context import load_exclusion_reasons
@@ -128,7 +128,7 @@ class ScreeningConfigService:
         project_id: UUID,
         enrolled_by: UUID,
         article_ids: list[UUID] | None,
-        phase: AssignmentPhase = TITLE_ABSTRACT,
+        phase: ScreeningPhase = TITLE_ABSTRACT,
     ) -> ScreeningEnrollResult:
         """Enroll the given articles (or every article of the project); repeats are skipped.
 

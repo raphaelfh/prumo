@@ -9,11 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ScreeningDecisionValue = Literal["include", "exclude", "maybe", "not_retrieved"]
 ScreeningOutcomeKind = Literal["solo", "consensus", "arbitrated"]
 ScreeningCallerStatus = Literal["awaiting_me", "awaiting_others", "conflict", "decided"]
-ScreeningPhase = Literal["title_abstract"]
-# Task 5 folds this into ScreeningPhase.
-AssignmentPhase = Literal["title_abstract", "full_text"]
+ScreeningPhase = Literal["title_abstract", "full_text"]
 ScreeningRecordStatus = Literal[
-    "not_enrolled", "to_screen", "waiting", "in_review", "conflict", "included", "excluded", "maybe"
+    "not_enrolled",
+    "to_screen",
+    "waiting",
+    "in_review",
+    "conflict",
+    "included",
+    "excluded",
+    "maybe",
+    "not_retrieved",
 ]
 
 MAX_ENROLL_ARTICLES = 10_000
@@ -54,7 +60,7 @@ class ScreeningEnrollRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    phase: AssignmentPhase = "title_abstract"
+    phase: ScreeningPhase = "title_abstract"
     article_ids: list[UUID] | None = Field(
         default=None, min_length=1, max_length=MAX_ENROLL_ARTICLES
     )
@@ -91,7 +97,8 @@ class ScreeningRecordRow(BaseModel):
 
     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
     when the article is not enrolled; the ``outcome*`` fields are set only once
-    the record has an outcome.
+    the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
+    of a full-text row.
     """
 
     article_id: UUID
@@ -111,6 +118,10 @@ class ScreeningRecordRow(BaseModel):
     outcome: ScreeningDecisionValue | None
     outcome_exclusion_reason: str | None
     outcome_kind: ScreeningOutcomeKind | None
+    # The title/abstract outcome; full-text rows only (null at title/abstract).
+    ta_outcome: ScreeningDecisionValue | None
+    ta_outcome_kind: ScreeningOutcomeKind | None
+    ta_reviewer_count: int | None
 
 
 class ScreeningRecordsRead(BaseModel):
@@ -210,4 +221,4 @@ class ScreeningAssignmentRef(BaseModel):
     id: UUID
     project_id: UUID
     article_id: UUID
-    phase: AssignmentPhase
+    phase: ScreeningPhase

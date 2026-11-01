@@ -37,6 +37,9 @@ _WIRE_FIELDS = {
     "outcome",
     "outcome_exclusion_reason",
     "outcome_kind",
+    "ta_outcome",
+    "ta_outcome_kind",
+    "ta_reviewer_count",
 }
 
 
@@ -77,3 +80,20 @@ def test_records_route_is_limited_to_120_per_minute() -> None:
     limits = limiter._route_limits["app.api.v1.endpoints.screening.get_screening_records"]
 
     assert [str(limit.limit) for limit in limits] == ["120 per 1 minute"]
+
+
+async def test_records_handler_passes_full_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    read = ScreeningRecordsRead(
+        phase="full_text", reviewer_count=2, inclusion_criteria=[], exclusion_reasons=[], rows=[]
+    )
+    service = MagicMock()
+    service.records = AsyncMock(return_value=read)
+    monkeypatch.setattr(endpoint, "ScreeningReviewService", MagicMock(return_value=service))
+    request = SimpleNamespace(state=SimpleNamespace(trace_id="trace-1"))
+
+    result = await endpoint.get_screening_records.__wrapped__(
+        request, PROJECT, "full_text", MagicMock(), CALLER
+    )
+
+    assert result.data is read
+    service.records.assert_awaited_once_with(PROJECT, CALLER, "full_text")

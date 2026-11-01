@@ -76,3 +76,44 @@ def test_main_needs_three_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert raised.value is refusal
     built.assert_not_awaited()
+
+
+def _run_collaborators(monkeypatch: pytest.MonkeyPatch, build: AsyncMock) -> MagicMock:
+    session = MagicMock()
+    session.commit = AsyncMock()
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=session)
+    context.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(seed_screening, "AsyncSessionLocal", Mock(return_value=context))
+    monkeypatch.setattr(
+        seed_screening, "resolve_profiles", AsyncMock(return_value=(uuid4(), (uuid4(), uuid4())))
+    )
+    monkeypatch.setattr(seed_screening, "build", build)
+    storage = MagicMock()
+    storage.delete, storage.upload = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(seed_screening, "get_supabase_client", Mock())
+    monkeypatch.setattr(seed_screening, "create_storage_adapter", Mock(return_value=storage))
+    return storage
+
+
+def test_main_uploads_the_seed_pdf_after_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@localhost:54322/postgres")
+    storage = _run_collaborators(monkeypatch, AsyncMock(return_value=seed_screening.PROJECT_ID))
+
+    seed_screening.main([])
+
+    storage.upload.assert_awaited_once_with(
+        "articles", seed_screening.SEED_PDF_KEY, seed_screening.SEED_PDF_BYTES, "application/pdf"
+    )
+    assert seed_screening.SEED_PDF_BYTES.startswith(b"%PDF-")
+    assert seed_screening.SEED_PDF_KEY.startswith(f"{seed_screening.PROJECT_ID}/")
+
+
+def test_main_does_not_upload_when_build_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@localhost:54322/postgres")
+    storage = _run_collaborators(monkeypatch, AsyncMock(side_effect=SystemExit("no")))
+
+    with pytest.raises(SystemExit):
+        seed_screening.main([])
+
+    storage.upload.assert_not_awaited()

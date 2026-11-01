@@ -12008,7 +12008,7 @@
         "type": "object"
       },
       "ScreeningRecordRow": {
-        "description": "One project article in a screening phase as the caller may see it.\n\nNo abstract: the panel reads the assignment. ``assignment_id`` is ``None``\nwhen the article is not enrolled; the ``outcome*`` fields are set only once\nthe record has an outcome.",
+        "description": "One project article in a screening phase as the caller may see it.\n\nNo abstract: the panel reads the assignment. ``assignment_id`` is ``None``\nwhen the article is not enrolled; the ``outcome*`` fields are set only once\nthe record has an outcome; the ``ta_*`` fields are the title/abstract outcome\nof a full-text row.",
         "properties": {
           "article_id": {
             "format": "uuid",
@@ -12182,10 +12182,55 @@
               "conflict",
               "included",
               "excluded",
-              "maybe"
+              "maybe",
+              "not_retrieved"
             ],
             "title": "Status",
             "type": "string"
+          },
+          "ta_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe",
+                  "not_retrieved"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ta Outcome"
+          },
+          "ta_outcome_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "solo",
+                  "consensus",
+                  "arbitrated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ta Outcome Kind"
+          },
+          "ta_reviewer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ta Reviewer Count"
           },
           "title": {
             "title": "Title",
@@ -12209,7 +12254,10 @@
           "my_exclusion_reason",
           "outcome",
           "outcome_exclusion_reason",
-          "outcome_kind"
+          "outcome_kind",
+          "ta_outcome",
+          "ta_outcome_kind",
+          "ta_reviewer_count"
         ],
         "title": "ScreeningRecordRow",
         "type": "object"
@@ -12232,7 +12280,10 @@
             "type": "array"
           },
           "phase": {
-            "const": "title_abstract",
+            "enum": [
+              "title_abstract",
+              "full_text"
+            ],
             "title": "Phase",
             "type": "string"
           },
@@ -18828,7 +18879,10 @@
             "name": "phase",
             "required": true,
             "schema": {
-              "const": "title_abstract",
+              "enum": [
+                "title_abstract",
+                "full_text"
+              ],
               "title": "Phase",
               "type": "string"
             }

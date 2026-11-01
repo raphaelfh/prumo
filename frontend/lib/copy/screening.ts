@@ -142,6 +142,7 @@ export const screening = {
   statusIncluded: 'Included',
   statusExcluded: 'Excluded',
   statusMaybe: 'Maybe',
+  statusNotRetrieved: 'Not retrieved',
   statusNotEnrolled: 'Not enrolled',
   statusArbitrated: 'Arbitrated',
   statusViewsLabel: 'Status views',

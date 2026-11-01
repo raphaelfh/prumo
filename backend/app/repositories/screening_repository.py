@@ -23,12 +23,13 @@ from sqlalchemy.orm import QueryableAttribute
 
 from app.models.article import Article, ArticleFile
 from app.models.screening import (
+    FULL_TEXT,
     TITLE_ABSTRACT,
     ScreeningArbitration,
     ScreeningAssignment,
     ScreeningDecision,
 )
-from app.schemas.screening import AssignmentPhase
+from app.schemas.screening import ScreeningPhase
 
 # THE assignment-to-article join condition. Members can move an article to
 # another project through PostgREST and nothing binds an assignment's
@@ -40,9 +41,7 @@ ARTICLE_STILL_IN_PROJECT = and_(
 )
 
 
-def live_assignments(
-    project_id: UUID, phase: AssignmentPhase
-) -> Select[tuple[ScreeningAssignment]]:
+def live_assignments(project_id: UUID, phase: ScreeningPhase) -> Select[tuple[ScreeningAssignment]]:
     """The project's ``phase`` assignments whose article is still in the project."""
     return (
         select(ScreeningAssignment)
@@ -93,7 +92,7 @@ class ScreeningRepository:
         project_id: UUID,
         enrolled_by: UUID,
         article_ids: Sequence[UUID] | None,
-        phase: AssignmentPhase,
+        phase: ScreeningPhase,
     ) -> int:
         """Insert one assignment per article, skipping the enrolled; returns the rows inserted.
 
@@ -121,7 +120,7 @@ class ScreeningRepository:
         result = await self.db.execute(stmt)
         return int(result.rowcount)  # type: ignore[attr-defined]
 
-    async def count_enrolled(self, *, project_id: UUID, phase: AssignmentPhase) -> int:
+    async def count_enrolled(self, *, project_id: UUID, phase: ScreeningPhase) -> int:
         live = live_assignments(project_id, phase).subquery()
         return int((await self.db.execute(select(func.count()).select_from(live))).scalar_one())
 
@@ -140,7 +139,7 @@ class ScreeningRepository:
         return bool((await self.db.execute(stmt)).scalar_one())
 
     async def has_assignment(
-        self, *, project_id: UUID, phase: AssignmentPhase, article_id: UUID | None = None
+        self, *, project_id: UUID, phase: ScreeningPhase, article_id: UUID | None = None
     ) -> bool:
         """Any ``phase`` assignment in the project (of ``article_id`` when given), moved articles included."""
         stmt = select(
@@ -152,11 +151,20 @@ class ScreeningRepository:
         )
         return bool((await self.db.execute(stmt)).scalar_one())
 
-    async def assigned_article_ids(self, *, project_id: UUID, phase: AssignmentPhase) -> set[UUID]:
+    async def assigned_article_ids(self, *, project_id: UUID, phase: ScreeningPhase) -> set[UUID]:
         stmt = select(ScreeningAssignment.article_id).where(
             ScreeningAssignment.project_id == project_id, ScreeningAssignment.phase == phase
         )
         return set((await self.db.execute(stmt)).scalars().all())
+
+    async def live_assignment_ids_by_article(
+        self, *, project_id: UUID, phase: ScreeningPhase
+    ) -> dict[UUID, UUID]:
+        """Article id to the id of its live ``phase`` assignment."""
+        stmt = live_assignments(project_id, phase).with_only_columns(
+            ScreeningAssignment.article_id, ScreeningAssignment.id
+        )
+        return dict((await self.db.execute(stmt)).tuples().all())
 
     async def get_assignment(self, assignment_id: UUID) -> ScreeningAssignment | None:
         """The by-id guard's lookup; nothing else resolves an assignment by id alone."""
@@ -177,7 +185,7 @@ class ScreeningRepository:
         self,
         *,
         project_id: UUID,
-        phase: AssignmentPhase,
+        phase: ScreeningPhase,
         assignment_ids: Sequence[UUID] | None = None,
     ) -> list[UUID]:
         stmt = live_assignments(project_id, phase).with_only_columns(ScreeningAssignment.id)
@@ -223,7 +231,7 @@ class ScreeningRepository:
         return {row.assignment_id: row for row in rows}
 
     async def assignments_with_articles(
-        self, *, project_id: UUID, phase: AssignmentPhase, assignment_ids: Sequence[UUID]
+        self, *, project_id: UUID, phase: ScreeningPhase, assignment_ids: Sequence[UUID]
     ) -> list[tuple[UUID, Article]]:
         """The given live assignments with their articles, in queue order."""
         stmt = (
@@ -234,33 +242,35 @@ class ScreeningRepository:
         )
         return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
 
-    async def record_rows(self, *, project_id: UUID, phase: AssignmentPhase) -> list[RecordSource]:
-        """Every article of the project, ``phase``-enrolled first in queue order, then by creation."""
+    async def record_rows(self, *, project_id: UUID, phase: ScreeningPhase) -> list[RecordSource]:
+        """The project's articles for ``phase`` in queue order.
+
+        Title/abstract lists every article, enrolled first, then by creation;
+        full text lists only the articles with a live full-text assignment.
+        """
         has_pdf = exists().where(
             ArticleFile.article_id == Article.id, ArticleFile.file_role == "MAIN"
         )
-        stmt = (
-            select(
-                Article.id,
-                ScreeningAssignment.id,
-                Article.title,
-                Article.authors,
-                Article.publication_year,
-                Article.journal_title,
-                Article.pmid,
-                Article.doi,
-                Article.ingestion_source,
-                has_pdf,
-            )
-            .select_from(Article)
-            .outerjoin(
-                ScreeningAssignment,
-                and_(ARTICLE_STILL_IN_PROJECT, ScreeningAssignment.phase == phase),
-            )
-            .where(Article.project_id == project_id)
-            .order_by(
-                ScreeningAssignment.id.is_(None), *_QUEUE_ORDER, Article.created_at, Article.id
-            )
+        phase_assignment = and_(ARTICLE_STILL_IN_PROJECT, ScreeningAssignment.phase == phase)
+        base = select(
+            Article.id,
+            ScreeningAssignment.id,
+            Article.title,
+            Article.authors,
+            Article.publication_year,
+            Article.journal_title,
+            Article.pmid,
+            Article.doi,
+            Article.ingestion_source,
+            has_pdf,
+        ).select_from(Article)
+        joined = (
+            base.join(ScreeningAssignment, phase_assignment)
+            if phase == FULL_TEXT
+            else base.outerjoin(ScreeningAssignment, phase_assignment)
+        )
+        stmt = joined.where(Article.project_id == project_id).order_by(
+            ScreeningAssignment.id.is_(None), *_QUEUE_ORDER, Article.created_at, Article.id
         )
         return [RecordSource(*row) for row in (await self.db.execute(stmt)).all()]
 

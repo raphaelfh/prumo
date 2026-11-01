@@ -15,17 +15,17 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.screening import AssignmentPhase
+from app.schemas.screening import ScreeningPhase
 
 SCREENING_SETTINGS_KEY = "screening"
 _MIN_REVIEWERS, _MAX_REVIEWERS = 1, 3
-_COUNT_KEY: dict[AssignmentPhase, str] = {
+_COUNT_KEY: dict[ScreeningPhase, str] = {
     "title_abstract": "reviewer_count",
     "full_text": "full_text_reviewer_count",
 }
 
 
-def reviewer_count_of(settings: Mapping[str, Any] | None, phase: AssignmentPhase) -> int | None:
+def reviewer_count_of(settings: Mapping[str, Any] | None, phase: ScreeningPhase) -> int | None:
     """The reviewers per record configured for ``phase`` when it is 1..3, else ``None``."""
     value = ((settings or {}).get(SCREENING_SETTINGS_KEY) or {}).get(_COUNT_KEY[phase])
     in_range = isinstance(value, int) and _MIN_REVIEWERS <= value <= _MAX_REVIEWERS

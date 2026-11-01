@@ -134,7 +134,8 @@ const STATUS_ORDER: Record<RecordStatus, number> = {
   maybe: 4,
   included: 5,
   excluded: 6,
-  not_enrolled: 7,
+  not_retrieved: 7,
+  not_enrolled: 8,
 };
 
 function compareField(a: Row, b: Row, field: RecordSortField): number {

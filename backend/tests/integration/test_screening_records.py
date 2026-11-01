@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.models.article import ArticleFile
+from app.models.screening import FULL_TEXT
 from tests.integration.conftest import SEED
 from tests.integration.helpers.engine_setup import client_as
 from tests.integration.helpers.screening_fixtures import (
     add_decision,
     add_member,
+    add_ruling,
     enroll_articles,
     make_screening_article,
     move_article,
@@ -49,6 +51,9 @@ _WIRE_FIELDS = {
     "outcome",
     "outcome_exclusion_reason",
     "outcome_kind",
+    "ta_outcome",
+    "ta_outcome_kind",
+    "ta_reviewer_count",
 }
 
 
@@ -233,9 +238,16 @@ async def test_records_phase_is_required_and_closed(db_session: AsyncSession) ->
     await set_reviewer_count(db_session, project_id, 1)
 
     assert (await _get(db_session, MANAGER, _path(project_id, ""))).status_code == 422
-    assert (
-        await _get(db_session, MANAGER, _path(project_id, "?phase=full_text"))
-    ).status_code == 422
+    assert (await _get(db_session, MANAGER, _path(project_id, "?phase=other"))).status_code == 422
+    off = await _get(db_session, MANAGER, _path(project_id, "?phase=full_text"))
+    assert off.status_code == 409
+    assert off.json()["error"]["code"] == "SCREENING_NOT_CONFIGURED"
+
+    await set_reviewer_count(db_session, project_id, 2, key="full_text_reviewer_count")
+    on = await _get(db_session, MANAGER, _path(project_id, "?phase=full_text"))
+    assert on.status_code == 200
+    assert on.json()["data"]["phase"] == "full_text"
+    assert on.json()["data"]["reviewer_count"] == 2
 
 
 async def test_records_non_member_is_403(db_session: AsyncSession) -> None:
@@ -298,3 +310,150 @@ async def test_records_carry_the_protocol_criteria(db_session: AsyncSession) -> 
     assert data["reviewer_count"] == 2
     assert data["phase"] == "title_abstract"
     assert data["rows"] == []
+
+
+_FT = "?phase=full_text"
+
+
+async def _ft_records(db: AsyncSession, user: UUID, project_id: UUID) -> dict[str, Any]:
+    response = await _get(db, user, _path(project_id, _FT))
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
+
+
+async def _ft_project(db: AsyncSession, *, ta: int = 2, ft: int = 2) -> UUID:
+    project_id = await make_project(db)
+    await _set_eligibility(db, project_id, _ELIGIBILITY)
+    await set_reviewer_count(db, project_id, ta)
+    await set_reviewer_count(db, project_id, ft, key="full_text_reviewer_count")
+    return project_id
+
+
+async def _ft_enroll(db: AsyncSession, project_id: UUID, articles: list[UUID]) -> list[UUID]:
+    """Full-text assignments in input order (explicit, distinct enrolment times)."""
+    return [
+        (
+            await enroll_articles(
+                db,
+                project_id,
+                [article],
+                by=MANAGER,
+                phase=FULL_TEXT,
+                enrolled_at=datetime(2026, 1, 1 + n, tzinfo=UTC),
+            )
+        )[0]
+        for n, article in enumerate(articles)
+    ]
+
+
+async def test_full_text_records_role_matrix(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    a, b, c = [await add_member(db, project_id, "reviewer") for _ in range(3)]
+    k = await add_member(db, project_id, "consensus")
+    v = await add_member(db, project_id, "viewer")
+    articles = [await make_screening_article(db, project_id) for _ in range(4)]
+    f1, f2, f3, _ = await _ft_enroll(db, project_id, articles)
+    await add_decision(db, f1, a, "exclude", reason="Wrong population")
+    await add_decision(db, f1, b, "exclude", reason="Wrong outcome")
+    await add_decision(db, f2, a, "include")
+    await add_decision(db, f3, a, "not_retrieved")
+    await add_decision(db, f3, b, "not_retrieved")
+
+    expected = {
+        a: ["waiting", "waiting", "not_retrieved", "to_screen"],
+        c: ["in_review", "to_screen", "not_retrieved", "to_screen"],
+        k: ["conflict", "to_screen", "not_retrieved", "to_screen"],
+        MANAGER: ["conflict", "to_screen", "not_retrieved", "to_screen"],
+        v: ["in_review", "in_review", "not_retrieved", "in_review"],
+    }
+    for caller, statuses in expected.items():
+        response = await _get(db, caller, _path(project_id, _FT))
+        assert response.status_code == 200, response.text
+        if caller in (a, c):
+            assert "Wrong outcome" not in response.text, caller
+        rows = _by_article(response.json()["data"])
+        assert [rows[str(i)]["status"] for i in articles] == statuses, caller
+        assert all(set(row) == _WIRE_FIELDS for row in rows.values())
+
+    rows_a = _by_article(await _ft_records(db, a, project_id))
+    assert rows_a[str(articles[0])]["my_exclusion_reason"] == "Wrong population"
+    assert rows_a[str(articles[0])]["outcome_exclusion_reason"] is None
+    assert rows_a[str(articles[2])]["outcome"] == "not_retrieved"
+
+
+async def test_full_text_rows_are_full_text_assignments_only(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    sent, ta_only, bare = [await make_screening_article(db, project_id) for _ in range(3)]
+    await enroll_articles(db, project_id, [sent, ta_only], by=MANAGER)
+    later, earlier = [await make_screening_article(db, project_id) for _ in range(2)]
+    await _ft_enroll(db, project_id, [later, earlier, sent])
+
+    rows = (await _ft_records(db, MANAGER, project_id))["rows"]
+
+    assert [r["article_id"] for r in rows] == [str(later), str(earlier), str(sent)]
+    assert [r["queue_rank"] for r in rows] == [0, 1, 2]
+    assert {str(ta_only), str(bare)}.isdisjoint(r["article_id"] for r in rows)
+
+
+async def test_full_text_rows_carry_the_title_abstract_outcome(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    a, b = [await add_member(db, project_id, "reviewer") for _ in range(2)]
+    k = await add_member(db, project_id, "consensus")
+    agreed, split, pending = [await make_screening_article(db, project_id) for _ in range(3)]
+    ta_agreed, ta_split, ta_pending = await enroll_articles(
+        db, project_id, [agreed, split, pending], by=MANAGER
+    )
+    await add_decision(db, ta_agreed, a, "include")
+    await add_decision(db, ta_agreed, b, "include")
+    await add_decision(db, ta_split, a, "include")
+    await add_decision(db, ta_split, b, "exclude", reason="Not ML")
+    await add_ruling(db, ta_split, k, "maybe")
+    await _ft_enroll(db, project_id, [agreed, split, pending])
+
+    rows = _by_article(await _ft_records(db, MANAGER, project_id))
+
+    assert [
+        (r["ta_outcome"], r["ta_outcome_kind"], r["ta_reviewer_count"])
+        for r in (rows[str(i)] for i in (agreed, split, pending))
+    ] == [("include", "consensus", 2), ("maybe", "arbitrated", 2), (None, None, 2)]
+
+
+async def test_title_abstract_rows_have_no_ta_fields(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    a = await add_member(db, project_id, "reviewer")
+    article = await make_screening_article(db, project_id)
+    (ta,) = await enroll_articles(db, project_id, [article], by=MANAGER)
+    await add_decision(db, ta, a, "include")
+
+    (row,) = (await _records(db, MANAGER, project_id))["rows"]
+
+    assert (row["ta_outcome"], row["ta_outcome_kind"], row["ta_reviewer_count"]) == (
+        None,
+        None,
+        None,
+    )
+
+
+async def test_full_text_has_pdf(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    bare, main = [await make_screening_article(db, project_id) for _ in range(2)]
+    db.add(
+        ArticleFile(
+            project_id=project_id,
+            article_id=main,
+            file_type="pdf",
+            storage_key=f"{project_id}/{main}.pdf",
+            file_role="MAIN",
+        )
+    )
+    await db.flush()
+    await _ft_enroll(db, project_id, [bare, main])
+
+    rows = _by_article(await _ft_records(db, MANAGER, project_id))
+
+    assert [rows[str(i)]["has_pdf"] for i in (bare, main)] == [False, True]
