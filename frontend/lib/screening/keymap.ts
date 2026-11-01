@@ -1,3 +1,5 @@
+import type {ScreeningPhase} from '@/services/screeningService';
+
 /**
  * The screening keyboard as a pure function: a keydown becomes one action, or
  * `null` to let the key through. Escape is not mapped: the reasons dialog
@@ -12,8 +14,6 @@ export type ScreeningKeyAction =
   | {kind: 'open_reasons'}
   | {kind: 'reason'; index: number}
   | null;
-
-import type {ScreeningPhase} from '@/services/screeningService';
 
 interface KeyEventLike {
   key: string;

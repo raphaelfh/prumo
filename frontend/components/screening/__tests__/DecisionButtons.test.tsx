@@ -145,4 +145,21 @@ describe('DecisionButtons at full text', () => {
     fireEvent.keyDown(window, {key: '2'});
     expect(onDecide).toHaveBeenCalledWith({decision: 'exclude', exclusion_reason: 'Not ML'});
   });
+
+  it.each(['click', 'key'])('re-picks the reason of a recorded exclusion (%s)', async (how) => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons('exclude', {...FT, recordedReason: 'Wrong population'});
+    if (how === 'click') await user.click(screen.getByRole('button', {name: /decisionExclude/}));
+    else fireEvent.keyDown(window, {key: '2'});
+    await user.click(await screen.findByRole('button', {name: /Not ML/}));
+    expect(onDecide).toHaveBeenCalledWith({decision: 'exclude', exclusion_reason: 'Not ML'});
+  });
+
+  it('ignores the recorded reason picked again', async () => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons('exclude', {...FT, recordedReason: 'Wrong population'});
+    await user.click(screen.getByRole('button', {name: /decisionExclude/}));
+    await user.click(await screen.findByRole('button', {name: /Wrong population/}));
+    expect(onDecide).not.toHaveBeenCalled();
+  });
 });

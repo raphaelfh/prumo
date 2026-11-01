@@ -4,10 +4,8 @@ import type {components} from '@/types/api/schema';
 
 import {
   HIDDEN_AT_ZERO,
-  EXCLUDED_REPORT_CSV_COLUMNS,
   RECORD_CSV_COLUMNS,
   defaultStatusView,
-  excludedReportsCsv,
   filterRecords,
   isReadOnly,
   myDecisionValuesFor,
@@ -421,26 +419,6 @@ describe('recordsToCsv', () => {
     const line = recordsToCsv([r]).split('\r\n')[1];
     expect(line).toContain(',Plain - title,');
     expect(line).toContain(',2021,');
-  });
-});
-
-describe('excludedReportsCsv', () => {
-  it('has one row per excluded report with its reason', () => {
-    const rows = [
-      row({status: 'excluded', title: 'Out', outcome_exclusion_reason: 'Wrong outcome'}),
-      row({status: 'included', title: 'In'}),
-      row({status: 'not_retrieved', title: 'Gone'}),
-    ];
-    const lines = excludedReportsCsv(rows).split('\r\n');
-    expect(lines[0]).toBe(EXCLUDED_REPORT_CSV_COLUMNS.join(','));
-    expect(lines).toHaveLength(2);
-    expect(lines[1].startsWith('Out,')).toBe(true);
-    expect(lines[1].endsWith(',Wrong outcome')).toBe(true);
-  });
-
-  it('guards a title starting with = like the records export', () => {
-    const lines = excludedReportsCsv([row({status: 'excluded', title: '=cmd', outcome_exclusion_reason: 'r'})]).split('\r\n');
-    expect(lines[1].startsWith("'=cmd,")).toBe(true);
   });
 });
 

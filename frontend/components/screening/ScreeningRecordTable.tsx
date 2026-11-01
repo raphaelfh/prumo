@@ -16,10 +16,10 @@ import {useEnrollArticles} from '@/hooks/screening/useScreeningConfig';
 import {t} from '@/lib/copy';
 import type {screening} from '@/lib/copy/screening';
 import {screeningErrorMessage} from '@/lib/screening/errors';
-import {excludedReportsCsv, recordsToCsv} from '@/lib/screening/records';
+import {recordsToCsv} from '@/lib/screening/records';
 import {TABLE_CELL_CLASS} from '@/lib/table-constants';
 import {cn} from '@/lib/utils';
-import type {ScreeningPhase, ScreeningRecordRow} from '@/services/screeningService';
+import type {ScreeningRecordRow} from '@/services/screeningService';
 
 import {RecordStatusChip} from './RecordStatusChip';
 
@@ -235,15 +235,14 @@ function downloadCsv(csv: string, filename: string) {
 
 interface RecordBulkBarProps {
   projectId: string;
-  phase: ScreeningPhase;
   rows: ScreeningRecordRow[];
   checkedIds: ReadonlySet<string>;
   canManage: boolean;
   onCheckedChange: (ids: ReadonlySet<string>) => void;
 }
 
-/** "N selected" with Enroll selected (manager; not-enrolled rows only) and Export selected (CSV); full text adds Export excluded reports. */
-export function RecordBulkBar({projectId, phase, rows, checkedIds, canManage, onCheckedChange}: RecordBulkBarProps) {
+/** "N selected" with Enroll selected (manager; not-enrolled rows only) and Export selected (CSV). */
+export function RecordBulkBar({projectId, rows, checkedIds, canManage, onCheckedChange}: RecordBulkBarProps) {
   const enroll = useEnrollArticles(projectId);
   const checkedRows = rows.filter((row) => checkedIds.has(row.article_id));
   const enrollIds = checkedRows.filter((row) => row.status === 'not_enrolled').map((row) => row.article_id);
@@ -271,15 +270,6 @@ export function RecordBulkBar({projectId, phase, rows, checkedIds, canManage, on
       <Button size="xs" variant="ghost" onClick={() => downloadCsv(recordsToCsv(checkedRows), 'screening-records.csv')}>
         {t('screening', 'exportSelected')}
       </Button>
-      {phase === 'full_text' && (
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={() => downloadCsv(excludedReportsCsv(checkedRows), 'excluded-reports.csv')}
-        >
-          {t('screening', 'exportExcludedReports')}
-        </Button>
-      )}
     </>
   );
 }

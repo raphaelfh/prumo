@@ -255,7 +255,6 @@ export function ScreeningRecordList({
             ) : (
               <RecordBulkBar
                 projectId={projectId}
-                phase={read.phase}
                 rows={read.rows}
                 checkedIds={checkedIds}
                 canManage={config.can_manage}

@@ -185,7 +185,6 @@ export const screening = {
   selectedCount: '{{n}} selected',
   enrollSelected: 'Enroll selected',
   exportSelected: 'Export selected',
-  exportExcludedReports: 'Export excluded reports',
   selectRecord: 'Select {{title}}',
   selectAllRecords: 'Select all records',
   removeFilterAria: 'Remove filter {{label}}',

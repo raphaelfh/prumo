@@ -2,8 +2,8 @@
  * Include / Exclude / Maybe, and "Exclude with reason" when the protocol
  * lists reasons. At full text there is no Maybe: Exclude (and 2 / E) always
  * opens the reasons, a reason being required; "Report not retrieved" is a
- * ghost button with no key; an optional note rides with every decision. The keyboard goes through the pure `screeningKeyAction`; one
- * window listener applies it, unless another handler took the key or an
+ * ghost button with no key; an optional note rides with every decision.
+ * The keyboard goes through the pure `screeningKeyAction`; one window listener applies it, unless another handler took the key or an
  * overlay other than its own reasons dialog is open. The caller keys this
  * component by record, so a record change closes the reasons dialog.
  *
@@ -58,12 +58,13 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
   };
 
   const decide = (decision: Decision) => {
-    if (decision === recorded) return;
-    // A full-text exclusion needs a reason: the list opens first.
+    // A full-text exclusion needs a reason: the list opens first, even over a
+    // recorded exclusion (the same reason is a no-op in `pickReason`).
     if (fullText && decision === 'exclude') {
       if (reasons.length > 0) setReasonsOpen(true);
       return;
     }
+    if (decision === recorded) return;
     send({decision});
   };
 

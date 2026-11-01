@@ -527,32 +527,6 @@ describe('ScreeningRecordList', () => {
       click.mockRestore();
     });
 
-    it('exports the excluded reports at full text, from the checked rows', async () => {
-      const user = userEvent.setup();
-      const clicks: string[] = [];
-      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-        clicks.push(this.download);
-      });
-      const out = row(1, {title: 'Out report', status: 'excluded', outcome_exclusion_reason: 'Wrong outcome'});
-      const kept = row(2, {title: 'Kept report', status: 'included'});
-      renderList({read: {...records([out, kept]), phase: 'full_text'}});
-      await check(user, out, kept);
-      await user.click(screen.getByRole('button', {name: 'Export excluded reports'}));
-
-      expect(clicks).toEqual(['excluded-reports.csv']);
-      const lines = (await createObjectURL.mock.calls[0][0].text()).split('\r\n');
-      expect(lines).toHaveLength(2);
-      expect(lines[1].endsWith(',Wrong outcome')).toBe(true);
-      click.mockRestore();
-    });
-
-    it('offers no excluded-reports export at title/abstract', async () => {
-      const user = userEvent.setup();
-      renderList();
-      await check(user, R2);
-      expect(screen.queryByRole('button', {name: 'Export excluded reports'})).not.toBeInTheDocument();
-    });
-
     it('revokes the object URL only after the click has returned', async () => {
       const user = userEvent.setup();
       let revokedBeforeNextTask: number | null = null;

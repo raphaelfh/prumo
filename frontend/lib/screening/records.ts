@@ -232,11 +232,6 @@ export const RECORD_CSV_COLUMNS: readonly (keyof Row)[] = [
   'outcome_exclusion_reason', 'outcome_kind', 'ta_outcome', 'ta_outcome_kind', 'ta_reviewer_count',
 ];
 
-/** A full-text excluded report with its reason: the PRISMA "reports excluded" list. */
-export const EXCLUDED_REPORT_CSV_COLUMNS = [
-  'title', 'first_author', 'publication_year', 'journal_title', 'pmid', 'doi', 'outcome_exclusion_reason',
-] as const satisfies readonly (keyof Row)[];
-
 /** A spreadsheet reads a cell starting with one of these as a formula. */
 const FORMULA_LEAD = /^[=+\-@\t\r]/;
 
@@ -258,8 +253,4 @@ function toCsv(columns: readonly (keyof Row)[], rows: Row[]): string {
 
 export function recordsToCsv(rows: Row[]): string {
   return toCsv(RECORD_CSV_COLUMNS, rows);
-}
-
-export function excludedReportsCsv(rows: Row[]): string {
-  return toCsv(EXCLUDED_REPORT_CSV_COLUMNS, rows.filter((row) => row.status === 'excluded'));
 }
