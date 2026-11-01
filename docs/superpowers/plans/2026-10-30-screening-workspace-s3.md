@@ -384,6 +384,7 @@ git -C "$WT" commit -m "feat(screening): full-text setting with its lock and the
 - Existing unit tests patch `set_reviewer_count` (`test_screening_config_unit.py:53,110,115`), assert a 3-arg `enroll` (`:131,:138`) and build `ScreeningConfigRead` literally in `_config()` (`:36`) — update them for `set_config`, the phase arg and the 4 new FT read fields.
 - S1's `ScreeningConfigService.enroll` takes no project lock (`:118-133`) and S2 is not in the tree: FT enroll adds the first `lock_for_update` on the project. If S2 lands first with its own enroll lock, keep one acquisition (whoever merges second dedupes).
 - Race tests reuse `_wait_for_a_lock_waiter(factory)` (`test_screening_concurrency.py:166`).
+- Task 1 did NOT add `ScreeningRepository.has_assignment(*, project_id, phase, article_id: UUID | None = None) -> bool` (vulture rejects uncalled code). Add it here with its first caller (`set_config`'s FT count lock / `full_text_count_locked`), with an integration test; Task 4 reuses it.
 
 ### Task 4: Full-text decision rules (backend, S3a2-1)
 
