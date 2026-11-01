@@ -67,6 +67,10 @@ class ScreeningArticle(BaseModel):
     publication_year: int | None
     pmid: str | None
     doi: str | None
+    mesh_terms: list[str] | None
+    keywords: list[str] | None
+    article_type: str | None
+    language: str | None
 
 
 class ScreeningRecordRow(BaseModel):

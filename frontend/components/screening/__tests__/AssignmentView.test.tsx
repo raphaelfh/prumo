@@ -35,6 +35,10 @@ function assignment(overrides: Partial<ScreeningAssignmentRead> = {}): Screening
       journal_title: 'Lancet',
       pmid: null,
       publication_year: 2021,
+      mesh_terms: null,
+      keywords: null,
+      article_type: null,
+      language: null,
     },
     my_decision: {
       id: 'd1',
