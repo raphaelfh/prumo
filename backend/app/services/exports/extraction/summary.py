@@ -1,8 +1,8 @@
 """Summary sub-builder.
 
 One row per record (article, or article × model when a ``MODEL_CONTAINER``
-exists), with identity columns + per-record completeness + an omitted-by-stage
-tally (§4 #2). Completeness reads the primary slot of the typed ``value_map``:
+exists), with identity columns + per-record completeness, then each omitted article with
+its reason (§4.5). Completeness reads the primary slot of the typed ``value_map``:
 a coordinate counts as "filled" when it renders (``display_value``) to a value,
 so markers and out-of-scope stamps count and cleared values do not. Pure — no
 DB, no openpyxl.
@@ -94,11 +94,10 @@ def build_summary(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     rows: list[tuple[Cell, ...]] = [tuple(Cell(h, _HEADER) for h in _HEADERS)]
     rows.extend(_record_rows(layout))
 
-    if layout.notes.omitted_articles_by_stage:
+    if layout.omitted:
         rows.append(())
         rows.append((Cell("Articles omitted", _HEADER),))
-        for stage, count in sorted(layout.notes.omitted_articles_by_stage.items()):
-            rows.append((Cell(f"stage={stage}"), Cell(count)))
+        rows.extend((Cell(o.article_label), Cell(o.reason)) for o in layout.omitted)
 
     return SheetSpec(
         title=titles.fixed["summary"],

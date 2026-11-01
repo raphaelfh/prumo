@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import replace
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -23,7 +24,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -64,7 +64,7 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=include_ai,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={},
     )
 
@@ -169,7 +169,6 @@ def test_readme_contents_equal_sheetnames_for_every_shape(
     layout = make_layout(
         sections=(_many("Sec", order=0),), articles=(_art(),), include_ai_metadata=include_ai
     )
-    assert layout.front_matter is None  # contents must not depend on front_matter
     titles = allocate_titles(layout, shape, include_matrix=True)
     wb = load_workbook(io.BytesIO(build_workbook(layout, shape, include_matrix=True)))
     assert tuple(wb.sheetnames) == titles.order

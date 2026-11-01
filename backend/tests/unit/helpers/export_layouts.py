@@ -8,6 +8,7 @@ as the only (active) version. Keyword overrides win.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -22,7 +23,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     ReviewerDescriptor,
     SectionDescriptor,
 )
@@ -54,7 +54,7 @@ def make_layout(
         "mode": mode,
         "include_ai_metadata": False,
         "anonymize_reviewer_names": False,
-        "notes": ExportNotes(),
+        "generated_at": datetime(2026, 1, 1, tzinfo=UTC),
         "value_map": value_map or {},
         "codebook": codebook,
     }

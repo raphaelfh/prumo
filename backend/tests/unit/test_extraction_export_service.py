@@ -431,7 +431,7 @@ class TestResolveArticlesForConsensus:
             version_numbers={},
         )
         assert articles == []
-        assert omitted == {}
+        assert omitted == []
         svc.db.execute.assert_not_called()
 
     @pytest.mark.asyncio
@@ -466,7 +466,7 @@ class TestResolveArticlesForConsensus:
         )
 
         assert len(articles) == 2
-        assert omitted == {}
+        assert omitted == []
         article_ids_out = {a.article_id for a in articles}
         assert article_ids_out == {aid1, aid2}
 
@@ -500,12 +500,14 @@ class TestResolveArticlesForConsensus:
         assert len(articles) == 1
         assert articles[0].article_id == aid_fin
         assert articles[0].article_label == "Smith 2020"
-        assert omitted[ExtractionRunStage.CONSENSUS.value] == 1
-        assert omitted[ExtractionRunStage.EXTRACT.value] == 1
+        assert omitted == [
+            (aid_rev, ExtractionRunStage.CONSENSUS.value),
+            (aid_prop, ExtractionRunStage.EXTRACT.value),
+        ]
 
     @pytest.mark.asyncio
     async def test_missing_run_counted_as_no_run(self):
-        """Article without a run → counted in omitted["no_run"]."""
+        """Article without a run → omitted as ``no_run``."""
         svc = _make_service()
         template_id = uuid4()
         project_id = uuid4()
@@ -527,7 +529,7 @@ class TestResolveArticlesForConsensus:
         )
 
         assert len(articles) == 1
-        assert omitted.get("no_run") == 1
+        assert omitted == [(aid_missing, "no_run")]
 
     @pytest.mark.asyncio
     async def test_model_and_study_instances_resolved(self):
@@ -568,7 +570,7 @@ class TestResolveArticlesForConsensus:
         # contract itself is pinned in test_extraction_export_entries_map.py.
         assert set(desc.entries[(model_entity_id, None)]) == {inst_model1.id, inst_model2.id}
         assert desc.entries[(study_entity_id, None)] == (inst_study.id,)
-        assert omitted == {}
+        assert omitted == []
 
 
 # ===========================================================================
@@ -2002,7 +2004,7 @@ class TestResolveArticlesForSingleUser:
             version_numbers={},
         )
         assert articles == []
-        assert omitted == {}
+        assert omitted == []
 
     @pytest.mark.asyncio
     async def test_no_runs_found_returns_no_run_omission(self):
@@ -2022,11 +2024,11 @@ class TestResolveArticlesForSingleUser:
         )
 
         assert articles == []
-        assert omitted["no_run"] == len(candidate_ids)
+        assert omitted == [(aid, "no_run") for aid in candidate_ids]
 
     @pytest.mark.asyncio
     async def test_cancelled_run_omitted(self):
-        """CANCELLED stage → counted in omitted['cancelled']."""
+        """CANCELLED stage → omitted as ``cancelled``."""
         svc = _make_service()
         aid = uuid4()
         reviewer_id = uuid4()
@@ -2049,7 +2051,7 @@ class TestResolveArticlesForSingleUser:
             version_numbers={},
         )
         assert articles == []
-        assert omitted.get("cancelled") == 1
+        assert omitted == [(aid, "cancelled")]
 
     @pytest.mark.asyncio
     async def test_run_not_eligible_omitted(self):
@@ -2076,7 +2078,7 @@ class TestResolveArticlesForSingleUser:
             version_numbers={},
         )
         assert articles == []
-        assert omitted.get("no_decisions_from_reviewer") == 1
+        assert omitted == [(aid, "no_decisions_from_reviewer")]
 
     @pytest.mark.asyncio
     async def test_eligible_run_returns_article_descriptor(self):
@@ -2107,7 +2109,7 @@ class TestResolveArticlesForSingleUser:
         )
         assert len(articles) == 1
         assert articles[0].article_id == aid
-        assert omitted == {}
+        assert omitted == []
 
 
 # ===========================================================================
@@ -2238,7 +2240,7 @@ class TestResolveArticlesForAllUsers:
             version_numbers={},
         )
         assert articles == []
-        assert omitted == {}
+        assert omitted == []
 
     @pytest.mark.asyncio
     async def test_cancelled_extract_pending_omitted(self):
@@ -2260,9 +2262,11 @@ class TestResolveArticlesForAllUsers:
             version_numbers={},
         )
         assert articles == []
-        assert omitted[ExtractionRunStage.CANCELLED.value] == 1
-        assert omitted[ExtractionRunStage.EXTRACT.value] == 1
-        assert omitted[ExtractionRunStage.PENDING.value] == 1
+        assert omitted == [
+            (aid1, ExtractionRunStage.CANCELLED.value),
+            (aid2, ExtractionRunStage.EXTRACT.value),
+            (aid3, ExtractionRunStage.PENDING.value),
+        ]
 
     @pytest.mark.asyncio
     async def test_consensus_and_finalized_kept(self):
@@ -2285,7 +2289,7 @@ class TestResolveArticlesForAllUsers:
             version_numbers={},
         )
         assert len(articles) == 2
-        assert omitted == {}
+        assert omitted == []
 
 
 # ===========================================================================

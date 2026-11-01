@@ -73,7 +73,6 @@ from app.services.exports.codebook_model import (
 from app.services.exports.descriptors import (
     ValueKey,
     build_entries,
-    count_level_records,
     primary_rater,
     root_instance,
     value_key,
@@ -104,7 +103,6 @@ from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
 )
-from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
 # Enums
@@ -191,8 +189,7 @@ class ArticleDescriptor:
     ``entries`` carries an ORDERED instance-id tuple per
     ``(entity_type, parent_instance)`` pair, so a section's instances are
     grouped under the entry that owns them rather than pooled by entity type.
-    ``version_id`` is the Run's own snapshot version, used for the per-Run
-    obsolete-field diff (§5.1).
+    ``version_id`` is the Run's own snapshot version (QA rules, ``template_version``).
     """
 
     article_id: UUID
@@ -216,36 +213,13 @@ class ReviewerDescriptor:
     display_label: str
 
 
-@dataclass
-class ExportNotes:
-    """Per-run audit info written to the ``Notes`` sheet."""
+@dataclass(frozen=True, slots=True)
+class OmittedArticle:
+    """An article left out of the export, with the Summary's reason (§4.5)."""
 
-    omitted_articles_by_stage: dict[str, int] = field(default_factory=dict)
-    obsolete_fields_per_article: dict[UUID, list[str]] = field(default_factory=dict)
-    generated_at: datetime | None = None
-
-
-@dataclass(frozen=True)
-class FrontMatter:
-    """README/Methods content (§4 #1) — absorbs the old ``Notes`` sheet.
-
-    Built service-side in ``resolve_layout`` (slice task T53) and rendered by
-    the pure ``build_front_matter`` sub-builder: template identity, export
-    provenance, the glyph/sentinel ``legend``,
-    provenance ``caveats``, and the per-Run ``obsolete_fields_per_article``
-    block lifted from ``ExportNotes`` (§5.1).
-    """
-
-    project_name: str
-    template_name: str
-    template_version: int
-    export_mode_label: str
-    generated_at: datetime
-    article_count: int
-    record_count: int
-    legend: tuple[tuple[str, str], ...]  # (glyph/sentinel, meaning)
-    caveats: tuple[str, ...]  # provenance + best-effort-outcome caveats
-    obsolete_fields_per_article: dict[UUID, tuple[str, ...]]  # activated §5.1
+    article_id: UUID
+    article_label: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -324,14 +298,12 @@ class ExportLayout:
     mode: ExportMode
     include_ai_metadata: bool
     anonymize_reviewer_names: bool
-    notes: ExportNotes
+    generated_at: datetime
     # ``value_key`` slots: rater None is consensus; reviewers by reviewer_id (R1).
     value_map: dict[ValueKey, ExportValue]
     # Populated only when ``include_ai_metadata`` is True (FR-036+).
     ai_proposal_rows: tuple[AIProposalRow, ...] = ()
-    # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
-    # None => the sub-builder falls back to the bare layout identity fields.
-    front_matter: FrontMatter | None = None
+    omitted: tuple[OmittedArticle, ...] = ()
     codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
     versions: tuple[VersionSections, ...] = ()  # active first, then pinned latest-first (R14)
     narrow_pinned_versions: tuple[int, ...] = ()  # pinned snapshots skipped as narrow (D5)
@@ -527,32 +499,6 @@ class ExtractionExportService(LoggerMixin):
             value_map=value_map,
         )
 
-        anchor_field_ids = {f.field_id for s in sections for f in s.fields}
-        obsolete_fields = await self._compute_obsolete_fields_per_article(
-            articles=tuple(articles),
-            anchor_field_ids=anchor_field_ids,
-        )
-
-        notes = ExportNotes(
-            omitted_articles_by_stage=omitted,
-            obsolete_fields_per_article=obsolete_fields,
-            generated_at=datetime.now(UTC),
-        )
-
-        # README/Methods projection (§4 #1): assembled from the already-computed
-        # counts and the obsolete-field block
-        # lifted from ``notes`` — no further IO.
-        front_matter = _build_front_matter(
-            project_name=project_name,
-            template_name=template.name,
-            template_version=version.version,
-            mode=mode,
-            generated_at=notes.generated_at or datetime.now(UTC),
-            articles=tuple(articles),
-            record_count=count_level_records(sections, articles),
-            obsolete_fields_per_article=notes.obsolete_fields_per_article,
-        )
-
         ai_rows: tuple[AIProposalRow, ...] = ()
         if include_ai_metadata:
             ai_rows = await self._load_ai_proposal_rows(
@@ -590,13 +536,16 @@ class ExtractionExportService(LoggerMixin):
             mode=mode,
             include_ai_metadata=include_ai_metadata,
             anonymize_reviewer_names=anonymize_reviewer_names,
-            notes=notes,
+            generated_at=datetime.now(UTC),
             value_map=value_map,
             ai_proposal_rows=ai_rows,
             codebook=codebook,
             versions=(active, *pinned),
             narrow_pinned_versions=narrow_pinned_versions,
-            front_matter=front_matter,
+            omitted=tuple(
+                OmittedArticle(aid, refs[aid].label if aid in refs else _short_id(aid), reason)
+                for aid, reason in omitted
+            ),
             appraisal=appraisal,
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
             raters_by_run=raters_by_run,
@@ -913,40 +862,6 @@ class ExtractionExportService(LoggerMixin):
             for s in map(section_from_view, views)
         )
 
-    async def _compute_obsolete_fields_per_article(
-        self,
-        *,
-        articles: tuple[ArticleDescriptor, ...],
-        anchor_field_ids: set[UUID],
-    ) -> dict[UUID, list[str]]:
-        """Fields present on a Run's frozen snapshot but removed from the anchor.
-
-        Spec §5.1: each Run's own version snapshot is diffed by ``field_id``
-        against the active-version anchor. Surviving fields are filled
-        elsewhere; Run-only fields (removed from the anchor after the Run
-        finalized) are recorded here, labelled from the Run snapshot (the
-        anchor no longer carries the label). Empty when nothing was removed.
-        """
-        snapshot_fields_cache: dict[UUID, tuple[tuple[UUID, str], ...]] = {}
-        out: dict[UUID, list[str]] = {}
-        for article in articles:
-            version_id = article.version_id
-            if version_id is None:
-                continue
-            if version_id not in snapshot_fields_cache:
-                run_sections = await load_export_sections(self.db, version_id=version_id)
-                snapshot_fields_cache[version_id] = tuple(
-                    (f.field_id, f.label) for s in run_sections for f in s.fields
-                )
-            obsolete = [
-                label
-                for fid, label in snapshot_fields_cache[version_id]
-                if fid not in anchor_field_ids
-            ]
-            if obsolete:
-                out[article.article_id] = obsolete
-        return out
-
     async def _resolve_articles_for_consensus(
         self,
         *,
@@ -955,29 +870,29 @@ class ExtractionExportService(LoggerMixin):
         candidate_ids: list[UUID],
         refs: Mapping[UUID, ArticleRef],
         version_numbers: Mapping[UUID, int],
-    ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
-        """Pick finalized articles + collect omitted-stage counts (FR-013).
+    ) -> tuple[list[ArticleDescriptor], list[tuple[UUID, str]]]:
+        """Pick finalized articles; the rest are omitted with their stage (FR-013).
 
         Each article's current run (``CurrentRunResolver``) on the exported
         template; a run's kind is its template's (composite FK), so the QA
         appraisal export (§7) takes the same finalized-run path.
         """
         if not candidate_ids:
-            return [], {}
+            return [], []
 
         runs_by_article = await CurrentRunResolver(self.db).current_by_article(
             project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-        omitted: dict[str, int] = {}
+        omitted: list[tuple[UUID, str]] = []
         kept_run_ids: list[UUID] = []
         kept_articles: list[UUID] = []
         for aid in candidate_ids:
             run = runs_by_article.get(aid)
             if run is None:
-                omitted["no_run"] = omitted.get("no_run", 0) + 1
+                omitted.append((aid, "no_run"))
                 continue
             if run.stage != ExtractionRunStage.FINALIZED.value:
-                omitted[run.stage] = omitted.get(run.stage, 0) + 1
+                omitted.append((aid, run.stage))
                 continue
             kept_articles.append(aid)
             kept_run_ids.append(run.id)
@@ -1136,7 +1051,7 @@ class ExtractionExportService(LoggerMixin):
         reviewer_id: UUID,
         refs: Mapping[UUID, ArticleRef],
         version_numbers: Mapping[UUID, int],
-    ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
+    ) -> tuple[list[ArticleDescriptor], list[tuple[UUID, str]]]:
         """Pick articles where the target reviewer has ≥ 1 non-reject decision (FR-014).
 
         Single-user mode tolerates any non-terminal Run stage (the reviewer
@@ -1149,14 +1064,14 @@ class ExtractionExportService(LoggerMixin):
         )
 
         if not candidate_ids:
-            return [], {}
+            return [], []
 
         runs_by_article = await CurrentRunResolver(self.db).current_by_article(
             project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
 
         if not runs_by_article:
-            return [], {"no_run": len(candidate_ids)}
+            return [], [(aid, "no_run") for aid in candidate_ids]
 
         # Eligibility: at least one non-reject reviewer decision for this
         # reviewer on this run.
@@ -1177,20 +1092,18 @@ class ExtractionExportService(LoggerMixin):
         ).all()
         eligible_run_ids: set[UUID] = {row[0] for row in eligible_run_rows}
 
-        omitted: dict[str, int] = {}
+        omitted: list[tuple[UUID, str]] = []
         kept_article_ids: list[UUID] = []
         for aid in candidate_ids:
             run = runs_by_article.get(aid)
             if run is None:
-                omitted["no_run"] = omitted.get("no_run", 0) + 1
+                omitted.append((aid, "no_run"))
                 continue
             if run.stage == ExtractionRunStage.CANCELLED.value:
-                omitted["cancelled"] = omitted.get("cancelled", 0) + 1
+                omitted.append((aid, "cancelled"))
                 continue
             if run.id not in eligible_run_ids:
-                omitted["no_decisions_from_reviewer"] = (
-                    omitted.get("no_decisions_from_reviewer", 0) + 1
-                )
+                omitted.append((aid, "no_decisions_from_reviewer"))
                 continue
             kept_article_ids.append(aid)
 
@@ -1375,22 +1288,22 @@ class ExtractionExportService(LoggerMixin):
         candidate_ids: list[UUID],
         refs: Mapping[UUID, ArticleRef],
         version_numbers: Mapping[UUID, int],
-    ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
+    ) -> tuple[list[ArticleDescriptor], list[tuple[UUID, str]]]:
         """Pick consensus + finalized articles for All-users mode; earlier
         and cancelled runs are omitted with their stage."""
         if not candidate_ids:
-            return [], {}
+            return [], []
 
         runs_by_article = await CurrentRunResolver(self.db).current_by_article(
             project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
 
-        omitted: dict[str, int] = {}
+        omitted: list[tuple[UUID, str]] = []
         kept_article_ids: list[UUID] = []
         for aid in candidate_ids:
             run = runs_by_article.get(aid)
             if run is None:
-                omitted["no_run"] = omitted.get("no_run", 0) + 1
+                omitted.append((aid, "no_run"))
                 continue
             if run.stage in (
                 ExtractionRunStage.CANCELLED.value,
@@ -1399,7 +1312,7 @@ class ExtractionExportService(LoggerMixin):
             ):
                 # All-users wants cross-reviewer activity; pre-consensus extract
                 # runs have none worth exporting.
-                omitted[run.stage] = omitted.get(run.stage, 0) + 1
+                omitted.append((aid, run.stage))
                 continue
             kept_article_ids.append(aid)
 
@@ -1824,71 +1737,6 @@ def _untyped_field(field_id: UUID) -> FieldDescriptor:
     )
 
 
-# ADR-0016 Phase 4: one legend row per coded disposition, its LABEL sourced from
-# ABSENT_REASON_LABELS (the same map display_value emits into a cell) so cell and
-# legend can never drift; only the frozen descriptions live here.
-_ABSENT_REASON_DESCRIPTIONS: dict[str, str] = {
-    AbsentReason.NO_INFORMATION.value: "The source does not state this item.",
-    AbsentReason.NOT_APPLICABLE.value: "The item does not apply to this study.",
-    AbsentReason.NOT_EVALUATED.value: "The item was not assessed.",
-}
-_FRONT_MATTER_LEGEND: tuple[tuple[str, str], ...] = (
-    ("(blank)", "No value recorded, or the reviewer rejected the AI proposal."),
-    *((ABSENT_REASON_LABELS[c.value], _ABSENT_REASON_DESCRIPTIONS[c.value]) for c in AbsentReason),
-    ("Yes / No", "Boolean field rendered from its true/false value."),
-    ("; ", "Separator between multiple selected options."),
-)
-
-_FRONT_MATTER_CAVEATS: tuple[str, ...] = (
-    "Every value is a static literal baked from the resolved extraction; "
-    "this workbook contains no live formulas.",
-    "Reviewer outcomes labelled 'best-effort' rely on heuristics; the data "
-    "model does not preserve the exact AI-proposal to edited-value lineage.",
-    "Columns reflect the active template version. Fields a Run was finalized "
-    "on but later removed are listed under 'Fields removed from active template'.",
-)
-
-_MODE_LABELS: dict[ExportMode, str] = {
-    ExportMode.CONSENSUS: "Consensus",
-    ExportMode.SINGLE_USER: "Single user",
-    ExportMode.ALL_USERS: "All users",
-}
-
-
-def _build_front_matter(
-    *,
-    project_name: str,
-    template_name: str,
-    template_version: int,
-    mode: ExportMode,
-    generated_at: datetime,
-    articles: tuple[ArticleDescriptor, ...],
-    record_count: int,
-    obsolete_fields_per_article: dict[UUID, list[str]],
-) -> FrontMatter:
-    """Assemble the README/Methods front matter (§4 #1).
-
-    Counts, the static ``legend``/``caveats``,
-    and the per-Run ``obsolete_fields_per_article`` block (lifted from
-    ``ExportNotes``) come from already-computed inputs. ``record_count`` is the
-    number of rows on the repeating-level sheets.
-    """
-    return FrontMatter(
-        project_name=project_name,
-        template_name=template_name,
-        template_version=template_version,
-        export_mode_label=_MODE_LABELS.get(mode, mode.value),
-        generated_at=generated_at,
-        article_count=len(articles),
-        record_count=record_count,
-        legend=_FRONT_MATTER_LEGEND,
-        caveats=_FRONT_MATTER_CAVEATS,
-        obsolete_fields_per_article={
-            aid: tuple(labels) for aid, labels in obsolete_fields_per_article.items()
-        },
-    )
-
-
 def _infer_reviewer_outcome(
     *,
     proposal_id: UUID,
@@ -2028,7 +1876,7 @@ __all__ = [
     "ArticleDescriptor",
     "ExportLayout",
     "ExportMode",
-    "ExportNotes",
+    "OmittedArticle",
     "ExtractionExportService",
     "FieldDescriptor",
     "ReviewerDescriptor",

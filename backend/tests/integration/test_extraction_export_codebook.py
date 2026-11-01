@@ -13,7 +13,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import ExtractionTemplateVersion
-from app.services.extraction_export_service import ExportMode, ExtractionExportService
+from app.services.extraction_export_service import (
+    ExportMode,
+    ExtractionExportService,
+    OmittedArticle,
+)
 from tests.integration.conftest import SEED
 from tests.unit.helpers.snapshot_builders import entity_node, field_node, snapshot
 
@@ -122,3 +126,35 @@ async def test_labels_and_metadata_come_from_the_latest_pinned_version(
     e = next(e for e in layout.codebook if e.field_id == fid)
     assert (e.field_label, e.versions) == ("Newer", (9001, 9003))
     assert [(o.code, o.label) for o in e.options] == [("B", "Bee v3")]
+
+
+async def test_an_article_without_a_run_is_omitted_with_its_label(
+    db_session: AsyncSession,
+) -> None:
+    """Summary names each omitted article by label and reason (spec §4.5)."""
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {
+            "pid": str(SEED.primary_project),
+            "aid": str(SEED.primary_article),
+            "tid": str(SEED.primary_template),
+        },
+    )
+    svc = ExtractionExportService(db=db_session, user_id=str(SEED.primary_profile))
+
+    layout = await svc.resolve_layout(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        mode=ExportMode.CONSENSUS,
+        article_ids=[SEED.primary_article],
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+    )
+
+    assert layout.articles == ()
+    assert layout.omitted == (
+        OmittedArticle(SEED.primary_article, "Integration Test Article", "no_run"),
+    )

@@ -29,7 +29,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -46,7 +45,7 @@ def _layout(sections, articles, value_map):
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         value_map=value_map,
     )
 
@@ -150,7 +149,7 @@ def _spec_layout(
         mode=mode,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map=value_map or {},
         reviewer_id=reviewer_id,
     )

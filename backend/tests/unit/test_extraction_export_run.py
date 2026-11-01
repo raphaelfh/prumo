@@ -23,7 +23,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     ExtractionExportService,
     FieldDescriptor,
     SectionDescriptor,
@@ -75,10 +74,7 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            omitted_articles_by_stage={},
-            generated_at=datetime(2026, 6, 14, tzinfo=UTC),
-        ),
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         value_map={},
     )
 

@@ -108,13 +108,8 @@ def _layout_with_appraisal(appraisal, *, mode_name="consensus", reviewers=()):
     from app.services.extraction_export_service import (
         ExportLayout,
         ExportMode,
-        ExportNotes,
     )
 
-    notes = ExportNotes(
-        omitted_articles_by_stage={},
-        generated_at=datetime.now(UTC),
-    )
     return ExportLayout(
         project_name="P",
         template_name="PROBAST",
@@ -125,7 +120,7 @@ def _layout_with_appraisal(appraisal, *, mode_name="consensus", reviewers=()):
         mode=ExportMode(mode_name),
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=notes,
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={},
         appraisal=appraisal,
     )

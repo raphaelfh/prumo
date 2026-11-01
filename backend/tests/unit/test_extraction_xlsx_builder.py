@@ -25,8 +25,8 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
+    OmittedArticle,
     SectionDescriptor,
 )
 
@@ -112,9 +112,7 @@ def _layout(
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=include_ai_metadata,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
-        ),
+        generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         value_map=value_map or {},
         appraisal=appraisal,
     )
@@ -340,17 +338,11 @@ def test_none_value_renders_blank_cell():
 
 
 # ----------------------------------------------------------------------
-# Notes sheet content
+# Summary sheet content
 # ----------------------------------------------------------------------
 
 
-def test_summary_sheet_lists_omitted_articles_by_stage():
-    # The omitted-by-stage tally moved from the legacy Notes sheet onto the
-    # Summary sheet (the README sub-builder absorbs the rest of Notes).
-    notes = ExportNotes(
-        omitted_articles_by_stage={"extract": 4, "no_run": 2},
-        generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
-    )
+def test_summary_sheet_lists_each_omitted_article():
     layout = ExportLayout(
         project_name="Test Project",
         template_name="CHARMS",
@@ -361,15 +353,18 @@ def test_summary_sheet_lists_omitted_articles_by_stage():
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=notes,
+        generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         value_map={},
+        omitted=(
+            OmittedArticle(uuid4(), "Smith 2020", "extract"),
+            OmittedArticle(uuid4(), "Jones 2019", "no_run"),
+        ),
     )
     data = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
-    rows = [list(row) for row in _open(data)["Summary"].iter_rows(values_only=True)]
-    flat = " ".join(str(c) for row in rows for c in row if c)
-    assert "Articles omitted" in flat
-    assert "stage=extract" in flat
-    assert "stage=no_run" in flat
+    rows = [tuple(row) for row in _open(data)["Summary"].iter_rows(values_only=True)]
+    assert ("Articles omitted", None, None, None, None) in rows
+    assert ("Smith 2020", "extract", None, None, None) in rows
+    assert ("Jones 2019", "no_run", None, None, None) in rows
 
 
 def test_ai_metadata_sheet_emits_placeholder_when_no_rows():
@@ -389,7 +384,6 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
     from app.services.extraction_export_service import (
         ExportLayout,
         ExportMode,
-        ExportNotes,
         ReviewerDescriptor,
     )
 
@@ -414,7 +408,7 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(generated_at=datetime(2026, 5, 23, tzinfo=UTC)),
+        generated_at=datetime(2026, 5, 23, tzinfo=UTC),
         value_map={
             # consensus
             value_key(article.run_id, inst_id, field_id): _ev(f, "Existing registry"),
@@ -478,7 +472,7 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
         mode=base.mode,
         include_ai_metadata=True,
         anonymize_reviewer_names=base.anonymize_reviewer_names,
-        notes=base.notes,
+        generated_at=base.generated_at,
         value_map=base.value_map,
         ai_proposal_rows=(proposal,),
     )
@@ -532,7 +526,7 @@ def test_ai_metadata_value_columns_pass_rendered_values_through():
         mode=base.mode,
         include_ai_metadata=True,
         anonymize_reviewer_names=base.anonymize_reviewer_names,
-        notes=base.notes,
+        generated_at=base.generated_at,
         value_map=base.value_map,
         ai_proposal_rows=(proposal,),
     )
@@ -556,9 +550,7 @@ def test_workbook_emits_sheets_in_section4_order():
         ArticleDescriptor,
         ExportLayout,
         ExportMode,
-        ExportNotes,
         FieldDescriptor,
-        FrontMatter,
         SectionDescriptor,
     )
 
@@ -588,18 +580,6 @@ def test_workbook_emits_sheets_in_section4_order():
         version_id=None,
         entries={(eid, None): (inst,)},
     )
-    fm = FrontMatter(
-        project_name="P",
-        template_name="CHARMS",
-        template_version=1,
-        export_mode_label="Consensus",
-        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
-        article_count=1,
-        record_count=1,
-        legend=(),
-        caveats=(),
-        obsolete_fields_per_article={},
-    )
     codebook = build_codebook_entries(
         VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
     )
@@ -613,9 +593,8 @@ def test_workbook_emits_sheets_in_section4_order():
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         value_map={value_key(run, inst, fid): _ev(section.fields[0], "Cohort")},
-        front_matter=fm,
         codebook=codebook,
     )
     wb = load_workbook(

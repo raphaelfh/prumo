@@ -37,7 +37,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -143,7 +142,7 @@ class _Charms:
             mode=ExportMode.CONSENSUS,
             include_ai_metadata=False,
             anonymize_reviewer_names=False,
-            notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+            generated_at=datetime(2026, 6, 14, tzinfo=UTC),
             value_map=value_map,
         )
 

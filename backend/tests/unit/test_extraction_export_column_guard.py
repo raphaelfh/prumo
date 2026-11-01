@@ -27,7 +27,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -75,10 +74,7 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            omitted_articles_by_stage={},
-            generated_at=datetime(2026, 6, 14, tzinfo=UTC),
-        ),
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         value_map={},
     )
 
@@ -94,7 +90,6 @@ def test_matrix_fits_at_the_boundary_and_not_past_it() -> None:
 
 def test_oversized_matrix_is_omitted_with_a_readme_note() -> None:
     layout = _wide_layout(n_articles=500, n_subcols_each=100)
-    assert layout.front_matter is None
     wb = load_workbook(
         io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=matrix_fits(layout)))
     )

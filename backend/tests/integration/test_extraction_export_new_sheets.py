@@ -147,7 +147,6 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
     )
 
     # Projections are populated.
-    assert layout.front_matter is not None
     assert layout.codebook  # >=1 field
 
     wb = load_workbook(

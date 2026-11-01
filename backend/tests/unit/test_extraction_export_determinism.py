@@ -46,9 +46,7 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
-    FrontMatter,
     ReviewerDescriptor,
     SectionDescriptor,
 )
@@ -79,8 +77,7 @@ def _fixed_layout() -> ExportLayout:
     """A layout whose every UUID is hard-coded so two runs produce the
     same workbook bytes (mod doc-properties).
 
-    Populates the §4 publication projections — ``front_matter`` (README /
-    Methods), ``codebook``, a repeating section (its level sheet), and an explicit ``None``
+    Populates the §4 projections — ``generated_at`` (README), ``codebook``, a repeating section (its level sheet), and an explicit ``None``
     ``appraisal`` — so the new sub-builder sheets actually render and their
     XML parts are covered by the structural-determinism assertion below.
     """
@@ -106,21 +103,6 @@ def _fixed_layout() -> ExportLayout:
         entries={(_SECTION_ID, None): (_INST_ID,)},
     )
 
-    # README / Methods front-matter (§4 #1). Its ``generated_at`` is hard-coded,
-    # so the rendered "Generated at" cell is identical across builds; the only
-    # surviving per-build divergence is the openpyxl docProps timestamp.
-    front_matter = FrontMatter(
-        project_name="Test Project",
-        template_name="CHARMS",
-        template_version=1,
-        export_mode_label="Consensus",
-        generated_at=_GENERATED_AT,
-        article_count=1,
-        record_count=1,
-        legend=(("—", "field not present in this Run"),),
-        caveats=("Reviewer outcomes are best-effort.",),
-        obsolete_fields_per_article={},
-    )
     # Codebook (§4.4): the field as a select with an option set, so an
     # Options sheet co-renders and is covered by the structural diff.
     coded = replace(
@@ -151,11 +133,8 @@ def _fixed_layout() -> ExportLayout:
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=_GENERATED_AT,
-        ),
+        generated_at=_GENERATED_AT,
         value_map={value_key(_RUN_ID, _INST_ID, _FIELD_ID): _tv("Existing registry")},
-        front_matter=front_matter,
         codebook=codebook,
         appraisal=None,
     )
@@ -216,7 +195,7 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
         mode=base.mode,
         include_ai_metadata=True,
         anonymize_reviewer_names=base.anonymize_reviewer_names,
-        notes=base.notes,
+        generated_at=base.generated_at,
         value_map=base.value_map,
         ai_proposal_rows=proposals,
     )
@@ -417,7 +396,7 @@ def test_column_guard_boundary() -> None:
             mode=ExportMode.CONSENSUS,
             include_ai_metadata=False,
             anonymize_reviewer_names=False,
-            notes=ExportNotes(),
+            generated_at=datetime(2026, 1, 1, tzinfo=UTC),
             value_map={},
         )
 
@@ -522,7 +501,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={},
     )
 
@@ -579,9 +558,7 @@ def _appraisal_layout(
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
-        ),
+        generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         value_map=value_map,
         appraisal=appraisal,
     )
