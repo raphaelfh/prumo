@@ -23,11 +23,11 @@ from uuid import UUID
 from openpyxl import Workbook
 
 from app.models.extraction import ExtractionCardinality
-from app.services.exports.descriptors import level_of, walk_sections
-from app.services.exports.extraction.ai_proposals import build_ai_proposals
+from app.services.exports.descriptors import ancestry, iter_records, level_of, walk_sections
+from app.services.exports.extraction.ai_proposals import AI_PROPOSAL_COLUMNS, build_ai_proposals
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.exports.extraction.codebook import build_codebook, build_options
-from app.services.exports.extraction.data_sheet import build_data_sheet
+from app.services.exports.extraction.data_sheet import DATA_COLUMNS, build_data_sheet
 from app.services.exports.extraction.front_matter import build_front_matter
 from app.services.exports.extraction.level_tables import build_level_tables
 from app.services.exports.extraction.matrix import (
@@ -315,12 +315,87 @@ def build_workbook(layout: ExportLayout, shape: ExportShape, *, include_matrix: 
     return buf.getvalue()
 
 
+def _level_bounds(layout: ExportLayout) -> tuple[dict[UUID | None, int], dict[UUID, int]]:
+    """``(fields per level, records per repeating level)``; ``None`` = Articles."""
+    walked = walk_sections(layout.sections)
+    fields: dict[UUID | None, int] = {}
+    for s in walked:
+        level = level_of(s, layout.sections)
+        fields[level] = fields.get(level, 0) + len(s.fields)
+    records = {
+        s.entity_type_id: sum(len(iter_records(s, a, layout.sections)) for a in layout.articles)
+        for s in walked
+        if s.cardinality is ExtractionCardinality.MANY
+    }
+    return fields, records
+
+
+def estimate_sheet_cells(layout: ExportLayout, shape: ExportShape) -> dict[str | UUID, int]:
+    """An upper bound of ``rows × columns`` per present sheet (R9), keyed like
+    ``SheetTitles``: fixed roles by builder id (``articles`` included), level
+    sheets by ``entity_type_id``. Read before any sheet is built, so the
+    budget refuses an oversized export without paying for it."""
+    titles = allocate_titles(layout, shape, include_matrix=matrix_fits(layout))
+    by_id = {s.entity_type_id: s for s in layout.sections}
+    fields, records = _level_bounds(layout)
+    raters = 1 + len(layout.reviewers) if layout.mode is ExportMode.ALL_USERS else 1
+    footnotes = 5 if shape is ExportShape.PUBLICATION else 0  # blank + NI, NA, NE, NA* (D7)
+    n_articles = len(layout.articles)
+    n_records = sum(records.values())
+    n_reviewers = len(layout.reviewers)
+
+    def readme_rows() -> int:
+        # Variable blocks: Contents, code clashes, AI tools, rule notes.
+        variable = len(titles.order) + len(layout.codebook) + len(layout.ai_proposal_rows)
+        return variable + len(layout.appraisal_notes) + 200
+
+    def appraisal_cells() -> int:
+        a = layout.appraisal
+        if a is None:
+            return 0
+        width = 1 + len(a.domain_labels) + max(1, len(a.derived_labels)) + n_reviewers
+        return (len(a.rows) + 1) * width
+
+    walked = walk_sections(layout.sections)
+    bounds: dict[str, int] = {
+        "front_matter": readme_rows() * 4,
+        "summary": (n_articles + n_records + len(layout.omitted) + 200) * 5,
+        "matrix": _matrix_column_count(layout)
+        * (sum(len(s.fields) for s in walked) + len(walked) + 2),
+        "articles": (n_articles * raters + 1 + footnotes) * (5 + 1 + 3 * fields.get(None, 0)),
+        "data": (len(layout.value_map) + 1) * len(DATA_COLUMNS),
+        "verification": (len({k[:3] for k in layout.cells}) + 1) * (13 + n_reviewers),
+        "ai_proposals": (len(layout.ai_proposal_rows) + 1) * len(AI_PROPOSAL_COLUMNS),
+        "appraisal_summary": appraisal_cells(),
+        "codebook": (len(layout.codebook) + 1) * 17,
+        "options": (sum(len(e.options) for e in layout.codebook) + 1) * 5,
+    }
+    out: dict[str | UUID, int] = {role: bounds[role] for role in titles.fixed}
+    if "articles" in titles.fixed:
+        for level_id in titles.levels:
+            above = sum(
+                1
+                for s in ancestry(by_id[level_id], layout.sections)[:-1]
+                if s.cardinality is ExtractionCardinality.MANY
+            )
+            width = 5 + above + 1 + 3 * fields.get(level_id, 0)
+            out[level_id] = (records[level_id] * raters + 1 + footnotes) * width
+    return out
+
+
+def estimate_cells(layout: ExportLayout, shape: ExportShape) -> int:
+    """The whole workbook's cell upper bound: the budget's measure."""
+    return sum(estimate_sheet_cells(layout, shape).values())
+
+
 __all__ = [
     "EXCEL_MAX_COLUMNS",
     "ExportShape",
     "SheetTitles",
     "allocate_titles",
     "build_workbook",
+    "estimate_cells",
+    "estimate_sheet_cells",
     "matrix_fits",
     "shape_needs_articles",
 ]
