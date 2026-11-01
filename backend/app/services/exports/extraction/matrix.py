@@ -7,28 +7,33 @@ publication-grade *structural* styling (spec §9): freeze panes (lock the
 label block + header row), bold-centered header rows, bold/filled
 section-band rows, a tab colour, left-wrap field labels and generic
 hierarchical ``section.field`` numbering. Structural only — no conditional
-formatting (no per-value tinting / traffic lights). The value-resolution +
-fan-out helpers are package-local so this module carries no runtime
-dependency on any legacy writer.
+formatting (no per-value tinting / traffic lights). Cells render through
+``exports.values.display_value``; the fan-out helpers are package-local so
+this module carries no runtime dependency on any legacy writer.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.models.extraction import (
     ExtractionCardinality,
 )
-from app.services.exports.descriptors import EntryColumn, build_columns, instance_for
+from app.services.exports.descriptors import (
+    EntryColumn,
+    build_columns,
+    instance_for,
+    primary_rater,
+    value_key,
+)
 from app.services.exports.extraction.sheet_spec import (
     Cell,
     CellStyle,
     MergeSpan,
     SheetSpec,
 )
-from app.services.exports.value_envelope import format_export_scalar
+from app.services.exports.values import ExportValue, display_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -97,65 +102,12 @@ def _lookup_value(
     article: ArticleDescriptor,
     instance_id: UUID | None,
     field: FieldDescriptor,
-    reviewer_id: UUID | None = None,
-) -> Any:
-    """Look up the typed Python value for a cell from the value_map.
-
-    Key shape is mode-dependent:
-      * Consensus / Single-user: ``(run_id, instance_id, field_id)``.
-      * All-users: ``(run_id, instance_id, field_id, reviewer_id|None)``;
-        ``None`` = consensus sub-column.
-    """
+    reviewer_id: UUID | None,
+) -> ExportValue | None:
+    """The typed value of one cell, read at ``reviewer_id``'s slot."""
     if instance_id is None or article.run_id is None:
         return None
-    if layout.mode is ExportMode.ALL_USERS:
-        return layout.value_map.get((article.run_id, instance_id, field.field_id, reviewer_id))
-    return layout.value_map.get((article.run_id, instance_id, field.field_id))
-
-
-def _format_cell(value: Any, field: FieldDescriptor) -> Any:
-    """Type-aware cell formatting for an ALREADY-RESOLVED matrix value.
-
-    Values arrive pre-resolved from ``resolve_value`` (no dicts). This
-    only applies the residual openpyxl-cell shaping shared with the AI
-    sheet via ``format_export_scalar``; multiselect lists (if any survive
-    as lists) are joined here.
-
-    NOTE: non-list scalars are delegated verbatim to
-    ``format_export_scalar`` (value_envelope). That helper only flips a
-    *real* ``bool`` instance for a BOOLEAN field — a pre-resolved string
-    such as ``"No"`` (the consensus builder already collapsed the boolean
-    via ``resolve_value``) passes through untouched. A local
-    ``bool(value)`` re-implementation would mis-render the truthy string
-    ``"No"`` as ``"Yes"`` and silently invert every False boolean cell.
-    """
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return "; ".join(str(item) for item in value if item is not None)
-    return format_export_scalar(value, field=field)
-
-
-def _xlsx_safe(value: Any) -> Any:
-    """Coerce only the openpyxl-incompatible-but-expected shapes.
-
-    Lists are joined; tz-aware datetimes are made naive. A ``dict`` is NOT
-    silently stringified: by §6 every envelope is collapsed to a scalar by
-    ``resolve_value`` upstream, so a dict here is a resolver defect that
-    fails loudly (raised here) rather than shipping a Python-repr cell.
-    """
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return "; ".join(str(item) for item in value if item is not None)
-    if isinstance(value, dict):
-        raise TypeError(
-            "_xlsx_safe received a dict; resolve_value must collapse the "
-            f"envelope upstream (got {value!r})."
-        )
-    if isinstance(value, datetime) and value.tzinfo is not None:
-        return value.replace(tzinfo=None)
-    return value
+    return layout.value_map.get(value_key(article.run_id, instance_id, field.field_id, reviewer_id))
 
 
 def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
@@ -174,9 +126,9 @@ def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
     is_all_users = layout.mode is ExportMode.ALL_USERS
     reviewer_axis: tuple[UUID | None, ...]
     if is_all_users:
-        reviewer_axis = (None,) + tuple(r.reviewer_id for r in layout.reviewers)
+        reviewer_axis = (None, *(r.reviewer_id for r in layout.reviewers))
     else:
-        reviewer_axis = (None,)
+        reviewer_axis = (primary_rater(layout.mode, layout.reviewer_id),)
 
     # Sparse cell grid: (row, col) -> (value, style). Rows/cols are 1-based;
     # styles mirror the legacy writer verbatim.
@@ -256,9 +208,8 @@ def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
                             field=field_desc,
                             reviewer_id=rev,
                         )
-                        formatted = _format_cell(value, field_desc)
-                        if formatted is not None:
-                            grid[(row_cursor, sub_col)] = (_xlsx_safe(formatted), None)
+                        if value is not None:
+                            grid[(row_cursor, sub_col)] = (display_value(value, field_desc), None)
             row_cursor += 1
 
     max_row = row_cursor - 1

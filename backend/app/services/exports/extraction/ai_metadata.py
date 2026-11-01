@@ -7,9 +7,8 @@ used" coexist without contaminating each other. Emitted only when
 ``include_ai_metadata`` is toggled on.
 
 Pure: returns a ``SheetSpec`` (or ``None``); no openpyxl, no I/O. The two
-value columns render through the shared ``format_export_scalar`` helper so
-number+unit / select / boolean read identically to the matrix; the
-timestamp is ISO-8601 text (the ``SheetSpec`` IR is scalar-only, matching
+value columns arrive rendered by ``display_value`` in the loader, so they read
+identically to the matrix; the timestamp is ISO-8601 text (the ``SheetSpec`` IR is scalar-only, matching
 the front-matter ``generated_at`` convention).
 """
 
@@ -19,7 +18,6 @@ from dataclasses import astuple
 from typing import TYPE_CHECKING
 
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, CellValue, SheetSpec
-from app.services.exports.value_envelope import format_export_scalar
 from app.services.extraction_export_service import AIProposalRow, ExportLayout
 
 if TYPE_CHECKING:
@@ -42,12 +40,6 @@ _HEADERS: tuple[str, ...] = (
     "Reviewer outcome",
     "Final value used",
 )
-#: 1-based column indices carrying resolved extraction values — rendered
-#: like matrix cells via the shared helper (number+unit / Yes survive).
-#: Col 5 = "AI proposed value"; col 13 = "Final value used" (shifted +1
-#: after the "Model used" column was inserted between "Proposed at" and
-#: "Reviewer outcome").
-_VALUE_COLS: frozenset[int] = frozenset({5, 13})
 #: 1-based column index of the ``proposed_at`` timestamp (unchanged).
 _TIMESTAMP_COL = 10
 _HEADER_STYLE = CellStyle(bold=True, align="center")
@@ -84,15 +76,9 @@ def build_ai_metadata(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | 
 
 
 def _coerce(col_idx: int, value: object) -> CellValue:
-    """Map one ``AIProposalRow`` field to a sheet-safe scalar.
-
-    Value columns render through the shared format helper (which raises on
-    a stray dict — the §6 envelope must have been collapsed by
-    ``resolve_value`` upstream); the timestamp is ISO-8601 text; everything
-    else is already a scalar (``str`` / ``int`` / ``float`` / ``None``).
-    """
-    if col_idx in _VALUE_COLS:
-        return format_export_scalar(value)
+    """Map one ``AIProposalRow`` field to a sheet-safe scalar: the timestamp
+    is ISO-8601 text; everything else (the value columns included, rendered
+    upstream by ``display_value``) is already a scalar."""
     if col_idx == _TIMESTAMP_COL:
         return value.isoformat() if value is not None else None  # type: ignore[union-attr]
     return value  # type: ignore[return-value]

@@ -11,6 +11,7 @@ behind ``screening_review_service.owned_decisions``.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from uuid import UUID
 
@@ -20,7 +21,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute
 
-from app.models.article import Article
+from app.models.article import Article, ArticleFile
 from app.models.screening import (
     SCREENING_PHASE,
     ScreeningArbitration,
@@ -50,8 +51,8 @@ def live_assignments(project_id: UUID) -> Select[tuple[ScreeningAssignment]]:
     )
 
 
-# Queue order: oldest enrollment first, then a stable shuffle within it, so two
-# reviewers do not walk one enrollment in the same order.
+# Queue order: oldest enrollment first, then md5(assignment id) — a stable
+# shuffle within an enrollment that is the same for every reviewer.
 _QUEUE_ORDER = (ScreeningAssignment.enrolled_at, func.md5(cast(ScreeningAssignment.id, Text)))
 
 
@@ -61,6 +62,22 @@ _S = TypeVar("_S", bound=Select[Any])
 def _narrowed(stmt: _S, column: QueryableAttribute[UUID], ids: Sequence[UUID] | None) -> _S:
     """Narrow a project-scoped read to ``ids``; ``None`` keeps the whole project."""
     return stmt if ids is None else stmt.where(column.in_(ids))
+
+
+@dataclass(frozen=True, slots=True)
+class RecordSource:
+    """One project article with its title/abstract assignment, if any (never the abstract)."""
+
+    article_id: UUID
+    assignment_id: UUID | None
+    title: str
+    authors: list[str] | None
+    publication_year: int | None
+    journal_title: str | None
+    pmid: str | None
+    doi: str | None
+    ingestion_source: str | None
+    has_pdf: bool
 
 
 class ScreeningRepository:
@@ -185,48 +202,35 @@ class ScreeningRepository:
         )
         return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
 
-    def _awaiting(
-        self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int
-    ) -> Select[tuple[ScreeningAssignment]]:
-        """THE "awaiting this reviewer" query: no ruling, no decision of theirs, a free seat."""
-        reviewers = (
-            select(func.count(func.distinct(ScreeningDecision.reviewer_id)))
-            .where(ScreeningDecision.assignment_id == ScreeningAssignment.id)
-            .scalar_subquery()
+    async def record_rows(self, *, project_id: UUID) -> list[RecordSource]:
+        """Every article of the project, enrolled first in queue order, then by creation."""
+        has_pdf = exists().where(
+            ArticleFile.article_id == Article.id, ArticleFile.file_role == "MAIN"
         )
-        return live_assignments(project_id).where(
-            ~exists().where(ScreeningArbitration.assignment_id == ScreeningAssignment.id),
-            ~exists().where(
-                ScreeningDecision.assignment_id == ScreeningAssignment.id,
-                ScreeningDecision.reviewer_id == reviewer_id,
-            ),
-            reviewers < reviewer_count,
-        )
-
-    async def queue_page(
-        self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int, limit: int = 20
-    ) -> list[tuple[UUID, Article]]:
         stmt = (
-            self._awaiting(
-                project_id=project_id, reviewer_id=reviewer_id, reviewer_count=reviewer_count
+            select(
+                Article.id,
+                ScreeningAssignment.id,
+                Article.title,
+                Article.authors,
+                Article.publication_year,
+                Article.journal_title,
+                Article.pmid,
+                Article.doi,
+                Article.ingestion_source,
+                has_pdf,
             )
-            .with_only_columns(ScreeningAssignment.id, Article)
-            .order_by(*_QUEUE_ORDER)
-            .limit(limit)
-        )
-        return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
-
-    async def count_awaiting_me(
-        self, *, project_id: UUID, reviewer_id: UUID, reviewer_count: int
-    ) -> int:
-        awaiting = (
-            self._awaiting(
-                project_id=project_id, reviewer_id=reviewer_id, reviewer_count=reviewer_count
+            .select_from(Article)
+            .outerjoin(
+                ScreeningAssignment,
+                and_(ARTICLE_STILL_IN_PROJECT, ScreeningAssignment.phase == SCREENING_PHASE),
             )
-            .with_only_columns(ScreeningAssignment.id)
-            .subquery()
+            .where(Article.project_id == project_id)
+            .order_by(
+                ScreeningAssignment.id.is_(None), *_QUEUE_ORDER, Article.created_at, Article.id
+            )
         )
-        return int((await self.db.execute(select(func.count()).select_from(awaiting))).scalar_one())
+        return [RecordSource(*row) for row in (await self.db.execute(stmt)).all()]
 
     async def add_decision(
         self,

@@ -21,6 +21,7 @@ from app.repositories.screening_repository import ScreeningRepository
 from app.schemas.common import ApiErrorCode
 from app.schemas.screening import ScreeningConfigRead, ScreeningEnrollResult
 from app.services.article_read_service import owned_articles
+from app.services.project_ai_context import load_exclusion_reasons
 from app.services.screening_errors import ScreeningStateError
 
 SCREENING_SETTINGS_KEY = "screening"
@@ -83,6 +84,7 @@ class ScreeningConfigService:
             can_manage=roles.can_manage,
             can_review=roles.can_review,
             can_arbitrate=roles.can_arbitrate,
+            exclusion_reasons=await load_exclusion_reasons(self.db, project_id),
         )
 
     async def set_reviewer_count(

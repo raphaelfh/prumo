@@ -6,7 +6,21 @@ import uuid
 
 import pytest
 
+from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.workbook import ExportShape, allocate_titles
+from app.services.exports.values import ExportValue, to_export_value
+from app.services.extraction_export_service import AllowedValue, FieldDescriptor
+
+_RISK = FieldDescriptor(
+    field_id=uuid.uuid4(),
+    label="RoB",
+    type=ExtractionFieldType.SELECT,
+    allowed_values=(AllowedValue("Low", "Low"), AllowedValue("High", "High")),
+)
+
+
+def _v(code: str) -> ExportValue:
+    return to_export_value({"value": code}, _RISK, {})
 
 
 def test_appraisal_dataclasses_importable_and_default_none() -> None:
@@ -20,7 +34,7 @@ def test_appraisal_dataclasses_importable_and_default_none() -> None:
     row = AppraisalRow(
         article_id=uuid.uuid4(),
         record_label="Gaca, 2011",
-        domain_verdicts=("Low", "High"),
+        domain_verdicts=(_v("Low"), _v("High")),
         overall="High",
         per_reviewer_overall={},
     )
@@ -29,6 +43,7 @@ def test_appraisal_dataclasses_importable_and_default_none() -> None:
     model = AppraisalModel(
         domain_section_ids=(),
         domain_labels=("Participants", "Predictors"),
+        domain_fields=(_RISK, _RISK),
         rows=(row,),
     )
     assert model.domain_labels[1] == "Predictors"
@@ -71,8 +86,8 @@ def test_appraisal_overall_worst_case(verdicts, expected) -> None:
 
 
 def test_disposition_marker_verdict_excluded_from_rank() -> None:
-    # ADR-0016 Phase 4: every resolved disposition label ranks -1 (ignored), from
-    # the SAME single label source resolve_value emits — so a marker verdict can
+    # ADR-0016 Phase 4: every rendered disposition label ranks -1 (ignored), from
+    # the SAME single label source display_value emits — so a marker verdict can
     # never silently force a Critical/most-severe Overall. Case-insensitive; must
     # not over-reach onto substantive risk labels.
     from app.services.exports.extraction.appraisal_summary import _verdict_rank
@@ -136,11 +151,12 @@ def test_build_appraisal_summary_consensus_shape() -> None:
     appraisal = AppraisalModel(
         domain_section_ids=(uuid.uuid4(), uuid.uuid4()),
         domain_labels=("Participants", "Predictors"),
+        domain_fields=(_RISK, _RISK),
         rows=(
             AppraisalRow(
                 article_id=aid,
                 record_label="Gaca, 2011",
-                domain_verdicts=("Low", "High"),
+                domain_verdicts=(_v("Low"), _v("High")),
                 overall="High",
                 per_reviewer_overall={},
             ),
@@ -176,11 +192,12 @@ def test_build_appraisal_summary_all_users_per_reviewer_columns() -> None:
     appraisal = AppraisalModel(
         domain_section_ids=(uuid.uuid4(),),
         domain_labels=("Participants",),
+        domain_fields=(_RISK,),
         rows=(
             AppraisalRow(
                 article_id=uuid.uuid4(),
                 record_label="Gaca, 2011",
-                domain_verdicts=("Low",),
+                domain_verdicts=(_v("Low"),),
                 overall="Low",
                 per_reviewer_overall={r1: "Low", r2: "High"},
             ),
@@ -210,11 +227,12 @@ def test_build_appraisal_summary_single_user_one_overall() -> None:
     appraisal = AppraisalModel(
         domain_section_ids=(uuid.uuid4(),),
         domain_labels=("Participants",),
+        domain_fields=(_RISK,),
         rows=(
             AppraisalRow(
                 article_id=uuid.uuid4(),
                 record_label="Gaca, 2011",
-                domain_verdicts=("High",),
+                domain_verdicts=(_v("High"),),
                 overall="High",  # the single reviewer's rollup
                 per_reviewer_overall={},
             ),
@@ -227,3 +245,38 @@ def test_build_appraisal_summary_single_user_one_overall() -> None:
     header = tuple(c.value for c in spec.rows[0])
     assert header == ("Record", "Participants", "Overall")  # no per-reviewer cols
     assert tuple(c.value for c in spec.rows[1]) == ("Gaca, 2011", "High", "High")
+
+
+def test_verdict_cells_render_through_display_value() -> None:
+    from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+    from app.services.extraction_export_service import AppraisalModel, AppraisalRow
+
+    f = FieldDescriptor(
+        field_id=uuid.uuid4(),
+        label="RoB",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=(AllowedValue("L", "Low"),),
+    )
+    appraisal = AppraisalModel(
+        domain_section_ids=(uuid.uuid4(), uuid.uuid4()),
+        domain_labels=("P", "Q"),
+        domain_fields=(f, f),
+        rows=(
+            AppraisalRow(
+                article_id=uuid.uuid4(),
+                record_label="Gaca, 2011",
+                domain_verdicts=(
+                    to_export_value({"value": "L"}, f, {(f.field_id, "L"): "Low"}),
+                    None,
+                ),
+                overall="Low",
+                per_reviewer_overall={},
+            ),
+        ),
+    )
+    layout = _layout_with_appraisal(appraisal)
+    spec = build_appraisal_summary(
+        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    )
+    assert spec is not None
+    assert tuple(c.value for c in spec.rows[1]) == ("Gaca, 2011", "Low", None, "Low")

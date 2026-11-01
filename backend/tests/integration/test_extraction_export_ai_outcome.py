@@ -334,6 +334,7 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
         value_map={},
         mode=ExportMode.CONSENSUS,
         target_reviewer_id=None,
+        labels={},
     )
     assert len(rows) == 1
     assert rows[0].reviewer_outcome == "accepted"
@@ -412,6 +413,7 @@ async def test_ai_outcome_single_user_scoped_to_target(
         value_map={},
         mode=ExportMode.SINGLE_USER,
         target_reviewer_id=target_reviewer,
+        labels={},
     )
     assert len(rows) == 1
     assert rows[0].reviewer_outcome == "rejected"
@@ -497,6 +499,7 @@ async def test_ai_outcome_not_selected_when_terminal_decision_exists(
         value_map={},
         mode=ExportMode.CONSENSUS,
         target_reviewer_id=None,
+        labels={},
     )
     # Only the AI proposal produces a row (source='ai' filter).
     assert len(rows) == 1
@@ -580,6 +583,7 @@ async def test_ai_evidence_ordered_and_deduped(
         value_map={},
         mode=ExportMode.CONSENSUS,
         target_reviewer_id=None,
+        labels={},
     )
     assert len(rows) == 1
     row = rows[0]
@@ -639,6 +643,7 @@ async def _ai_metadata_rows(
         value_map={},
         mode=ExportMode.CONSENSUS,
         target_reviewer_id=None,
+        labels={},
     )
 
 

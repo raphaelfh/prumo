@@ -30,7 +30,9 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
+from app.services.exports.values import to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -42,6 +44,9 @@ from app.services.extraction_export_service import (
 
 # Seeded CHARMS carries six sections under ``prediction_models``; the count
 # is what turns the flat tuple into a six-step staircase, so keep it real.
+_TEXT = FieldDescriptor(
+    field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+)
 _CHILD_LABELS = (
     "Model Development",
     "Model Performance",
@@ -120,11 +125,11 @@ class _Charms:
 
     def layout(self) -> ExportLayout:
         value_map = {
-            (
+            value_key(
                 self.run_id,
                 self.child_instances[(entry, self.child_ids[c])],
                 self.field_ids[c],
-            ): self.value(e, c)
+            ): to_export_value({"value": self.value(e, c)}, _TEXT, {})
             for e, entry in enumerate(self.entry_ids)
             for c in range(len(self.child_ids))
         }

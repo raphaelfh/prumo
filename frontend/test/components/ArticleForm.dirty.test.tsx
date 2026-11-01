@@ -29,6 +29,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
+import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
 import {fetchArticle, fetchArticleFiles, insertArticle, updateArticle} from '@/services/articlesService';
 import {toast} from 'sonner';
 
@@ -60,6 +61,7 @@ describe('ArticleForm dirty reporting', () => {
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         await screen.findByText('A stored-markdown study');
@@ -82,6 +84,7 @@ describe('ArticleForm dirty reporting', () => {
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         const titleValue = await screen.findByText('A stored-markdown study');
@@ -115,6 +118,7 @@ describe('ArticleForm dirty reporting', () => {
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         const titleValue = await screen.findByText('A stored-markdown study');
@@ -145,6 +149,7 @@ describe('ArticleForm dirty reporting', () => {
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         const titleValue = await screen.findByText('A stored-markdown study');
@@ -172,6 +177,7 @@ describe('ArticleForm dirty reporting', () => {
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         await waitFor(() => {
@@ -198,6 +204,7 @@ describe('ArticleForm create reporting', () => {
                     onArticleCreated={onArticleCreated}
                 />
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         // Title starts empty: it is a Zotero-style row, so it reads as its
@@ -235,6 +242,7 @@ describe('ArticleForm create-button gating (no disabled-on-empty-title gate)', (
             <MemoryRouter>
                 <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         const createButton = await screen.findByRole('button', {name: /createArticle/});
@@ -246,6 +254,7 @@ describe('ArticleForm create-button gating (no disabled-on-empty-title gate)', (
             <MemoryRouter>
                 <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         const createButton = await screen.findByRole('button', {name: /createArticle/});
@@ -264,6 +273,7 @@ describe('ArticleForm create-button gating (no disabled-on-empty-title gate)', (
             <MemoryRouter>
                 <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
+            {wrapper: createQueryWrapper().wrapper},
         );
 
         const titleReadState = await screen.findByLabelText(/titleRequired/);

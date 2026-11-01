@@ -38,9 +38,9 @@ INCLUDE = ScreeningDecisionCreate(decision="include")
 
 @contextlib.asynccontextmanager
 async def _screening(
-    factory: Factory, *, reviewers: int
+    factory: Factory, *, reviewers: int, reviewer_count: int = 2
 ) -> AsyncIterator[tuple[UUID, list[UUID], UUID]]:
-    """A committed project with rc 2, ``reviewers`` reviewers and one enrolled article.
+    """A committed project with ``reviewer_count``, ``reviewers`` reviewers and one enrolled article.
 
     Yields (project, reviewer ids, assignment id); the users are deleted after the project.
     """
@@ -53,7 +53,7 @@ async def _screening(
                 )
                 article = await make_screening_article(s, project_id)
                 (assignment,) = await enroll_articles(s, project_id, [article], by=MANAGER)
-                await set_reviewer_count(s, project_id, 2)
+                await set_reviewer_count(s, project_id, reviewer_count)
                 await s.commit()
             yield project_id, users, assignment
     finally:
@@ -160,6 +160,58 @@ async def test_one_reviewer_posting_twice_at_once_writes_one_decision(
         assert len(errors) == 1
         assert isinstance(errors[0], ScreeningStateError)
         assert errors[0].code == "SCREENING_DECISION_FINAL"
+        assert await _decision_rows(session_factory, assignment) == 1
+
+
+async def _wait_for_a_lock_waiter(factory: Factory) -> bool:
+    """Poll (<= 1 s) until some backend waits on a lock it was not granted."""
+    async with factory() as s:
+        for _ in range(50):
+            waiting = (
+                await s.execute(text("SELECT count(*) FROM pg_locks WHERE NOT granted"))
+            ).scalar_one()
+            if waiting > 0:
+                return True
+            await s.rollback()  # a fresh snapshot of pg_locks on the next poll
+            await asyncio.sleep(0.02)
+    return False
+
+
+async def test_solo_re_decide_racing_a_ruling_is_refused(session_factory: Factory) -> None:
+    """The ruling check reads the post-lock snapshot: a re-decide parked on the lock is FINAL."""
+    async with _screening(session_factory, reviewers=1, reviewer_count=1) as (
+        _,
+        (r,),
+        assignment,
+    ):
+        await _decide(session_factory, assignment, r)
+        locked = asyncio.Event()
+        saw_waiter: list[bool] = []
+
+        async def rule() -> None:
+            async with session_factory() as s1:
+                await ScreeningRepository(s1).lock_assignment(assignment)
+                await ScreeningRepository(s1).add_arbitration(
+                    assignment, "exclude", None, None, None, MANAGER
+                )
+                locked.set()
+                saw_waiter.append(await _wait_for_a_lock_waiter(session_factory))
+                await s1.commit()
+
+        async def redecide() -> None:
+            await locked.wait()
+            async with session_factory() as s2:
+                await ScreeningReviewService(s2).decide(
+                    assignment, r, ScreeningDecisionCreate(decision="maybe")
+                )
+                await s2.commit()
+
+        results = await asyncio.gather(rule(), redecide(), return_exceptions=True)
+
+        assert saw_waiter == [True]
+        assert results[0] is None
+        assert isinstance(results[1], ScreeningStateError)
+        assert results[1].code == "SCREENING_DECISION_FINAL"
         assert await _decision_rows(session_factory, assignment) == 1
 
 

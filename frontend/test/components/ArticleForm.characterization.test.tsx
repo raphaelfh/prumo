@@ -48,11 +48,17 @@ import {
     deleteArticleFile,
     fetchArticle,
     fetchArticleFiles,
+    insertArticle,
+    updateArticle,
 } from '@/services/articlesService';
+import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
+import {screeningKeys} from '@/lib/query-keys/screening';
 
 // ArticleForm calls useNavigate() as a fallback when no onDismiss is passed.
 function renderForm(ui: React.ReactElement) {
-    return render(<MemoryRouter>{ui}</MemoryRouter>);
+    const {queryClient, wrapper} = createQueryWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    return {...render(<MemoryRouter>{ui}</MemoryRouter>, {wrapper}), invalidate};
 }
 
 const ARTICLE = {
@@ -96,6 +102,50 @@ describe('ArticleForm — add mode', () => {
         await screen.findByRole('navigation', {name: 'formStepsAria'});
         expect(fetchArticle).not.toHaveBeenCalled();
         expect(fetchArticleFiles).not.toHaveBeenCalled();
+    });
+});
+
+describe('ArticleForm — screening invalidation', () => {
+    it('invalidates the screening reads of the project after a create', async () => {
+        const user = userEvent.setup();
+        vi.mocked(insertArticle).mockResolvedValue({ok: true, data: {id: 'art-new'}} as never);
+        const {invalidate} = renderForm(<ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>);
+
+        await user.type(screen.getByLabelText(/titleRequired/), 'A new study');
+        await user.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => expect(insertArticle).toHaveBeenCalledTimes(1));
+        await waitFor(() =>
+            expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project('proj-1')}),
+        );
+    });
+
+    it('invalidates the screening reads of the project after an update', async () => {
+        const user = userEvent.setup();
+        vi.mocked(updateArticle).mockResolvedValue({ok: true, data: undefined} as never);
+        const {invalidate} = renderForm(
+            <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" onDismiss={vi.fn()}/>,
+        );
+        await screen.findByText('paper.pdf');
+
+        await user.click(screen.getByRole('button', {name: 'save'}));
+
+        await waitFor(() => expect(updateArticle).toHaveBeenCalledTimes(1));
+        await waitFor(() =>
+            expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project('proj-1')}),
+        );
+    });
+
+    it('leaves the screening reads alone when the create fails', async () => {
+        const user = userEvent.setup();
+        vi.mocked(insertArticle).mockResolvedValue({ok: false, error: {message: 'rls'}} as never);
+        const {invalidate} = renderForm(<ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>);
+
+        await user.type(screen.getByLabelText(/titleRequired/), 'A new study');
+        await user.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => expect(insertArticle).toHaveBeenCalledTimes(1));
+        expect(invalidate).not.toHaveBeenCalled();
     });
 });
 

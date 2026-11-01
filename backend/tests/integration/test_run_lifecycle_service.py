@@ -1506,7 +1506,8 @@ async def test_qa_single_user_export_not_blank_after_advance(
                 allowed_values=(),
             )
         },
+        labels={},
     )
     assert value_map, "single-user QA export must not be blank after materialization"
-    assert "final answer" in " ".join(str(v) for v in value_map.values())
+    assert "final answer" in " ".join(str(v.value_text) for v in value_map.values())
     await db_session.rollback()
