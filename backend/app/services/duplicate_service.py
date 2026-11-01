@@ -138,7 +138,7 @@ class DuplicateService:
 
     async def _may_remove(self, project_id: UUID, item: DuplicateVerdictCreate) -> bool:
         """False when the removed side is already removed; raises on a refused removal."""
-        removed = await self.repo.removed_among(
+        removed = await ScreeningRepository(self.db).removed_among(
             project_id=project_id, article_ids=[item.article_id, item.kept_article_id]
         )
         if item.article_id in removed:

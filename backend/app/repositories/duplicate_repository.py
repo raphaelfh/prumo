@@ -182,15 +182,6 @@ class DuplicateRepository:
         row = (await self.db.execute(stmt)).first()
         return None if row is None else LatestVerdict(*row)
 
-    async def removed_among(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> set[UUID]:
-        """The given project articles that are the removed side of a live ``duplicate``."""
-        stmt = select(Article.id).where(
-            Article.project_id == project_id,
-            Article.id.in_(article_ids),
-            removed_duplicate(Article),
-        )
-        return set((await self.db.execute(stmt)).scalars())
-
     async def has_refusing_work(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> bool:
         """Any of the given project articles has :func:`refusing_work`."""
         stmt = select(
