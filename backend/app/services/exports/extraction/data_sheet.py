@@ -106,6 +106,24 @@ DATA_COLUMNS: Final[tuple[str, ...]] = (
     "n_raters_with_value",
 )
 
+# Columns whose cells are numbers, booleans or datetimes. Every other column is
+# text and must be read as such, else pandas turns the codes "None" / "N/A" into NaN.
+DATA_TYPED_COLUMNS: Final[frozenset[str]] = frozenset(
+    {"value_num", "value_bool", "out_of_scope", "ai_proposed", "n_raters_with_value", "decided_at"}
+)
+DATA_TEXT_COLUMNS: Final[tuple[str, ...]] = tuple(
+    c for c in DATA_COLUMNS if c not in DATA_TYPED_COLUMNS
+)
+
+R_READ_SNIPPET: Final[str] = 'readxl::read_excel(path, "Data", guess_max = Inf)'
+
+
+def pandas_read_snippet() -> str:
+    """The pandas call that reads the Data sheet with every code intact (§4.5)."""
+    dtype = ", ".join(f'"{c}": str' for c in DATA_TEXT_COLUMNS)
+    return f'pd.read_excel(path, "Data", keep_default_na=False, na_values=[""], dtype={{{dtype}}})'
+
+
 DataRow = tuple[CellValue, ...]
 
 _CONSENSUS = "consensus"  # reserved rater literal on consensus rows
