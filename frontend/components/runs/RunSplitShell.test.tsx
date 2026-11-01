@@ -119,9 +119,11 @@ describe("RunSplitShell expanded", () => {
   function ExpandHarness({
     children,
     onClosePalette = () => {},
+    nested,
   }: {
     children?: React.ReactNode;
     onClosePalette?: () => void;
+    nested?: boolean;
   }) {
     const pdf = usePdfPanel({ initialOpen: true });
     useRunShortcuts({
@@ -138,6 +140,7 @@ describe("RunSplitShell expanded", () => {
         </button>
         <RunSplitShell
           pdfState={pdf}
+          nested={nested}
           pdfPanel={<div data-testid="pdf-content">PDF</div>}
           formPanel={<div data-testid="form-content">FORM</div>}
           header={<div data-testid="header">HEAD</div>}
@@ -204,10 +207,21 @@ describe("RunSplitShell expanded", () => {
 
   it("toggles on the ⇧mod+\\ chord, the section rail's sibling", () => {
     render(<ExpandHarness />);
-    fireEvent.keyDown(window, { key: "\\", ctrlKey: true, metaKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "|", code: "Backslash", ctrlKey: true, metaKey: true, shiftKey: true });
     expect(screen.queryByTestId("form-content")).not.toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "\\", ctrlKey: true, metaKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "|", code: "Backslash", ctrlKey: true, metaKey: true, shiftKey: true });
     expect(screen.getByTestId("form-content")).toBeInTheDocument();
+  });
+
+  it("nested: registers neither the chord nor Escape", () => {
+    render(<ExpandHarness nested />);
+    fireEvent.keyDown(window, { key: "|", code: "Backslash", ctrlKey: true, metaKey: true, shiftKey: true });
+    expect(screen.getByTestId("form-content")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("toggle-expand"));
+    expect(screen.queryByTestId("form-content")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("form-content")).not.toBeInTheDocument();
   });
 
   it("ignores the rail's own mod+\\ , which carries no Shift", () => {

@@ -11,6 +11,7 @@
  */
 
 import {useEffect, useState} from "react";
+import {useQueryClient} from "@tanstack/react-query";
 import {
     Dialog,
     DialogBody,
@@ -35,6 +36,8 @@ import {useAuth} from "@/contexts/AuthContext";
 import {FILE_ROLE_DESCRIPTIONS, FILE_ROLE_LABELS, FILE_ROLES, FILE_UPLOAD_CONFIG, type FileRole} from "@/lib/file-constants";
 import {formatFileSize, generateStorageKey, validateFile} from "@/lib/file-validation";
 import {t} from "@/lib/copy";
+import {articleKeys} from "@/lib/query-keys";
+import {invalidateScreening} from "@/lib/query-keys/screening";
 import {fetchMainFileInfo, uploadArticleFile} from "@/services/articlesService";
 
 interface FileWithRole {
@@ -80,6 +83,7 @@ export function ArticleFileUploadDialogNew({
 }: ArticleFileUploadDialogNewProps) {
   const isStaging = articleId === undefined;
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [files, setFiles] = useState<FileWithRole[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [hasMainFile, setHasMainFile] = useState(false);
@@ -195,7 +199,8 @@ export function ArticleFileUploadDialogNew({
   };
 
   // Upload one file
-  const uploadFile = async (fileWithRole: FileWithRole): Promise<void> => {
+  /** Resolves to the failure message, or null once the file is stored. */
+  const uploadFile = async (fileWithRole: FileWithRole): Promise<string | null> => {
     const { file, role } = fileWithRole;
 
     // Set status to uploading with initial progress
@@ -213,7 +218,7 @@ export function ArticleFileUploadDialogNew({
           ? {...f, status: 'error' as const, error: validation.error || t('articles', 'invalidFile')}
           : f
       ));
-      return;
+      return validation.error || t('articles', 'invalidFile');
     }
 
     // Update progress: validation done (5%)
@@ -228,10 +233,10 @@ export function ArticleFileUploadDialogNew({
           ? {...f, status: 'error' as const, error: t('articles', 'mainExistsError')}
           : f
       ));
-      return;
+      return t('articles', 'mainExistsError');
     }
 
-    if (articleId === undefined) return; // staging never reaches here
+    if (articleId === undefined) return null; // staging never reaches here
     const storageKey = generateStorageKey(projectId, articleId, file.name);
 
     // Update progress: preparation done (10%)
@@ -253,7 +258,7 @@ export function ArticleFileUploadDialogNew({
           ? {...f, status: 'error' as const, error: result.error.message || t('articles', 'errorUnknown')}
           : f
       ));
-      return;
+      return result.error.message || t('articles', 'errorUnknown');
     }
 
     // Set status: completed (100%)
@@ -262,6 +267,7 @@ export function ArticleFileUploadDialogNew({
         ? { ...f, status: 'completed', progress: 100 }
         : f
     ));
+    return null;
   };
 
   /**
@@ -329,29 +335,29 @@ export function ArticleFileUploadDialogNew({
       });
     });
 
-    // Upload sequentially so a MAIN conflict surfaces before the rest
+    // Upload sequentially so a MAIN conflict surfaces before the rest. The
+    // outcome is tallied here, not read back out of a `setFiles` updater:
+    // StrictMode runs updaters twice, and a side effect in one fires twice.
+    const failures: string[] = [];
+    let completedFiles = 0;
     for (const fileWithRole of filesToUpload) {
-      await uploadFile(fileWithRole);
+      const failure = await uploadFile(fileWithRole);
+      if (failure === null) completedFiles += 1;
+      else failures.push(failure);
     }
+    const failedFiles = failures.length;
 
-    // Wait a moment for state updates to settle
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Check results after upload (using updated state)
-    setFiles(currentFiles => {
-      const completedFiles = currentFiles.filter(f => f.status === 'completed').length;
-      const failedFiles = currentFiles.filter(f => f.status === 'error').length;
-
-      if (failedFiles > 0 && completedFiles === 0) {
-        const errorMessages = currentFiles
-          .filter(f => f.status === 'error' && f.error)
-          .map(f => f.error)
-          .join('; ');
-        toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || t('articles', 'errorUnknown')));
-      } else if (failedFiles > 0) {
+    if (failedFiles > 0 && completedFiles === 0) {
+      toast.error(t('articles', 'uploadFilesError') + ': ' + (failures.join('; ') || t('articles', 'errorUnknown')));
+    } else if (completedFiles > 0) {
+      // The files landed, so `has_pdf` on the screening rows and the article's
+      // files list are stale until they refetch.
+      void invalidateScreening(queryClient, projectId);
+      if (articleId) void queryClient.invalidateQueries({queryKey: articleKeys.files(articleId)});
+      if (failedFiles > 0) {
         toast.warning(t('articles', 'uploadPartialCount').replace('{{completed}}', String(completedFiles)).replace('{{failed}}', String(failedFiles)));
         onFileUploaded?.();
-      } else if (completedFiles > 0) {
+      } else {
         toast.success(t('articles', 'uploadSuccessCount').replace('{{n}}', String(completedFiles)));
         onFileUploaded?.();
         // Close after 2 seconds
@@ -359,9 +365,7 @@ export function ArticleFileUploadDialogNew({
           handleClose();
         }, 2000);
       }
-
-      return currentFiles; // Return unchanged
-    });
+    }
 
     setIsUploading(false);
   };

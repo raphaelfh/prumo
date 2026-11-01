@@ -9,6 +9,8 @@ export interface UseListKeyboardShortcutsOptions {
     hasActiveFilters?: boolean;
     selectAll?: () => void;
     selectFiltered?: () => void;
+    /** False registers no listener (a host shell owns the keys). Default true. */
+    enabled?: boolean;
 }
 
 /**
@@ -25,8 +27,10 @@ export function useListKeyboardShortcuts({
                                              hasActiveFilters = false,
                                              selectAll,
                                              selectFiltered,
+                                             enabled = true,
                                          }: UseListKeyboardShortcutsOptions) {
     useEffect(() => {
+        if (!enabled) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement;
             const inInput =
@@ -85,6 +89,7 @@ export function useListKeyboardShortcuts({
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [
+        enabled,
         searchInputRef,
         setFilterPopoverOpen,
         filterPopoverOpen,

@@ -27,6 +27,7 @@ import {IdentifiersSection} from './sections/IdentifiersSection';
 import {AdditionalInfoSection} from './sections/AdditionalInfoSection';
 import {FilesSection} from './sections/FilesSection';
 import {t} from '@/lib/copy';
+import {articleKeys} from '@/lib/query-keys';
 import {invalidateScreening} from '@/lib/query-keys/screening';
 import {triggerDownload} from '@/lib/download';
 import {
@@ -556,6 +557,7 @@ export function ArticleForm({
     // The row is written (created or updated) and its uploads settled, so the
     // screening reads refetch with a fresh `has_pdf`.
     void invalidateScreening(queryClient, projectId);
+    void queryClient.invalidateQueries({queryKey: articleKeys.files(savedArticleId)});
 
     setSaving(false);
 

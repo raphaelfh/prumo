@@ -109,6 +109,19 @@ describe('useArticleDocuments', () => {
     expect(blocksMock).toHaveBeenLastCalledWith('supp-1', {refetchInterval: 4000});
   });
 
+  it('reports a failed files read and refetches on demand', async () => {
+    listMock.mockRejectedValueOnce(new Error('boom'));
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+
+    await waitFor(() => expect(result.current.filesError).toBe(true));
+    expect(result.current.files).toEqual([]);
+
+    act(() => result.current.refetchFiles());
+    await waitFor(() => expect(result.current.filesError).toBe(false));
+    expect(result.current.files).toHaveLength(2);
+  });
+
   it('is disabled (no fetch) when articleId is null', async () => {
     const {wrapper} = createWrapper();
     const {result} = renderHook(() => useArticleDocuments(null), {wrapper});
