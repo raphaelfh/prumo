@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from app.schemas.extraction_run import RunViewField
 from app.services.exports.codebook_model import (
     VersionSections,
     apply_field_codes,
@@ -30,6 +31,17 @@ from app.services.extraction_export_service import (
 
 def export_value(status: ExportStatus = "answered", **over: Any) -> ExportValue:
     return ExportValue(**{"raw": None, "status": status, **over})
+
+
+def make_run_view_field(**kw: Any) -> RunViewField:
+    base: dict[str, Any] = {
+        "id": uuid4(),
+        "name": "f",
+        "label": "F",
+        "is_required": False,
+        "sort_order": 0,
+    }
+    return RunViewField(**{**base, **kw})
 
 
 def make_layout(
