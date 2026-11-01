@@ -77,7 +77,9 @@ def screening_box(states: Sequence[AssignmentState]) -> ScreeningBox:
 
 async def _pubmed_identified(db: AsyncSession, project_id: UUID) -> int:
     """Distinct PMIDs the project's PubMed imports found for an article in the project,
-    plus PubMed-sourced project articles no such event links (each counted once)."""
+    plus PubMed-sourced project articles no such event links by a PMID (each counted
+    once: an article linked only by events without a PMID counts here)."""
+    pmid = ArticleSyncEvent.event_payload["pmid"].astext
     found = (
         select(ArticleSyncEvent)
         .join(ArticleSyncRun, ArticleSyncRun.id == ArticleSyncEvent.sync_run_id)
@@ -88,11 +90,10 @@ async def _pubmed_identified(db: AsyncSession, project_id: UUID) -> int:
             ArticleSyncEvent.article_id.in_(
                 select(Article.id).where(Article.project_id == project_id)
             ),
+            pmid.is_not(None),
         )
     )
-    pmids = found.with_only_columns(
-        func.count(func.distinct(ArticleSyncEvent.event_payload["pmid"].astext))
-    )
+    pmids = found.with_only_columns(func.count(func.distinct(pmid)))
     unlinked = (
         select(func.count())
         .select_from(Article)

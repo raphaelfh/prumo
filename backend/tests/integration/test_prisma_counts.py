@@ -291,7 +291,7 @@ async def test_prisma_route_guard(db_session: AsyncSession) -> None:
 
 
 async def _pubmed_event(
-    db: AsyncSession, project_id: UUID, article_id: UUID, pmid: str, status: str
+    db: AsyncSession, project_id: UUID, article_id: UUID, pmid: str | None, status: str
 ) -> None:
     """One PubMed sync event linking ``pmid`` to ``article_id``, as the importer writes it."""
     run = await ArticleSyncRunRepository(db).create_run(
@@ -363,3 +363,16 @@ async def test_cross_source_c_pubmed_article_without_event(db_session: AsyncSess
     assert _identified(counts) == [{"source": "pubmed", "count": 1}]
     assert counts.duplicates_removed == 0
     assert counts.other_removed == 1
+
+
+async def test_pubmed_article_linked_only_by_a_null_pmid_event_counts_once(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await make_project(db_session)
+    article = await make_screening_article(db_session, project_id, ingestion_source="PubMed")
+    await _pubmed_event(db_session, project_id, article, None, "inserted")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert _identified(counts) == [{"source": "pubmed", "count": 1}]
+    assert counts.duplicates_removed == 0
