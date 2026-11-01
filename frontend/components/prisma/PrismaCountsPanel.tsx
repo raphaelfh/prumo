@@ -1,5 +1,5 @@
 /**
- * The PRISMA tab: identification and title/abstract screening numbers, read
+ * The PRISMA tab: identification, title/abstract and (when on) full-text numbers, read
  * as the server counts them. Blind review: the payload carries outcomes only,
  * so nothing here can tell a record awaiting a peer from one in conflict, and
  * nothing is derived client-side to try. The flow diagram is a later version.
@@ -8,6 +8,7 @@ import {useId} from 'react';
 
 import {ErrorState} from '@/components/patterns/ErrorState';
 import {LoadingState, Notice} from '@/components/screening/ScreeningParts';
+import {useScreeningConfig} from '@/hooks/screening/useScreeningConfig';
 import {usePrismaCounts} from '@/hooks/screening/usePrismaCounts';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
@@ -33,7 +34,7 @@ interface Line {
   /** Unique within its section: a reason or a raw source may repeat a label. */
   id: string;
   label: string;
-  count: number;
+  count: number | string;
   /** A breakdown of the line above it. */
   nested?: boolean;
 }
@@ -88,12 +89,49 @@ function screeningLines(counts: PrismaCountsRead): Line[] {
     {id: 'screened', label: t('screening', 'prismaScreened'), count: counts.screened},
     {id: 'excluded', label: t('screening', 'prismaExcluded'), count: counts.excluded},
     ...breakdown,
-    {id: 'sought', label: t('screening', 'prismaSought'), count: counts.sought_for_retrieval},
+    {id: 'ta-included', label: t('screening', 'prismaTaIncluded'), count: counts.ta_included},
+    // Full text off: the maybes are never assessed; with it on they went to full text.
+    ...(counts.reports_assessed === null
+      ? [{id: 'ta-maybe', label: t('screening', 'prismaTaMaybe'), count: counts.ta_maybe}]
+      : []),
   ];
+}
+
+function reportsLines(counts: PrismaCountsRead): Line[] {
+  const inProgress = counts.full_text_in_progress === true;
+  const pending = t('screening', 'prismaInProgress');
+  const num = (n: number | null): number | string => (inProgress ? pending : (n ?? 0));
+  const byReason = counts.reports_excluded_by_reason ?? [];
+  const excludedTotal = byReason.reduce((sum, {count}) => sum + count, 0);
+  return [
+    {id: 'sought', label: t('screening', 'prismaReportsSought'), count: num(counts.sought_for_retrieval)},
+    {id: 'not-retrieved-reports', label: t('screening', 'prismaReportsNotRetrieved'), count: num(counts.reports_not_retrieved)},
+    {id: 'assessed', label: t('screening', 'prismaReportsAssessed'), count: num(counts.reports_assessed)},
+    {id: 'reports-excluded', label: t('screening', 'prismaReportsExcluded'), count: num(excludedTotal)},
+    ...(inProgress
+      ? []
+      : byReason
+          .filter(({count}) => count > 0)
+          .map(({reason, count}) => ({id: `report-reason:${reason}`, label: reason, count, nested: true}))),
+    {id: 'reports-included', label: t('screening', 'prismaReportsIncluded'), count: num(counts.reports_included)},
+  ];
+}
+
+function methodLine(config: {reviewer_count: number | null; full_text_reviewer_count: number | null}): string | null {
+  const ta = config.reviewer_count;
+  if (ta === null) return null;
+  const head = t('screening', ta === 1 ? 'prismaMethodTaOne' : 'prismaMethodTaMany').replace('{{n}}', String(ta));
+  const ft =
+    config.full_text_reviewer_count === null
+      ? ''
+      : t('screening', 'prismaMethodFtClause').replace('{{n}}', String(config.full_text_reviewer_count));
+  return head + ft + t('screening', 'prismaMethodArbitrator');
 }
 
 export function PrismaCountsPanel({projectId}: {projectId: string}) {
   const query = usePrismaCounts(projectId);
+  // The method line is a nicety: omitted while the config loads or errors.
+  const config = useScreeningConfig(projectId).data;
 
   if (query.isPending) return <LoadingState />;
   if (query.isError) {
@@ -107,6 +145,7 @@ export function PrismaCountsPanel({projectId}: {projectId: string}) {
   }
 
   const counts = query.data;
+  const method = config ? methodLine(config) : null;
   if (counts.screened === 0) {
     return (
       <Notice title={t('screening', 'prismaEmptyTitle')} body={t('screening', 'prismaEmptyBody')}>
@@ -125,6 +164,10 @@ export function PrismaCountsPanel({projectId}: {projectId: string}) {
       <h2 className="text-sm font-medium text-foreground">{t('screening', 'prismaTitle')}</h2>
       <CountsSection title={t('screening', 'prismaIdentification')} lines={identificationLines(counts)} />
       <CountsSection title={t('screening', 'prismaScreening')} lines={screeningLines(counts)} />
+      {counts.reports_assessed !== null && (
+        <CountsSection title={t('screening', 'prismaFullText')} lines={reportsLines(counts)} />
+      )}
+      {method && <p className="text-xs text-muted-foreground">{method}</p>}
     </div>
   );
 }
