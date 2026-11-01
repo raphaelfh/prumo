@@ -160,7 +160,7 @@ async def test_signaling_selects_carry_the_instruments_five_answer_scale() -> No
         "NI",
     ]
     assert _PROBAST_SIGNALING == ["Y", "PY", "PN", "N"]
-    # The label is display only — ``resolve_value`` emits an option's VALUE,
+    # The label is display only — the export rules read an option's VALUE,
     # and maps to a marker label only for a coded absent_reason — so both the
     # screen and the workbook reach Unclear through ``_SIGNALING_MAP["ni"]``.
     # It coincides with the marker's label on purpose (one concept reads the

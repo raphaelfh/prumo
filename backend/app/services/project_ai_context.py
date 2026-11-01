@@ -216,6 +216,29 @@ async def load_exclusion_reasons(db: AsyncSession, project_id: UUID) -> list[str
     return protocol_exclusion_reasons(project.picots_config_ai_review, project.eligibility_criteria)
 
 
+def protocol_inclusion_criteria(picots: Any, eligibility: Any) -> list[str]:
+    """The protocol's inclusion criteria a screening reviewer reads beside a record.
+
+    The mirror of :func:`protocol_exclusion_reasons`: every PICOTS slot's
+    inclusions in slot order, then the eligibility inclusions; first occurrence kept.
+    """
+    criteria: list[str] = []
+    if isinstance(picots, Mapping):
+        for key in _SLOT_KEYS:
+            reader = _timing_texts if key == "timing" else _texts
+            criteria.extend(reader(picots.get(key))[1])
+    if isinstance(eligibility, Mapping):
+        criteria.extend(_string_list(eligibility.get("inclusion")))
+    return list(dict.fromkeys(criteria))
+
+
+async def load_inclusion_criteria(db: AsyncSession, project_id: UUID) -> list[str]:
+    project = await _load(db, project_id)
+    return protocol_inclusion_criteria(
+        project.picots_config_ai_review, project.eligibility_criteria
+    )
+
+
 def render_review_question(
     picots: Any, review_type: str | None, eligibility: Any, study_design: Any
 ) -> str | None:

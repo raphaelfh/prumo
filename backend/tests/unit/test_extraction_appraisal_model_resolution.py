@@ -8,7 +8,14 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction_snapshot_reader import AllowedValue
+from app.services.exports.values import (
+    ExportValue,
+    build_option_labels,
+    display_value,
+    to_export_value,
+)
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
@@ -33,6 +40,23 @@ def _field(
         label=label,
         type=ftype,
         allowed_values=allowed_values,
+    )
+
+
+def _ev(field: FieldDescriptor, code: str) -> ExportValue:
+    return to_export_value({"value": code}, field, {})
+
+
+_MARKER = {
+    "No information": {"value": None, "absent_reason": "no_information"},
+    "Not applicable": {"value": None, "absent_reason": "not_applicable"},
+}
+
+
+def _shown(model, row) -> tuple:
+    return tuple(
+        None if v is None else display_value(v, f)
+        for v, f in zip(row.domain_verdicts, model.domain_fields, strict=True)
     )
 
 
@@ -65,10 +89,9 @@ def test_build_appraisal_model_consensus_rollup() -> None:
         version_id=None,
         entries={(d1.entity_type_id, None): (inst1,), (d2.entity_type_id, None): (inst2,)},
     )
-    # consensus value_map: 3-tuple keys, already-resolved scalars.
     value_map = {
-        (run_id, inst1, f1): "Low",
-        (run_id, inst2, f2): "High",
+        value_key(run_id, inst1, f1): _ev(d1.fields[0], "Low"),
+        value_key(run_id, inst2, f2): _ev(d2.fields[0], "High"),
     }
 
     model = ExtractionExportService._build_appraisal_model(
@@ -77,20 +100,21 @@ def test_build_appraisal_model_consensus_rollup() -> None:
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert model is not None
     assert model.domain_labels == ("Participants", "Predictors")
     assert len(model.rows) == 1
     row = model.rows[0]
     assert row.record_label == "Gaca, 2011"
-    assert row.domain_verdicts == ("Low", "High")
+    assert _shown(model, row) == ("Low", "High")
     assert row.overall == "High"  # worst-case
     assert row.per_reviewer_overall == {}
 
 
 def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
-    # ADR-0016 Phase 4: a coded-disposition verdict resolves (via resolve_value,
-    # upstream of this builder) to its stable label — "No information" here. The
+    # ADR-0016 Phase 4: a coded-disposition verdict renders (display_value)
+    # as its stable label — "No information" here. The
     # domain CELL keeps that label, but the worst-case Overall EXCLUDES it, so the
     # real "High" wins instead of a fabricated Critical/most-severe. An all-marker
     # record rolls up to a blank Overall while its cells still show the label.
@@ -114,12 +138,18 @@ def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
         sections=(d1, d2),
         articles=(article,),
         reviewers=(),
-        value_map={(run_id, inst1, f1): "No information", (run_id, inst2, f2): "High"},
+        value_map={
+            value_key(run_id, inst1, f1): to_export_value(
+                _MARKER["No information"], d1.fields[0], {}
+            ),
+            value_key(run_id, inst2, f2): _ev(d2.fields[0], "High"),
+        },
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert mixed is not None
     row = mixed.rows[0]
-    assert row.domain_verdicts == ("No information", "High")  # cells stay populated
+    assert _shown(mixed, row) == ("No information", "High")  # cells stay populated
     assert row.overall == "High"  # marker excluded — real verdict wins
 
     # All-marker: every domain silent → blank Overall, cells still labelled.
@@ -128,14 +158,19 @@ def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
         articles=(article,),
         reviewers=(),
         value_map={
-            (run_id, inst1, f1): "No information",
-            (run_id, inst2, f2): "Not applicable",
+            value_key(run_id, inst1, f1): to_export_value(
+                _MARKER["No information"], d1.fields[0], {}
+            ),
+            value_key(run_id, inst2, f2): to_export_value(
+                _MARKER["Not applicable"], d2.fields[0], {}
+            ),
         },
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert all_marker is not None
     am_row = all_marker.rows[0]
-    assert am_row.domain_verdicts == ("No information", "Not applicable")
+    assert _shown(all_marker, am_row) == ("No information", "Not applicable")
     assert am_row.overall is None  # nothing assessable => blank, not most-severe
 
 
@@ -155,11 +190,11 @@ def test_build_appraisal_model_all_users_per_reviewer() -> None:
         version_id=None,
         entries={(d1.entity_type_id, None): (inst1,)},
     )
-    # all_users value_map: 4-tuple keys; consensus row uses reviewer_id=None.
+    # all_users: the consensus slot is rater None; each reviewer has its own.
     value_map = {
-        (run_id, inst1, f1, None): "Low",
-        (run_id, inst1, f1, r1): "Low",
-        (run_id, inst1, f1, r2): "High",
+        value_key(run_id, inst1, f1): _ev(d1.fields[0], "Low"),
+        value_key(run_id, inst1, f1, r1): _ev(d1.fields[0], "Low"),
+        value_key(run_id, inst1, f1, r2): _ev(d1.fields[0], "High"),
     }
     model = ExtractionExportService._build_appraisal_model(
         sections=(d1,),
@@ -167,6 +202,7 @@ def test_build_appraisal_model_all_users_per_reviewer() -> None:
         reviewers=reviewers,
         value_map=value_map,
         mode=ExportMode.ALL_USERS,
+        reviewer_id=None,
     )
     row = model.rows[0]
     assert row.overall == "Low"  # consensus rollup
@@ -183,6 +219,7 @@ def test_build_appraisal_model_none_when_no_select_field() -> None:
         reviewers=(),
         value_map={},
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert model is None
 
@@ -230,9 +267,9 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
     # ranked maximally severe -> Overall "Y". Keying on the risk-label set
     # reads risk_of_bias instead, so the verdict is the judgment "Low".
     value_map = {
-        (run_id, inst, signalling.field_id): "Y",
-        (run_id, inst, risk.field_id): "Low",
-        (run_id, inst, applicability.field_id): "High",
+        value_key(run_id, inst, signalling.field_id): _ev(signalling, "Y"),
+        value_key(run_id, inst, risk.field_id): _ev(risk, "Low"),
+        value_key(run_id, inst, applicability.field_id): _ev(applicability, "High"),
     }
     model = ExtractionExportService._build_appraisal_model(
         sections=(d1,),
@@ -240,10 +277,11 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert model is not None
     row = model.rows[0]
-    assert row.domain_verdicts == ("Low",)  # risk_of_bias, not "Y" or "High"
+    assert _shown(model, row) == ("Low",)  # risk_of_bias, not "Y" or "High"
     assert row.overall == "Low"
 
 
@@ -322,6 +360,7 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
         reviewers=(),
         value_map={},
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert model is not None
     assert model.domain_labels == ("Evaluation D4 — judgment",)
@@ -344,6 +383,67 @@ def test_coded_verdict_options_are_selected_by_their_labels() -> None:
         reviewers=(),
         value_map={},
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert model is not None
     assert model.domain_labels == ("Participants",)
+
+
+def test_overall_ranks_coded_verdicts_by_label() -> None:
+    lhu = (AllowedValue("L", "Low"), AllowedValue("U", "Unclear"), AllowedValue("H", "High"))
+    d1 = _section("D1", _field("RoB", allowed_values=lhu), 0)
+    d2 = _section("D2", _field("RoB", allowed_values=lhu), 1)
+    labels = build_option_labels([d1, d2])
+    run_id, i1, i2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid.uuid4(),
+        header_label="A",
+        run_id=run_id,
+        version_id=None,
+        entries={(d1.entity_type_id, None): (i1,), (d2.entity_type_id, None): (i2,)},
+    )
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(d1, d2),
+        articles=(article,),
+        reviewers=(),
+        value_map={
+            value_key(run_id, i1, d1.fields[0].field_id): to_export_value(
+                {"value": "L"}, d1.fields[0], labels
+            ),
+            value_key(run_id, i2, d2.fields[0].field_id): to_export_value(
+                {"value": "U"}, d2.fields[0], labels
+            ),
+        },
+        mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
+    )
+    assert model is not None
+    assert model.domain_fields == (d1.fields[0], d2.fields[0])
+    assert tuple(v.value_text for v in model.rows[0].domain_verdicts) == ("L", "U")
+    assert model.rows[0].overall == "Unclear"
+
+
+def test_single_user_verdicts_read_the_reviewer_slot() -> None:
+    d1 = _section("D1", _field("RoB", allowed_values=(AllowedValue("H", "High"),)), 0)
+    run_id, i1, r = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid.uuid4(),
+        header_label="A",
+        run_id=run_id,
+        version_id=None,
+        entries={(d1.entity_type_id, None): (i1,)},
+    )
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(d1,),
+        articles=(article,),
+        reviewers=(),
+        value_map={
+            value_key(run_id, i1, d1.fields[0].field_id, r): to_export_value(
+                {"value": "H"}, d1.fields[0], {}
+            )
+        },
+        mode=ExportMode.SINGLE_USER,
+        reviewer_id=r,
+    )
+    # An unlabelled code ranks as unknown, hence most severe.
+    assert model is not None and model.rows[0].overall == "H"

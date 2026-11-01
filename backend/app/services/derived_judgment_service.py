@@ -62,16 +62,6 @@ _UNCLEAR = "Unclear"
 # worse; ``max`` over this mapping is the "worst" operator.
 JUDGMENT_SEVERITY: dict[str, int] = {"Low": 0, _UNCLEAR: 1, "High": 2}
 
-# The two callers hand us DIFFERENT shapes for the same stored value: the run
-# view passes the raw jsonb envelope, while the export passes a value_map whose
-# entries ``resolve_value`` has already collapsed to a display label. Mapping
-# the labels back to their codes is what keeps "screen and workbook cannot
-# drift" true — without it a marker reads as Unclear on the banner and as
-# nothing at all in the xlsx.
-_LABEL_TO_ABSENT_REASON: dict[str, str] = {
-    label.casefold(): code for code, label in ABSENT_REASON_LABELS.items()
-}
-
 _COLLAPSE_KEY = "collapse"
 
 # The two rules a spec may declare. Anything else is a definition this code
@@ -99,10 +89,7 @@ _SIGNALING_MAP: dict[str, Contribution] = {
     "n": "High",
     # PROBAST+AI 2.1.0's fifth answer. The instrument reads NI as Unclear, which
     # is also what the retired ``no_information`` MARKER already contributed —
-    # so putting NI on the scale needs no branch anywhere downstream. The
-    # export's label path reaches the same result through the marker-label
-    # table (the option's label is "No information"); this entry is the raw
-    # run-view path, and the pair is the screen/workbook parity.
+    # so putting NI on the scale needs no branch anywhere downstream.
     "ni": "Unclear",
     # QUADAS-2's third answer (§11 adoption) — same casefolded lookup.
     "unclear": "Unclear",
@@ -173,21 +160,6 @@ class DerivedJudgment:
     inputs: tuple[DerivedInput, ...] = ()
 
 
-def _absent_reason(raw: Any) -> str | None:
-    """The disposition code carried by *raw*, from either caller's shape.
-
-    Accepts the raw envelope (run view) and the already-resolved display label
-    (export), so both read a marker identically.
-    """
-    reason = value_absent_reason(raw)
-    if reason is not None:
-        return reason
-    value = unwrap_value_envelope(raw)
-    if isinstance(value, str):
-        return _LABEL_TO_ABSENT_REASON.get(value.strip().casefold())
-    return None
-
-
 def judgment_of(raw: Any, *, no_information_as_unclear: bool = False) -> str | None:
     """The canonical judgment carried by *raw*, or None when it is not one.
 
@@ -206,7 +178,7 @@ def judgment_of(raw: Any, *, no_information_as_unclear: bool = False) -> str | N
     does not. ``not_applicable`` / ``not_evaluated`` are never judgments in
     either context — a PROBAST+AI domain cannot legitimately be N/A.
     """
-    reason = _absent_reason(raw)
+    reason = value_absent_reason(raw)
     if reason is not None:
         if no_information_as_unclear and reason == AbsentReason.NO_INFORMATION.value:
             return _UNCLEAR
@@ -268,11 +240,11 @@ def _worst_gated(states: Sequence[str | None]) -> str | None:
 def _signaling_contribution(raw: Any) -> Contribution:
     """What one stored signaling answer contributes (spec 2026-08-22 §1).
 
-    Accepts both caller shapes (raw envelope and resolved display label) via
-    the same ``_absent_reason``/``unwrap_value_envelope`` pair as ``_judgment``
-    — the screen/workbook parity invariant.
+    Reads the raw stored value through ``value_absent_reason`` /
+    ``unwrap_value_envelope``; both callers hand it raw envelopes, which is the
+    screen/workbook parity invariant.
     """
-    reason = _absent_reason(raw)
+    reason = value_absent_reason(raw)
     if reason == AbsentReason.NO_INFORMATION.value:
         return "Unclear"
     if reason is not None:
@@ -289,7 +261,7 @@ def _raw_display(raw: Any) -> str | None:
     Traceability means naming the cause in the reviewer's own vocabulary
     (``"PN"``, ``"No information"``) — never the mapped judgment.
     """
-    reason = _absent_reason(raw)
+    reason = value_absent_reason(raw)
     if reason is not None:
         return ABSENT_REASON_LABELS.get(reason, reason)
     value = unwrap_value_envelope(raw)
@@ -517,7 +489,7 @@ def out_of_scope_sections(
     if coord is None:
         return frozenset()
     raw = values_by_coord.get(coord)
-    if raw is None or _absent_reason(raw) is not None:
+    if raw is None or value_absent_reason(raw) is not None:
         return frozenset()
     excludes = _scope_rules(template_schema).get("excludes")
     if not isinstance(excludes, dict):

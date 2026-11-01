@@ -1,8 +1,8 @@
 /**
- * Every screening/PRISMA read refetches on remount. No article writer
- * (Zotero/RIS import, manual create, delete) invalidates the screening keys,
+ * Every screening/PRISMA read refetches on remount. Writes made elsewhere (a
+ * co-reviewer's decision, another session's import) never reach this cache,
  * so under the app's 5-minute staleTime a remount would otherwise keep
- * pre-import enroll and PRISMA numbers. One row per screening `useQuery`.
+ * stale enroll and PRISMA numbers. One row per screening `useQuery`.
  */
 import {renderHook, waitFor} from '@testing-library/react';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
@@ -12,25 +12,22 @@ import {describe, expect, it, vi} from 'vitest';
 
 const fetchScreeningConfig = vi.fn();
 const fetchImportRun = vi.fn();
-const fetchScreeningQueue = vi.fn();
 const fetchAssignment = vi.fn();
-const fetchConflicts = vi.fn();
 const fetchPrismaCounts = vi.fn();
+const fetchScreeningRecords = vi.fn();
 vi.mock('@/services/screeningService', () => ({
   fetchScreeningConfig: (...args: unknown[]) => fetchScreeningConfig(...args),
   fetchImportRun: (...args: unknown[]) => fetchImportRun(...args),
-  fetchScreeningQueue: (...args: unknown[]) => fetchScreeningQueue(...args),
   fetchAssignment: (...args: unknown[]) => fetchAssignment(...args),
-  fetchConflicts: (...args: unknown[]) => fetchConflicts(...args),
   fetchPrismaCounts: (...args: unknown[]) => fetchPrismaCounts(...args),
+  fetchScreeningRecords: (...args: unknown[]) => fetchScreeningRecords(...args),
 }));
 
 import {usePrismaCounts} from '@/hooks/screening/usePrismaCounts';
 import {useImportRun} from '@/hooks/screening/usePubmedImport';
 import {useScreeningAssignment} from '@/hooks/screening/useScreeningAssignment';
-import {useScreeningConflicts} from '@/hooks/screening/useScreeningConflicts';
 import {useScreeningConfig} from '@/hooks/screening/useScreeningConfig';
-import {useScreeningQueue} from '@/hooks/screening/useScreeningQueue';
+import {useScreeningRecords} from '@/hooks/screening/useScreeningRecords';
 
 // The app's default freshness window (frontend/App.tsx): a cached read inside
 // it is fresh, so only refetchOnMount can make a remount fetch again.
@@ -45,10 +42,9 @@ type Row = [name: string, useHook: () => {data: unknown; isSuccess: boolean; isS
 const ROWS: Row[] = [
   ['useScreeningConfig', () => useScreeningConfig('p1'), fetchScreeningConfig],
   ['useImportRun', () => useImportRun('p1', 's1'), fetchImportRun],
-  ['useScreeningQueue', () => useScreeningQueue('p1', true), fetchScreeningQueue],
   ['useScreeningAssignment', () => useScreeningAssignment('a1'), fetchAssignment],
-  ['useScreeningConflicts', () => useScreeningConflicts('p1', true), fetchConflicts],
   ['usePrismaCounts', () => usePrismaCounts('p1'), fetchPrismaCounts],
+  ['useScreeningRecords', () => useScreeningRecords('p1', 'title_abstract', true), fetchScreeningRecords],
 ];
 
 function wrapper() {

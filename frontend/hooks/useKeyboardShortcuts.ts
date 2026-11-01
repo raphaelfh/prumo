@@ -17,6 +17,8 @@ type ChordBinding = {
   allowInInputs?: boolean;
   /** Fire while a dialog is open — for a binding that operates that dialog, like a palette's own toggle. */
   allowInDialogs?: boolean;
+  /** Leave the key to a focused button or link: a bare Enter there is its click. */
+  yieldToControls?: boolean;
 };
 
 type SequenceBinding = {
@@ -42,6 +44,10 @@ export function isTypingTarget(e: KeyboardEvent): boolean {
     target.matches('input, textarea, select, [role="combobox"], [aria-haspopup="listbox"]') || target.isContentEditable ||
     !!target.closest('[contenteditable]:not([contenteditable="false"])')
   ));
+}
+
+function isControlTarget(e: KeyboardEvent): boolean {
+  return e.composedPath().some((target) => target instanceof HTMLElement && target.matches('button, a[href]'));
 }
 
 const OPEN_OVERLAY_SELECTOR =
@@ -100,6 +106,7 @@ export function useKeyboardShortcuts({
         if (!!b.shift !== e.shiftKey) continue;
         // Mod chords bypass the input guard unless they opt out.
         if (!(b.allowInInputs ?? mod) && isTypingTarget(e)) continue;
+        if (b.yieldToControls && isControlTarget(e)) continue;
         clearPending();
         if (!b.allowInDialogs && isDialogOpen()) return true;
         e.preventDefault();

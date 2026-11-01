@@ -13,6 +13,7 @@ import {render, screen} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import {ArticlesList} from "@/components/articles/ArticlesList";
+import {createQueryWrapper} from "@/test/helpers/queryClientWrapper";
 import type {Article} from "@/types/article";
 import {fetchArticleIdsWithMainFile, fetchArticlePdfSignedUrl} from "@/services/articlesService";
 
@@ -59,6 +60,7 @@ function renderList(articles: Article[]) {
                 {...handlers}
             />
         </MemoryRouter>,
+        {wrapper: createQueryWrapper().wrapper},
     );
     return handlers;
 }

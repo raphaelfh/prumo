@@ -18,6 +18,10 @@ const sectionViews: Record<string, SectionView[]> = {
     { value: 'dashboard', label: t('qa', 'tabDashboard'), urlParam: 'qaTab' },
     { value: 'configuration', label: t('qa', 'tabConfiguration'), urlParam: 'qaTab', managerOnly: true },
   ],
+  screening: [
+    { value: 'title_abstract', label: t('screening', 'tabTitleAbstract'), urlParam: 'screeningTab' },
+    { value: 'settings', label: t('screening', 'tabSettings'), urlParam: 'screeningTab', managerOnly: true },
+  ],
 };
 
 export function getSectionViews(sectionId: string): SectionView[] {
