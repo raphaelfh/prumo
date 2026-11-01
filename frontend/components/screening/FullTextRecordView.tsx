@@ -25,7 +25,7 @@ import {createViewerStore} from '@/pdf-viewer/core';
 import type {ScreeningAssignmentRead, ScreeningRecordRow} from '@/services/screeningService';
 
 import {RecordStatusChip} from './RecordStatusChip';
-import {RecordAbstract} from './ScreeningParts';
+import {RecordBody} from './ScreeningParts';
 
 type View = 'abstract' | 'pdf';
 
@@ -80,7 +80,7 @@ export function FullTextRecordView({projectId, row, read, maximized, readOnly, d
             {header}
             {decisionPane}
             <section className="flex flex-col gap-2 border-t border-border/40 pt-3">
-              <RecordAbstract article={read.article} />
+              <RecordBody article={read.article} showTitle={false} />
             </section>
           </div>
         }
@@ -107,7 +107,7 @@ export function FullTextRecordView({projectId, row, read, maximized, readOnly, d
           documents
         ) : (
           <div className="flex h-full flex-col gap-2 overflow-y-auto px-4 py-3">
-            <RecordAbstract article={read.article} />
+            <RecordBody article={read.article} showTitle={false} />
           </div>
         )}
       </div>

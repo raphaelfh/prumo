@@ -21,6 +21,7 @@ import {ApiError} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import {isReadOnly} from '@/lib/screening/records';
+import {cn} from '@/lib/utils';
 import type {
   ScreeningArbitrationCreate,
   ScreeningAssignmentRead,
@@ -31,7 +32,9 @@ import type {
 } from '@/services/screeningService';
 
 import {ConflictRulingForm} from './ConflictRulingForm';
+import {CriteriaPanel, criteriaCount, type ScreeningCriteria} from './CriteriaPanel';
 import {DecisionButtons} from './DecisionButtons';
+import {DecisionNote, useDecisionNoteForm} from './DecisionNote';
 import {FullTextDecisionPane} from './FullTextDecisionPane';
 import {FullTextRecordView} from './FullTextRecordView';
 import {RecordStatusChip} from './RecordStatusChip';
@@ -117,7 +120,11 @@ interface AssignmentViewProps {
   row: ScreeningRecordRow;
   config: ScreeningConfigRead;
   phase: ScreeningPhase;
-  /** The workspace's controlled shell state: full text splits the report beside the pane. */
+  criteria: ScreeningCriteria;
+  /**
+   * The workspace's controlled shell state. Title/abstract: the criteria rail beside the record
+   * (docked: the disclosure above it). Full text: the report splits beside the pane.
+   */
   maximized: boolean;
   onDecided: (row: ScreeningRecordRow) => void;
   onNotInPhase: () => void;
@@ -128,6 +135,7 @@ export function AssignmentView({
   row,
   config,
   phase,
+  criteria,
   maximized,
   onDecided,
   onNotInPhase,
@@ -136,6 +144,8 @@ export function AssignmentView({
   const projectId = query.data?.project_id ?? '';
   const decide = useDecide(projectId);
   const arbitrate = useArbitrate(projectId);
+  // Before the early returns; the panel keys this view by assignment, so another record starts blank.
+  const noteForm = useDecisionNoteForm();
   // `isPending` reaches the buttons only after a re-render; two keys pressed
   // before it would both post. This flag flips at once.
   const inFlight = useRef(false);
@@ -180,10 +190,12 @@ export function AssignmentView({
   const onDecide = (body: ScreeningDecisionCreate) => {
     if (inFlight.current) return;
     inFlight.current = true;
+    const rationale = noteForm.getValues('note').trim();
     decide.mutate(
-      {assignmentId, body},
+      {assignmentId, body: rationale ? {...body, rationale} : body},
       {
         onSuccess: () => {
+          noteForm.reset();
           if (solo) toast.success(t('screening', 'changedTo').replace('{{decision}}', decisionLabel(body.decision)));
           onDecided(row);
         },
@@ -239,31 +251,47 @@ export function AssignmentView({
     );
   }
 
+  const body = canDecide ? (
+    <RecordBody article={read.article} />
+  ) : canRule ? (
+    <div className="flex flex-col gap-4">
+      <RecordBody article={read.article} />
+      {ruling}
+    </div>
+  ) : (
+    <div className="flex flex-col gap-4">
+      <RecordBody article={read.article} />
+      <AssignmentDecisions read={read} />
+    </div>
+  );
+  // Maximized with a rail: wide enough for the 68ch reading column plus the 18rem rail.
+  const withRail = maximized && criteriaCount(criteria) > 0;
+  const columnWidth = withRail ? 'max-w-5xl' : 'max-w-3xl';
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
+        <div className={cn('mx-auto flex w-full flex-col gap-3 px-4 py-4', columnWidth)}>
           <div>
             <RecordStatusChip status={row.status} arbitrated={row.outcome_kind === 'arbitrated'} />
           </div>
-          {canDecide ? (
-            <RecordBody article={read.article} />
-          ) : canRule ? (
-            <div className="flex flex-col gap-4">
-              <RecordBody article={read.article} />
-              {ruling}
+          {withRail ? (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+              <div className="min-w-0">{body}</div>
+              <CriteriaPanel criteria={criteria} variant="rail" />
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              <RecordBody article={read.article} />
-              <AssignmentDecisions read={read} />
-            </div>
+            <>
+              {!maximized && <CriteriaPanel criteria={criteria} variant="disclosure" />}
+              {body}
+            </>
           )}
         </div>
       </div>
       {canDecide && (
         <div className="shrink-0 border-t border-border/40 bg-background px-4 py-3">
-          <div className="mx-auto w-full max-w-3xl">
+          <div className={cn('mx-auto flex w-full flex-col gap-2', columnWidth)}>
+            <DecisionNote form={noteForm} disabled={busy} />
             <DecisionButtons
               reasons={read.exclusion_reasons}
               disabled={busy}

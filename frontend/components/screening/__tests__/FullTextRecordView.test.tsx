@@ -108,6 +108,10 @@ function assignment(overrides: Partial<ScreeningAssignmentRead> = {}): Screening
       journal_title: 'Lancet',
       pmid: null,
       publication_year: 2021,
+      mesh_terms: null,
+      keywords: null,
+      article_type: null,
+      language: null,
     },
     my_decision: null,
     outcome: null,
@@ -154,6 +158,7 @@ function renderPanel({row: r = row(), config: c = config(), maximized = false}: 
       <ScreeningRecordPanel
         projectId="p1"
         phase="full_text"
+        criteria={{inclusion: [], exclusion: []}}
         maximized={maximized}
         row={next}
         config={c}

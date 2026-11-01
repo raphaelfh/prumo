@@ -7168,6 +7168,8 @@ export interface components {
         ScreeningArticle: {
             /** Abstract */
             abstract: string | null;
+            /** Article Type */
+            article_type: string | null;
             /** Authors */
             authors: string[] | null;
             /** Doi */
@@ -7179,6 +7181,12 @@ export interface components {
             id: string;
             /** Journal Title */
             journal_title: string | null;
+            /** Keywords */
+            keywords: string[] | null;
+            /** Language */
+            language: string | null;
+            /** Mesh Terms */
+            mesh_terms: string[] | null;
             /** Pmid */
             pmid: string | null;
             /** Publication Year */

@@ -35,6 +35,10 @@ function assignment(overrides: Partial<ScreeningAssignmentRead> = {}): Screening
       journal_title: 'Lancet',
       pmid: null,
       publication_year: 2021,
+      mesh_terms: null,
+      keywords: null,
+      article_type: null,
+      language: null,
     },
     my_decision: {
       id: 'd1',
@@ -117,6 +121,7 @@ function renderView({canReview = true, row = ROW}: {canReview?: boolean; row?: S
         row={row}
         config={config(canReview)}
         phase="title_abstract"
+        criteria={{inclusion: [], exclusion: []}}
         maximized={false}
         onDecided={vi.fn()}
         onNotInPhase={onNotInPhase}

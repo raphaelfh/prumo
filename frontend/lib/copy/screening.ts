@@ -103,7 +103,29 @@ export const screening = {
   reportNotRetrieved: 'Report not retrieved',
   decisionNoteLabel: 'Note (optional)',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',
+
+  // Keyboard shortcuts popover (`ShortcutsHelp`)
+  shortcutsTitle: 'Keyboard shortcuts',
+  shortcutsButton: 'Keyboard shortcuts',
+  shortcutMove: 'Move between records',
+  shortcutOpen: 'Open the record',
+  shortcutEsc: 'Close, one layer at a time',
+  shortcutSelect: 'Select a row · a range · all',
+  shortcutMaximize: 'Maximize the panel',
+  shortcutPanel: 'Show or hide the panel',
+  shortcutDecide: 'Include · Exclude · Maybe',
+  shortcutReason: 'Exclude with a reason',
+  shortcutSearch: 'Search',
+  shortcutFilter: 'Filter',
+  shortcutHelp: 'Show this list',
+
   noAbstract: 'No abstract available',
+  pmidLabel: 'PMID',
+  doiLabel: 'DOI',
+  meshLabel: 'MeSH',
+  keywordsLabel: 'Keywords',
+  languageChipAria: 'Language: {{language}}',
+  typeChipAria: 'Article type: {{type}}',
 
   // Title/abstract workspace
   panelToggle: 'Toggle the record panel',
@@ -231,6 +253,17 @@ export const screening = {
   selectRecord: 'Select {{title}}',
   selectAllRecords: 'Select all records',
   removeFilterAria: 'Remove filter {{label}}',
+
+  // Protocol criteria beside the record (`CriteriaPanel`).
+  criteriaToggle: 'Criteria ({{n}})',
+  criteriaInclusion: 'Include if',
+  criteriaExclusion: 'Exclude if',
+  criteriaRailLabel: 'Screening criteria',
+
+  // Reviewer note on a decision (`DecisionNote`) and the arbitrator's view of it.
+  noteAdd: 'Add note',
+  noteLabel: 'Note (optional)',
+  peerNote: 'Note: {{note}}',
 
   // Errors (`lib/screening/errors.ts`): no `{{…}}` placeholders — the mapper fills nothing.
   errorConfigFrozen: 'Reviewers per record cannot change after the first decision.',

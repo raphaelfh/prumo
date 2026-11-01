@@ -27,6 +27,7 @@ import {useSearchParams} from 'react-router';
 import {toast} from 'sonner';
 
 import {ListDetailSplitShell} from '@/components/layout/ListDetailSplitShell';
+import {ShortcutsHelp} from '@/components/screening/ShortcutsHelp';
 import {ErrorState} from '@/components/patterns/ErrorState';
 import {EmptyListState} from '@/components/shared/list';
 import {Skeleton} from '@/components/ui/skeleton';
@@ -315,6 +316,7 @@ export function ScreeningWorkspace({
         />
       )}
       {!readOnly && myLeft > 0 && <StartScreeningButton onStart={start} />}
+      <ShortcutsHelp />
     </>
   );
 
@@ -393,6 +395,10 @@ export function ScreeningWorkspace({
   }
 
   const selectedRow = rows?.find((row) => row.article_id === articleId) ?? null;
+  const criteria = {
+    inclusion: records.data?.inclusion_criteria ?? [],
+    exclusion: records.data?.exclusion_reasons ?? [],
+  };
 
   return (
     <ListDetailSplitShell
@@ -409,6 +415,7 @@ export function ScreeningWorkspace({
             row={selectedRow}
             config={config}
             phase={phase}
+            criteria={criteria}
             maximized={maximized}
             onDecided={onDecided}
             onNotInPhase={onNotInPhase}

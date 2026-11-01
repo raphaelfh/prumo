@@ -13,6 +13,8 @@ import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningConfigRead, ScreeningPhase, ScreeningRecordRow} from '@/services/screeningService';
 
 import {AssignmentView} from './AssignmentView';
+import type {ScreeningCriteria} from './CriteriaPanel';
+import {RecordIdentifiers} from './RecordMeta';
 import {RecordStatusChip} from './RecordStatusChip';
 import {Notice} from './ScreeningParts';
 
@@ -22,7 +24,9 @@ export interface ScreeningRecordPanelProps {
   row: ScreeningRecordRow | null;
   config: ScreeningConfigRead;
   phase: ScreeningPhase;
-  /** The workspace's controlled shell state: at full text the maximized panel splits the PDF beside the pane. */
+  /** The protocol criteria, shown beside an enrolled record (never on the placeholder or a not-enrolled one). */
+  criteria: ScreeningCriteria;
+  /** The workspace's controlled shell state: the criteria rail over the disclosure; at full text the PDF beside the pane. */
   maximized: boolean;
   /** After a successful decision (auto-advance and the announcement are the caller's). */
   onDecided: (row: ScreeningRecordRow) => void;
@@ -35,7 +39,6 @@ function NotEnrolledBody({projectId, row, canManage}: {projectId: string; row: S
   const byline = [row.first_author, row.journal_title, row.publication_year]
     .filter((part) => part !== null && part !== '')
     .join(' · ');
-  const ids = [row.pmid && `PMID ${row.pmid}`, row.doi && `DOI ${row.doi}`].filter(Boolean).join(' · ');
 
   const enrollOne = () =>
     enroll.mutate(
@@ -55,7 +58,7 @@ function NotEnrolledBody({projectId, row, canManage}: {projectId: string; row: S
       <article className="flex min-w-0 flex-col gap-2">
         <h2 className="text-base font-semibold leading-snug text-foreground">{row.title}</h2>
         {byline && <p className="text-[13px] text-muted-foreground">{byline}</p>}
-        {ids && <p className="text-xs text-muted-foreground">{ids}</p>}
+        <RecordIdentifiers article={row} />
       </article>
       {canManage ? (
         <div>
@@ -75,6 +78,7 @@ export function ScreeningRecordPanel({
   row,
   config,
   phase,
+  criteria,
   maximized,
   onDecided,
   onNotInPhase,
@@ -92,6 +96,7 @@ export function ScreeningRecordPanel({
       row={row}
       config={config}
       phase={phase}
+      criteria={criteria}
       maximized={maximized}
       onDecided={onDecided}
       onNotInPhase={onNotInPhase}

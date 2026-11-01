@@ -11,9 +11,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
+from app.models.article import Article
 from app.models.project import Project
+from app.models.screening import ScreeningAssignment, ScreeningDecision
 from app.models.user import Profile
-from app.seed_screening import build, resolve_profiles
+from app.seed_screening import _ARTICLES, build, resolve_profiles
 from tests.integration.conftest import SEED
 from tests.integration.helpers.engine_setup import client_as
 from tests.integration.helpers.screening_fixtures import add_member
@@ -80,6 +82,38 @@ async def _enrolled_full_text(db: AsyncSession, user: UUID, project_id: UUID) ->
         app.dependency_overrides.clear()
     assert response.status_code == 200, response.text
     return int(response.json()["data"]["full_text_enrolled"])
+
+
+async def test_seed_carries_the_reading_states(db_session: AsyncSession) -> None:
+    scratch = await make_project(db_session)
+    r1 = await add_member(db_session, scratch, "reviewer")
+    r2 = await add_member(db_session, scratch, "reviewer")
+    project_id = await build(db_session, manager_id=SEED.primary_profile, reviewer_ids=(r1, r2))
+
+    rows = (
+        await db_session.execute(select(Article).where(Article.project_id == project_id))
+    ).scalars()
+    by_title = {article.title: article for article in rows}
+    structured = by_title[_ARTICLES[1][0]]
+    assert structured.abstract is not None
+    assert structured.abstract.startswith("BACKGROUND:")
+    assert structured.mesh_terms == ["Sepsis", "Humans", "Adult"]
+    assert by_title[_ARTICLES[3][0]].language == "spa"
+
+    notes = (
+        await db_session.execute(
+            select(ScreeningDecision.reviewer_id, ScreeningDecision.rationale)
+            .join(ScreeningAssignment, ScreeningAssignment.id == ScreeningDecision.assignment_id)
+            .where(
+                ScreeningAssignment.project_id == project_id,
+                ScreeningAssignment.article_id == by_title[_ARTICLES[0][0]].id,
+            )
+        )
+    ).tuples()
+    assert dict(notes.all()) == {
+        r1: "Adults with sepsis, meets inclusion",
+        r2: "Paediatric cohort",
+    }
 
 
 async def _created_at(db: AsyncSession, profile_id: UUID) -> Any:
