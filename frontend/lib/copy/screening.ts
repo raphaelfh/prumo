@@ -193,6 +193,11 @@ export const screening = {
   criteriaExclusion: 'Exclude if',
   criteriaRailLabel: 'Screening criteria',
 
+  // Reviewer note on a decision (`DecisionNote`) and the arbitrator's view of it.
+  noteAdd: 'Add note',
+  noteLabel: 'Note (optional)',
+  peerNote: 'Note: {{note}}',
+
   // Errors (`lib/screening/errors.ts`): no `{{…}}` placeholders — the mapper fills nothing.
   errorConfigFrozen: 'Reviewers per record cannot change after the first decision.',
   errorTooFewReviewers: 'The project has fewer reviewers than that.',

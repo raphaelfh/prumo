@@ -69,6 +69,21 @@ describe('ConflictRulingForm', () => {
     expect(screen.queryByText('Reviewer B Name')).toBeNull();
   });
 
+  it("shows each reviewer's note under their label", () => {
+    const withNote: ScreeningAssignmentRead = {
+      ...READ,
+      peer_decisions: [{...READ.peer_decisions[0], rationale: 'Adults only'}, READ.peer_decisions[1]],
+    };
+    render(<ConflictRulingForm read={withNote} busy={false} onRule={vi.fn()} />);
+    const rowA = screen.getByText('Reviewer A').closest('li');
+    const rowB = screen.getByText('Reviewer B').closest('li');
+    expect(rowA).toHaveTextContent('Note: Adults only');
+    expect(rowB).not.toHaveTextContent('Note:');
+    expect(screen.getAllByText(/^Note:/)).toHaveLength(1);
+    expect(screen.queryByText('Reviewer A Name')).toBeNull();
+    expect(screen.queryByText('Reviewer B Name')).toBeNull();
+  });
+
   it("adopts a reviewer's decision with every decision id ruled on", async () => {
     const user = userEvent.setup();
     const onRule = renderForm();

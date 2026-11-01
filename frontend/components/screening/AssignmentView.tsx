@@ -28,6 +28,7 @@ import type {
 import {ConflictRulingForm} from './ConflictRulingForm';
 import {CriteriaPanel, criteriaCount, type ScreeningCriteria} from './CriteriaPanel';
 import {DecisionButtons} from './DecisionButtons';
+import {DecisionNote, useDecisionNoteForm} from './DecisionNote';
 import {RecordStatusChip} from './RecordStatusChip';
 import {decisionLabel, LoadingState, RecordBody} from './ScreeningParts';
 
@@ -130,6 +131,8 @@ export function AssignmentView({
   const projectId = query.data?.project_id ?? '';
   const decide = useDecide(projectId);
   const arbitrate = useArbitrate(projectId);
+  // Before the early returns; the panel keys this view by assignment, so another record starts blank.
+  const noteForm = useDecisionNoteForm();
   // `isPending` reaches the buttons only after a re-render; two keys pressed
   // before it would both post. This flag flips at once.
   const inFlight = useRef(false);
@@ -168,10 +171,12 @@ export function AssignmentView({
   const onDecide = (body: ScreeningDecisionCreate) => {
     if (inFlight.current) return;
     inFlight.current = true;
+    const rationale = noteForm.getValues('note').trim();
     decide.mutate(
-      {assignmentId, body},
+      {assignmentId, body: rationale ? {...body, rationale} : body},
       {
         onSuccess: () => {
+          noteForm.reset();
           if (solo) toast.success(t('screening', 'changedTo').replace('{{decision}}', decisionLabel(body.decision)));
           onDecided(row);
         },
@@ -232,7 +237,8 @@ export function AssignmentView({
       </div>
       {canDecide && (
         <div className="shrink-0 border-t border-border/40 bg-background px-4 py-3">
-          <div className={cn('mx-auto w-full', columnWidth)}>
+          <div className={cn('mx-auto flex w-full flex-col gap-2', columnWidth)}>
+            <DecisionNote form={noteForm} disabled={busy} />
             <DecisionButtons
               reasons={read.exclusion_reasons}
               disabled={busy}
