@@ -31,6 +31,7 @@ from app.models.extraction_workflow import ExtractionProposalRecord
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
 # orchestrator package.
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction.workbook import (
     ExportShape,
     allocate_titles,
@@ -38,6 +39,7 @@ from app.services.exports.extraction.workbook import (
     matrix_fits,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -61,6 +63,17 @@ _RUN_ID = uuid4()
 _INST_ID = uuid4()
 _ARTICLE_ID = uuid4()
 _GENERATED_AT = datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC)
+
+
+def _tv(raw: object) -> ExportValue:
+    """``raw`` typed against a TEXT field, as a value-map entry."""
+    return to_export_value(
+        {"value": raw},
+        FieldDescriptor(
+            field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+        ),
+        {},
+    )
 
 
 def _fixed_layout() -> ExportLayout:
@@ -156,7 +169,7 @@ def _fixed_layout() -> ExportLayout:
         notes=ExportNotes(
             generated_at=_GENERATED_AT,
         ),
-        value_map={(_RUN_ID, _INST_ID, _FIELD_ID): "Existing registry"},
+        value_map={value_key(_RUN_ID, _INST_ID, _FIELD_ID): _tv("Existing registry")},
         front_matter=front_matter,
         data_dictionary=data_dictionary,
         tidy_tables=tidy_tables,
@@ -242,10 +255,17 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
 
 
 @pytest.mark.asyncio
-async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() -> None:
-    """Regression: when mode=ALL_USERS, the consensus value_map uses 4-tuple
-    keys (run_id, instance_id, field_id, None). _load_ai_proposal_rows must
-    use the 4-tuple lookup; a 3-tuple would silently produce final_value=None.
+@pytest.mark.parametrize(
+    ("mode", "reviewer_slot"),
+    [(ExportMode.ALL_USERS, None), (ExportMode.SINGLE_USER, uuid4())],
+    ids=["all_users_reads_consensus_slot", "single_user_reads_reviewer_slot"],
+)
+async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode(
+    mode: ExportMode, reviewer_slot
+) -> None:
+    """Regression: "Final value used" reads the primary rater's slot of the
+    value_map: consensus (None) in ALL_USERS, the reviewer in SINGLE_USER. A
+    missed slot would silently produce final_value=None.
     """
     from app.services.extraction_export_service import ExtractionExportService
 
@@ -277,8 +297,8 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         entries={(entity_type_id, None): (inst_id,)},
     )
 
-    # ALL_USERS value_map: consensus column uses (run_id, inst_id, field_id, None).
-    value_map = {(run_id, inst_id, field_id, None): "Existing registry"}
+    # The value sits ONLY under the primary rater's slot (None, or the reviewer).
+    value_map = {value_key(run_id, inst_id, field_id, reviewer_slot): _tv("Existing registry")}
 
     # Mock the six DB execute calls in _load_ai_proposal_rows order (B-3a):
     #   1. instance query, 2. proposal query, 3. evidence query,
@@ -336,8 +356,9 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         articles=(article,),
         sections=(section,),
         value_map=value_map,
-        mode=ExportMode.ALL_USERS,
-        target_reviewer_id=None,
+        mode=mode,
+        target_reviewer_id=reviewer_slot,
+        labels={},
     )
 
     assert len(rows) == 1
@@ -560,6 +581,7 @@ def _appraisal_layout(
         reviewers=reviewers,
         value_map=value_map,
         mode=ExportMode.ALL_USERS,
+        reviewer_id=None,
     )
     return ExportLayout(
         project_name="QA Project",
@@ -655,12 +677,12 @@ def _tied_appraisal_inputs():
     # for the consensus column AND for each reviewer. The differing byte strings
     # give the first-wins tie-break teeth (a last-wins rollup would yield ``high``).
     value_map = {
-        (run_id, inst1, f1.field_id, None): "High",
-        (run_id, inst2, f2.field_id, None): "high",
-        (run_id, inst1, f1.field_id, r1): "High",
-        (run_id, inst2, f2.field_id, r1): "high",
-        (run_id, inst1, f1.field_id, r2): "High",
-        (run_id, inst2, f2.field_id, r2): "high",
+        value_key(run_id, inst1, f1.field_id): _tv("High"),
+        value_key(run_id, inst2, f2.field_id): _tv("high"),
+        value_key(run_id, inst1, f1.field_id, r1): _tv("High"),
+        value_key(run_id, inst2, f2.field_id, r1): _tv("high"),
+        value_key(run_id, inst1, f1.field_id, r2): _tv("High"),
+        value_key(run_id, inst2, f2.field_id, r2): _tv("high"),
     }
     return (d1, d2), (article,), reviewers, value_map
 

@@ -51,6 +51,9 @@ export function useListKeyboardShortcuts({
                 return;
             }
             if (e.key === 'Escape') {
+                // ListDetailSplitShell's capture-phase Escape chain already
+                // undid one step on this press (and marked it handled).
+                if (e.defaultPrevented) return;
                 if (filterPopoverOpen) {
                     e.preventDefault();
                     setFilterPopoverOpen(false);

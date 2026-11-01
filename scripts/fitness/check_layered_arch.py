@@ -53,6 +53,7 @@ ENTRYPOINTS = frozenset(
         "seed_instrument",
         "seed_probast_ai",
         "seed_probast_ai_data",
+        "seed_screening",
         "worker",
     }
 )
