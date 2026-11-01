@@ -2,7 +2,7 @@ import { useSearchParams } from 'react-router';
 import { Check, ChevronDown } from 'lucide-react';
 import { useShellLocation } from '@/hooks/useShellLocation';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
-import { getSectionViews } from '@/components/layout/sectionViews';
+import { defaultSectionView, getSectionViews } from '@/components/layout/sectionViews';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,8 +25,8 @@ export function SectionViewSwitcher() {
 
   const urlParam = views[0].urlParam;
   const fromUrl = searchParams.get(urlParam);
-  const active = views.some((v) => v.value === fromUrl) ? (fromUrl as string) : views[0].value;
-  const activeLabel = views.find((v) => v.value === active)?.label ?? views[0].label;
+  const active = views.some((v) => v.value === fromUrl) ? (fromUrl as string) : defaultSectionView(views).value;
+  const activeLabel = views.find((v) => v.value === active)?.label ?? defaultSectionView(views).label;
 
   const select = (value: string) => {
     const next = new URLSearchParams(searchParams);

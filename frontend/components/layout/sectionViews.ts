@@ -5,6 +5,8 @@ export interface SectionView {
   label: string;
   urlParam: string;
   managerOnly?: boolean;
+  /** The view shown when the URL names none (or an unknown one); else the first. */
+  isDefault?: true;
 }
 
 const sectionViews: Record<string, SectionView[]> = {
@@ -19,10 +21,15 @@ const sectionViews: Record<string, SectionView[]> = {
     { value: 'configuration', label: t('qa', 'tabConfiguration'), urlParam: 'qaTab', managerOnly: true },
   ],
   screening: [
-    { value: 'title_abstract', label: t('screening', 'tabTitleAbstract'), urlParam: 'screeningTab' },
+    { value: 'duplicates', label: t('duplicates', 'tabDuplicates'), urlParam: 'screeningTab', managerOnly: true },
+    { value: 'title_abstract', label: t('screening', 'tabTitleAbstract'), urlParam: 'screeningTab', isDefault: true },
     { value: 'settings', label: t('screening', 'tabSettings'), urlParam: 'screeningTab', managerOnly: true },
   ],
 };
+
+export function defaultSectionView(views: SectionView[]): SectionView {
+  return views.find((v) => v.isDefault) ?? views[0];
+}
 
 export function getSectionViews(sectionId: string): SectionView[] {
   return sectionViews[sectionId] ?? [];

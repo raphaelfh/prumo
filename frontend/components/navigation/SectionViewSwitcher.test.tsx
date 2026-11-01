@@ -63,6 +63,24 @@ describe('SectionViewSwitcher', () => {
     expect(screen.getByRole('tab', { name: 'tabSettings' })).toBeInTheDocument();
   });
 
+  it('highlights Title/abstract by default with Duplicates listed first', () => {
+    roleMock.mockReturnValue({ isManager: true, role: 'manager', loading: false });
+    renderWith('screening');
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'tabDuplicates',
+      'tabTitleAbstract',
+      'tabSettings',
+    ]);
+    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'tabDuplicates' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('hides Duplicates for a member', () => {
+    roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
+    renderWith('screening');
+    expect(screen.queryByRole('tab', { name: 'tabDuplicates' })).toBeNull();
+  });
+
   it('hides Settings for a screening member', () => {
     roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
     renderWith('screening');

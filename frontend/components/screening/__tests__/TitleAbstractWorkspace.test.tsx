@@ -368,3 +368,111 @@ describe('TitleAbstractWorkspace — selection', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', {name: 'Select Beta cohort'})).not.toBeChecked());
   });
 });
+
+const DUPLICATES_URL = '*/api/v1/projects/:projectId/duplicates';
+
+function pairs(n: number) {
+  const side = (id: string) => ({
+    article_id: id,
+    authors: [],
+    doi: null,
+    has_abstract: true,
+    has_pdf: false,
+    has_review_work: false,
+    ingestion_source: null,
+    journal_title: null,
+    pmid: null,
+    publication_year: 2020,
+    screening_decisions: 0,
+    title: `Title ${id}`,
+  });
+  return Array.from({length: n}, (_, i) => ({
+    article_id: `r${i}`,
+    basis: 'title',
+    kept: side(`k${i}`),
+    kept_article_id: `k${i}`,
+    match_label: 'title',
+    removed: side(`r${i}`),
+    tier: 'likely',
+  }));
+}
+
+function serveEnroll() {
+  const calls = {count: 0};
+  server.use(
+    http.post(ENROLL_URL, () => {
+      calls.count += 1;
+      return ok({enrolled: 2, already_enrolled: 0});
+    }),
+  );
+  return calls;
+}
+
+describe('TitleAbstractWorkspace — Enroll anyway?', () => {
+  const buttons = [
+    {name: 'Enroll all articles', cfg: () => config({...MANAGER, enrolled: 0, not_enrolled: 2})},
+    {name: 'Enroll 2 new', cfg: () => config({...MANAGER, enrolled: 7, not_enrolled: 2})},
+  ];
+
+  it.each(buttons)('asks before "$name" while open pairs exist', async ({name, cfg}) => {
+    serveRecords([ALPHA, notEnrolled(BETA)]);
+    server.use(http.get(DUPLICATES_URL, () => ok({open: pairs(23), resolved: []})));
+    const enroll = serveEnroll();
+    const user = userEvent.setup();
+    renderWorkspace({cfg: cfg()});
+    await screen.findByRole('button', {name: 'Alpha trial'});
+
+    await user.click(screen.getByRole('button', {name}));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('Enroll anyway?')).toBeInTheDocument();
+    expect(within(dialog).getByText('23 possible duplicates not reviewed. Enroll anyway?')).toBeInTheDocument();
+    expect(enroll.count).toBe(0);
+
+    await user.click(within(dialog).getByRole('button', {name: 'Enroll anyway'}));
+    await waitFor(() => expect(enroll.count).toBe(1));
+  });
+
+  it.each(buttons)('enrolls "$name" without asking when no pair is open', async ({name, cfg}) => {
+    serveRecords([ALPHA, notEnrolled(BETA)]);
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: pairs(3)})));
+    const enroll = serveEnroll();
+    const user = userEvent.setup();
+    renderWorkspace({cfg: cfg()});
+    await screen.findByRole('button', {name: 'Alpha trial'});
+
+    await user.click(screen.getByRole('button', {name}));
+
+    await waitFor(() => expect(enroll.count).toBe(1));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('enrolls directly when the duplicates fetch fails', async () => {
+    serveRecords([ALPHA, notEnrolled(BETA)]);
+    server.use(http.get(DUPLICATES_URL, () => fail(500, 'INTERNAL_ERROR')));
+    const enroll = serveEnroll();
+    const user = userEvent.setup();
+    renderWorkspace({cfg: config({...MANAGER, enrolled: 7, not_enrolled: 2})});
+    await screen.findByRole('button', {name: 'Alpha trial'});
+
+    await user.click(screen.getByRole('button', {name: 'Enroll 2 new'}));
+
+    await waitFor(() => expect(enroll.count).toBe(1));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('"Review duplicates" switches to the Duplicates sub-view without enrolling', async () => {
+    serveRecords([ALPHA, notEnrolled(BETA)]);
+    server.use(http.get(DUPLICATES_URL, () => ok({open: pairs(2), resolved: []})));
+    const enroll = serveEnroll();
+    const user = userEvent.setup();
+    renderWorkspace({cfg: config({...MANAGER, enrolled: 7, not_enrolled: 2})});
+    await screen.findByRole('button', {name: 'Alpha trial'});
+
+    await user.click(screen.getByRole('button', {name: 'Enroll 2 new'}));
+    await user.click(await screen.findByRole('button', {name: 'Review duplicates'}));
+
+    await waitFor(() => expect(search().get('screeningTab')).toBe('duplicates'));
+    expect(enroll.count).toBe(0);
+  });
+});

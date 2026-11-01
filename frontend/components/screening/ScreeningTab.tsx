@@ -2,14 +2,17 @@
  * The project's Screening tab (spec §4, §4.6): the config read gates every
  * sub-view. While it is pending or errored the tab shows the loading / error
  * state and never touches the URL. Once it has succeeded:
- * - `?screeningTab=settings` without `can_manage` is redirected to
- *   `title_abstract` (replace, no toast);
+ * - `?screeningTab=settings` or `duplicates` without `can_manage` is
+ *   redirected to `title_abstract` (replace, no toast);
  * - a manager with no `?screeningTab` and no config lands on Settings (first
  *   run, replace).
  * Title/abstract without a config shows the toolbar, then "not set up";
  * otherwise the workspace. `?assignment=` is stripped by the workspace.
+ * Duplicates does not read the screening config, so it renders before the
+ * not-set-up gate. Changing sub-view drops the selection and status filter
+ * (`article`, `kept`, `status`): they belong to the view that wrote them.
  */
-import {useEffect} from 'react';
+import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router';
 
 import {ErrorState} from '@/components/patterns/ErrorState';
@@ -26,10 +29,11 @@ import {PubMedImportButton} from './ScreeningToolbarActions';
 import {TitleAbstractWorkspace} from './TitleAbstractWorkspace';
 
 const TAB_PARAM = 'screeningTab';
+const VIEW_PARAMS = ['article', 'kept', 'status'] as const;
 
 /** The URL change the loaded config demands, or null. */
 function requiredTab(config: ScreeningConfigRead, tab: string | null): string | null {
-  if (tab === 'settings' && !config.can_manage) return 'title_abstract';
+  if ((tab === 'settings' || tab === 'duplicates') && !config.can_manage) return 'title_abstract';
   if (tab === null && config.reviewer_count === null && config.can_manage) return 'settings';
   return null;
 }
@@ -79,6 +83,27 @@ export function ScreeningTab({projectId}: {projectId: string}) {
       {replace: true},
     );
 
+  // Previous value in state: the render notes the tab change as a fresh
+  // token, and the effect keyed on that token does the URL write.
+  const [seenTab, setSeenTab] = useState(tabParam);
+  const [tabChange, setTabChange] = useState<object | null>(null);
+  if (seenTab !== tabParam) {
+    setSeenTab(tabParam);
+    setTabChange({});
+  }
+  useEffect(() => {
+    if (tabChange === null) return;
+    setSearchParams(
+      (prev) => {
+        if (!VIEW_PARAMS.some((name) => prev.has(name))) return prev;
+        const next = new URLSearchParams(prev);
+        VIEW_PARAMS.forEach((name) => next.delete(name));
+        return next;
+      },
+      {replace: true},
+    );
+  }, [tabChange, setSearchParams]);
+
   useEffect(() => {
     if (redirectTo === null) return;
     setSearchParams(
@@ -108,6 +133,8 @@ export function ScreeningTab({projectId}: {projectId: string}) {
   if (tab === 'settings' && config.can_manage) {
     return <ScreeningSettings projectId={projectId} config={config} />;
   }
+  // Placeholder until the Duplicates workspace is wired in.
+  if (tab === 'duplicates') return null;
   if (config.reviewer_count === null) {
     return <NotSetUp projectId={projectId} config={config} onOpenSettings={() => setTab('settings')} />;
   }
