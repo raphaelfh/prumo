@@ -1,12 +1,14 @@
 /**
  * The full-text decision pane (spec §7.3): where the report came from at
  * title/abstract, a "No PDF attached" line when the row has no main file
- * (deciding stays allowed), then the full-text decision buttons with their note.
+ * (deciding stays allowed), then the reviewer's note (`DecisionNote`, the
+ * caller's form) and the full-text decision buttons.
  */
 import {t} from '@/lib/copy';
 import type {ScreeningDecisionCreate, ScreeningRecordRow} from '@/services/screeningService';
 
 import {DecisionButtons} from './DecisionButtons';
+import {DecisionNote, type DecisionNoteForm} from './DecisionNote';
 
 const TA_KIND_LABEL = {consensus: 'outcomeConsensus', arbitrated: 'outcomeArbitrated'} as const;
 
@@ -28,15 +30,26 @@ export interface FullTextDecisionPaneProps {
   /** A solo record's own decision (the recorded-choice ring). */
   recorded?: ScreeningDecisionCreate['decision'] | null;
   recordedReason?: string | null;
+  /** The caller reads it in `onDecide` and resets it on success. */
+  noteForm: DecisionNoteForm;
   onDecide: (body: ScreeningDecisionCreate) => void;
 }
 
-export function FullTextDecisionPane({row, reasons, busy, recorded, recordedReason, onDecide}: FullTextDecisionPaneProps) {
+export function FullTextDecisionPane({
+  row,
+  reasons,
+  busy,
+  recorded,
+  recordedReason,
+  noteForm,
+  onDecide,
+}: FullTextDecisionPaneProps) {
   const provenance = taProvenance(row);
   return (
     <div className="flex flex-col gap-2">
       {provenance && <p className="text-xs text-muted-foreground">{provenance}</p>}
       {!row.has_pdf && <p className="text-xs text-muted-foreground">{t('screening', 'noPdfAttached')}</p>}
+      <DecisionNote form={noteForm} disabled={busy} />
       <DecisionButtons
         reasons={reasons}
         disabled={busy}

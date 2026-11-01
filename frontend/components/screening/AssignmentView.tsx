@@ -232,6 +232,7 @@ export function AssignmentView({
         busy={busy}
         recorded={recorded}
         recordedReason={recordedReason}
+        noteForm={noteForm}
         onDecide={onDecide}
       />
     ) : canRule ? (
@@ -244,6 +245,7 @@ export function AssignmentView({
         projectId={read.project_id}
         row={row}
         read={read}
+        criteria={criteria}
         maximized={maximized}
         readOnly={isReadOnly(config)}
         decisionPane={pane}

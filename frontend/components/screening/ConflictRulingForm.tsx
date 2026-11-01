@@ -118,7 +118,6 @@ export function ConflictRulingForm({read, busy, onRule, phase}: ConflictRulingFo
             disabled={busy}
             onDecide={({decision, exclusion_reason}) => rule({decision, exclusion_reason})}
             phase={phase}
-            withNote={false}
           />
         )}
       </div>

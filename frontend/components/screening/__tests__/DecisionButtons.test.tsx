@@ -124,14 +124,6 @@ describe('DecisionButtons at full text', () => {
     expect(onDecide).toHaveBeenCalledWith({decision: 'not_retrieved'});
   });
 
-  it('the note rides along, trimmed', async () => {
-    const user = userEvent.setup();
-    const onDecide = renderButtons(null, FT);
-    await user.type(screen.getByLabelText(/decisionNoteLabel/), '  scanned copy only  ');
-    await user.click(screen.getByRole('button', {name: /decisionInclude/}));
-    expect(onDecide).toHaveBeenCalledWith({decision: 'include', rationale: 'scanned copy only'});
-  });
-
   it('3 does nothing', () => {
     const onDecide = renderButtons(null, FT);
     fireEvent.keyDown(window, {key: '3'});

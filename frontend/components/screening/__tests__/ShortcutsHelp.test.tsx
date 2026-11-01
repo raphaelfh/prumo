@@ -50,6 +50,17 @@ describe('ShortcutsHelp', () => {
     });
   });
 
+  it('at full text the decide row names 1 and 2 only', async () => {
+    const user = userEvent.setup();
+    render(<ShortcutsHelp phase="full_text" />);
+    await user.click(screen.getByRole('button', {name: 'Keyboard shortcuts'}));
+
+    const dialog = await screen.findByRole('dialog', {name: 'Keyboard shortcuts'});
+    const decide = within(dialog).getByText('Include · Exclude').closest('li');
+    expect(Array.from(decide?.querySelectorAll('kbd') ?? [], (kbd) => kbd.textContent)).toEqual(['1', '2']);
+    expect(within(dialog).queryByText('Include · Exclude · Maybe')).toBeNull();
+  });
+
   it('? opens the popover', async () => {
     render(<ShortcutsHelp />);
     expect(screen.queryByRole('dialog')).toBeNull();

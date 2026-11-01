@@ -9,6 +9,7 @@
  *
  * The PDF pane is always open and shows the PDF or the missing-PDF body
  * (with attach), so a PDF attached while maximized appears with no toggle.
+ * The criteria disclosure sits under the title in both layouts.
  * Every hook runs unconditionally, above the layout branches; the viewer
  * store and the chosen view reset when the article changes.
  */
@@ -24,6 +25,7 @@ import {t} from '@/lib/copy';
 import {createViewerStore} from '@/pdf-viewer/core';
 import type {ScreeningAssignmentRead, ScreeningRecordRow} from '@/services/screeningService';
 
+import {CriteriaPanel, type ScreeningCriteria} from './CriteriaPanel';
 import {RecordStatusChip} from './RecordStatusChip';
 import {RecordBody} from './ScreeningParts';
 
@@ -34,6 +36,7 @@ export interface FullTextRecordViewProps {
   row: ScreeningRecordRow;
   /** The article for the Abstract view. */
   read: ScreeningAssignmentRead;
+  criteria: ScreeningCriteria;
   /** The workspace's controlled shell state. */
   maximized: boolean;
   /** `isReadOnly(config)`: no attach. */
@@ -42,7 +45,15 @@ export interface FullTextRecordViewProps {
   decisionPane: ReactNode | null;
 }
 
-export function FullTextRecordView({projectId, row, read, maximized, readOnly, decisionPane}: FullTextRecordViewProps) {
+export function FullTextRecordView({
+  projectId,
+  row,
+  read,
+  criteria,
+  maximized,
+  readOnly,
+  decisionPane,
+}: FullTextRecordViewProps) {
   const belowDesktop = useIsBelowDesktop();
   const pdf = usePdfPanel({initialOpen: true, compact: useIsNarrow()});
   const [store, setStore] = useState(() => createViewerStore());
@@ -61,6 +72,7 @@ export function FullTextRecordView({projectId, row, read, maximized, readOnly, d
         <RecordStatusChip status={row.status} arbitrated={row.outcome_kind === 'arbitrated'} />
       </div>
       <h2 className="text-base font-semibold leading-snug text-foreground">{read.article.title}</h2>
+      <CriteriaPanel criteria={criteria} variant="disclosure" />
     </div>
   );
   const documents = (

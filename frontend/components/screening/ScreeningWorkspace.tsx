@@ -316,7 +316,7 @@ export function ScreeningWorkspace({
         />
       )}
       {!readOnly && myLeft > 0 && <StartScreeningButton onStart={start} />}
-      <ShortcutsHelp />
+      <ShortcutsHelp phase={phase} />
     </>
   );
 

@@ -101,7 +101,6 @@ export const screening = {
   reasonsTitle: 'Exclusion reason',
   keyboardHintFullText: '1 include · 2 or E exclude with reason',
   reportNotRetrieved: 'Report not retrieved',
-  decisionNoteLabel: 'Note (optional)',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',
 
   // Keyboard shortcuts popover (`ShortcutsHelp`)
@@ -114,6 +113,7 @@ export const screening = {
   shortcutMaximize: 'Maximize the panel',
   shortcutPanel: 'Show or hide the panel',
   shortcutDecide: 'Include · Exclude · Maybe',
+  shortcutDecideFullText: 'Include · Exclude',
   shortcutReason: 'Exclude with a reason',
   shortcutSearch: 'Search',
   shortcutFilter: 'Filter',

@@ -638,6 +638,31 @@ describe('ScreeningRecordPanel at full text', () => {
     expect(await screen.findByRole('button', {name: /Include/})).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('one note field: Add note, and the note rides with the decision', async () => {
+    serveAssignment(assignment());
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(DECIDE_URL, async ({request}) => {
+        bodies.push(await request.json());
+        return ok(assignment({status: 'awaiting_others'}));
+      }),
+    );
+    const user = userEvent.setup();
+    renderPanel({row: row(FT_ROW), config: config({full_text_reviewer_count: 2}), phase: 'full_text'});
+
+    await user.click(await screen.findByRole('button', {name: 'Add note'}));
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    await user.type(screen.getByLabelText('Note (optional)'), '  scanned copy only  ');
+    await user.click(screen.getByRole('button', {name: /Include/}));
+    await waitFor(() => expect(bodies).toEqual([{decision: 'include', rationale: 'scanned copy only'}]));
+  });
+
+  it('shows the criteria disclosure', async () => {
+    serveAssignment(assignment());
+    renderPanel({row: row(FT_ROW), config: config({full_text_reviewer_count: 2}), phase: 'full_text', criteria: CRITERIA});
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toBeInTheDocument();
+  });
+
   it('maps SCREENING_REASON_REQUIRED to its toast', async () => {
     serveAssignment(assignment());
     server.use(http.post(DECIDE_URL, () => fail(409, 'SCREENING_REASON_REQUIRED')));

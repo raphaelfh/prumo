@@ -2,7 +2,7 @@
  * Include / Exclude / Maybe, and "Exclude with reason" when the protocol
  * lists reasons. At full text there is no Maybe: Exclude (and 2 / E) always
  * opens the reasons, a reason being required; "Report not retrieved" is a
- * ghost button with no key; an optional note rides with every decision.
+ * ghost button with no key. The note is the caller's (`DecisionNote`).
  * The keyboard goes through the pure `screeningKeyAction`; one window listener applies it, unless another handler took the key or an
  * overlay other than its own reasons dialog is open. The caller keys this
  * component by record, so a record change closes the reasons dialog.
@@ -13,11 +13,10 @@
  * with a reason other than `recordedReason`.
  */
 import {Check} from 'lucide-react';
-import {useEffect, useId, useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 import {AppDialog} from '@/components/patterns/AppDialog';
 import {Button} from '@/components/ui/button';
-import {Textarea} from '@/components/ui/textarea';
 import {KbdBadge} from '@/components/ui/kbd-badge';
 import {isDialogOpen} from '@/hooks/useKeyboardShortcuts';
 import {t} from '@/lib/copy';
@@ -34,8 +33,6 @@ interface DecisionButtonsProps {
   recorded?: ScreeningDecisionCreate['decision'] | null;
   /** The recorded exclusion's reason: picking it again does nothing, another reason re-decides. */
   recordedReason?: string | null;
-  /** False: no note field (a ruling carries its own note). Full text only. */
-  withNote?: boolean;
 }
 
 type Decision = ScreeningDecisionCreate['decision'];
@@ -53,19 +50,11 @@ export function DecisionButtons({
   phase,
   recorded,
   recordedReason,
-  withNote = true,
 }: DecisionButtonsProps) {
   const fullText = phase === 'full_text';
   const [reasonsOpen, setReasonsOpen] = useState(false);
-  const [note, setNote] = useState('');
-  const noteId = useId();
   const reasonsList = useRef<HTMLOListElement>(null);
   const decisions = DECISIONS.filter(({decision}) => !(fullText && decision === 'maybe'));
-
-  const send = (body: ScreeningDecisionCreate) => {
-    const rationale = note.trim();
-    onDecide(fullText && rationale ? {...body, rationale} : body);
-  };
 
   const decide = (decision: Decision) => {
     // A full-text exclusion needs a reason: the list opens first, even over a
@@ -75,13 +64,13 @@ export function DecisionButtons({
       return;
     }
     if (decision === recorded) return;
-    send({decision});
+    onDecide({decision});
   };
 
   const pickReason = (reason: string) => {
     setReasonsOpen(false);
     if (recorded === 'exclude' && reason === recordedReason) return;
-    send({decision: 'exclude', exclusion_reason: reason});
+    onDecide({decision: 'exclude', exclusion_reason: reason});
   };
 
   useEffect(() => {
@@ -157,14 +146,6 @@ export function DecisionButtons({
           </Button>
         )}
       </div>
-      {fullText && withNote && (
-        <div className="flex flex-col gap-1">
-          <label htmlFor={noteId} className="text-xs text-muted-foreground">
-            {t('screening', 'decisionNoteLabel')}
-          </label>
-          <Textarea id={noteId} rows={2} value={note} onChange={(event) => setNote(event.target.value)} />
-        </div>
-      )}
       <p className="text-xs text-muted-foreground">
         {t('screening', fullText ? 'keyboardHintFullText' : 'keyboardHint')}
       </p>
