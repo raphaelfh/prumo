@@ -17,6 +17,7 @@ vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
 import {toast} from 'sonner';
 
+import type {ScreeningCriteria} from '@/components/screening/CriteriaPanel';
 import {ScreeningRecordPanel} from '@/components/screening/ScreeningRecordPanel';
 import {screeningKeys} from '@/lib/query-keys/screening';
 import type {ScreeningAssignmentRead, ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
@@ -129,15 +130,33 @@ function serveAssignment(read: ScreeningAssignmentRead) {
 interface RenderOptions {
   row?: ScreeningRecordRow | null;
   config?: ScreeningConfigRead;
+  criteria?: ScreeningCriteria;
+  maximized?: boolean;
 }
 
-function renderPanel({row: r = row(), config: c = config()}: RenderOptions = {}) {
+const NO_CRITERIA: ScreeningCriteria = {inclusion: [], exclusion: []};
+const CRITERIA: ScreeningCriteria = {inclusion: ['Adults'], exclusion: ['Not ML']};
+
+function renderPanel({
+  row: r = row(),
+  config: c = config(),
+  criteria = NO_CRITERIA,
+  maximized = false,
+}: RenderOptions = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
   const onDecided = vi.fn<(row: ScreeningRecordRow) => void>();
   const onNotInPhase = vi.fn<() => void>();
   render(
     <QueryClientProvider client={client}>
-      <ScreeningRecordPanel projectId="p1" row={r} config={c} onDecided={onDecided} onNotInPhase={onNotInPhase} />
+      <ScreeningRecordPanel
+        projectId="p1"
+        row={r}
+        config={c}
+        criteria={criteria}
+        maximized={maximized}
+        onDecided={onDecided}
+        onNotInPhase={onNotInPhase}
+      />
     </QueryClientProvider>,
   );
   return {client, onDecided, onNotInPhase};
@@ -150,8 +169,9 @@ beforeEach(() => {
 
 describe('ScreeningRecordPanel', () => {
   it('shows the placeholder with no row', () => {
-    renderPanel({row: null});
+    renderPanel({row: null, criteria: CRITERIA});
     expect(screen.getByText('Select a record')).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Criteria (2)'})).toBeNull();
     expect(screen.getByText('Pick a row to screen it here.')).toBeInTheDocument();
   });
 
@@ -352,9 +372,41 @@ describe('ScreeningRecordPanel', () => {
   });
 
   it('not enrolled: a reviewer sees metadata only', () => {
-    renderPanel({row: row({assignment_id: null, status: 'not_enrolled'})});
+    renderPanel({row: row({assignment_id: null, status: 'not_enrolled'}), criteria: CRITERIA, maximized: true});
+    expect(screen.queryByRole('complementary', {name: 'Screening criteria'})).toBeNull();
     expect(screen.getByRole('heading', {name: 'Deep learning for sepsis'})).toBeInTheDocument();
     expect(screen.queryByRole('button', {name: 'Enroll'})).toBeNull();
     expect(screen.getByText('A manager enrolls articles')).toBeInTheDocument();
+  });
+
+  it('docked shows the criteria disclosure and no rail', async () => {
+    serveAssignment(assignment());
+    renderPanel({criteria: CRITERIA});
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('complementary', {name: 'Screening criteria'})).toBeNull();
+  });
+
+  it('maximized shows the rail and no disclosure', async () => {
+    serveAssignment(assignment());
+    renderPanel({criteria: CRITERIA, maximized: true});
+    const rail = await screen.findByRole('complementary', {name: 'Screening criteria'});
+    expect(rail).toHaveTextContent('Adults');
+    expect(screen.queryByRole('button', {name: 'Criteria (2)'})).toBeNull();
+  });
+
+  it.each([
+    ['ruling', assignment({status: 'conflict', peer_decisions: [PEER_A, PEER_B]}), row({status: 'conflict'})],
+    [
+      'read-only',
+      assignment({
+        status: 'awaiting_others',
+        my_decision: {id: 'd1', decision: 'include', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+      }),
+      row({status: 'waiting', my_decision: 'include'}),
+    ],
+  ] as const)('the %s body shows the criteria too', async (_label, read, r) => {
+    serveAssignment(read);
+    renderPanel({row: r, config: config({can_arbitrate: true}), criteria: CRITERIA});
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toBeInTheDocument();
   });
 });

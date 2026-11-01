@@ -187,6 +187,12 @@ export const screening = {
   selectAllRecords: 'Select all records',
   removeFilterAria: 'Remove filter {{label}}',
 
+  // Protocol criteria beside the record (`CriteriaPanel`).
+  criteriaToggle: 'Criteria ({{n}})',
+  criteriaInclusion: 'Include if',
+  criteriaExclusion: 'Exclude if',
+  criteriaRailLabel: 'Screening criteria',
+
   // Errors (`lib/screening/errors.ts`): no `{{…}}` placeholders — the mapper fills nothing.
   errorConfigFrozen: 'Reviewers per record cannot change after the first decision.',
   errorTooFewReviewers: 'The project has fewer reviewers than that.',

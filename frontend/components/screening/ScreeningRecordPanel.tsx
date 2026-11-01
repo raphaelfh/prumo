@@ -13,6 +13,7 @@ import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
 
 import {AssignmentView} from './AssignmentView';
+import type {ScreeningCriteria} from './CriteriaPanel';
 import {RecordIdentifiers} from './RecordMeta';
 import {RecordStatusChip} from './RecordStatusChip';
 import {Notice} from './ScreeningParts';
@@ -22,6 +23,10 @@ export interface ScreeningRecordPanelProps {
   /** `null` → the placeholder. */
   row: ScreeningRecordRow | null;
   config: ScreeningConfigRead;
+  /** The protocol criteria, shown beside an enrolled record (never on the placeholder or a not-enrolled one). */
+  criteria: ScreeningCriteria;
+  /** The workspace's maximized state: picks the criteria rail over the disclosure. */
+  maximized: boolean;
   /** After a successful decision (auto-advance and the announcement are the caller's). */
   onDecided: (row: ScreeningRecordRow) => void;
   /** 403/404 on the assignment read, or 404 from decide/arbitrate: the caller clears the selection and toasts. */
@@ -67,7 +72,15 @@ function NotEnrolledBody({projectId, row, canManage}: {projectId: string; row: S
   );
 }
 
-export function ScreeningRecordPanel({projectId, row, config, onDecided, onNotInPhase}: ScreeningRecordPanelProps) {
+export function ScreeningRecordPanel({
+  projectId,
+  row,
+  config,
+  criteria,
+  maximized,
+  onDecided,
+  onNotInPhase,
+}: ScreeningRecordPanelProps) {
   if (row === null) {
     return <Notice title={t('screening', 'panelPlaceholderTitle')} body={t('screening', 'panelPlaceholderBody')} />;
   }
@@ -80,6 +93,8 @@ export function ScreeningRecordPanel({projectId, row, config, onDecided, onNotIn
       assignmentId={row.assignment_id}
       row={row}
       config={config}
+      criteria={criteria}
+      maximized={maximized}
       onDecided={onDecided}
       onNotInPhase={onNotInPhase}
     />

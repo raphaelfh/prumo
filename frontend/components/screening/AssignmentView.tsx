@@ -16,6 +16,7 @@ import {useArbitrate, useDecide} from '@/hooks/screening/useScreeningMutations';
 import {ApiError} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
+import {cn} from '@/lib/utils';
 import type {
   ScreeningArbitrationCreate,
   ScreeningAssignmentRead,
@@ -25,6 +26,7 @@ import type {
 } from '@/services/screeningService';
 
 import {ConflictRulingForm} from './ConflictRulingForm';
+import {CriteriaPanel, criteriaCount, type ScreeningCriteria} from './CriteriaPanel';
 import {DecisionButtons} from './DecisionButtons';
 import {RecordStatusChip} from './RecordStatusChip';
 import {decisionLabel, LoadingState, RecordBody} from './ScreeningParts';
@@ -108,11 +110,22 @@ interface AssignmentViewProps {
   assignmentId: string;
   row: ScreeningRecordRow;
   config: ScreeningConfigRead;
+  criteria: ScreeningCriteria;
+  /** Maximized → the criteria rail beside the record; docked → the disclosure above it. */
+  maximized: boolean;
   onDecided: (row: ScreeningRecordRow) => void;
   onNotInPhase: () => void;
 }
 
-export function AssignmentView({assignmentId, row, config, onDecided, onNotInPhase}: AssignmentViewProps) {
+export function AssignmentView({
+  assignmentId,
+  row,
+  config,
+  criteria,
+  maximized,
+  onDecided,
+  onNotInPhase,
+}: AssignmentViewProps) {
   const query = useScreeningAssignment(assignmentId);
   const projectId = query.data?.project_id ?? '';
   const decide = useDecide(projectId);
@@ -181,30 +194,45 @@ export function AssignmentView({assignmentId, row, config, onDecided, onNotInPha
     );
   };
 
+  const body = canDecide ? (
+    <RecordBody article={read.article} />
+  ) : canRule ? (
+    <div className="flex flex-col gap-4">
+      <RecordBody article={read.article} />
+      <Section title={t('screening', 'peerDecisionsTitle')}>
+        <ConflictRulingForm read={read} busy={busy} onRule={onRule} />
+      </Section>
+    </div>
+  ) : (
+    <AssignmentDetails read={read} />
+  );
+  // Maximized with a rail: wide enough for the 68ch reading column plus the 18rem rail.
+  const withRail = maximized && criteriaCount(criteria) > 0;
+  const columnWidth = withRail ? 'max-w-5xl' : 'max-w-3xl';
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
+        <div className={cn('mx-auto flex w-full flex-col gap-3 px-4 py-4', columnWidth)}>
           <div>
             <RecordStatusChip status={row.status} arbitrated={row.outcome_kind === 'arbitrated'} />
           </div>
-          {canDecide ? (
-            <RecordBody article={read.article} />
-          ) : canRule ? (
-            <div className="flex flex-col gap-4">
-              <RecordBody article={read.article} />
-              <Section title={t('screening', 'peerDecisionsTitle')}>
-                <ConflictRulingForm read={read} busy={busy} onRule={onRule} />
-              </Section>
+          {withRail ? (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+              <div className="min-w-0">{body}</div>
+              <CriteriaPanel criteria={criteria} variant="rail" />
             </div>
           ) : (
-            <AssignmentDetails read={read} />
+            <>
+              {!maximized && <CriteriaPanel criteria={criteria} variant="disclosure" />}
+              {body}
+            </>
           )}
         </div>
       </div>
       {canDecide && (
         <div className="shrink-0 border-t border-border/40 bg-background px-4 py-3">
-          <div className="mx-auto w-full max-w-3xl">
+          <div className={cn('mx-auto w-full', columnWidth)}>
             <DecisionButtons
               reasons={read.exclusion_reasons}
               disabled={busy}

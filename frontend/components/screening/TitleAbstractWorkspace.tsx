@@ -338,6 +338,10 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
   }
 
   const selectedRow = rows?.find((row) => row.article_id === articleId) ?? null;
+  const criteria = {
+    inclusion: records.data?.inclusion_criteria ?? [],
+    exclusion: records.data?.exclusion_reasons ?? [],
+  };
 
   return (
     <ListDetailSplitShell
@@ -353,6 +357,8 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
             projectId={projectId}
             row={selectedRow}
             config={config}
+            criteria={criteria}
+            maximized={maximized}
             onDecided={onDecided}
             onNotInPhase={onNotInPhase}
           />

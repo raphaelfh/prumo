@@ -113,6 +113,8 @@ function renderView({canReview = true, row = ROW}: {canReview?: boolean; row?: S
         assignmentId="a1"
         row={row}
         config={config(canReview)}
+        criteria={{inclusion: [], exclusion: []}}
+        maximized={false}
         onDecided={vi.fn()}
         onNotInPhase={onNotInPhase}
       />
