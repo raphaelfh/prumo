@@ -1,7 +1,9 @@
 /**
  * Title/abstract screening end to end on the list-first workspace, on its own
  * project (SCREENING_PROJECT_ID): the owner lands on Settings (first run),
- * sets two reviewers per record and enrolls from the Title/abstract list;
+ * sets two reviewers per record, merges the exact-PMID duplicate pair on the
+ * Duplicates sub-view (merge, undo, merge again) and enrolls the two remaining
+ * records from the Title/abstract list;
  * reviewer B starts screening and includes both records by keyboard (the
  * panel auto-advances); reviewer C decides by API (agreeing on Alpha,
  * disagreeing on Beta); the owner opens the conflict view, rules Beta with
@@ -28,8 +30,9 @@ import {
 } from "../_fixtures/fixture-ids";
 import { resetScreeningProject } from "../_fixtures/screening";
 
-const [ALPHA, BETA] = SCREENING_ARTICLES;
+const [ALPHA, BETA, ALPHA_DUPLICATE] = SCREENING_ARTICLES;
 const SCREENING_URL = `/projects/${SCREENING_PROJECT_ID}?tab=screening`;
+const DUPLICATES_URL = `${SCREENING_URL}&screeningTab=duplicates`;
 const PRISMA_URL = `/projects/${SCREENING_PROJECT_ID}?tab=prisma`;
 const RECORD_TITLE = /^E2E Screening (Alpha|Beta)$/;
 
@@ -96,8 +99,9 @@ test.beforeAll(async () => {
 test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   test.setTimeout(120_000);
 
-  // 1. Owner: the first run lands on Settings; two reviewers per record, then
-  //    enroll both articles from the Title/abstract list.
+  // 1. Owner: the first run lands on Settings; two reviewers per record; merge
+  //    the duplicate pair (Alpha is the oldest, so the suggested keeper); then
+  //    enroll the two remaining articles from the Title/abstract list.
   const ownerContext = await browser.newContext();
   const owner = await ownerContext.newPage();
   await loginViaUiAs(owner, OWNER_EMAIL, FIXTURE_PASSWORD);
@@ -106,7 +110,24 @@ test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   await owner.getByRole("radio", { name: "2 reviewers" }).check();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Screening is set up")).toBeVisible();
+
+  await owner.goto(DUPLICATES_URL);
+  await expect(owner.getByRole("tab", { name: "Open 1", exact: true })).toBeVisible();
+  await expect(owner.getByText("PMID", { exact: true })).toBeVisible();
+  const openPair = () => owner.getByRole("button", { name: ALPHA_DUPLICATE.title }).click();
+  await openPair();
+  await owner.getByRole("button", { name: "Merge, keep selected" }).click();
+  await expect(owner.getByText("Merged", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("tab", { name: "Open 0", exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(owner.getByRole("tab", { name: "Open 1", exact: true })).toBeVisible();
+  await openPair();
+  await owner.getByRole("button", { name: "Merge, keep selected" }).click();
+  await expect(owner.getByRole("tab", { name: "Open 0", exact: true })).toBeVisible();
+  await expect(owner.getByRole("tab", { name: "Resolved 1", exact: true })).toBeVisible();
+
   await owner.getByRole("tab", { name: "Title/abstract" }).click();
+  // No open pair is left, so no "Enroll anyway?" prompt interrupts.
   await owner.getByRole("button", { name: "Enroll all articles" }).click();
   await expect(owner.getByRole("tab", { name: "To screen 2", exact: true })).toBeVisible();
   await expect(owner.getByRole("tab", { name: "All 2", exact: true })).toBeVisible();
@@ -158,13 +179,14 @@ test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   // 5. Owner: PRISMA counts the outcomes.
   await owner.goto(PRISMA_URL);
   await expect(owner.getByRole("heading", { name: "PRISMA counts" })).toBeVisible();
+  // total = 3 articles, removed = 1 (the merged duplicate), enrolled = 2.
   for (const name of [
-    "Manual 2",
-    "Records identified 2",
-    "Duplicates removed 0",
-    "Records screened 2",
-    "Records excluded 1",
-    "Sought for retrieval 1",
+    "Manual 3", // every project article is manual-sourced, removed ones included
+    "Records identified 3", // identified_total = sum of the source counts = total
+    "Duplicates removed 1", // identified_total - total + removed = 3 - 3 + 1
+    "Records screened 2", // enrolled records with an assignment
+    "Records excluded 1", // Beta, ruled exclude
+    "Sought for retrieval 1", // Alpha, included by both
   ]) {
     await expect(owner.getByRole("row", { name, exact: true })).toBeVisible();
   }
@@ -178,9 +200,9 @@ test("a reset after the full flow starts clean", async () => {
   const config = await apiGet<ConfigResponse>(`/projects/${SCREENING_PROJECT_ID}/screening/config`, ownerToken);
   expect(config.reviewer_count).toBeNull();
   expect(config.enrolled).toBe(0);
-  expect(config.not_enrolled).toBe(2);
+  expect(config.not_enrolled).toBe(3); // total 3, none removed after the reset
 
   const prisma = await apiGet<PrismaResponse>(`/projects/${SCREENING_PROJECT_ID}/prisma`, ownerToken);
   expect(prisma.screened).toBe(0);
-  expect(prisma.other_removed).toBe(2);
+  expect(prisma.other_removed).toBe(3); // total - enrolled - removed = 3 - 0 - 0
 });
