@@ -84,6 +84,7 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
       <div className="flex flex-wrap items-center gap-2">
         {DECISIONS.map(({decision, key, label, variant}) => {
           const isRecorded = recorded === decision;
+          const filled = !isRecorded && variant === 'default';
           return (
             <Button
               key={decision}
@@ -97,7 +98,11 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
             >
               {isRecorded && <Check className="h-4 w-4" strokeWidth={1.5} />}
               {t('screening', label)}
-              <KbdBadge keys={[key]} />
+              {/* The muted chip vanishes on bg-primary: re-tint it from the button's foreground. */}
+              <KbdBadge
+                keys={[key]}
+                className={cn(filled && 'border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground/80')}
+              />
             </Button>
           );
         })}
