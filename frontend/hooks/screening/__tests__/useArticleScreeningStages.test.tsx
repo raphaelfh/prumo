@@ -158,6 +158,47 @@ describe('useArticleScreeningStages', () => {
     expect(counts.records).toBe(1);
   });
 
+  it('does not refetch a failed read when more chips mount', async () => {
+    const counts = serve({}, records([]), 500);
+    const {wrapper} = createQueryWrapper();
+    const first = renderHook(() => useArticleScreeningStages('p1'), {wrapper});
+    await waitFor(() => expect(counts.records).toBe(1));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    const more = [1, 2, 3].map(() => renderHook(() => useArticleScreeningStages('p1'), {wrapper}));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(counts.records).toBe(1);
+    expect(first.result.current.stageOf('a1')).toBeNull();
+    for (const hook of more) expect(hook.result.current.stageOf('a1')).toBeNull();
+  });
+
+  it('does not refetch a failed config read when more chips mount', async () => {
+    const counts = serve({}, records([row('a1', 'included')]));
+    let configCalls = 0;
+    server.use(
+      http.get(CONFIG_URL, () => {
+        configCalls += 1;
+        return HttpResponse.json({ok: false, error: {code: 'BOOM', message: 'x'}}, {status: 500});
+      }),
+    );
+    const {wrapper} = createQueryWrapper();
+    renderHook(() => useArticleScreeningStages('p1'), {wrapper});
+    await waitFor(() => expect(configCalls).toBe(1));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    const more = [1, 2, 3].map(() => renderHook(() => useArticleScreeningStages('p1'), {wrapper}));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(configCalls).toBe(1);
+    expect(counts.records).toBe(0);
+    for (const hook of more) expect(hook.result.current.stageOf('a1')).toBeNull();
+  });
+
   it('refetches after invalidateScreening', async () => {
     const counts = serve({}, records([row('a1', 'excluded')]));
     const {queryClient, wrapper} = createQueryWrapper();

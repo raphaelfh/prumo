@@ -8,7 +8,9 @@
  * each row mounts an observer, and 50 of them would refetch on every scroll.
  * A 30 s staleTime bounds drift instead. The records read is skipped while
  * screening is unconfigured (it answers 409), and a failed read leaves every
- * chip blank (`toResult` already logged it).
+ * chip blank (`toResult` already logged it) and stays
+ * failed until an invalidation refetches it (`retryOnMount: false`, else every
+ * newly mounting chip would re-request).
  */
 import {useQuery} from '@tanstack/react-query';
 
@@ -22,7 +24,11 @@ const STALE_TIME_MS = 30_000;
 type StagesData = {rows: Map<string, ScreeningRecordRow>; removed: Set<string>};
 
 export function useArticleScreeningStages(projectId: string): {stageOf(articleId: string): ArticleStage | null} {
-  const {data: config} = useQuery({...screeningConfigQueryOptions(projectId), staleTime: STALE_TIME_MS});
+  const {data: config} = useQuery({
+    ...screeningConfigQueryOptions(projectId),
+    staleTime: STALE_TIME_MS,
+    retryOnMount: false,
+  });
   const configured = config?.reviewer_count != null;
 
   const {data} = useQuery({
@@ -30,6 +36,7 @@ export function useArticleScreeningStages(projectId: string): {stageOf(articleId
     enabled: configured && Boolean(projectId),
     staleTime: STALE_TIME_MS,
     retry: false,
+    retryOnMount: false,
     // Rebuilding the Map/Set per fetch is the point; structural sharing would walk them for nothing.
     structuralSharing: false,
     queryFn: async (): Promise<StagesData> => {
