@@ -366,6 +366,22 @@ describe('DuplicatesWorkspace — verdicts', () => {
     ]);
   });
 
+  it('words one acceptable exact pair in the singular', async () => {
+    serveDuplicates();
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(await screen.findByRole('button', {name: 'Accept 1 exact'}));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('Merge 1 exact duplicate?')).toBeInTheDocument();
+  });
+
+  it('hides Accept exact in the Resolved view', async () => {
+    serveDuplicates();
+    renderWorkspace('&status=resolved');
+    await pairRow(/^Metformin/);
+    expect(screen.queryByRole('button', {name: /^Accept \d+ exact$/})).toBeNull();
+  });
+
   it('hides Accept exact when no exact pair is acceptable', async () => {
     serveDuplicates({open: [LIKELY], resolved: []});
     renderWorkspace();

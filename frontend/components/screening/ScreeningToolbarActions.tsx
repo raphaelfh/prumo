@@ -98,7 +98,9 @@ export function EnrollAllButton({projectId, label, disabled = false, size, class
           <AlertDialogHeader>
             <AlertDialogTitle>{t('duplicates', 'enrollAnywayTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('duplicates', 'enrollAnywayBody').replace('{{n}}', String(openPairs ?? 0))}
+              {openPairs === 1
+                ? t('duplicates', 'enrollAnywayBodyOne')
+                : t('duplicates', 'enrollAnywayBody').replace('{{n}}', String(openPairs ?? 0))}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

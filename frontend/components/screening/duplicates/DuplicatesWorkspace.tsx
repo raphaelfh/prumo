@@ -226,7 +226,8 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
   });
 
   const acceptLabel = t('duplicates', 'acceptExact').replace('{{n}}', String(acceptable.length));
-  const toolbarActions = acceptable.length > 0 && (
+  // Bulk accept acts on open pairs only: not offered from the Resolved view.
+  const toolbarActions = view !== 'resolved' && acceptable.length > 0 && (
     <>
       <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmOpen(true)}>
         {acceptLabel}
@@ -235,7 +236,9 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('duplicates', 'acceptExactTitle').replace('{{n}}', String(acceptable.length))}
+              {acceptable.length === 1
+                ? t('duplicates', 'acceptExactTitleOne')
+                : t('duplicates', 'acceptExactTitle').replace('{{n}}', String(acceptable.length))}
             </AlertDialogTitle>
             <AlertDialogDescription>{t('duplicates', 'acceptExactBody')}</AlertDialogDescription>
           </AlertDialogHeader>

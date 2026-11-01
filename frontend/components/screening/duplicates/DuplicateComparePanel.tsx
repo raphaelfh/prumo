@@ -36,7 +36,9 @@ function fieldValue(side: Side, field: CompareField): string {
     case 'has_pdf':
       return side.has_pdf ? t('duplicates', 'yes') : t('duplicates', 'no');
     case 'screening_decisions':
-      return t('duplicates', 'decisionsCount').replace('{{n}}', String(side.screening_decisions));
+      return side.screening_decisions === 1
+        ? t('duplicates', 'decisionsCountOne')
+        : t('duplicates', 'decisionsCount').replace('{{n}}', String(side.screening_decisions));
     default:
       return side[field] == null ? '' : String(side[field]);
   }

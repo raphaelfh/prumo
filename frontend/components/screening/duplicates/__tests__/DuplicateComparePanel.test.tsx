@@ -83,6 +83,12 @@ describe('DuplicateComparePanel', () => {
     expect(h.onMerge).toHaveBeenCalledWith('rem', 'kept');
   });
 
+  it('words the screening work count in the singular for one decision', () => {
+    setup(pair({screening_decisions: 1, has_review_work: true}, {screening_decisions: 3, has_review_work: true}));
+    expect(screen.getByText('1 decision')).toBeInTheDocument();
+    expect(screen.getByText('3 decisions')).toBeInTheDocument();
+  });
+
   it('merge posts the selected keeper', async () => {
     const h = setup(pair());
     await userEvent.click(screen.getByRole('radio', {name: 'Keep record 2: "Title rem"'}));

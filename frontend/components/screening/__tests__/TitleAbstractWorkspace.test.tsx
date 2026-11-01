@@ -456,11 +456,25 @@ describe('TitleAbstractWorkspace — Enroll anyway?', () => {
 
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText('Enroll anyway?')).toBeInTheDocument();
-    expect(within(dialog).getByText('23 possible duplicates not reviewed. Enroll anyway?')).toBeInTheDocument();
+    expect(within(dialog).getByText('23 possible duplicates not reviewed.')).toBeInTheDocument();
     expect(enroll.count).toBe(0);
 
     await user.click(within(dialog).getByRole('button', {name: 'Enroll anyway'}));
     await waitFor(() => expect(enroll.count).toBe(1));
+  });
+
+  it('words one open pair in the singular', async () => {
+    serveRecords([ALPHA, notEnrolled(BETA)]);
+    server.use(http.get(DUPLICATES_URL, () => ok({open: pairs(1), resolved: []})));
+    serveEnroll();
+    const user = userEvent.setup();
+    renderWorkspace({cfg: config({...MANAGER, enrolled: 0, not_enrolled: 2})});
+    await screen.findByRole('button', {name: 'Alpha trial'});
+
+    await user.click(screen.getByRole('button', {name: 'Enroll all articles'}));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('1 possible duplicate not reviewed.')).toBeInTheDocument();
   });
 
   it.each(buttons)('enrolls "$name" without asking when no pair is open', async ({name, cfg}) => {

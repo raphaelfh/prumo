@@ -25,6 +25,7 @@ export const duplicates = {
   mergedMany: 'Merged {{n}}',
   acceptExact: 'Accept {{n}} exact',
   acceptExactTitle: 'Merge {{n}} exact duplicates?',
+  acceptExactTitleOne: 'Merge 1 exact duplicate?',
   acceptExactBody: 'Each keeps the suggested record. Pairs where the record to remove has review work are left out.',
 
   // Compare panel
@@ -38,6 +39,7 @@ export const duplicates = {
   fieldPdf: 'PDF',
   fieldScreening: 'Screening work',
   decisionsCount: '{{n}} decisions',
+  decisionsCountOne: '1 decision',
   yes: 'Yes',
   no: 'No',
   differs: 'Differs',
@@ -61,7 +63,8 @@ export const duplicates = {
 
   // "Enroll anyway?" prompt on the enroll buttons
   enrollAnywayTitle: 'Enroll anyway?',
-  enrollAnywayBody: '{{n}} possible duplicates not reviewed. Enroll anyway?',
+  enrollAnywayBody: '{{n}} possible duplicates not reviewed.',
+  enrollAnywayBodyOne: '1 possible duplicate not reviewed.',
   enrollAnywayConfirm: 'Enroll anyway',
   reviewDuplicates: 'Review duplicates',
 } as const;
