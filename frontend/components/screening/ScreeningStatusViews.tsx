@@ -6,10 +6,12 @@
 import {t} from '@/lib/copy';
 import {visibleStatusViews, type StatusView} from '@/lib/screening/records';
 import {cn} from '@/lib/utils';
+import type {ScreeningPhase} from '@/services/screeningService';
 
 import {RECORD_STATUS_LABEL} from './RecordStatusChip';
 
 interface ScreeningStatusViewsProps {
+  phase: ScreeningPhase;
   counts: Record<StatusView, number>;
   status: StatusView;
   onStatusChange: (status: StatusView) => void;
@@ -19,14 +21,14 @@ function viewLabel(view: StatusView): string {
   return view === 'all' ? t('screening', 'statusAll') : t('screening', RECORD_STATUS_LABEL[view]);
 }
 
-export function ScreeningStatusViews({counts, status, onStatusChange}: ScreeningStatusViewsProps) {
+export function ScreeningStatusViews({phase, counts, status, onStatusChange}: ScreeningStatusViewsProps) {
   return (
     <div
       role="tablist"
       aria-label={t('screening', 'statusViewsLabel')}
       className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md bg-muted/40 p-0.5"
     >
-      {visibleStatusViews(counts, status).map((view) => {
+      {visibleStatusViews(phase, counts, status).map((view) => {
         const active = view === status;
         const empty = counts[view] === 0;
         return (

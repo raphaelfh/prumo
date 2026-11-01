@@ -4,16 +4,19 @@ import type {components} from '@/types/api/schema';
 
 import {
   HIDDEN_AT_ZERO,
+  EXCLUDED_REPORT_CSV_COLUMNS,
   RECORD_CSV_COLUMNS,
-  STATUS_VIEWS,
   defaultStatusView,
+  excludedReportsCsv,
   filterRecords,
   isReadOnly,
+  myDecisionValuesFor,
   nextToScreen,
   progress,
   recordsToCsv,
   sortRecords,
   statusCounts,
+  statusViewsFor,
   visibleStatusViews,
   type StatusView,
 } from './records';
@@ -61,7 +64,7 @@ const COUNTS_FIXTURE: Row[] = [
 ];
 
 function zeroCounts(): Record<StatusView, number> {
-  return Object.fromEntries(STATUS_VIEWS.map((v) => [v, 0])) as Record<StatusView, number>;
+  return statusCounts([]);
 }
 
 const MANAGER = {can_manage: true, can_review: true, can_arbitrate: true};
@@ -69,12 +72,21 @@ const CONSENSUS = {can_manage: false, can_review: true, can_arbitrate: true};
 const REVIEWER = {can_manage: false, can_review: true, can_arbitrate: false};
 const VIEWER = {can_manage: false, can_review: false, can_arbitrate: false};
 
-describe('STATUS_VIEWS / HIDDEN_AT_ZERO', () => {
-  it('lists every view in display order and hides only conflict and not_enrolled at zero', () => {
-    expect(STATUS_VIEWS).toEqual([
+describe('statusViewsFor / HIDDEN_AT_ZERO', () => {
+  it('lists the title/abstract views in display order and hides only conflict and not_enrolled at zero', () => {
+    expect(statusViewsFor('title_abstract')).toEqual([
       'all', 'to_screen', 'waiting', 'in_review', 'conflict', 'included', 'excluded', 'maybe', 'not_enrolled',
     ]);
     expect([...HIDDEN_AT_ZERO].sort()).toEqual(['conflict', 'not_enrolled']);
+  });
+
+  it('lists the full-text views: not_retrieved, no maybe, no not_enrolled', () => {
+    const views = statusViewsFor('full_text');
+    expect(views).toEqual([
+      'all', 'to_screen', 'waiting', 'in_review', 'conflict', 'included', 'excluded', 'not_retrieved',
+    ]);
+    expect(views).not.toContain('maybe');
+    expect(views).not.toContain('not_enrolled');
   });
 });
 
@@ -89,6 +101,7 @@ describe('statusCounts', () => {
       included: 1,
       excluded: 1,
       maybe: 1,
+      not_retrieved: 0,
       not_enrolled: 2,
     });
   });
@@ -97,7 +110,7 @@ describe('statusCounts', () => {
 describe('visibleStatusViews', () => {
   it('omits a zero conflict but keeps a zero maybe', () => {
     const counts = {...statusCounts(COUNTS_FIXTURE), maybe: 0};
-    const views = visibleStatusViews(counts);
+    const views = visibleStatusViews('title_abstract', counts);
     expect(views).not.toContain('conflict');
     expect(views).toContain('maybe');
     expect(views).toContain('not_enrolled');
@@ -105,7 +118,7 @@ describe('visibleStatusViews', () => {
 
   it('omits a zero not_enrolled and keeps a non-zero conflict', () => {
     const counts = {...zeroCounts(), conflict: 1};
-    const views = visibleStatusViews(counts);
+    const views = visibleStatusViews('title_abstract', counts);
     expect(views).toContain('conflict');
     expect(views).not.toContain('not_enrolled');
     expect(views[0]).toBe('all');
@@ -113,10 +126,19 @@ describe('visibleStatusViews', () => {
 
   it('keeps the active view at zero, in its usual place', () => {
     const counts = zeroCounts();
-    const views = visibleStatusViews(counts, 'conflict');
+    const views = visibleStatusViews('title_abstract', counts, 'conflict');
     expect(views).toContain('conflict');
     expect(views).not.toContain('not_enrolled');
-    expect(views.indexOf('conflict')).toBe(STATUS_VIEWS.indexOf('conflict'));
+    expect(views.indexOf('conflict')).toBe(statusViewsFor('title_abstract').indexOf('conflict'));
+  });
+});
+
+describe('visibleStatusViews at full text', () => {
+  it('shows not_retrieved even at zero and never lists maybe', () => {
+    const views = visibleStatusViews('full_text', zeroCounts());
+    expect(views).toContain('not_retrieved');
+    expect(views).not.toContain('maybe');
+    expect(views).not.toContain('conflict');
   });
 });
 
@@ -351,12 +373,13 @@ describe('nextToScreen', () => {
 });
 
 describe('recordsToCsv', () => {
-  it('exports the 17 wire fields in wire order, without abstract', () => {
+  it('exports the 20 wire fields in wire order, without abstract', () => {
     expect(RECORD_CSV_COLUMNS).toEqual([
       'article_id', 'assignment_id', 'queue_rank', 'title', 'first_author', 'publication_year', 'journal_title',
       'pmid', 'doi', 'ingestion_source', 'has_pdf', 'status', 'my_decision', 'my_exclusion_reason', 'outcome',
-      'outcome_exclusion_reason', 'outcome_kind',
+      'outcome_exclusion_reason', 'outcome_kind', 'ta_outcome', 'ta_outcome_kind', 'ta_reviewer_count',
     ]);
+    expect(RECORD_CSV_COLUMNS).toHaveLength(20);
     expect(RECORD_CSV_COLUMNS).not.toContain('abstract');
   });
 
@@ -375,7 +398,7 @@ describe('recordsToCsv', () => {
     expect(lines[0]).toBe(RECORD_CSV_COLUMNS.join(','));
     expect(lines).toHaveLength(2);
     expect(lines[1]).toBe(
-      'x1,,1,"Sepsis, ""early"" care","Line\nbreak",2020,,,,,true,not_enrolled,,,,,',
+      'x1,,1,"Sepsis, ""early"" care","Line\nbreak",2020,,,,,true,not_enrolled,,,,,,,,',
     );
   });
 
@@ -398,5 +421,53 @@ describe('recordsToCsv', () => {
     const line = recordsToCsv([r]).split('\r\n')[1];
     expect(line).toContain(',Plain - title,');
     expect(line).toContain(',2021,');
+  });
+});
+
+describe('excludedReportsCsv', () => {
+  it('has one row per excluded report with its reason', () => {
+    const rows = [
+      row({status: 'excluded', title: 'Out', outcome_exclusion_reason: 'Wrong outcome'}),
+      row({status: 'included', title: 'In'}),
+      row({status: 'not_retrieved', title: 'Gone'}),
+    ];
+    const lines = excludedReportsCsv(rows).split('\r\n');
+    expect(lines[0]).toBe(EXCLUDED_REPORT_CSV_COLUMNS.join(','));
+    expect(lines).toHaveLength(2);
+    expect(lines[1].startsWith('Out,')).toBe(true);
+    expect(lines[1].endsWith(',Wrong outcome')).toBe(true);
+  });
+
+  it('guards a title starting with = like the records export', () => {
+    const lines = excludedReportsCsv([row({status: 'excluded', title: '=cmd', outcome_exclusion_reason: 'r'})]).split('\r\n');
+    expect(lines[1].startsWith("'=cmd,")).toBe(true);
+  });
+});
+
+describe('myDecisionValuesFor', () => {
+  it('follows the phase', () => {
+    expect(myDecisionValuesFor('full_text')).toEqual(['include', 'exclude', 'not_retrieved', 'none']);
+    expect(myDecisionValuesFor('title_abstract')).toEqual(['include', 'exclude', 'maybe', 'none']);
+  });
+});
+
+describe('full-text vocabulary in the list functions', () => {
+  it('filters by PDF attached and missing', () => {
+    const withPdf = row({has_pdf: true});
+    const without = row({has_pdf: false});
+    const q = {search: '', status: 'all'} as const;
+    expect(filterRecords([withPdf, without], {...q, filters: {pdf: ['attached']}})).toEqual([withPdf]);
+    expect(filterRecords([withPdf, without], {...q, filters: {pdf: ['missing']}})).toEqual([without]);
+    expect(filterRecords([withPdf, without], {...q, filters: {pdf: ['attached', 'missing']}})).toHaveLength(2);
+  });
+
+  it('sorts not_retrieved after excluded', () => {
+    const rows = [row({status: 'not_retrieved'}), row({status: 'excluded'}), row({status: 'included'})];
+    expect(sortRecords(rows, 'status', 'asc').map((r) => r.status)).toEqual(['included', 'excluded', 'not_retrieved']);
+  });
+
+  it('counts not_retrieved as decided', () => {
+    const rows = [row({status: 'not_retrieved'}), row({status: 'to_screen'})];
+    expect(progress(rows).decided).toBe(1);
   });
 });

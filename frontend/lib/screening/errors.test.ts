@@ -17,6 +17,9 @@ const MAPPED_CODES = [
   'SCREENING_NOT_IN_CONFLICT',
   'SCREENING_DECISION_FINAL',
   'SCREENING_SELF_ARBITRATION',
+  'SCREENING_PHASE_ADVANCED',
+  'SCREENING_DECISION_NOT_IN_PHASE',
+  'SCREENING_REASON_REQUIRED',
 ];
 
 describe('screeningErrorMessage', () => {
@@ -55,5 +58,13 @@ describe('screeningErrorMessage', () => {
       'Something went wrong. Please try again.',
     );
     expect(screeningErrorMessage(new Error('boom'))).toBe('Something went wrong. Please try again.');
+  });
+
+  it.each([
+    ['SCREENING_PHASE_ADVANCED', 'This article is already in full-text screening.'],
+    ['SCREENING_DECISION_NOT_IN_PHASE', 'That decision is not available in this phase.'],
+    ['SCREENING_REASON_REQUIRED', 'Pick an exclusion reason.'],
+  ])('words %s', (code, text) => {
+    expect(screeningErrorMessage(new ApiError(code, 'x', 409))).toBe(text);
   });
 });

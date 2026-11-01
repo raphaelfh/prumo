@@ -26,6 +26,7 @@ import {t} from '@/lib/copy';
 import type {screening} from '@/lib/copy/screening';
 import {
   filterRecords,
+  myDecisionValuesFor,
   progress,
   sortRecords,
   statusCounts,
@@ -72,16 +73,23 @@ const categorical = (id: string, label: CopyKey, options: {value: string; label:
   options,
 });
 
+const DECISION_VALUE_LABEL: Record<string, CopyKey> = {
+  include: 'decisionInclude',
+  exclude: 'decisionExclude',
+  maybe: 'decisionMaybe',
+  not_retrieved: 'decisionNotRetrieved',
+  none: 'myDecisionNone',
+};
+
 function filterFields(read: ScreeningRecordsRead, canReview: boolean): FilterFieldConfig[] {
   const years = read.rows.flatMap((row) => (row.publication_year === null ? [] : [row.publication_year]));
   const currentYear = new Date().getFullYear();
   const sources = [...new Set(read.rows.map((row) => row.ingestion_source ?? 'unknown'))];
-  const myDecision = categorical('my_decision', 'filterMyDecision', [
-    {value: 'include', label: t('screening', 'decisionInclude')},
-    {value: 'exclude', label: t('screening', 'decisionExclude')},
-    {value: 'maybe', label: t('screening', 'decisionMaybe')},
-    {value: 'none', label: t('screening', 'myDecisionNone')},
-  ]);
+  const myDecision = categorical(
+    'my_decision',
+    'filterMyDecision',
+    myDecisionValuesFor(read.phase).map((value) => ({value, label: t('screening', DECISION_VALUE_LABEL[value])})),
+  );
   return [
     {id: 'title', label: t('screening', 'filterTitle'), type: 'text'},
     {id: 'authors', label: t('screening', 'filterAuthors'), type: 'text'},
@@ -107,6 +115,14 @@ function filterFields(read: ScreeningRecordsRead, canReview: boolean): FilterFie
         label: source in SOURCE_LABEL ? t('screening', SOURCE_LABEL[source]) : source,
       })),
     ),
+    ...(read.phase === 'full_text'
+      ? [
+          categorical('pdf', 'filterPdf', [
+            {value: 'attached', label: t('screening', 'pdfAttached')},
+            {value: 'missing', label: t('screening', 'pdfMissing')},
+          ]),
+        ]
+      : []),
   ];
 }
 
@@ -202,7 +218,7 @@ export function ScreeningRecordList({
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex shrink-0 flex-col gap-2">
-        <ScreeningStatusViews counts={counts} status={status} onStatusChange={onStatusChange} />
+        <ScreeningStatusViews phase={read.phase} counts={counts} status={status} onStatusChange={onStatusChange} />
         <div className="flex w-full flex-wrap items-center gap-2">
           <ListToolbarSearch
             ref={searchInputRef}
@@ -239,6 +255,7 @@ export function ScreeningRecordList({
             ) : (
               <RecordBulkBar
                 projectId={projectId}
+                phase={read.phase}
                 rows={read.rows}
                 checkedIds={checkedIds}
                 canManage={config.can_manage}

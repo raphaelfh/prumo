@@ -39,7 +39,7 @@ import {
   progress,
   sortRecords,
   statusCounts,
-  STATUS_VIEWS,
+  statusViewsFor,
   type StatusView,
 } from '@/lib/screening/records';
 import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
@@ -67,7 +67,7 @@ function queueAfter(rows: ScreeningRecordRow[], from: ScreeningRecordRow, decide
 }
 
 function isStatusView(value: string | null): value is StatusView {
-  return value !== null && (STATUS_VIEWS as readonly string[]).includes(value);
+  return value !== null && (statusViewsFor('title_abstract') as readonly string[]).includes(value);
 }
 
 /** The toolbar row alone, above a list-level state that has no list. */

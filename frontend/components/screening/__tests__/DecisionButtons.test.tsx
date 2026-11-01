@@ -7,13 +7,17 @@ import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
 import {DecisionButtons} from '@/components/screening/DecisionButtons';
-import type {ScreeningDecisionCreate} from '@/services/screeningService';
+import type {ScreeningDecisionCreate, ScreeningPhase} from '@/services/screeningService';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
 function renderButtons(
   recorded?: ScreeningDecisionCreate['decision'] | null,
-  {reasons = [], recordedReason}: {reasons?: string[]; recordedReason?: string | null} = {},
+  {
+    reasons = [],
+    recordedReason,
+    phase = 'title_abstract',
+  }: {reasons?: string[]; recordedReason?: string | null; phase?: ScreeningPhase} = {},
 ) {
   const onDecide = vi.fn<(body: ScreeningDecisionCreate) => void>();
   render(
@@ -21,7 +25,7 @@ function renderButtons(
       reasons={reasons}
       disabled={false}
       onDecide={onDecide}
-      phase="title_abstract"
+      phase={phase}
       recorded={recorded}
       recordedReason={recordedReason}
     />,
@@ -90,5 +94,55 @@ describe('DecisionButtons', () => {
     fireEvent.keyDown(input, {key: '1'});
     expect(onDecide).not.toHaveBeenCalled();
     input.remove();
+  });
+});
+
+describe('DecisionButtons at full text', () => {
+  const FT = {phase: 'full_text', reasons: REASONS} as const;
+
+  it('has no Maybe', () => {
+    renderButtons(null, FT);
+    expect(screen.queryByRole('button', {name: /decisionMaybe/})).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: /decisionInclude/})).toBeInTheDocument();
+  });
+
+  it('Exclude opens the reasons and needs one', async () => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons(null, FT);
+    await user.click(screen.getByRole('button', {name: /decisionExclude/}));
+    expect(onDecide).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole('button', {name: /Not ML/}));
+    expect(onDecide).toHaveBeenCalledWith({decision: 'exclude', exclusion_reason: 'Not ML'});
+  });
+
+  it('Report not retrieved posts not_retrieved', async () => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons(null, FT);
+    const button = screen.getByRole('button', {name: /reportNotRetrieved/});
+    expect(button).not.toHaveAttribute('aria-keyshortcuts');
+    await user.click(button);
+    expect(onDecide).toHaveBeenCalledWith({decision: 'not_retrieved'});
+  });
+
+  it('the note rides along, trimmed', async () => {
+    const user = userEvent.setup();
+    const onDecide = renderButtons(null, FT);
+    await user.type(screen.getByLabelText(/decisionNoteLabel/), '  scanned copy only  ');
+    await user.click(screen.getByRole('button', {name: /decisionInclude/}));
+    expect(onDecide).toHaveBeenCalledWith({decision: 'include', rationale: 'scanned copy only'});
+  });
+
+  it('3 does nothing', () => {
+    const onDecide = renderButtons(null, FT);
+    fireEvent.keyDown(window, {key: '3'});
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it('2 arms the reasons and a digit picks one', () => {
+    const onDecide = renderButtons(null, FT);
+    fireEvent.keyDown(window, {key: '2'});
+    expect(onDecide).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, {key: '2'});
+    expect(onDecide).toHaveBeenCalledWith({decision: 'exclude', exclusion_reason: 'Not ML'});
   });
 });
