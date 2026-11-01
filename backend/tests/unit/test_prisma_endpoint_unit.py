@@ -32,6 +32,13 @@ async def test_prisma_handler_returns_counts(monkeypatch: pytest.MonkeyPatch) ->
         excluded_reasons_differ=0,
         excluded_without_reason=0,
         sought_for_retrieval=2,
+        ta_included=1,
+        ta_maybe=1,
+        reports_not_retrieved=0,
+        reports_assessed=1,
+        reports_excluded_by_reason=[PrismaReasonCount(reason="Wrong outcome", count=1)],
+        reports_included=0,
+        full_text_in_progress=False,
     )
     project_id = uuid4()
     db = object()

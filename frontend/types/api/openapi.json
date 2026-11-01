@@ -9110,6 +9110,17 @@
             "title": "Excluded Without Reason",
             "type": "integer"
           },
+          "full_text_in_progress": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Text In Progress"
+          },
           "identified": {
             "items": {
               "$ref": "#/components/schemas/PrismaSourceCount"
@@ -9129,12 +9140,67 @@
             "title": "Records Not Found",
             "type": "integer"
           },
+          "reports_assessed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Assessed"
+          },
+          "reports_excluded_by_reason": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PrismaReasonCount"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Excluded By Reason"
+          },
+          "reports_included": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Included"
+          },
+          "reports_not_retrieved": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Not Retrieved"
+          },
           "screened": {
             "title": "Screened",
             "type": "integer"
           },
           "sought_for_retrieval": {
             "title": "Sought For Retrieval",
+            "type": "integer"
+          },
+          "ta_included": {
+            "title": "Ta Included",
+            "type": "integer"
+          },
+          "ta_maybe": {
+            "title": "Ta Maybe",
             "type": "integer"
           }
         },
@@ -9149,7 +9215,14 @@
           "excluded_by_reason",
           "excluded_reasons_differ",
           "excluded_without_reason",
-          "sought_for_retrieval"
+          "sought_for_retrieval",
+          "ta_included",
+          "ta_maybe",
+          "reports_not_retrieved",
+          "reports_assessed",
+          "reports_excluded_by_reason",
+          "reports_included",
+          "full_text_in_progress"
         ],
         "title": "PrismaCountsRead",
         "type": "object"

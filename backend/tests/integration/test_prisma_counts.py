@@ -281,3 +281,100 @@ async def test_prisma_route_guard(db_session: AsyncSession) -> None:
     assert member.status_code == 200
     assert member.json()["data"]["imported_not_enrolled"] == 1
     assert refused.status_code == 403
+
+
+async def _ta_and_ft(
+    db: AsyncSession, ta: list[str], sent: list[int], *, ft_count: int | None = 1
+) -> tuple[UUID, list[UUID], list[UUID]]:
+    """A project with solo TA decisions ``ta`` and FT assignments for ``sent`` (indexes into ``ta``).
+
+    Returns the project, the TA assignment ids and the FT assignment ids.
+    """
+    project_id = await make_project(db)
+    await set_reviewer_count(db, project_id, 1)
+    if ft_count is not None:
+        await set_reviewer_count(db, project_id, ft_count, key="full_text_reviewer_count")
+    articles = [await make_screening_article(db, project_id) for _ in ta]
+    ta_ids = await enroll_articles(db, project_id, articles, by=MANAGER)
+    for assignment_id, decision in zip(ta_ids, ta, strict=True):
+        await add_decision(
+            db, assignment_id, MANAGER, decision, reason="Not ML" if decision == "exclude" else None
+        )
+    ft_ids = await enroll_articles(
+        db, project_id, [articles[i] for i in sent], by=MANAGER, phase="full_text"
+    )
+    return project_id, ta_ids, ft_ids
+
+
+async def test_reports_box_adds_up_while_in_progress(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(
+        db_session, ["include", "maybe", "include", "include"], sent=[0, 1, 2]
+    )
+    await add_decision(db_session, ft[0], MANAGER, "include")
+    await add_decision(db_session, ft[1], MANAGER, "not_retrieved")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.sought_for_retrieval == 4
+    assert counts.reports_not_retrieved == 1
+    assert counts.reports_assessed == 1
+    assert counts.reports_included == 1
+    assert counts.reports_excluded_by_reason == []
+    assert counts.full_text_in_progress is True
+    # 1 not retrieved + 1 assessed + 1 pending + 1 ready (the unsent include)
+    assert counts.sought_for_retrieval == 1 + 1 + 1 + 1
+
+
+async def test_reports_box_adds_up_when_done(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(db_session, ["include", "maybe"], sent=[0, 1])
+    await add_decision(db_session, ft[0], MANAGER, "exclude", reason="Wrong outcome")
+    await add_decision(db_session, ft[1], MANAGER, "not_retrieved")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.full_text_in_progress is False
+    assert counts.sought_for_retrieval == counts.reports_not_retrieved + counts.reports_assessed
+    assert counts.reports_included == 0
+    assert [r.model_dump() for r in counts.reports_excluded_by_reason or []] == [
+        {"reason": "Wrong outcome", "count": 1}
+    ]
+
+
+async def test_flag_true_while_unsent_include_exists(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(db_session, ["include", "include"], sent=[0])
+    await add_decision(db_session, ft[0], MANAGER, "include")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.full_text_in_progress is True
+
+
+async def test_full_text_off_payload(db_session: AsyncSession) -> None:
+    project_id, _, _ = await _ta_and_ft(
+        db_session, ["include", "maybe", "exclude"], sent=[], ft_count=None
+    )
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.ta_included == 1
+    assert counts.ta_maybe == 1
+    assert counts.reports_not_retrieved is None
+    assert counts.reports_assessed is None
+    assert counts.reports_excluded_by_reason is None
+    assert counts.reports_included is None
+    assert counts.full_text_in_progress is None
+
+
+async def test_title_abstract_box_ignores_full_text_rows(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(db_session, ["include", "maybe", "exclude"], sent=[0, 1])
+    before = await prisma_counts(db_session, project_id)
+
+    await add_decision(db_session, ft[0], MANAGER, "exclude", reason="Wrong outcome")
+    await add_decision(db_session, ft[1], MANAGER, "not_retrieved")
+    after = await prisma_counts(db_session, project_id)
+
+    ta_fields = {
+        "screened", "excluded", "excluded_by_reason", "excluded_reasons_differ",
+        "excluded_without_reason", "sought_for_retrieval", "ta_included", "ta_maybe",
+    }  # fmt: skip
+    assert after.model_dump(include=ta_fields) == before.model_dump(include=ta_fields)

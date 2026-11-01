@@ -6077,6 +6077,8 @@ export interface components {
             excluded_reasons_differ: number;
             /** Excluded Without Reason */
             excluded_without_reason: number;
+            /** Full Text In Progress */
+            full_text_in_progress: boolean | null;
             /** Identified */
             identified: components["schemas"]["PrismaSourceCount"][];
             /** Identified Total */
@@ -6085,10 +6087,22 @@ export interface components {
             imported_not_enrolled: number;
             /** Records Not Found */
             records_not_found: number;
+            /** Reports Assessed */
+            reports_assessed: number | null;
+            /** Reports Excluded By Reason */
+            reports_excluded_by_reason: components["schemas"]["PrismaReasonCount"][] | null;
+            /** Reports Included */
+            reports_included: number | null;
+            /** Reports Not Retrieved */
+            reports_not_retrieved: number | null;
             /** Screened */
             screened: number;
             /** Sought For Retrieval */
             sought_for_retrieval: number;
+            /** Ta Included */
+            ta_included: number;
+            /** Ta Maybe */
+            ta_maybe: number;
         };
         /** PrismaReasonCount */
         PrismaReasonCount: {
