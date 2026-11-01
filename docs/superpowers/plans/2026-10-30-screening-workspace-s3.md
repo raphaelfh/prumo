@@ -775,6 +775,8 @@ git -C "$WT" commit -m "feat(screening): full-text sub-view with Send to full te
 - Workspace hard-codes `useScreeningRecords(…,'title_abstract', config.reviewer_count !== null)` (`:99`) and default view `config.enrolled === 0 ? 'all'` (`~:120`): make both phase-aware (`full_text_reviewer_count`, `full_text_enrolled`).
 - Ruling 44: an unknown `?status=` is rewritten with `replace:true` in BOTH phases (one shared workspace path; TA adopts the rewrite).
 - `RecordBulkBar` (`ScreeningRecordTable.tsx:244`) renders Enroll for managers: gate it to TA. Export the private `downloadCsv` (`:225`) for `ExportExcludedReportsButton`.
+- From Task 7 (commits 43a9bc91, a9cbbe8a): `excludedReportsCsv` was built in 43a9bc91 then removed (knip: unused before this task). Restore it (and its test) from `git show 43a9bc91` into `lib/screening/records.ts`, through the shared private `toCsv` that carries the formula-injection guard; add a test that an excluded title starting with `=` is written with the `'` prefix. `ExportExcludedReportsButton` exports ALL excluded FT reports (not checked rows); no export action in `RecordBulkBar`. `downloadCsv` now takes `(csv, filename)`.
+- `ScreeningRecordList` already reads `read.phase` (no phase prop) and `ScreeningStatusViews`/`visibleStatusViews` take `phase`; `statusCounts(rows)` takes no phase.
 
 ### Task 10: Settings (full text) and the PRISMA panel (frontend, S3b-5)
 
