@@ -63,6 +63,7 @@ from app.services.exports.ai_proposal_projection import (
     load_evidence_summaries,
     proposal_model_used,
 )
+from app.services.exports.codebook_model import CodebookEntry
 from app.services.exports.descriptors import (
     ValueKey,
     build_entries,
@@ -376,12 +377,11 @@ class ExportLayout:
     # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
     # None => the sub-builder falls back to the bare layout identity fields.
     front_matter: FrontMatter | None = None
-    # Data-dictionary / dropdown catalogue (§4 #k+2); built in
-    # ``resolve_layout`` (T51). One ``FieldDictEntry`` per snapshot field.
+    # Data-dictionary / dropdown catalogue (§4 #k+2), one entry per snapshot field.
     data_dictionary: tuple[FieldDictEntry, ...] = ()
-    # Per-section publication "Table 1" sheets (§5.3); built in
-    # ``resolve_layout`` (T52). One ``TidyTable`` per non-container section.
+    # Per-section publication "Table 1" sheets (§5.3), one per non-container section.
     tidy_tables: tuple[TidyTable, ...] = ()
+    codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
     # Per-domain risk-of-bias / appraisal roll-up with mode-aware ``Overall``
     # (§7). None unless the exported template carries an appraisal layer
     # (``kind == TemplateKind.QUALITY_ASSESSMENT``); ``build_appraisal_summary``

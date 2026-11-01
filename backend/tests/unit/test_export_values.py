@@ -174,3 +174,26 @@ def test_oversized_number_is_nonconforming(payload):
 def test_bool_in_a_text_or_date_field_is_nonconforming(ftype):
     v = to_export_value({"value": True}, _field(ftype), {})
     assert (v.status, v.value_text) == ("nonconforming", "True")
+
+
+def _sel_section(sid, fid, *options) -> SectionDescriptor:
+    f = FieldDescriptor(
+        field_id=fid,
+        label="C",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=tuple(AllowedValue(c, lbl) for c, lbl in options),
+    )
+    return SectionDescriptor(entity_type_id=sid, label="S", parent_entity_type_id=None, fields=(f,))
+
+
+def test_option_labels_fill_pinned_only_codes_latest_first():
+    fid, sid = uuid4(), uuid4()
+    active = (_sel_section(sid, fid, ("A", "Alpha")),)
+    v2 = (_sel_section(sid, fid, ("A", "a2"), ("B", "Bee v2")),)
+    v1 = (_sel_section(sid, fid, ("B", "Bee v1"), ("C", "Cee")),)
+    labels = build_option_labels(active, [v2, v1])
+    assert (labels[(fid, "A")], labels[(fid, "B")], labels[(fid, "C")]) == (
+        "Alpha",
+        "Bee v2",
+        "Cee",
+    )
