@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, get_args
 
 from app.services.exports.codebook_model import field_code_clashes
 from app.services.exports.descriptors import count_level_records, primary_rater
-from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
+from app.services.exports.extraction.sheet_spec import Cell, CellStyle, CellValue, SheetSpec
 from app.services.exports.values import ExportStatus
 from app.services.extraction_export_service import ExportLayout, ExportMode
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
@@ -66,7 +66,7 @@ _MODE_LABELS: dict[ExportMode, str] = {
 }
 
 
-def _kv(label: str, value: object) -> tuple[Cell, ...]:
+def _kv(label: str, value: CellValue) -> tuple[Cell, ...]:
     return (Cell(label, _TITLE), Cell("" if value is None else value))
 
 
