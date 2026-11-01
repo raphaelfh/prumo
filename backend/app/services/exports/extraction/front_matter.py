@@ -130,7 +130,7 @@ def build_front_matter(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     rows.extend(_codebook_rows(layout))
 
     rows.extend(_block("Notes"))
-    rows.extend((Cell(""), Cell(note, _WRAP)) for note in _NOTES)
+    rows.extend((Cell(""), Cell(note, _WRAP)) for note in (*_NOTES, *layout.appraisal_notes))
     rows.extend(_block("Caveats"))
     rows.extend((Cell(""), Cell(caveat, _WRAP)) for caveat in _CAVEATS)
 

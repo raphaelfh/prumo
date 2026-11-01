@@ -307,11 +307,10 @@ class ExportLayout:
     codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
     versions: tuple[VersionSections, ...] = ()  # active first, then pinned latest-first (R14)
     narrow_pinned_versions: tuple[int, ...] = ()  # pinned snapshots skipped as narrow (D5)
-    # Per-domain risk-of-bias / appraisal roll-up with mode-aware ``Overall``
-    # (§7). None unless the exported template carries an appraisal layer
-    # (``kind == TemplateKind.QUALITY_ASSESSMENT``); ``build_appraisal_summary``
-    # returns None and the sheet is omitted when this is None.
+    # Per-domain appraisal roll-up (§7). None unless a root section carries a
+    # risk-vocabulary verdict (rule 8); the sheet is then omitted.
     appraisal: AppraisalModel | None = None
+    appraisal_notes: tuple[str, ...] = ()  # rule-8 README notes
     reviewer_id: UUID | None = None  # single_user target; None in the other modes
     # all_users: run -> reviewers with >=1 non-reject current decision (R16).
     raters_by_run: Mapping[UUID, tuple[UUID, ...]] = field(default_factory=dict)
@@ -323,6 +322,19 @@ class ExportLayout:
 
 
 _FILENAME_SANITISE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _is_risk_verdict(field: FieldDescriptor) -> bool:
+    """A SELECT field whose option labels all belong to the risk-of-bias
+    vocabulary (rule 8); signalling questions (Y/PY/PN/N/...) do not."""
+    # Function-local import breaks the module cycle: appraisal_summary imports
+    # ExportLayout from this module at load time. The vocabulary lives there.
+    from app.services.exports.extraction.appraisal_summary import _RISK_LABELS
+
+    if field.type is not ExtractionFieldType.SELECT:
+        return False
+    labels = [av.label.strip().lower() for av in field.allowed_values if av.label.strip()]
+    return bool(labels) and all(label in _RISK_LABELS for label in labels)
 
 
 class ExtractionExportService(LoggerMixin):
@@ -512,19 +524,17 @@ class ExtractionExportService(LoggerMixin):
                 labels=labels,
             )
 
-        # Per-domain risk-of-bias / appraisal roll-up (§7): only for QA templates.
-        # None when no domain carries a risk-label SELECT verdict field.
-        appraisal: AppraisalModel | None = None
-        if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
-            appraisal = self._build_appraisal_model(
-                rules_by_article=rules_by_article,
-                sections=sections,
-                articles=tuple(articles),
-                reviewers=reviewers,
-                value_map=value_map,
-                mode=mode,
-                reviewer_id=reviewer_id,
-            )
+        # Appraisal roll-up (§7, rule 8): detected by vocabulary at the root,
+        # whatever the template kind.
+        appraisal = self._build_appraisal_model(
+            rules_by_article=rules_by_article,
+            sections=sections,
+            articles=tuple(articles),
+            reviewers=reviewers,
+            value_map=value_map,
+            mode=mode,
+            reviewer_id=reviewer_id,
+        )
 
         return ExportLayout(
             project_name=project_name,
@@ -547,6 +557,9 @@ class ExtractionExportService(LoggerMixin):
                 for aid, reason in omitted
             ),
             appraisal=appraisal,
+            appraisal_notes=self._appraisal_notes(
+                sections, template_kind=template.kind, appraisal=appraisal
+            ),
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
             raters_by_run=raters_by_run,
         )
@@ -554,6 +567,27 @@ class ExtractionExportService(LoggerMixin):
     # ------------------------------------------------------------------
     # Appraisal roll-up (§7) — pure, DB-free
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _appraisal_notes(
+        sections: Sequence[SectionDescriptor],
+        *,
+        template_kind: str,
+        appraisal: AppraisalModel | None,
+    ) -> tuple[str, ...]:
+        """Rule-8 README notes: skipped nested domains, and a QA template
+        whose verdict labels are outside the risk-of-bias vocabulary."""
+        notes = [
+            f"Appraisal: '{s.label}' is not at the root, so it is not an Appraisal domain."
+            for s in sections
+            if s.parent_entity_type_id is not None and any(map(_is_risk_verdict, s.fields))
+        ]
+        if template_kind == TemplateKind.QUALITY_ASSESSMENT.value and appraisal is None:
+            notes.append(
+                "Appraisal: no root section has a SELECT field whose labels all belong to the "
+                "risk-of-bias vocabulary (PROBAST, QUADAS, RoB), so there is no Appraisal sheet."
+            )
+        return tuple(notes)
 
     @staticmethod
     def _build_appraisal_model(
@@ -566,9 +600,9 @@ class ExtractionExportService(LoggerMixin):
         reviewer_id: UUID | None,
         rules_by_article: Mapping[UUID, Mapping[str, Any]] | None = None,
     ) -> AppraisalModel | None:
-        """Compute the appraisal roll-up for a quality-assessment template (§7).
+        """Compute the appraisal roll-up (§7) over the root sections (rule 8).
 
-        Each domain = one section; its verdict field = the first SELECT-typed
+        Each domain = one root section; its verdict field = the first SELECT-typed
         field in sort_order whose ``allowed_values`` are the risk-label set
         (``{Low, High, Unclear, ...}`` — the recognised severity vocabulary).
         This is NOT "the first SELECT field": signalling questions are also
@@ -587,29 +621,15 @@ class ExtractionExportService(LoggerMixin):
         Returns None when no domain has a risk-label-set SELECT verdict field
         (no roll-up sheet; the sections still ship on their level sheets).
         """
-        # Function-local import breaks the module cycle: appraisal_summary
-        # imports ExportLayout/ExportMode from this module at load time, so a
-        # top-level import here would deadlock. The rollup vocabulary +
-        # worst-case helper live in the pure sub-builder (single source).
-        from app.services.exports.extraction.appraisal_summary import (
-            _RISK_LABELS,
-            _appraisal_overall,
-        )
+        # Function-local import breaks the module cycle (see _is_risk_verdict).
+        from app.services.exports.extraction.appraisal_summary import _appraisal_overall
 
-        # Verdict field per domain: first SELECT field in sort_order whose
-        # option labels are the recognised risk-label set (excludes signalling
-        # SELECT fields, whose answer sets differ — see _appraisal_overall's
-        # severity table for the recognised labels).
-        def _is_verdict(field: FieldDescriptor) -> bool:
-            if field.type is not ExtractionFieldType.SELECT:
-                return False
-            labels = [av.label.strip().lower() for av in field.allowed_values if av.label.strip()]
-            return bool(labels) and all(label in _RISK_LABELS for label in labels)
-
+        # Domains are root sections only (rule 8); nested ones get a README note.
         domains: list[tuple[SectionDescriptor, FieldDescriptor]] = []
-        for section in sorted(sections, key=lambda s: s.sort_order):
+        roots = (s for s in sections if s.parent_entity_type_id is None)
+        for section in sorted(roots, key=lambda s: s.sort_order):
             verdict_field = next(
-                (f for f in section.fields if _is_verdict(f)),
+                (f for f in section.fields if _is_risk_verdict(f)),
                 None,
             )
             if verdict_field is not None:

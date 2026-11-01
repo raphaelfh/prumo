@@ -59,7 +59,11 @@ from app.models.extraction_workflow import (
 from app.services.exports.descriptors import root_instance, value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
-from app.services.extraction_export_service import ExportMode, ExtractionExportService
+from app.services.extraction_export_service import (
+    ExportMode,
+    ExtractionExportService,
+    _is_risk_verdict,
+)
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -453,8 +457,9 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
 
     The QA template's two domains roll up to a single worst-case
     ``Overall`` per record (``Low`` ∨ ``High`` → ``High``). The same
-    project's plain ``extraction`` template yields ``appraisal is None``
-    (emission gate — the sections ship on their level sheets only).
+    project's ``extraction`` template has no root SELECT field in the
+    risk-of-bias vocabulary, so it yields ``appraisal is None`` (rule 8:
+    detection by vocabulary, not by template kind).
     """
     fx = await _seed_finalized_qa_run(db_session)
     if fx is None:
@@ -477,8 +482,7 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
     assert row.overall == "High"
     assert row.per_reviewer_overall == {}
 
-    # Emission gate: the project's extraction template carries no
-    # appraisal layer.
+    # Rule 8: detection is by vocabulary at the root, not by template kind.
     extraction_layout = await _service(db_session, fx).resolve_layout(
         project_id=fx.project_id,
         template_id=fx.extraction_template_id,
@@ -487,7 +491,11 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
     )
+    roots = [s for s in extraction_layout.sections if s.parent_entity_type_id is None]
+    assert roots, "precondition: the extraction template has root sections"
+    assert not any(_is_risk_verdict(f) for s in roots for f in s.fields)
     assert extraction_layout.appraisal is None
+    assert extraction_layout.appraisal_notes == ()
 
     await db_session.rollback()
 

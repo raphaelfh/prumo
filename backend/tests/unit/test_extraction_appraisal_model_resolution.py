@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import io
 import uuid
+from dataclasses import replace
+
+from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
 from app.services.exports.descriptors import value_key
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.exports.values import (
     ExportValue,
@@ -24,6 +29,7 @@ from app.services.extraction_export_service import (
     ReviewerDescriptor,
     SectionDescriptor,
 )
+from tests.unit.helpers.export_layouts import make_layout
 
 
 def _pairs(*labels: str) -> tuple[AllowedValue, ...]:
@@ -447,3 +453,82 @@ def test_single_user_verdicts_read_the_reviewer_slot() -> None:
     )
     # An unlabelled code ranks as unknown, hence most severe.
     assert model is not None and model.rows[0].overall == "H"
+
+
+# ----------------------------------------------------------------------
+# Rule 8: domains at the root, detected by vocabulary
+# ----------------------------------------------------------------------
+
+
+def test_nested_risk_verdict_is_not_a_domain_and_is_noted() -> None:
+    root = _section("Participants", _field("RoB"), 0)
+    nested = replace(_section("Per model", _field("RoB"), 1), parent_entity_type_id=uuid.uuid4())
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(root, nested),
+        articles=(),
+        reviewers=(),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
+    )
+    assert model is not None
+    assert model.domain_labels == ("Participants",)
+    assert ExtractionExportService._appraisal_notes(
+        (root, nested), template_kind="extraction", appraisal=model
+    ) == ("Appraisal: 'Per model' is not at the root, so it is not an Appraisal domain.",)
+
+
+def test_only_nested_risk_verdicts_give_no_appraisal() -> None:
+    nested = replace(_section("Per model", _field("RoB"), 0), parent_entity_type_id=uuid.uuid4())
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(nested,),
+        articles=(),
+        reviewers=(),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
+    )
+    assert model is None
+
+
+def test_custom_vocabulary_qa_template_has_no_appraisal_and_a_note() -> None:
+    d = _section("Quality", _field("Grade", allowed_values=_pairs("Good", "Fair", "Poor")), 0)
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(d,),
+        articles=(),
+        reviewers=(),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
+    )
+    assert model is None
+    notes = ExtractionExportService._appraisal_notes(
+        (d,), template_kind="quality_assessment", appraisal=None
+    )
+    assert notes == (
+        "Appraisal: no root section has a SELECT field whose labels all belong to the "
+        "risk-of-bias vocabulary (PROBAST, QUADAS, RoB), so there is no Appraisal sheet.",
+    )
+
+
+def test_extraction_template_without_verdicts_gets_no_note() -> None:
+    d = _section("Quality", _field("Grade", allowed_values=_pairs("Good", "Fair", "Poor")), 0)
+    assert (
+        ExtractionExportService._appraisal_notes((d,), template_kind="extraction", appraisal=None)
+        == ()
+    )
+
+
+def test_workbook_without_appraisal_prints_the_note_in_the_readme() -> None:
+    note = "Appraisal: no root section has a SELECT field (test note)."
+    layout = make_layout(
+        sections=(_section("Quality", _field("Grade"), 0),),
+        appraisal=None,
+        appraisal_notes=(note,),
+    )
+    wb = load_workbook(
+        io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
+    )
+    assert "Appraisal" not in wb.sheetnames
+    readme = [c for row in wb["README"].iter_rows(values_only=True) for c in row]
+    assert note in readme
