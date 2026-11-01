@@ -13,7 +13,7 @@ from uuid import uuid4
 from app.models.extraction import ExtractionFieldType
 from app.services.exports.descriptors import ValueKey, value_key
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
-from app.services.exports.extraction.workbook import SheetTitles
+from app.services.exports.extraction.workbook import ExportShape, SheetTitles
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
@@ -73,7 +73,7 @@ def test_legacy_template_keeps_single_overall_column() -> None:
         ),
     )
     layout = _Layout(model)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     assert tuple(c.value for c in sheet.rows[0]) == ("Record", "D1", "D2", "Overall")
     assert tuple(c.value for c in sheet.rows[1]) == ("Art 1", "Low", "High", "High")
@@ -97,7 +97,7 @@ def test_spec_template_emits_named_overall_columns() -> None:
         derived_labels=("Overall quality (development)", "Overall RoB (evaluation)"),
     )
     layout = _Layout(model)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     header = tuple(c.value for c in sheet.rows[0])
     assert header == (
@@ -134,7 +134,7 @@ def test_all_users_keeps_per_reviewer_overall_for_a_legacy_template() -> None:
     )
     layout = _Layout(model, mode=ExportMode.ALL_USERS)
     layout.reviewers = (reviewer,)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     assert tuple(c.value for c in sheet.rows[0]) == ("Record", "D1", "Overall", "Overall — Ana")
 
@@ -165,7 +165,7 @@ def test_all_users_spec_template_does_not_emit_the_legacy_per_reviewer_overall()
     )
     layout = _Layout(model, mode=ExportMode.ALL_USERS)
     layout.reviewers = (reviewer,)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     header = tuple(c.value for c in sheet.rows[0])
     assert header == ("Record", "Dev D1", "Overall quality (development)")

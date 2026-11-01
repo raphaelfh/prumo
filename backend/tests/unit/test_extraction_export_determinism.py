@@ -540,10 +540,14 @@ def test_appraisal_summary_spec_is_reproducible_and_tie_breaks_first_worst() -> 
     )
 
     spec_a = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
     spec_b = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
     assert spec_a is not None
 
@@ -591,7 +595,9 @@ def test_appraisal_reviewer_columns_pinned_to_layout_order() -> None:
         value_map=value_map,
     )
     forward = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
     reversed_reviewers = tuple(reversed(reviewers))
     layout = _appraisal_layout(
@@ -601,7 +607,9 @@ def test_appraisal_reviewer_columns_pinned_to_layout_order() -> None:
         value_map=value_map,
     )
     backward = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
 
     fwd_header = tuple(c.value for c in forward.rows[0])
