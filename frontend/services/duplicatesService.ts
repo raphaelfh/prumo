@@ -8,6 +8,7 @@ import {apiClient} from '@/integrations/api/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {components} from '@/types/api/schema';
 
+export type DuplicatePair = components['schemas']['DuplicatePair'];
 export type DuplicatesRead = components['schemas']['DuplicatesRead'];
 export type DuplicateVerdictCreate = components['schemas']['DuplicateVerdictCreate'];
 export type DuplicateVerdictsResult = components['schemas']['DuplicateVerdictsResult'];
