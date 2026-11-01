@@ -12,9 +12,10 @@
  *
  * Keyboard (§4.5): j/k and ↓/↑ move the cursor through the visible order (the
  * selection follows while the panel is open), Enter opens the cursor row, `x`
- * checks it; ⇧-click checks a range. A decision advances to the next To screen
- * row in queue order, announces it and prefetches the two after it; a ruling
- * stays on the ruled record (§4.4 advances after a decision only).
+ * checks it; ⇧-click checks a range. A decision on a To screen row advances to
+ * the next To screen row in queue order, announces it and prefetches the two
+ * after it (wrapping like the advance); a ruling or a solo re-decide stays on
+ * its record (§4.4 advances after a To screen decision only).
  */
 import {FileText} from 'lucide-react';
 import {useQueryClient} from '@tanstack/react-query';
@@ -50,15 +51,19 @@ import {EnrollAllButton, PubMedImportButton, StartScreeningButton} from './Scree
 const SKELETON_ROWS = 6;
 const PREFETCH_AHEAD = 2;
 
-/** The To screen rows after `from` in queue order, skipping the one just decided (its cached status is pre-decision). */
+/**
+ * The To screen rows after `from` in queue order, wrapping to the queue's start
+ * as `nextToScreen` does; skips the row just decided (its cached status is
+ * pre-decision) and `from` itself.
+ */
 function queueAfter(rows: ScreeningRecordRow[], from: ScreeningRecordRow, decidedId: string): ScreeningRecordRow[] {
-  return sortRecords(
-    rows.filter(
-      (row) => row.status === 'to_screen' && row.article_id !== decidedId && row.queue_rank > from.queue_rank,
-    ),
+  const queue = sortRecords(
+    rows.filter((row) => row.status === 'to_screen' && row.article_id !== decidedId),
     'queue',
     'asc',
   );
+  const at = queue.findIndex((row) => row.article_id === from.article_id);
+  return [...queue.slice(at + 1), ...queue.slice(0, Math.max(at, 0))];
 }
 
 function isStatusView(value: string | null): value is StatusView {
@@ -205,6 +210,9 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
 
   const onDecided = (decided: ScreeningRecordRow) => {
     setKeepArticleIds((prev) => new Set(prev).add(decided.article_id));
+    // `decided` is the row as it was before the decision: a solo re-decide
+    // (anything but To screen) stays on the record, whose chip refetches.
+    if (decided.status !== 'to_screen') return;
     const next = rows ? nextToScreen(rows, decided.article_id) : null;
     if (!rows || !next) return;
     selectRow(next);

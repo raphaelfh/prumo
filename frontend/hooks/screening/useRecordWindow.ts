@@ -2,9 +2,10 @@
  * Row windowing for the screening record list (spec §4.6 size target: 5,000
  * records). Up to `WINDOW_THRESHOLD` rows every row mounts; above it only the
  * rows in the scroller's viewport plus an overscan, with spacer heights
- * standing in for the rest. A cursor move scrolls the cursor row into the
- * window and, when focus was on a row, focuses the cursor row once it has
- * mounted, so a native Enter opens the cursor row.
+ * standing in for the rest. A cursor move (a new cursor row, never a refetch
+ * that only shifts its index) scrolls the cursor row into the window and, when
+ * focus was on a row, focuses the cursor row once it has mounted, so a native
+ * Enter opens the cursor row.
  */
 import {
   measureElement as measureDomElement,
@@ -28,7 +29,7 @@ interface RecordWindowOptions {
   /** Height of the sticky header inside the scroller, so a scrolled-to row clears it. */
   headerHeight: number;
   cursorIndex: number;
-  /** The cursor row's identity: a new cursor at the same index still scrolls and focuses. */
+  /** The cursor row's identity: scroll and focus follow when it changes, not when its index does. */
   cursorKey: string | null;
   /** The cursor row's focus target, or null while it is not mounted. */
   cursorElement: () => HTMLElement | null;
@@ -80,7 +81,14 @@ export function useRecordWindow({
 
   // Set when the cursor moves while a row holds focus; cleared once focus lands.
   const focusPending = useRef(false);
+  // The cursor row last followed (undefined before the first run, so a
+  // deep-linked cursor scrolls in on mount).
+  const followedKey = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    // A refetch that reorders rows moves the cursor's index, not the cursor:
+    // focus stays where the user put it and the list does not scroll.
+    if (cursorIndex >= 0 && followedKey.current === cursorKey) return;
+    if (cursorIndex >= 0) followedKey.current = cursorKey;
     // A new cursor replaces any landing still pending for the previous one.
     focusPending.current = cursorIndex >= 0 && document.activeElement?.closest('[data-record-row]') != null;
     if (cursorIndex < 0) return;

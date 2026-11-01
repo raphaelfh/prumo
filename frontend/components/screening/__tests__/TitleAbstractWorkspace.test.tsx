@@ -635,11 +635,10 @@ describe('TitleAbstractWorkspace — keyboard', () => {
     expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
     // Focus returns to the filter trigger, whose tooltip opens: the tooltip
     // takes its own Escape, which is not a chain step.
-    if (screen.queryByRole('tooltip')) {
-      escape();
-      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
-      expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
-    }
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument();
+    escape();
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
 
     escape();
     expect(document.querySelector('[data-maximized]')).toBeNull();
@@ -740,6 +739,64 @@ describe('TitleAbstractWorkspace — auto-advance', () => {
     await waitFor(() => expect(calls.ids).toEqual(expect.arrayContaining(['a2', 'a4', 'a5'])));
     expect(calls.ids).not.toContain('a6');
     expect(search().get('article')).toBe('art2');
+  });
+
+  it('prefetches the next two in wrapped queue order at the end of the queue', async () => {
+    const current = serveRecords([ALPHA, BETA, DELTA, EPSILON, ZETA]);
+    const calls = serveAssignments(current.rows);
+    serveDecide(current, EPSILON);
+    const user = userEvent.setup();
+    renderWorkspace({path: '/projects/p1?tab=screening&article=art5'});
+    await screen.findByRole('heading', {name: 'Epsilon series'});
+    expect(calls.ids).not.toContain('a1');
+
+    await user.click(await screen.findByRole('button', {name: /Include/}));
+
+    // Zeta is the last To screen: the two after it wrap to Alpha and Beta, as nextToScreen does.
+    await waitFor(() => expect(search().get('article')).toBe('art6'));
+    await waitFor(() => expect(calls.ids).toEqual(expect.arrayContaining(['a6', 'a1', 'a2'])));
+    expect(calls.ids).not.toContain('a4');
+  });
+
+  // Spec §4.4 advances after a To screen decision only: a solo re-decide of a
+  // decided record stays on it, and its chip follows the new outcome.
+  it('stays on the record after a solo re-decide', async () => {
+    const DECIDED = {...ALPHA, status: 'included' as const, my_decision: 'include' as const, outcome: 'include' as const};
+    const current = serveRecords([DECIDED, BETA]);
+    serveAssignments(current.rows, (r) =>
+      r.article_id === DECIDED.article_id
+        ? {
+            ...assignmentFor(r),
+            status: 'decided',
+            my_decision: {id: 'd1', decision: 'include', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+            outcome: {decision: 'include', exclusion_reason: null, kind: 'solo', reasons_differ: false},
+          }
+        : assignmentFor(r),
+    );
+    let decisions = 0;
+    server.use(
+      http.post(DECIDE_URL, () => {
+        decisions += 1;
+        current.rows = current.rows.map((r) =>
+          r.article_id === DECIDED.article_id ? {...r, status: 'excluded', my_decision: 'exclude', outcome: 'exclude'} : r,
+        );
+        return ok({...assignmentFor(DECIDED), status: 'decided'});
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace({cfg: config({reviewer_count: 1}), path: '/projects/p1?tab=screening&status=all&article=art1'});
+    expect(await screen.findByRole('button', {name: /Include/})).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', {name: /^Exclude(?! with)/}));
+
+    await waitFor(() => expect(decisions).toBe(1));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Changed to Exclude'));
+    await waitFor(() =>
+      expect(within(titleButton('Alpha trial')!.closest('tr')!).getByText('Excluded')).toBeInTheDocument(),
+    );
+    expect(search().get('article')).toBe('art1');
+    expect(screen.getByRole('heading', {name: 'Alpha trial'})).toBeInTheDocument();
+    expect(liveRegion()).toHaveTextContent('');
   });
 
   it('stays on the decided record when nothing is left to screen', async () => {

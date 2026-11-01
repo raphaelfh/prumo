@@ -8,7 +8,7 @@
  * `scrollHeight`.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {render, screen, waitFor, within} from '@testing-library/react';
+import {fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {http, HttpResponse} from 'msw';
 import {MemoryRouter} from 'react-router';
@@ -58,13 +58,16 @@ const CONFIG: ScreeningConfigRead = {
 };
 
 const originalScrollTo = HTMLElement.prototype.scrollTo;
+/** The records the next read serves; a test reassigns it before a refetch. */
+let served: ScreeningRecordRow[] = ROWS;
 
 beforeEach(() => {
+  served = ROWS;
   server.use(
     http.get('*/api/v1/projects/:projectId/screening/records', () =>
       HttpResponse.json({
         ok: true,
-        data: {exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', reviewer_count: 2, rows: ROWS},
+        data: {exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', reviewer_count: 2, rows: served},
       }),
     ),
     http.get('*/api/v1/screening/assignments/:assignmentId', ({params}) => {
@@ -101,7 +104,7 @@ afterEach(() => {
 
 function renderWorkspace() {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <HeaderActionsProvider>
         <MemoryRouter initialEntries={['/projects/p1?tab=screening']}>
@@ -110,6 +113,7 @@ function renderWorkspace() {
       </HeaderActionsProvider>
     </QueryClientProvider>,
   );
+  return {...view, client};
 }
 
 const bodyRows = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
@@ -134,7 +138,9 @@ describe('ScreeningRecordList — windowed rows', () => {
     // Precondition: the target is outside the first window.
     expect(screen.queryByRole('button', {name: 'Record 60'})).toBeNull();
     first.focus();
-    for (let step = 0; step <= 60; step++) await user.keyboard('j');
+    // 61 synchronous presses: userEvent's per-key async round trips exceed the
+    // timeout under a loaded full-suite run.
+    for (let step = 0; step <= 60; step++) fireEvent.keyDown(document.activeElement ?? document.body, {key: 'j'});
     const target = await screen.findByRole('button', {name: 'Record 60'});
     await waitFor(() => expect(document.activeElement).toBe(target));
     const cursor = document.querySelector('[data-cursor="true"]');
@@ -170,5 +176,41 @@ describe('ScreeningRecordList — windowed rows', () => {
     await screen.findByRole('button', {name: 'Record 0'});
     await user.click(screen.getByRole('checkbox', {name: 'Select all records'}));
     expect(screen.getByText(`${COUNT} selected`)).toBeInTheDocument();
+  });
+
+  it('shift-click checks a range across rows that are not mounted', async () => {
+    const user = userEvent.setup();
+    renderWorkspace();
+    await screen.findByRole('button', {name: 'Record 0'});
+    await user.click(screen.getByRole('checkbox', {name: 'Select Record 0'}));
+    const scroller = screen.getByRole('table').parentElement?.parentElement as HTMLElement;
+    scroller.scrollTo({top: 200 * 36});
+    await screen.findByRole('button', {name: 'Record 200'});
+    // Precondition: the start of the range is no longer mounted.
+    expect(screen.queryByRole('button', {name: 'Record 0'})).toBeNull();
+
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByRole('checkbox', {name: 'Select Record 200'}));
+    await user.keyboard('{/Shift}');
+
+    expect(screen.getByText('201 selected')).toBeInTheDocument();
+  });
+
+  it('a refetch that shifts the cursor row leaves focus where it is', async () => {
+    const user = userEvent.setup();
+    const {client} = renderWorkspace();
+    const first = await screen.findByRole('button', {name: 'Record 0'});
+    first.focus();
+    await user.keyboard('j');
+    expect(document.querySelector('[data-cursor="true"]')).toHaveAttribute('data-record-row', 'art0');
+    const box = screen.getByRole('checkbox', {name: 'Select Record 3'});
+    box.focus();
+
+    // Record 0 moves to the fifth place in queue order: the cursor row's index changes.
+    served = ROWS.map((r) => (r.article_id === 'art0' ? {...r, queue_rank: 5} : r.queue_rank <= 5 ? {...r, queue_rank: r.queue_rank - 1} : r));
+    await client.invalidateQueries();
+    await waitFor(() => expect(bodyRows()[4]).toHaveAttribute('data-record-row', 'art0'));
+
+    expect(document.activeElement).toBe(box);
   });
 });
