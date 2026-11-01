@@ -128,6 +128,7 @@ def test_complete_emits_every_sheet() -> None:
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "AI proposals",
         "Appraisal",
         "Codebook",

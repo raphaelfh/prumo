@@ -134,7 +134,7 @@ def test_build_workbook_returns_valid_xlsx_bytes():
     wb = _open(data)
     # §3 order: README → Summary → Matrix → Articles → Codebook. The empty
     # layout has no repeating level and no coded option (no Options sheet).
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Codebook"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data", "Codebook"]
 
 
 def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
@@ -148,6 +148,7 @@ def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "AI proposals",
         "Codebook",
     ]
@@ -605,6 +606,7 @@ def test_workbook_emits_sheets_in_section4_order():
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "Codebook",
         "Options",
     ]
