@@ -241,7 +241,7 @@ def _article(
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=article_id,
-        header_label="Article",
+        article_label="Article",
         run_id=run_id,
         version_id=None,
         entries={(entity_type_id, None): (instance_id,)},

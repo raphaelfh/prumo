@@ -110,6 +110,6 @@ async def build_export(
         project_name=layout.project_name,
         template_name=layout.template_name,
         mode=req.mode,
-        generated_at=layout.notes.generated_at,
+        generated_at=layout.generated_at,
     )
     return ExportFile(content=content, filename=filename)

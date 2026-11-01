@@ -102,7 +102,7 @@ def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetS
     Returns None when ``allocate_titles`` left the role out because the
     exported template carries no appraisal layer (``layout.appraisal is
     None``) — the workbook orchestrator then omits
-    sheet #k+1 and any risk-of-bias section still renders as a tidy table.
+    sheet #k+1 and any risk-of-bias section still renders on its level sheet.
 
     Mode-aware Overall columns (§7):
       * consensus / single_user -> a single ``Overall`` column (the record's

@@ -17,15 +17,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.models.extraction import (
-    ExtractionCardinality,
-)
 from app.services.exports.descriptors import (
     EntryColumn,
     build_columns,
     instance_for,
     primary_rater,
     value_key,
+    walk_sections,
 )
 from app.services.exports.extraction.sheet_spec import (
     Cell,
@@ -143,7 +141,7 @@ def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
     for article in layout.articles:
         models_per_article = _article_fanout_count(article=article, layout=layout)
         span = models_per_article * len(reviewer_axis)
-        grid[(1, col_cursor)] = (article.header_label, _HEADER_STYLE)
+        grid[(1, col_cursor)] = (article.article_label, _HEADER_STYLE)
         first = col_cursor
         last = col_cursor + span - 1
         if span > 1:
@@ -170,12 +168,7 @@ def build_matrix(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
                     cur += 1
 
     row_cursor = header_offset + 1
-    section_number = 0
-    for section in layout.sections:
-        if section.cardinality is ExtractionCardinality.MANY and not section.fields:
-            continue
-        section_number += 1
-
+    for section_number, section in enumerate(walk_sections(layout.sections), start=1):
         grid[(row_cursor, 1)] = (f"{section_number}. {section.label}", _BAND_STYLE)
         last_col = col_cursor - 1
         if last_col > 1:

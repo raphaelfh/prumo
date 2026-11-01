@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -28,6 +29,7 @@ from app.models.extraction import (
     ExtractionFieldType,
 )
 from app.models.extraction_workflow import ExtractionProposalRecord
+from app.services.exports.codebook_model import VersionSections, build_codebook_entries
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
 # orchestrator package.
@@ -39,23 +41,18 @@ from app.services.exports.extraction.workbook import (
     matrix_fits,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
-from app.services.exports.values import ExportValue, to_export_value
+from app.services.exports.values import ExportValue, build_option_labels, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
-    FieldDictEntry,
-    FrontMatter,
     ReviewerDescriptor,
     SectionDescriptor,
-    TidyRow,
-    TidyTable,
 )
 
 # Hard-coded UUIDs for the fixed layout — module-level so the README/Methods
-# front-matter, the data dictionary, and the tidy table all reference the SAME
+# front-matter, the data dictionary, and the level sheet all reference the SAME
 # ids two builds over, keeping the new sheets byte-identical across builds.
 _SECTION_ID = uuid4()
 _FIELD_ID = uuid4()
@@ -80,8 +77,7 @@ def _fixed_layout() -> ExportLayout:
     """A layout whose every UUID is hard-coded so two runs produce the
     same workbook bytes (mod doc-properties).
 
-    Populates the §4 publication projections — ``front_matter`` (README /
-    Methods), ``data_dictionary``, ``tidy_tables``, and an explicit ``None``
+    Populates the §4 projections — ``generated_at`` (README), ``codebook``, a repeating section (its level sheet), and an explicit ``None``
     ``appraisal`` — so the new sub-builder sheets actually render and their
     XML parts are covered by the structural-determinism assertion below.
     """
@@ -96,65 +92,36 @@ def _fixed_layout() -> ExportLayout:
         label="1. Source of data",
         parent_entity_type_id=None,
         fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+        name="source_of_data",
     )
     article = ArticleDescriptor(
         article_id=_ARTICLE_ID,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=_RUN_ID,
         version_id=None,
         entries={(_SECTION_ID, None): (_INST_ID,)},
     )
 
-    # README / Methods front-matter (§4 #1). Its ``generated_at`` is hard-coded,
-    # so the rendered "Generated at" cell is identical across builds; the only
-    # surviving per-build divergence is the openpyxl docProps timestamp.
-    front_matter = FrontMatter(
-        project_name="Test Project",
-        template_name="CHARMS",
-        template_version=1,
-        export_mode_label="Consensus",
-        generated_at=_GENERATED_AT,
-        article_count=1,
-        record_count=1,
-        legend=(("—", "field not present in this Run"),),
-        caveats=("Reviewer outcomes are best-effort.",),
-        obsolete_fields_per_article={},
-    )
-    # Data dictionary (§4 #k+2): one entry with a select option set so a
-    # Dropdown lists sheet co-renders and is covered by the structural diff.
-    data_dictionary = (
-        FieldDictEntry(
-            field_id=_FIELD_ID,
-            section_label="1. Source of data",
-            label="1.1 Source of data",
-            type=ExtractionFieldType.SELECT,
-            unit=None,
-            description="Where the predictor data came from.",
-            allowed_values=(
-                AllowedValue(value="registry", label="Existing registry"),
-                AllowedValue(value="cohort", label="New cohort"),
-            ),
-            is_required=True,
-            allow_other=False,
-        ),
-    )
-    # Tidy table (§5.3): one records-as-rows sheet at the section grain.
-    tidy_tables = (
-        TidyTable(
-            section_id=_SECTION_ID,
-            title="1. Source of data",
-            cardinality=ExtractionCardinality.ONE,
-            column_field_ids=(_FIELD_ID,),
-            column_labels=("1.1 Source of data",),
-            rows=(
-                TidyRow(
-                    article_id=_ARTICLE_ID,
-                    instance_id=None,
-                    record_label="Gaca, 2011",
-                    values=("Existing registry",),
+    # Codebook (§4.4): the field as a select with an option set, so an
+    # Options sheet co-renders and is covered by the structural diff.
+    coded = replace(
+        section,
+        fields=(
+            replace(
+                field,
+                type=ExtractionFieldType.SELECT,
+                description="Where the predictor data came from.",
+                allowed_values=(
+                    AllowedValue(value="registry", label="Existing registry"),
+                    AllowedValue(value="cohort", label="New cohort"),
                 ),
+                is_required=True,
             ),
         ),
+    )
+    codebook = build_codebook_entries(
+        VersionSections(_SECTION_ID, 1, (coded,)), (), build_option_labels((coded,))
     )
     return ExportLayout(
         project_name="Test Project",
@@ -166,13 +133,9 @@ def _fixed_layout() -> ExportLayout:
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=_GENERATED_AT,
-        ),
+        generated_at=_GENERATED_AT,
         value_map={value_key(_RUN_ID, _INST_ID, _FIELD_ID): _tv("Existing registry")},
-        front_matter=front_matter,
-        data_dictionary=data_dictionary,
-        tidy_tables=tidy_tables,
+        codebook=codebook,
         appraisal=None,
     )
 
@@ -232,7 +195,7 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
         mode=base.mode,
         include_ai_metadata=True,
         anonymize_reviewer_names=base.anonymize_reviewer_names,
-        notes=base.notes,
+        generated_at=base.generated_at,
         value_map=base.value_map,
         ai_proposal_rows=proposals,
     )
@@ -288,10 +251,12 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode(
         label="1. Source of data",
         parent_entity_type_id=None,
         fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+        name="source_of_data",
     )
     article = ArticleDescriptor(
         article_id=article_id,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(entity_type_id, None): (inst_id,)},
@@ -412,7 +377,7 @@ def test_column_guard_boundary() -> None:
         articles = tuple(
             ArticleDescriptor(
                 article_id=uuid4(),
-                header_label=f"a{i}",
+                article_label=f"a{i}",
                 run_id=uuid4(),
                 version_id=None,
                 # One cardinality=one study section ⇒ a single data column
@@ -431,7 +396,7 @@ def test_column_guard_boundary() -> None:
             mode=ExportMode.CONSENSUS,
             include_ai_metadata=False,
             anonymize_reviewer_names=False,
-            notes=ExportNotes(),
+            generated_at=datetime(2026, 1, 1, tzinfo=UTC),
             value_map={},
         )
 
@@ -445,7 +410,7 @@ def test_column_guard_boundary() -> None:
 
 # ----------------------------------------------------------------------
 # S8 / Task 73: extend structural determinism to the new publication sheets
-# (README/Methods, Data dictionary, tidy tables, Dropdown lists) + a
+# (README/Methods, Codebook, level sheets, Options) + a
 # 500×100 all-users case that blows past the 16,384-column guard.
 # ----------------------------------------------------------------------
 
@@ -480,12 +445,12 @@ def test_new_sheets_are_structurally_deterministic() -> None:
 
     # The new sub-builder sheets are present in the rendered workbook.
     names = _sheet_titles(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
-    assert "Data dictionary" in names
+    assert "Codebook" in names
     assert any(n.startswith("README") or "Methods" in n for n in names)
-    # The tidy table + co-located dropdown catalogue render too (the
-    # _fixed_layout dictionary entry carries select options).
-    assert "Dropdown lists" in names
-    assert "1. Source of data" in names
+    # The level sheets and the Options sheet render too (the _fixed_layout
+    # codebook entry carries select options).
+    assert "Options" in names
+    assert {"Articles", "source_of_data"} <= set(names)
 
 
 def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayout:
@@ -515,7 +480,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
     articles = tuple(
         ArticleDescriptor(
             article_id=uuid4(),
-            header_label=f"A{i}",
+            article_label=f"A{i}",
             run_id=uuid4(),
             version_id=uuid4(),
             entries={(sec_id, None): tuple(uuid4() for _ in range(subcols_each))},
@@ -536,7 +501,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={},
     )
 
@@ -593,9 +558,7 @@ def _appraisal_layout(
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
-        ),
+        generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         value_map=value_map,
         appraisal=appraisal,
     )
@@ -659,7 +622,7 @@ def _tied_appraisal_inputs():
     inst1, inst2 = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(sid1, None): (inst1,), (sid2, None): (inst2,)},
