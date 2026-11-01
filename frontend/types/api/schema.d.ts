@@ -4468,6 +4468,11 @@ export interface components {
             has_abstract: boolean;
             /** Has Pdf */
             has_pdf: boolean;
+            /**
+             * Has Refusing Work
+             * @description Full-text or extraction work: the server refuses removing this side.
+             */
+            has_refusing_work: boolean;
             /** Has Review Work */
             has_review_work: boolean;
             /** Ingestion Source */

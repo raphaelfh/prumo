@@ -22,6 +22,7 @@ function side(id: string, over: Partial<Side> = {}): Side {
     has_abstract: true,
     screening_decisions: 0,
     has_review_work: false,
+    has_refusing_work: false,
     ...over,
   };
 }
@@ -68,11 +69,18 @@ describe('DuplicateComparePanel', () => {
     expect(screen.getAllByLabelText('Differs')).toHaveLength(2);
   });
 
-  it('shows the set-aside warning when keeping the side with fewer decisions', async () => {
-    setup(pair({screening_decisions: 3}, {screening_decisions: 0, title: 'Kept title'}));
+  it('keep-the-other: removed side with only TA decisions is mergeable, with the set-aside warning', async () => {
+    // Server-consistent: TA decisions => has_review_work, but no FT/extraction work.
+    const h = setup(
+      pair({screening_decisions: 2, has_review_work: true}, {screening_decisions: 0, title: 'Kept title'}),
+    );
     expect(
-      screen.getByText("Title rem's title/abstract decisions (3) are set aside; Kept title will need screening"),
+      screen.getByText("Title rem's title/abstract decisions (2) are set aside; Kept title will need screening"),
     ).toBeInTheDocument();
+    const merge = screen.getByRole('button', {name: 'Merge, keep selected'});
+    expect(merge).toBeEnabled();
+    await userEvent.click(merge);
+    expect(h.onMerge).toHaveBeenCalledWith('rem', 'kept');
   });
 
   it('merge posts the selected keeper', async () => {
@@ -88,15 +96,27 @@ describe('DuplicateComparePanel', () => {
     expect(h.onMerge).toHaveBeenCalledWith('rem', 'kept');
   });
 
-  it('disables Merge when the removed side has review work', () => {
-    setup(pair({has_review_work: true}));
-    expect(screen.getByRole('button', {name: 'Merge, keep selected'})).toBeDisabled();
+  it('disables Merge with a tooltip when the removed side has full-text or extraction work', async () => {
+    setup(pair({has_review_work: true, has_refusing_work: true}));
+    const merge = screen.getByRole('button', {name: 'Merge, keep selected'});
+    expect(merge).toBeDisabled();
+    await userEvent.hover(merge.parentElement!);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'This record already has full-text or extraction work, so keep it instead.',
+    );
   });
 
-  it('disables Merge when both sides have review work', () => {
-    const h = setup(pair({has_review_work: true}, {has_review_work: true}));
-    expect(screen.getByRole('button', {name: 'Merge, keep selected'})).toBeDisabled();
+  it('disables Merge with a tooltip when both sides have review work', async () => {
+    const h = setup(
+      pair({screening_decisions: 1, has_review_work: true}, {screening_decisions: 2, has_review_work: true}),
+    );
+    const merge = screen.getByRole('button', {name: 'Merge, keep selected'});
+    expect(merge).toBeDisabled();
     expect(screen.getByRole('button', {name: 'Not duplicates'})).toBeEnabled();
+    await userEvent.hover(merge.parentElement!);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Both records have review work: mark them Not duplicates or leave the pair open.',
+    );
     expect(h.onMerge).not.toHaveBeenCalled();
   });
 

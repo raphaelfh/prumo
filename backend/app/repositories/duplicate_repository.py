@@ -263,6 +263,7 @@ class DuplicateRepository:
             _has_abstract(Article).label("has_abstract"),
             decisions.label("screening_decisions"),
             review_work(Article).label("has_review_work"),
+            refusing_work(Article).label("has_refusing_work"),
         ).where(Article.project_id == project_id, Article.id.in_(article_ids))
         sides: dict[UUID, DuplicateSide] = {}
         for row in (await self.db.execute(stmt)).mappings().all():

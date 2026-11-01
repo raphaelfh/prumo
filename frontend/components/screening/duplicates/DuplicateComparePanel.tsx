@@ -61,7 +61,14 @@ export function DuplicateComparePanel({pair, busy, onMerge, onDistinct, onSkip, 
   const keeper = keeperId === pair.removed.article_id ? pair.removed : pair.kept;
   const other = keeper === pair.kept ? pair.removed : pair.kept;
   const setAside = !resolved && keeper.screening_decisions < other.screening_decisions;
-  const blocked = other.has_review_work;
+  // The server refuses removing a side with FT/extraction work; a pair whose
+  // both sides have review work can only be "Not duplicates" or left open (§8.3).
+  const blockedBy = other.has_refusing_work
+    ? 'errHasReviewWork'
+    : pair.kept.has_review_work && pair.removed.has_review_work
+      ? 'bothHaveReviewWork'
+      : null;
+  const blocked = blockedBy != null;
 
   const mergeButton = (
     <Button disabled={busy || blocked} onClick={() => onMerge(other.article_id, keeper.article_id)}>
@@ -141,12 +148,12 @@ export function DuplicateComparePanel({pair, busy, onMerge, onDistinct, onSkip, 
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          {blocked ? (
+          {blockedBy ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span tabIndex={0}>{mergeButton}</span>
               </TooltipTrigger>
-              <TooltipContent>{t('duplicates', 'errHasReviewWork')}</TooltipContent>
+              <TooltipContent>{t('duplicates', blockedBy)}</TooltipContent>
             </Tooltip>
           ) : (
             mergeButton

@@ -408,6 +408,7 @@ function pairs(n: number) {
     has_abstract: true,
     has_pdf: false,
     has_review_work: false,
+    has_refusing_work: false,
     ingestion_source: null,
     journal_title: null,
     pmid: null,

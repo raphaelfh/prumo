@@ -46,6 +46,7 @@ def test_duplicate_side_has_the_compare_fields() -> None:
         "has_abstract",
         "screening_decisions",
         "has_review_work",
+        "has_refusing_work",
     }
 
 

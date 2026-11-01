@@ -26,6 +26,7 @@ const side = (id: string, title: string): Side => ({
   has_abstract: true,
   screening_decisions: 0,
   has_review_work: false,
+  has_refusing_work: false,
 });
 
 const pair = (removed: Side, kept: Side): DuplicatePair => ({

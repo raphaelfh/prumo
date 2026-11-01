@@ -5739,6 +5739,11 @@
             "title": "Has Pdf",
             "type": "boolean"
           },
+          "has_refusing_work": {
+            "description": "Full-text or extraction work: the server refuses removing this side.",
+            "title": "Has Refusing Work",
+            "type": "boolean"
+          },
           "has_review_work": {
             "title": "Has Review Work",
             "type": "boolean"
@@ -5808,7 +5813,8 @@
           "has_pdf",
           "has_abstract",
           "screening_decisions",
-          "has_review_work"
+          "has_review_work",
+          "has_refusing_work"
         ],
         "title": "DuplicateSide",
         "type": "object"

@@ -26,6 +26,7 @@ function side(id: string, over: Partial<Side> = {}): Side {
     has_abstract: true,
     screening_decisions: 0,
     has_review_work: false,
+    has_refusing_work: false,
     ...over,
   };
 }

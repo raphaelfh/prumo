@@ -181,13 +181,15 @@ async def test_each_tier_is_listed(db_session: AsyncSession) -> None:
         "has_abstract": True,
         "screening_decisions": 2,
         "has_review_work": True,
+        "has_refusing_work": False,
     }
     removed = exact["removed"]
-    assert (removed["has_pdf"], removed["has_abstract"], removed["has_review_work"]) == (
-        False,
-        False,
-        True,
-    )
+    assert (
+        removed["has_pdf"],
+        removed["has_abstract"],
+        removed["has_review_work"],
+        removed["has_refusing_work"],
+    ) == (False, False, True, True)
     assert removed["screening_decisions"] == 0
     assert removed["authors"] == []
     assert data["open"][2]["removed"]["doi"] == "https://doi.org/10.5/P"

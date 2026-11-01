@@ -54,6 +54,7 @@ export const duplicates = {
 
   // Failures
   errHasReviewWork: 'This record already has full-text or extraction work, so keep it instead.',
+  bothHaveReviewWork: 'Both records have review work: mark them Not duplicates or leave the pair open.',
   errKeptIsRemoved: 'The record you chose to keep was already removed as a duplicate.',
   errForbidden: 'Only project managers can do this',
   errGeneric: 'Something went wrong. Try again.',

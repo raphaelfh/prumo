@@ -30,6 +30,9 @@ class DuplicateSide(BaseModel):
     has_abstract: bool
     screening_decisions: int
     has_review_work: bool
+    has_refusing_work: bool = Field(
+        description="Full-text or extraction work: the server refuses removing this side."
+    )
 
 
 class DuplicatePair(BaseModel):
