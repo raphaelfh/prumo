@@ -124,7 +124,7 @@ def test_sheet_order_without_ai() -> None:
         _one_field_layout(include_ai=False), ExportShape.COMPLETE, include_matrix=True
     )
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Codebook"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data", "Codebook"]
 
 
 def test_sheet_order_with_ai() -> None:
@@ -138,6 +138,7 @@ def test_sheet_order_with_ai() -> None:
         "Summary",
         "Matrix",
         "Articles",
+        "Data",
         "AI proposals",
         "Codebook",
     ]
@@ -157,6 +158,7 @@ def test_sections_named_history_and_data_get_suffixed_titles() -> None:
         "Articles",
         "history (2)",
         "data (2)",
+        "Data",
         "Codebook",
     ]
 

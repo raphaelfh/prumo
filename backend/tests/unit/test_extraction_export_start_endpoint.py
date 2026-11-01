@@ -27,7 +27,7 @@ from app.schemas.extraction_export import (
     ExtractionExportRequest,
     ExtractionExportShape,
 )
-from app.services.exports.extraction.run import EmptyExportError, ExportFile
+from app.services.exports.extraction.run import EmptyExportError, ExportFile, ExportTooLargeError
 from app.services.exports.extraction.workbook import ExportShape
 
 _EP = "app.api.v1.endpoints.extraction_export"
@@ -202,3 +202,11 @@ async def test_empty_export_is_422_with_the_stable_code() -> None:
     error = _error(response)
     assert error["code"] == "EMPTY_ELIGIBLE_ARTICLES"
     assert error["message"].startswith("EMPTY_ELIGIBLE_ARTICLES: ")
+
+
+@pytest.mark.asyncio
+async def test_sync_path_propagates_export_too_large() -> None:
+    """Only ``EmptyExportError`` is caught in ``_start``; the over-budget error
+    reaches the global ``AppError`` handler with its own code and 422."""
+    with pytest.raises(ExportTooLargeError):
+        await _call_sync(_payload(), build_side_effect=ExportTooLargeError("EXPORT_TOO_LARGE: x"))

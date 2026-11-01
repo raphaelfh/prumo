@@ -56,8 +56,8 @@ def _with_removed_section() -> ExportLayout:
     study = _s("study", _f("design"), order=0)
     models = _s("models", _f("auc"), many=True, order=1)
     old = _s("old", _f("x"), order=2)
-    active = VersionSections(uuid4(), 2, (study, models))
-    v1 = VersionSections(uuid4(), 1, (study, models, old))
+    active = VersionSections(uuid4(), 2, (study, models), {})
+    v1 = VersionSections(uuid4(), 1, (study, models, old), {})
     labels = build_option_labels(active.sections, [v1.sections])
     return make_layout(
         sections=(study, models), codebook=build_codebook_entries(active, (v1,), labels)

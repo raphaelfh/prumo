@@ -14,7 +14,6 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     SnapshotField,
     SnapshotSection,
-    load_export_sections,
     section_from_view,
 )
 
@@ -77,12 +76,6 @@ def test_snapshot_section_carries_parent_and_cardinality() -> None:
         fields=(),
     )
     assert s.cardinality is ExtractionCardinality.ONE
-
-
-def test_load_export_sections_is_async_callable() -> None:
-    import inspect
-
-    assert inspect.iscoroutinefunction(load_export_sections)
 
 
 def test_field_view_carries_units_key_and_absent_codes() -> None:

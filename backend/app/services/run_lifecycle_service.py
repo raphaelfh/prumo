@@ -2,7 +2,7 @@
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select
@@ -33,6 +33,10 @@ from app.services.extraction_run_write import load_run_for_update
 from app.services.hitl_config_service import HitlConfigService
 from app.services.qa_divergence_gate import divergence_rationale_failure
 from app.services.value_semantics import is_value_filled, resolve_reviewer_value, strip_verification
+
+# Frozen: the export classifies `no_conflict` consensus rows by equality with this
+# text; editing it reclassifies past rows.
+APPROVE_ALL_RATIONALE: Final[str] = "Approved: reviewers agree (Phase 2 approve-all)."
 
 
 class InvalidStageTransitionError(Exception):
@@ -286,7 +290,7 @@ class RunLifecycleService:
                 consensus_user_id=user_id,
                 mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
                 value=envelope,
-                rationale="Approved: reviewers agree (Phase 2 approve-all).",
+                rationale=APPROVE_ALL_RATIONALE,
                 # Agreed values may include accepted AI proposals that were never
                 # validated; the read-only value-envelope audit covers them.
                 enforce_contract=False,

@@ -12,7 +12,7 @@
  *
  *   2. **UI flow** — drives the actual dialog on the Data Extraction
  *      page in three modes (Consensus / Single user / All users) plus
- *      the optional AI metadata sheet. Skips automatically if the
+ *      the optional AI detail. Skips automatically if the
  *      required seeded resource ids are missing.
  *
  * Required env (see `frontend/e2e/_fixtures/env.ts`):
@@ -222,7 +222,7 @@ test.describe("Extraction export — API surface", () => {
     expect(Array.isArray(body.data)).toBe(true);
   });
 
-  test("AI metadata toggle dispatches an async job (202) or skips when queue is down", async ({ request }) => {
+  test("AI detail toggle dispatches an async job (202) or skips when queue is down", async ({ request }) => {
     const env = loadE2EEnv();
     const required = missingEnvKeys([
       "E2E_AUTH_TOKEN",
@@ -323,15 +323,14 @@ test.describe("Extraction export — UI flow", () => {
 
     // Dialog opens.
     await expect(page.getByText(/Export to Excel/i)).toBeVisible();
-    // Defaults: Consensus + the complete workbook; AI off; anonymize hidden.
+    // Defaults: Consensus + the review workbook; AI off; anonymize shown
+    // in every mode, off.
     await expect(page.getByLabel("Consensus")).toBeChecked();
-    await expect(page.getByLabel(/Complete workbook/i)).toBeChecked();
-    await expect(
-      page.getByLabel(/Include AI metadata sheet/i),
-    ).not.toBeChecked();
-    await expect(
-      page.getByLabel(/Anonymize reviewer names/i),
-    ).not.toBeVisible();
+    await expect(page.getByLabel(/Review workbook/i)).toBeChecked();
+    await expect(page.getByLabel(/Include AI detail/i)).not.toBeChecked();
+    const anonymize = page.getByLabel(/Anonymize reviewer names/i);
+    await expect(anonymize).toBeVisible();
+    await expect(anonymize).not.toBeChecked();
     // Live preview line is visible whenever the article count > 0.
     await expect(
       page.getByTestId("extraction-export-preview"),
@@ -358,24 +357,15 @@ test.describe("Extraction export — UI flow", () => {
     await expect(reviewerControl).toBeVisible();
   });
 
-  test("All-users mode reveals the anonymize-reviewer toggle for managers", async ({ page }) => {
+  test("anonymize toggle is available in every mode", async ({ page }) => {
     const env = loadE2EEnv();
     const exportBtn = await openExportTab(page, env);
     await exportBtn.click();
-    const allUsers = page.getByLabel(/All users/i);
-    // Non-managers see it disabled; managers can tick it.
-    const disabled = await allUsers.isDisabled();
-    if (disabled) {
-      test.info().annotations.push({
-        type: "skip-reason",
-        description: "Current user is not a manager — All-users disabled.",
-      });
-      return;
-    }
-    await allUsers.check();
-    await expect(
-      page.getByLabel(/Anonymize reviewer names/i),
-    ).toBeVisible();
+    const anonymize = page.getByLabel(/Anonymize reviewer names/i);
+    await expect(page.getByLabel("Consensus")).toBeChecked();
+    await expect(anonymize).toBeVisible();
+    await page.getByLabel(/Single user/i).check();
+    await expect(anonymize).toBeVisible();
   });
 
   test("Cancel button closes the dialog without dispatching", async ({ page }) => {

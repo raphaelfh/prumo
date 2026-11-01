@@ -89,7 +89,7 @@ def test_thirty_flat_root_sections_give_articles_only() -> None:
         entries={(s.entity_type_id, None): (uuid4(),) for s in sections},
     )
     wb = _workbook(make_layout(sections=sections, articles=(article,)))
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Codebook"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data", "Codebook"]
     hdr = next(wb["Articles"].values)
     assert [h for h in hdr if h.startswith("s")] == [f"s{i:02d}.f{i:02d}" for i in range(1, 31)]
     assert_unique_records_and_resolving_parents(wb, {article.article_id})
@@ -118,6 +118,7 @@ def test_nested_many_under_a_fieldless_many_gives_both_levels() -> None:
         "Articles",
         "groups",
         "items",
+        "Data",
         "Codebook",
     ]
     assert wb["groups"].max_row == 3

@@ -171,6 +171,8 @@ async def test_workbook_has_the_expected_sheet_inventory(db_session: AsyncSessio
     # field is a number, so there is no coded option and no Options sheet.
     assert titles[-1] == "Codebook"
     assert "Options" not in titles
+    assert titles.index("Data") > titles.index("Articles")
+    assert titles.index("AI proposals") > titles.index("Data")
     assert titles.index("AI proposals") < titles.index("Codebook")
     assert "Matrix" in titles
     assert "Articles" in titles

@@ -1,4 +1,4 @@
-"""Per-proposal facts projected onto one ``AI metadata`` export row.
+"""Per-proposal facts projected onto one ``AI proposals`` export row.
 
 Lives directly under ``exports/`` rather than ``exports/extraction/`` for the
 import-cycle reason ``descriptors`` gives. Both facts belong to the proposal
@@ -8,7 +8,8 @@ itself: its immutable engine, read through the shared allowlisted serializer
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,15 +23,36 @@ from app.services.proposal_generation_read import (
 )
 
 
-def proposal_model_used(proposal: ExtractionProposalRecord) -> str:
-    """The proposal's own engine model, empty when unavailable.
+@dataclass(frozen=True, slots=True)
+class EngineFacts:
+    """The engine one proposal records; ``""`` for a fact it does not record."""
 
-    The export reveals no runner identity, so the reveal context is empty.
+    provider: str
+    model: str
+    prompt_version: str
+
+
+def _text(facts: Mapping[str, object], key: str) -> str:
+    value = facts.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def proposal_engine(proposal: ExtractionProposalRecord, *, had_snapshot: bool) -> EngineFacts:
+    """The proposal's own engine, read through the allowlisted serializer.
+
+    ``had_snapshot`` is whether the row stored a ``generation_snapshot`` before
+    the loader stripped its prompt payload: such a row names its engine from the
+    snapshot only, never from ``provenance``. The export reveals no runner
+    identity, so the reveal context is empty.
     """
     generation = serialize_proposal_generation(proposal, ProposalRevealContext({}))
-    facts = generation["generation_snapshot"] or generation["provenance"] or {}
-    model = facts.get("model")
-    return model if isinstance(model, str) else ""
+    snapshot = generation["generation_snapshot"] or {}
+    engine = snapshot if had_snapshot else (generation["provenance"] or {})
+    return EngineFacts(
+        provider=_text(engine, "provider"),
+        model=_text(engine, "model"),
+        prompt_version=_text(snapshot, "prompt_version"),
+    )
 
 
 async def load_evidence_summaries(

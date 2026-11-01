@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Collection
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Final
 
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -19,7 +20,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-CellValue = str | int | float | bool | None
+CellValue = str | int | float | bool | datetime | None  # datetime: naive UTC
 
 
 @dataclass(frozen=True)
