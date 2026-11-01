@@ -539,8 +539,8 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
     monkeypatch.setattr(
         service, "_resolve_articles_for_consensus", AsyncMock(return_value=((), {}))
     )
-    monkeypatch.setattr(service, "_build_single_user_value_map", AsyncMock(return_value={}))
-    monkeypatch.setattr(service, "_build_consensus_value_map", AsyncMock(return_value={}))
+    monkeypatch.setattr(service, "_load_reviewer_cells", AsyncMock(return_value={}))
+    monkeypatch.setattr(service, "_load_consensus_cells", AsyncMock(return_value={}))
 
     with pytest.raises(_Stop):
         await service.resolve_layout(

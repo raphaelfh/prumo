@@ -9,8 +9,8 @@ Architectural notes:
   through repositories and direct ``select()`` statements that respect
   RLS via the injected ``AsyncSession``. No HTTP types cross the
   boundary.
-* Bulk reads only — no per-cell N+1. Every value-map builder issues at
-  most a fixed small number of queries regardless of article count.
+* Bulk reads only — no per-cell N+1. Each cell loader issues one
+  statement regardless of article count.
 * All three value-source modes (Consensus, Single-user, All-users) are
   fully implemented; ``resolve_layout`` dispatches on ``mode``.
 """
@@ -18,15 +18,16 @@ Architectural notes:
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
 from app.core.logging import LoggerMixin
@@ -42,7 +43,13 @@ from app.models.extraction import (
 )
 from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
-from app.models.extraction_workflow import ExtractionPublishedState
+from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
+    ExtractionProposalRecord,
+    ExtractionPublishedState,
+    ExtractionReviewerDecision,
+    ExtractionReviewerState,
+)
 from app.models.project import ProjectMemberRole
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
@@ -63,6 +70,12 @@ from app.services.entity_key import key_of
 from app.services.exports.ai_proposal_projection import (
     load_evidence_summaries,
     proposal_model_used,
+)
+from app.services.exports.cell_record import (
+    CellRecord,
+    DecisionFact,
+    LinkedProposal,
+    value_map_from_cells,
 )
 from app.services.exports.codebook_model import (
     CodebookEntry,
@@ -103,6 +116,7 @@ from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
 )
+from app.services.value_semantics import resolve_reviewer_value
 
 # ----------------------------------------------------------------------
 # Enums
@@ -314,6 +328,8 @@ class ExportLayout:
     reviewer_id: UUID | None = None  # single_user target; None in the other modes
     # all_users: run -> reviewers with >=1 non-reject current decision (R16).
     raters_by_run: Mapping[UUID, tuple[UUID, ...]] = field(default_factory=dict)
+    # Every loaded cell under its ``value_map`` key; ``value_map`` projects it (D10).
+    cells: Mapping[ValueKey, CellRecord] = field(default_factory=dict)
 
 
 # ----------------------------------------------------------------------
@@ -435,9 +451,6 @@ class ExtractionExportService(LoggerMixin):
         labels = build_option_labels(active.sections, [v.sections for v in pinned])
         codebook = build_codebook_entries(active, pinned, labels)
         sections = apply_field_codes(active.sections, {e.field_id: e.field_code for e in codebook})
-        fields_by_id: dict[UUID, FieldDescriptor] = {
-            f.field_id: f for s in sections for f in s.fields
-        }
         primary = primary_rater(mode, reviewer_id)
         refs = await self._load_article_refs(project_id=project_id)
         version_numbers = {version.id: version.version, **{r.id: r.version for r in rows}}
@@ -452,11 +465,12 @@ class ExtractionExportService(LoggerMixin):
                 refs=refs,
                 version_numbers=version_numbers,
             )
-            value_map = await self._build_consensus_value_map(
-                run_ids=[a.run_id for a in articles if a.run_id is not None],
-                fields_by_id=fields_by_id,
-                labels=labels,
-            )
+            run_ids = [a.run_id for a in articles if a.run_id is not None]
+            cells = {
+                **await self._load_reviewer_cells(run_ids=run_ids, reviewer_ids=None),
+                **await self._load_consensus_cells(run_ids=run_ids),
+            }
+            slots: Literal["consensus", "reviewer", "both"] = "consensus"
         elif mode is ExportMode.SINGLE_USER:
             if reviewer_id is None:
                 raise NotFoundError("reviewer_id is required when mode=single_user.")
@@ -468,12 +482,11 @@ class ExtractionExportService(LoggerMixin):
                 refs=refs,
                 version_numbers=version_numbers,
             )
-            value_map = await self._build_single_user_value_map(
+            cells = await self._load_reviewer_cells(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
-                reviewer_id=reviewer_id,
-                fields_by_id=fields_by_id,
-                labels=labels,
+                reviewer_ids=[reviewer_id],
             )
+            slots = "reviewer"
         elif mode is ExportMode.ALL_USERS:
             articles, omitted = await self._resolve_articles_for_all_users(
                 template_id=template_id,
@@ -486,14 +499,29 @@ class ExtractionExportService(LoggerMixin):
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 anonymize=anonymize_reviewer_names,
             )
-            value_map = await self._build_all_users_value_map(
-                run_ids=[a.run_id for a in articles if a.run_id is not None],
-                reviewer_ids=[r.reviewer_id for r in reviewers],
-                fields_by_id=fields_by_id,
-                labels=labels,
-            )
+            run_ids = [a.run_id for a in articles if a.run_id is not None]
+            cells = {
+                **await self._load_reviewer_cells(
+                    run_ids=run_ids, reviewer_ids=[r.reviewer_id for r in reviewers]
+                ),
+                **await self._load_consensus_cells(run_ids=run_ids),
+            }
+            slots = "both"
         else:  # pragma: no cover — exhaustive over ExportMode
             raise AssertionError(f"unhandled export mode: {mode!r}")
+
+        # Active descriptors win, then the latest pinned version holding the
+        # field, then a minimal live descriptor for an orphan (D10, R14).
+        fields: dict[UUID, FieldDescriptor] = {
+            f.field_id: f for v in reversed(pinned) for s in v.sections for f in s.fields
+        }
+        fields.update({f.field_id: f for s in sections for f in s.fields})
+        fields.update(
+            await self._load_orphan_fields(
+                template_id=template_id, field_ids={k[2] for k in cells} - fields.keys()
+            )
+        )
+        value_map = value_map_from_cells(cells, slots=slots, fields=fields, labels=labels)
 
         # QA rules are each article's own: those frozen in its run's pinned
         # version, so articles reviewed under different versions export apart.
@@ -562,6 +590,7 @@ class ExtractionExportService(LoggerMixin):
             ),
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
             raters_by_run=raters_by_run,
+            cells=cells,
         )
 
     # ------------------------------------------------------------------
@@ -1029,34 +1058,6 @@ class ExtractionExportService(LoggerMixin):
         )
         return {row[0]: ArticleRef(labels[row[0]], row[5], row[6]) for row in rows}
 
-    async def _build_consensus_value_map(
-        self,
-        *,
-        run_ids: list[UUID],
-        fields_by_id: dict[UUID, FieldDescriptor],
-        labels: OptionLabels,
-    ) -> dict[ValueKey, ExportValue]:
-        """Bulk-fetch all published values for the given runs (FR-013), typed
-        against their active field under the consensus key (rater ``None``).
-        A field outside the active sections is skipped."""
-        if not run_ids:
-            return {}
-        rows = (
-            await self.db.execute(
-                select(
-                    ExtractionPublishedState.run_id,
-                    ExtractionPublishedState.instance_id,
-                    ExtractionPublishedState.field_id,
-                    ExtractionPublishedState.value,
-                ).where(ExtractionPublishedState.run_id.in_(run_ids))
-            )
-        ).all()
-        return {
-            value_key(rid, iid, fid): to_export_value(value, fields_by_id[fid], labels)
-            for rid, iid, fid, value in rows
-            if fid in fields_by_id
-        }
-
     # ==================================================================
     # Single-user mode
     # ==================================================================
@@ -1077,11 +1078,6 @@ class ExtractionExportService(LoggerMixin):
         may have started before consensus). ``cancelled`` runs and runs
         with no decisions from this reviewer are omitted.
         """
-        from app.models.extraction_workflow import (
-            ExtractionReviewerDecision,
-            ExtractionReviewerState,
-        )
-
         if not candidate_ids:
             return [], []
 
@@ -1138,63 +1134,6 @@ class ExtractionExportService(LoggerMixin):
             version_numbers=version_numbers,
         )
         return descriptors, omitted
-
-    async def _build_single_user_value_map(
-        self,
-        *,
-        run_ids: list[UUID],
-        reviewer_id: UUID,
-        fields_by_id: dict[UUID, FieldDescriptor],
-        labels: OptionLabels,
-    ) -> dict[ValueKey, ExportValue]:
-        """Bulk-fetch one reviewer's latest decisions, keyed by ``reviewer_id`` (R1):
-        accept_proposal → proposed_value; edit → decision.value; reject omitted."""
-        from app.models.extraction_workflow import (
-            ExtractionProposalRecord,
-            ExtractionReviewerDecision,
-            ExtractionReviewerState,
-        )
-
-        if not run_ids:
-            return {}
-
-        rows = (
-            await self.db.execute(
-                select(
-                    ExtractionReviewerState.run_id,
-                    ExtractionReviewerState.instance_id,
-                    ExtractionReviewerState.field_id,
-                    ExtractionReviewerDecision.decision,
-                    ExtractionReviewerDecision.value,
-                    ExtractionProposalRecord.proposed_value,
-                )
-                .join(
-                    ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
-                )
-                .outerjoin(
-                    ExtractionProposalRecord,
-                    ExtractionReviewerDecision.proposal_record_id == ExtractionProposalRecord.id,
-                )
-                .where(
-                    ExtractionReviewerState.run_id.in_(run_ids),
-                    ExtractionReviewerState.reviewer_id == reviewer_id,
-                )
-            )
-        ).all()
-
-        out: dict[ValueKey, ExportValue] = {}
-        for rid, iid, fid, decision, value, proposed_value in rows:
-            field = fields_by_id.get(fid)
-            if field is None:
-                continue
-            key = value_key(rid, iid, fid, reviewer_id)
-            if decision == "accept_proposal":
-                out[key] = to_export_value(proposed_value, field, labels)
-            elif decision == "edit":
-                out[key] = to_export_value(value, field, labels)
-            # reject → key absent (renders blank)
-        return out
 
     async def list_eligible_reviewers_for_picker(
         self,
@@ -1257,10 +1196,6 @@ class ExtractionExportService(LoggerMixin):
         at creation, so filtering on the template's own kind surfaces the
         QA picker's reviewers instead of a hard-coded ``extraction`` that hides them.
         """
-        from app.models.extraction_workflow import (
-            ExtractionReviewerDecision,
-            ExtractionReviewerState,
-        )
         from app.models.user import Profile
 
         rows = (
@@ -1362,10 +1297,6 @@ class ExtractionExportService(LoggerMixin):
           * anonymize=True  → stable by reviewer id (so re-runs of the
             same export produce the same Reviewer A/B mapping)
         """
-        from app.models.extraction_workflow import (
-            ExtractionReviewerDecision,
-            ExtractionReviewerState,
-        )
         from app.models.user import Profile
 
         if not run_ids:
@@ -1418,84 +1349,100 @@ class ExtractionExportService(LoggerMixin):
         }
         return reviewers, by_run
 
-    async def _build_all_users_value_map(
-        self,
-        *,
-        run_ids: list[UUID],
-        reviewer_ids: list[UUID],
-        fields_by_id: dict[UUID, FieldDescriptor],
-        labels: OptionLabels,
-    ) -> dict[ValueKey, ExportValue]:
-        """Build the All-users value map (FR-015): rater ``None`` is the
-        consensus sub-column; each reviewer's slot carries their latest
-        decision (accept_proposal → proposed_value; edit → decision.value;
-        reject omitted).
-        """
-        from app.models.extraction_workflow import (
-            ExtractionProposalRecord,
-            ExtractionReviewerDecision,
-            ExtractionReviewerState,
-        )
+    # ==================================================================
+    # Cell loaders (D10): every export value is read from one of these two
+    # ==================================================================
 
-        out: dict[ValueKey, ExportValue] = {}
+    async def _load_reviewer_cells(
+        self, *, run_ids: list[UUID], reviewer_ids: Sequence[UUID] | None
+    ) -> dict[ValueKey, CellRecord]:
+        """Each reviewer's CURRENT decision with its linked proposal, keyed by
+        ``reviewer_id`` (R1). Rejects stay in; ``None`` means every reviewer."""
         if not run_ids:
-            return out
-
-        # Consensus sub-column (reviewer_id=None) — published states.
-        consensus_rows = (
-            await self.db.execute(
-                select(
-                    ExtractionPublishedState.run_id,
-                    ExtractionPublishedState.instance_id,
-                    ExtractionPublishedState.field_id,
-                    ExtractionPublishedState.value,
-                ).where(ExtractionPublishedState.run_id.in_(run_ids))
+            return {}
+        st, d, p = ExtractionReviewerState, ExtractionReviewerDecision, ExtractionProposalRecord
+        stmt = (
+            select(st.run_id, st.instance_id, st.field_id, st.reviewer_id)
+            .add_columns(d.id, d.decision, d.created_at, d.rationale, d.value)
+            .add_columns(p.id, p.run_id, p.source, p.proposed_value)
+            .join(d, st.current_decision_id == d.id)
+            .outerjoin(p, d.proposal_record_id == p.id)
+            .where(st.run_id.in_(run_ids))
+        )
+        if reviewer_ids is not None:
+            stmt = stmt.where(st.reviewer_id.in_(reviewer_ids))
+        out: dict[ValueKey, CellRecord] = {}
+        for row in (await self.db.execute(stmt)).all():
+            rid, iid, fid, reviewer, did, kind, at, rationale, value, pid, prun, src, pval = row
+            out[value_key(rid, iid, fid, reviewer)] = CellRecord(
+                envelope=resolve_reviewer_value(kind, value, pval),
+                decision=DecisionFact(did, kind, reviewer, at, rationale, None),
+                linked_proposal=_linked(pid, prun, src, pval),
             )
-        ).all()
-        for rid, iid, fid, value in consensus_rows:
-            if fid in fields_by_id:
-                out[value_key(rid, iid, fid)] = to_export_value(value, fields_by_id[fid], labels)
-
-        if not reviewer_ids:
-            return out
-
-        # Per-reviewer values.
-        rev_rows = (
-            await self.db.execute(
-                select(
-                    ExtractionReviewerState.run_id,
-                    ExtractionReviewerState.instance_id,
-                    ExtractionReviewerState.field_id,
-                    ExtractionReviewerState.reviewer_id,
-                    ExtractionReviewerDecision.decision,
-                    ExtractionReviewerDecision.value,
-                    ExtractionProposalRecord.proposed_value,
-                )
-                .join(
-                    ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
-                )
-                .outerjoin(
-                    ExtractionProposalRecord,
-                    ExtractionReviewerDecision.proposal_record_id == ExtractionProposalRecord.id,
-                )
-                .where(
-                    ExtractionReviewerState.run_id.in_(run_ids),
-                    ExtractionReviewerState.reviewer_id.in_(reviewer_ids),
-                )
-            )
-        ).all()
-        for rid, iid, fid, reviewer_id, decision, value, proposed in rev_rows:
-            field = fields_by_id.get(fid)
-            if field is None:
-                continue
-            if decision == "accept_proposal":
-                out[value_key(rid, iid, fid, reviewer_id)] = to_export_value(
-                    proposed, field, labels
-                )
-            elif decision == "edit":
-                out[value_key(rid, iid, fid, reviewer_id)] = to_export_value(value, field, labels)
         return out
+
+    async def _load_consensus_cells(self, *, run_ids: list[UUID]) -> dict[ValueKey, CellRecord]:
+        """Every published state, with the coordinate's latest consensus decision
+        and the SELECTED decision's own proposal link (D10). A state with no
+        decision (legacy synthetic runs) reads as a ``manual_override`` by its
+        publisher, so no published value is dropped."""
+        if not run_ids:
+            return {}
+        c, d, p = ExtractionConsensusDecision, ExtractionReviewerDecision, ExtractionProposalRecord
+        latest = aliased(
+            c,
+            select(c)
+            .where(c.run_id.in_(run_ids))
+            .distinct(c.run_id, c.instance_id, c.field_id)
+            .order_by(c.run_id, c.instance_id, c.field_id, c.created_at.desc(), c.id.desc())
+            .subquery(),
+        )
+        ps = ExtractionPublishedState
+        stmt = (
+            select(ps.id, ps.run_id, ps.instance_id, ps.field_id, ps.value)
+            .add_columns(ps.published_by, ps.published_at, latest.id, latest.mode)
+            .add_columns(latest.consensus_user_id, latest.created_at, latest.rationale)
+            .add_columns(latest.selected_decision_id, p.id, p.run_id, p.source, p.proposed_value)
+            .outerjoin(
+                latest,
+                (latest.run_id == ps.run_id)
+                & (latest.instance_id == ps.instance_id)
+                & (latest.field_id == ps.field_id),
+            )
+            .outerjoin(d, latest.selected_decision_id == d.id)
+            .outerjoin(p, d.proposal_record_id == p.id)
+            .where(ps.run_id.in_(run_ids))
+        )
+        out: dict[ValueKey, CellRecord] = {}
+        for row in (await self.db.execute(stmt)).all():
+            sid, rid, iid, fid, value, by, at, did, mode, actor, created, why, sel = row[:13]
+            decision = (
+                DecisionFact(sid, "manual_override", by, at, None, None)
+                if did is None
+                else DecisionFact(did, mode, actor, created, why, sel)
+            )
+            out[value_key(rid, iid, fid)] = CellRecord(
+                envelope=value, decision=decision, linked_proposal=_linked(*row[13:])
+            )
+        return out
+
+    async def _load_orphan_fields(
+        self, *, template_id: UUID, field_ids: Collection[UUID]
+    ) -> dict[UUID, FieldDescriptor]:
+        """Minimal descriptors for fields no loaded version holds (D10). The
+        field FK is RESTRICT, so a live row exists for every stored value."""
+        if not field_ids:
+            return {}
+        f, et = ExtractionField, ExtractionEntityType
+        rows = await self.db.execute(
+            select(f.id, f.label, f.field_type, f.unit)
+            .join(et, et.id == f.entity_type_id)
+            .where(f.id.in_(field_ids), et.project_template_id == template_id)
+        )
+        return {
+            fid: FieldDescriptor(fid, label, ExtractionFieldType(ftype), (), unit=unit)
+            for fid, label, ftype, unit in rows.all()
+        }
 
     # ------------------------------------------------------------------
     # AI metadata sheet loader (FR-036 – FR-040)
@@ -1519,12 +1466,6 @@ class ExtractionExportService(LoggerMixin):
           3. reviewer_states + decisions for the same (run, instance, field)
              coordinates (to compute the ``Reviewer outcome`` column).
         """
-        from app.models.extraction_workflow import (
-            ExtractionProposalRecord,
-            ExtractionReviewerDecision,
-            ExtractionReviewerState,
-        )
-
         run_ids = [a.run_id for a in articles if a.run_id is not None]
         if not run_ids:
             return ()
@@ -1746,6 +1687,14 @@ class ExtractionExportService(LoggerMixin):
 # ----------------------------------------------------------------------
 # Module-level pure helpers
 # ----------------------------------------------------------------------
+
+
+def _linked(
+    proposal_id: UUID | None, run_id: UUID | None, source: str | None, proposed: Any
+) -> LinkedProposal | None:
+    if proposal_id is None or run_id is None or source is None:
+        return None
+    return LinkedProposal(proposal_id, run_id, source, proposed)
 
 
 def _untyped_field(field_id: UUID) -> FieldDescriptor:

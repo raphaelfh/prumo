@@ -7,10 +7,18 @@ service, so a runtime import from there would close a cycle.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
+
+from app.services.exports.values import to_export_value
+
+if TYPE_CHECKING:
+    from app.services.exports.descriptors import ValueKey
+    from app.services.exports.values import ExportValue, OptionLabels
+    from app.services.extraction_export_service import FieldDescriptor
 
 DecisionKind = Literal["accept_proposal", "edit", "reject", "select_existing", "manual_override"]
 
@@ -47,3 +55,19 @@ class CellRecord:
     envelope: Any
     decision: DecisionFact
     linked_proposal: LinkedProposal | None
+
+
+def value_map_from_cells(
+    cells: Mapping[ValueKey, CellRecord],
+    *,
+    slots: Literal["consensus", "reviewer", "both"],
+    fields: Mapping[UUID, FieldDescriptor],
+    labels: OptionLabels,
+) -> dict[ValueKey, ExportValue]:
+    """The export values of ``cells`` under their own keys (R1); ``slots`` keeps
+    the consensus slot (rater ``None``), the reviewer slots, or both."""
+    return {
+        k: to_export_value(c.envelope, fields[k[2]], labels, rejected=c.decision.kind == "reject")
+        for k, c in cells.items()
+        if slots == "both" or (k[3] is None) == (slots == "consensus")
+    }
