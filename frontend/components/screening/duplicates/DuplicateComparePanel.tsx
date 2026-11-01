@@ -100,7 +100,10 @@ export function DuplicateComparePanel({pair, busy, onMerge, onDistinct, onSkip, 
                     isKeeper && 'bg-success/10 text-success ring-1 ring-success',
                   )}
                 >
-                  <RadioGroupItem value={side.article_id} />
+                  <RadioGroupItem
+                    value={side.article_id}
+                    aria-label={t('duplicates', 'keepSide').replace('{{title}}', side.title)}
+                  />
                   {t('duplicates', 'keep')}
                 </label>
               )}

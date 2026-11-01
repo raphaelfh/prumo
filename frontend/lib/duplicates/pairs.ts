@@ -48,13 +48,15 @@ export function findSelectedPair(
  */
 export function selectAcceptableExact(open: DuplicatePair[], max = 500): DuplicatePair[] {
   const removedSoFar = new Set<string>();
+  const keptSoFar = new Set<string>();
   const accepted: DuplicatePair[] = [];
   for (const p of open) {
     if (accepted.length >= max) break;
     if (p.tier !== 'exact') continue;
     if (p.removed.has_review_work) continue;
-    if (removedSoFar.has(p.kept_article_id) || removedSoFar.has(p.article_id)) continue;
+    if (removedSoFar.has(p.kept_article_id) || removedSoFar.has(p.article_id) || keptSoFar.has(p.article_id)) continue;
     removedSoFar.add(p.article_id);
+    keptSoFar.add(p.kept_article_id);
     accepted.push(p);
   }
   return accepted;

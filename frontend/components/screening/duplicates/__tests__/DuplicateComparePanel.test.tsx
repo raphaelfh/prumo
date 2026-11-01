@@ -52,10 +52,8 @@ function setup(p: DuplicatePair, busy = false) {
 describe('DuplicateComparePanel', () => {
   it("defaults Keep to the server's suggestion", () => {
     setup(pair());
-    const radios = screen.getAllByRole('radio');
-    expect(radios).toHaveLength(2);
-    expect(radios[0]).toBeChecked();
-    expect(radios[1]).not.toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep "Title kept"'})).toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep "Title rem"'})).not.toBeChecked();
   });
 
   it('marks differing fields with a dot', () => {
@@ -73,7 +71,7 @@ describe('DuplicateComparePanel', () => {
 
   it('merge posts the selected keeper', async () => {
     const h = setup(pair());
-    await userEvent.click(screen.getAllByRole('radio')[1]);
+    await userEvent.click(screen.getByRole('radio', {name: 'Keep "Title rem"'}));
     await userEvent.click(screen.getByRole('button', {name: 'Merge, keep selected'}));
     expect(h.onMerge).toHaveBeenCalledWith('kept', 'rem');
   });

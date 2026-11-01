@@ -17,6 +17,7 @@ export const duplicates = {
   no: 'No',
   differs: 'Differs',
   keep: 'Keep',
+  keepSide: 'Keep "{{title}}"',
   merge: 'Merge, keep selected',
   notDuplicates: 'Not duplicates',
   skip: 'Skip',

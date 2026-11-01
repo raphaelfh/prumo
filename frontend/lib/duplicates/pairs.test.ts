@@ -113,6 +113,11 @@ describe('selectAcceptableExact', () => {
     expect(selectAcceptableExact(open).map(pairKey)).toEqual(['b~a']);
   });
 
+  it('skips a pair that removes an article an earlier pair kept', () => {
+    const open = [pair('c', 'b'), pair('b', 'a')];
+    expect(selectAcceptableExact(open).map(pairKey)).toEqual(['c~b']);
+  });
+
   it('skips a removed side with review work', () => {
     const open = [pair('b', 'a', {}, {has_review_work: true}), pair('d', 'c')];
     expect(selectAcceptableExact(open).map(pairKey)).toEqual(['d~c']);
