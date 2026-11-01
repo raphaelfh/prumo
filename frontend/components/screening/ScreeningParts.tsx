@@ -13,12 +13,12 @@ import {StructuredAbstract} from './StructuredAbstract';
 
 type ScreeningArticle = ScreeningAssignmentRead['article'];
 
-export function Notice({title, body, children}: {title: string; body: string; children?: ReactNode}) {
+export function Notice({title, body, children}: {title: string; body?: string; children?: ReactNode}) {
   return (
     <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-medium text-foreground">{title}</h2>
-        <p className="max-w-sm text-[13px] text-muted-foreground">{body}</p>
+        {body && <p className="max-w-sm text-[13px] text-muted-foreground">{body}</p>}
       </div>
       {children}
     </div>
@@ -43,6 +43,7 @@ const DECISION_LABEL = {
   include: 'decisionInclude',
   exclude: 'decisionExclude',
   maybe: 'decisionMaybe',
+  not_retrieved: 'decisionNotRetrieved',
 } as const;
 
 export function decisionLabel(decision: ScreeningDecisionCreate['decision']): string {
@@ -52,15 +53,17 @@ export function decisionLabel(decision: ScreeningDecisionCreate['decision']): st
 /**
  * The record as read for screening, in a 68ch/15px column: chips, title,
  * byline, identifiers, the abstract (or its absence), then MeSH and keywords.
+ * `showTitle={false}` when the caller's header already carries the title
+ * (the full-text record).
  */
-export function RecordBody({article}: {article: ScreeningArticle}) {
+export function RecordBody({article, showTitle = true}: {article: ScreeningArticle; showTitle?: boolean}) {
   const byline = [article.authors?.join(', '), article.journal_title, article.publication_year]
     .filter((part) => part !== null && part !== undefined && part !== '')
     .join(' · ');
   return (
     <article className="flex w-full min-w-0 max-w-[68ch] flex-col gap-2 text-[15px]">
       <RecordChips article={article} />
-      <h2 className="text-base font-semibold leading-snug text-foreground">{article.title}</h2>
+      {showTitle && <h2 className="text-base font-semibold leading-snug text-foreground">{article.title}</h2>}
       {byline && <p className="text-[13px] text-muted-foreground">{byline}</p>}
       <RecordIdentifiers article={article} />
       {article.abstract ? (

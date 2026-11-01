@@ -29,6 +29,7 @@ function rows(decidedEvery: number): ScreeningRecordRow[] {
   return Array.from({length: ROWS}, (_, index) => ({
     article_id: `art${index}`,
     assignment_id: `as${index}`,
+    phase: 'title_abstract',
     doi: null,
     first_author: `Author ${index}`,
     has_pdf: false,
@@ -39,6 +40,9 @@ function rows(decidedEvery: number): ScreeningRecordRow[] {
     outcome: null,
     outcome_exclusion_reason: null,
     outcome_kind: null,
+    ta_outcome: null,
+    ta_outcome_kind: null,
+    ta_reviewer_count: null,
     pmid: null,
     publication_year: 1990 + (index % 35),
     queue_rank: index + 1,
@@ -51,6 +55,7 @@ const read = (decidedEvery: number): ScreeningRecordsRead => ({
   exclusion_reasons: [],
   inclusion_criteria: [],
   phase: 'title_abstract',
+  removed_duplicate_ids: [],
   reviewer_count: 2,
   rows: rows(decidedEvery),
 });
@@ -65,6 +70,10 @@ const CONFIG: ScreeningConfigRead = {
   reviewer_capable: 2,
   reviewer_count: 2,
   reviewer_count_locked: true,
+  full_text_reviewer_count: null,
+  full_text_count_locked: false,
+  full_text_ready: 0,
+  full_text_enrolled: 0,
 };
 
 const EMPTY = new Set<string>();
@@ -89,6 +98,7 @@ function List({data, status, onStatusChange}: {data: ScreeningRecordsRead; statu
       toolbarActions={null}
       keepArticleIds={EMPTY}
       onFiltersChange={noop}
+      maximized={false}
     />
   );
 }

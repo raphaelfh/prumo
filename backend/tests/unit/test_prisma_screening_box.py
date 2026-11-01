@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.schemas.prisma import PrismaCountsRead
-from app.services.prisma_service import ScreeningBox, screening_box
+from app.services.prisma_service import ReportsBox, ScreeningBox, reports_box, screening_box
 from app.services.screening_outcome import AssignmentState, Outcome
 
 PENDING = AssignmentState("pending", None)
@@ -51,17 +51,46 @@ def test_pending_and_conflict_are_indistinguishable() -> None:
     assert screening_box([CONFLICT]) == only_one
 
 
-def test_prisma_payload_has_no_pending_or_conflict_field() -> None:
-    assert set(PrismaCountsRead.model_fields) == {
+def test_prisma_payload_has_one_in_progress_flag_and_no_pending_or_conflict_count() -> None:
+    fields = set(PrismaCountsRead.model_fields)
+
+    assert fields == {
         "identified",
         "identified_total",
         "duplicates_removed",
-        "not_retrieved",
-        "imported_not_enrolled",
+        "records_not_found",
+        "other_removed",
         "screened",
         "excluded",
         "excluded_by_reason",
         "excluded_reasons_differ",
         "excluded_without_reason",
         "sought_for_retrieval",
+        "ta_included",
+        "ta_maybe",
+        "reports_not_retrieved",
+        "reports_assessed",
+        "reports_excluded_by_reason",
+        "reports_included",
+        "full_text_in_progress",
     }
+    assert not [f for f in fields if "pending" in f or "conflict" in f]
+
+
+def test_reports_box_arithmetic() -> None:
+    states = [
+        _decided("consensus", "include"),
+        _decided("consensus", "include"),
+        _decided("consensus", "exclude", "Wrong outcome"),
+        _decided("solo", "not_retrieved"),
+        PENDING,
+        CONFLICT,
+    ]
+
+    assert reports_box(states) == ReportsBox(
+        not_retrieved=1,
+        assessed=3,
+        excluded_by_reason={"Wrong outcome": 1},
+        included=2,
+        without_outcome=2,
+    )

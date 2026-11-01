@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     article_text_blocks,
     articles,
     articles_export,
+    duplicates,
     extraction_batches,
     extraction_export,
     extraction_instances,
@@ -48,6 +49,7 @@ api_router = APIRouter()
 api_router.include_router(template_catalogue.router, tags=["template-catalogue"])
 api_router.include_router(pubmed_import.router, tags=["imports"])
 api_router.include_router(screening.router, tags=["screening"])
+api_router.include_router(duplicates.router, tags=["duplicates"])
 api_router.include_router(prisma.router, tags=["prisma"])
 
 api_router.include_router(

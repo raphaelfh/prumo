@@ -14,8 +14,7 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     SnapshotField,
     SnapshotSection,
-    _section_from_view,
-    load_export_sections,
+    section_from_view,
 )
 
 
@@ -37,13 +36,13 @@ def _container_view(payload: dict) -> RunViewEntityType:
 
 
 def test_section_from_view_maps_entry_label() -> None:
-    section = _section_from_view(_container_view({"entry_label": "algorithm"}))
+    section = section_from_view(_container_view({"entry_label": "algorithm"}))
     assert section.entry_label == "algorithm"
 
 
 def test_section_from_view_defaults_entry_label_for_old_snapshots() -> None:
     # Pre-0051 snapshot dicts have no entry_label key at all.
-    section = _section_from_view(_container_view({}))
+    section = section_from_view(_container_view({}))
     assert section.entry_label is None
 
 
@@ -79,7 +78,51 @@ def test_snapshot_section_carries_parent_and_cardinality() -> None:
     assert s.cardinality is ExtractionCardinality.ONE
 
 
-def test_load_export_sections_is_async_callable() -> None:
-    import inspect
+def test_field_view_carries_units_key_and_absent_codes() -> None:
+    view = _container_view(
+        {
+            "fields": [
+                {
+                    "id": str(uuid4()),
+                    "name": "dose",
+                    "label": "Dose",
+                    "field_type": "number",
+                    "is_required": False,
+                    "sort_order": 0,
+                    "allowed_units": ["mg", "g", 3],
+                    "is_entity_key": True,
+                    "allows_not_applicable": True,
+                    "allows_not_evaluated": False,
+                    "allows_no_information": True,
+                }
+            ]
+        }
+    )
+    f = section_from_view(view).fields[0]
+    assert f.allowed_units == ("mg", "g")
+    assert f.is_entity_key is True
+    assert f.allowed_absent_codes == ("no_information", "not_applicable")
 
-    assert inspect.iscoroutinefunction(load_export_sections)
+
+def test_field_view_defaults_units_key_and_absent_codes() -> None:
+    # A non-list allowed_units reads as no units; a snapshot without the
+    # disposition keys keeps the universal no_information (pre-0062 default).
+    view = _container_view(
+        {
+            "fields": [
+                {
+                    "id": str(uuid4()),
+                    "name": "age",
+                    "label": "Age",
+                    "field_type": "number",
+                    "is_required": False,
+                    "sort_order": 0,
+                    "allowed_units": {"mg": 1},
+                }
+            ]
+        }
+    )
+    f = section_from_view(view).fields[0]
+    assert f.allowed_units == ()
+    assert f.is_entity_key is False
+    assert f.allowed_absent_codes == ("no_information",)

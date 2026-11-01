@@ -18,13 +18,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.screening import (
-    SCREENING_PHASE,
+    TITLE_ABSTRACT,
     ScreeningArbitration,
     ScreeningAssignment,
     ScreeningDecision,
 )
 from app.repositories.project_repository import ProjectRepository
+from tests.integration.conftest import SEED
 
 
 async def add_member(db: AsyncSession, project_id: UUID, role: str) -> UUID:
@@ -74,13 +76,14 @@ async def enroll_articles(
     *,
     by: UUID,
     enrolled_at: datetime | None = None,
+    phase: str = TITLE_ABSTRACT,
 ) -> list[UUID]:
     """ORM assignments in input order; ``None`` keeps the SQL default ``now()``."""
     assignments = [
         ScreeningAssignment(
             project_id=project_id,
             article_id=article_id,
-            phase=SCREENING_PHASE,
+            phase=phase,
             enrolled_by=by,
             **({} if enrolled_at is None else {"enrolled_at": enrolled_at}),
         )
@@ -137,6 +140,23 @@ async def add_ruling(
     return row.id
 
 
+async def remove_duplicate(
+    db: AsyncSession, project_id: UUID, article_id: UUID, kept_article_id: UUID
+) -> None:
+    """A manual ``duplicate`` verdict removing ``article_id`` in favour of ``kept_article_id``."""
+    db.add(
+        ArticleDuplicateVerdict(
+            project_id=project_id,
+            article_id=article_id,
+            kept_article_id=kept_article_id,
+            verdict="duplicate",
+            basis="manual",
+            decided_by=SEED.primary_profile,
+        )
+    )
+    await db.flush()
+
+
 async def move_article(db: AsyncSession, article_id: UUID, to_project: UUID) -> None:
     """What a member's PostgREST update does: the article changes project, its assignment stays."""
     await db.execute(
@@ -145,8 +165,13 @@ async def move_article(db: AsyncSession, article_id: UUID, to_project: UUID) -> 
     )
 
 
-async def set_reviewer_count(db: AsyncSession, project_id: UUID, n: int) -> None:
-    """Write ``settings["screening"]`` through the one settings writer."""
+async def set_reviewer_count(
+    db: AsyncSession, project_id: UUID, n: int, *, key: str = "reviewer_count"
+) -> None:
+    """Write ``settings["screening"][key]`` through the one settings writer.
+
+    ``key="full_text_reviewer_count"`` sets the full-text phase's count.
+    """
     await ProjectRepository(db).update_settings_key(
-        project_id, "screening", lambda old: {**(old or {}), "reviewer_count": n}
+        project_id, "screening", lambda old: {**(old or {}), key: n}
     )

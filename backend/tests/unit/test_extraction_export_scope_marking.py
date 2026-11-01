@@ -3,7 +3,7 @@
 A section the article's own study-type classification takes out of play used
 to export as a BLANK cell while the run view showed a "Not applicable" badge.
 The marking happens once, on ``value_map``, after the map is built and before
-the tidy / matrix / appraisal builders read it — so no sub-builder receives
+the level / matrix / appraisal builders read it — so no sub-builder receives
 the schema and no builder signature changes.
 
 The cells that matter are the ones nobody ever answered: an excluded domain
@@ -25,8 +25,12 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.codebook_model import VersionSections
 from app.services.exports.descriptors import ValueKey, value_key
-from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
+from app.services.exports.extraction_scope_marking import (
+    mark_out_of_scope_values,
+    reader_instance_ids,
+)
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
@@ -126,7 +130,7 @@ def _article(
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={
@@ -144,6 +148,7 @@ def _mark(
     raters: tuple[UUID | None, ...] = (None,),
     schema: Any = None,
     sections: tuple[SectionDescriptor, ...] | None = None,
+    pinned_field_ids: dict[UUID, frozenset[UUID]] | None = None,
 ) -> None:
     mark_out_of_scope_values(
         rules_by_article={a.article_id: _SCHEMA if schema is None else schema for a in articles},
@@ -151,6 +156,7 @@ def _mark(
         articles=articles,
         raters=raters,
         value_map=value_map,
+        pinned_field_ids={} if pinned_field_ids is None else pinned_field_ids,
     )
 
 
@@ -167,6 +173,44 @@ def test_marks_a_cell_that_was_never_answered() -> None:
 
     assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
     assert _stamped(value_map[value_key(run, eval_i, _EVAL_SIGNALLING)])
+
+
+def test_no_stamp_for_field_missing_from_pinned_version() -> None:
+    """A field the article's pinned version lacks was never asked of that run:
+    no stamp, and a recorded value there is left as it is."""
+    run, scope_i, dev_i, eval_i = uuid4(), uuid4(), uuid4(), uuid4()
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    unpinned_answer = _answered("x")
+    value_map: dict[ValueKey, ExportValue] = {
+        value_key(run, scope_i, _STUDY_TYPE): _v("development_only"),
+        value_key(run, eval_i, _EVAL_SIGNALLING): unpinned_answer,
+    }
+
+    _mark(
+        value_map,
+        articles=(article,),
+        pinned_field_ids={article.article_id: frozenset({_STUDY_TYPE, _EVAL_VERDICT})},
+    )
+
+    assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
+    assert value_map[value_key(run, eval_i, _EVAL_SIGNALLING)] is unpinned_answer
+
+
+def test_no_stamp_for_unpinned_field_on_an_empty_cell() -> None:
+    run, scope_i, dev_i, eval_i = uuid4(), uuid4(), uuid4(), uuid4()
+    article = _article(run, scope_inst=scope_i, dev_inst=dev_i, eval_insts=(eval_i,))
+    value_map: dict[ValueKey, ExportValue] = {
+        value_key(run, scope_i, _STUDY_TYPE): _v("development_only"),
+    }
+
+    _mark(
+        value_map,
+        articles=(article,),
+        pinned_field_ids={article.article_id: frozenset({_STUDY_TYPE, _EVAL_VERDICT})},
+    )
+
+    assert _stamped(value_map[value_key(run, eval_i, _EVAL_VERDICT)])
+    assert value_key(run, eval_i, _EVAL_SIGNALLING) not in value_map
 
 
 def test_leaves_in_scope_sections_and_the_classifier_alone() -> None:
@@ -323,6 +367,7 @@ def test_each_article_is_marked_by_its_own_rules() -> None:
         articles=(article_a, article_b),
         raters=(None,),
         value_map=value_map,
+        pinned_field_ids={},
     )
 
     assert _stamped(value_map[value_key(run_a, eval_a, _EVAL_VERDICT)])
@@ -344,7 +389,7 @@ def test_an_unclassified_article_is_untouched() -> None:
 def test_an_article_with_no_run_is_skipped() -> None:
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="No run",
+        article_label="No run",
         run_id=None,
         version_id=None,
         entries={},
@@ -517,20 +562,29 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
 
     monkeypatch.setattr(svc, "mark_out_of_scope_values", _spy)
     monkeypatch.setattr(svc, "pinned_template_rules", AsyncMock(return_value={}))
-    service = ExtractionExportService(db=MagicMock(), user_id="u")
+    service = ExtractionExportService(db=MagicMock(), user_id=str(uuid4()))
+    members = MagicMock(has_role=AsyncMock(return_value=True))
+    monkeypatch.setattr(service, "_project_members_repo", MagicMock(return_value=members))
+    monkeypatch.setattr(service, "_load_rater_labels", AsyncMock(return_value={}))
     monkeypatch.setattr(
         service, "_load_active_template_version", AsyncMock(return_value=(MagicMock(), MagicMock()))
     )
     monkeypatch.setattr(service, "_resolve_project_name", AsyncMock(return_value="P"))
-    monkeypatch.setattr(service, "_load_sections", AsyncMock(return_value=()))
+    monkeypatch.setattr(service, "_pinned_version_rows", AsyncMock(return_value=()))
+    monkeypatch.setattr(
+        service,
+        "_load_pinned_versions",
+        AsyncMock(return_value=(VersionSections(uuid4(), 1, (), {}),)),
+    )
+    monkeypatch.setattr(service, "_load_article_refs", AsyncMock(return_value={}))
     monkeypatch.setattr(
         service, "_resolve_articles_for_single_user", AsyncMock(return_value=((), {}))
     )
     monkeypatch.setattr(
         service, "_resolve_articles_for_consensus", AsyncMock(return_value=((), {}))
     )
-    monkeypatch.setattr(service, "_build_single_user_value_map", AsyncMock(return_value={}))
-    monkeypatch.setattr(service, "_build_consensus_value_map", AsyncMock(return_value={}))
+    monkeypatch.setattr(service, "_load_reviewer_cells", AsyncMock(return_value={}))
+    monkeypatch.setattr(service, "_load_consensus_cells", AsyncMock(return_value={}))
 
     with pytest.raises(_Stop):
         await service.resolve_layout(
@@ -544,3 +598,29 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
         )
 
     assert seen["raters"] == ((reviewer if expected_primary == "reviewer" else None),)
+
+
+def test_reader_instance_ids_follows_the_walk() -> None:
+    many = ExtractionCardinality.MANY
+    g = _section(uuid4(), "groups", (), cardinality=many)  # fieldless MANY, owns items
+    items = replace(
+        _section(uuid4(), "items", (_field(uuid4(), "x"),), cardinality=many),
+        parent_entity_type_id=g.entity_type_id,
+    )
+    empty = _section(uuid4(), "empty", (), cardinality=many)  # fieldless subtree
+    e1, p1, p2, x1 = uuid4(), uuid4(), uuid4(), uuid4()
+    art = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label="A",
+        run_id=uuid4(),
+        version_id=None,
+        entries={
+            (g.entity_type_id, None): (e1,),
+            (items.entity_type_id, e1): (p1, p2),
+            (empty.entity_type_id, None): (x1,),
+        },
+    )
+    secs = (g, items, empty)
+    assert reader_instance_ids(g, art, secs) == (e1,)
+    assert reader_instance_ids(items, art, secs) == (p1, p2)
+    assert reader_instance_ids(empty, art, secs) == ()

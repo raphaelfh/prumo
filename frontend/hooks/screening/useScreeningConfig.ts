@@ -18,19 +18,25 @@ import {
   type ScreeningEnrollResult,
 } from '@/services/screeningService';
 
-export function useScreeningConfig(projectId: string) {
-  return useQuery({
+export function screeningConfigQueryOptions(projectId: string) {
+  return {
     queryKey: screeningKeys.config(projectId),
     enabled: Boolean(projectId),
-    // Writes made elsewhere (a co-reviewer's decision, another session's
-    // import) never reach this cache: under the app's 5-minute staleTime a remount would
-    // otherwise keep pre-import enroll and PRISMA numbers.
-    refetchOnMount: 'always',
     queryFn: async (): Promise<ScreeningConfigRead> => {
       const result = await fetchScreeningConfig(projectId);
       if (!result.ok) throw result.error;
       return result.data;
     },
+  };
+}
+
+export function useScreeningConfig(projectId: string) {
+  return useQuery({
+    ...screeningConfigQueryOptions(projectId),
+    // Writes made elsewhere (a co-reviewer's decision, another session's
+    // import) never reach this cache: under the app's 5-minute staleTime a remount would
+    // otherwise keep pre-import enroll and PRISMA numbers.
+    refetchOnMount: 'always',
   });
 }
 

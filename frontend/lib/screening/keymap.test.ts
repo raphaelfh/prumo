@@ -53,4 +53,23 @@ describe('screeningKeyAction', () => {
     expect(screeningKeyAction(key('4'), false, 'title_abstract')).toBeNull();
     expect(screeningKeyAction(key('Escape'), true, 'title_abstract')).toBeNull();
   });
+
+  describe('full text', () => {
+    it('maps 1 to include', () => {
+      expect(screeningKeyAction(key('1'), false, 'full_text')).toEqual({kind: 'decide', decision: 'include'});
+    });
+
+    it('arms the reason list on 2 and on e', () => {
+      expect(screeningKeyAction(key('2'), false, 'full_text')).toEqual({kind: 'open_reasons'});
+      expect(screeningKeyAction(key('e'), false, 'full_text')).toEqual({kind: 'open_reasons'});
+    });
+
+    it('maps 3 to nothing', () => {
+      expect(screeningKeyAction(key('3'), false, 'full_text')).toBeNull();
+    });
+
+    it('picks a reason by digit while armed', () => {
+      expect(screeningKeyAction(key('2'), true, 'full_text')).toEqual({kind: 'reason', index: 1});
+    });
+  });
 });

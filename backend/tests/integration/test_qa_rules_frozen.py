@@ -323,7 +323,7 @@ def _consensus_cell(
     )
     assert article.run_id is not None
     v = layout.value_map[value_key(article.run_id, instance_id, field.field_id)]
-    return v, display_value(v, field)
+    return v, display_value(v, field, target="matrix")
 
 
 def _overalls(layout: ExportLayout, article_id: UUID) -> dict[str, Any]:

@@ -879,6 +879,46 @@ export interface paths {
         patch: operations["update_project_details_api_v1_projects__project_id__details_patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Duplicates
+         * @description Open candidate pairs and resolved pairs, each side with its compare fields.
+         */
+        get: operations["get_duplicates_api_v1_projects__project_id__duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/duplicates/verdicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Duplicate Verdicts
+         * @description Record a batch of rulings in order, in one transaction; a refusal writes nothing.
+         */
+        post: operations["post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extraction-export": {
         parameters: {
             query?: never;
@@ -1182,7 +1222,9 @@ export interface paths {
          * Get Screening Records
          * @description Every article of the project in one phase with the caller's blind-safe status.
          *
-         *     One row per article, in queue order, never a peer's decision.
+         *     One row per article, in queue order, never a peer's decision. Without
+         *     ``phase``: one row per article across both phases (the full-text row wins)
+         *     plus the removed duplicates' ids.
          */
         get: operations["get_screening_records_api_v1_projects__project_id__screening_records_get"];
         put?: never;
@@ -2550,6 +2592,40 @@ export interface components {
         ApiResponse_DiscardDraftResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["DiscardDraftResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DuplicateVerdictsResult] */
+        ApiResponse_DuplicateVerdictsResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DuplicateVerdictsResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DuplicatesRead] */
+        ApiResponse_DuplicatesRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DuplicatesRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4338,6 +4414,133 @@ export interface components {
             /** Size */
             size: number;
         };
+        /**
+         * DuplicatePair
+         * @description A candidate pair (open) or a ruled one (resolved).
+         *
+         *     ``kept_article_id`` is the keep order's suggestion for an open pair and the
+         *     recorded keeper for a resolved one. ``tier`` and ``match_label`` are
+         *     recomputed from today's metadata; a resolved pair that no longer matches
+         *     carries ``None``.
+         */
+        DuplicatePair: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "pmid" | "doi" | "title" | "manual";
+            /** Created At */
+            created_at?: string | null;
+            /** Decided By Name */
+            decided_by_name?: string | null;
+            kept: components["schemas"]["DuplicateSide"];
+            /**
+             * Kept Article Id
+             * Format: uuid
+             */
+            kept_article_id: string;
+            /** Match Label */
+            match_label: ("pmid" | "doi_title" | "title" | "doi_only") | null;
+            removed: components["schemas"]["DuplicateSide"];
+            /** Tier */
+            tier: ("exact" | "likely" | "possible") | null;
+            /** Verdict */
+            verdict?: ("duplicate" | "distinct") | null;
+        };
+        /**
+         * DuplicateSide
+         * @description One side of a pair: the fields the compare panel shows.
+         */
+        DuplicateSide: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Authors */
+            authors: string[];
+            /** Doi */
+            doi: string | null;
+            /** Has Abstract */
+            has_abstract: boolean;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Has Refusing Work
+             * @description Full-text or extraction work: the server refuses removing this side.
+             */
+            has_refusing_work: boolean;
+            /** Has Review Work */
+            has_review_work: boolean;
+            /** Ingestion Source */
+            ingestion_source: string | null;
+            /** Journal Title */
+            journal_title: string | null;
+            /** Pmid */
+            pmid: string | null;
+            /** Publication Year */
+            publication_year: number | null;
+            /** Screening Decisions */
+            screening_decisions: number;
+            /** Title */
+            title: string;
+        };
+        /**
+         * DuplicateVerdictCreate
+         * @description One ruling: ``article_id`` is removed (or judged distinct), ``kept_article_id`` stays.
+         *
+         *     The basis is derived by the server from today's metadata, never sent.
+         */
+        DuplicateVerdictCreate: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /**
+             * Kept Article Id
+             * Format: uuid
+             */
+            kept_article_id: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "duplicate" | "distinct" | "cleared";
+        };
+        /**
+         * DuplicateVerdictsCreate
+         * @description A batch of rulings, applied in order in one transaction.
+         */
+        DuplicateVerdictsCreate: {
+            /** Items */
+            items: components["schemas"]["DuplicateVerdictCreate"][];
+        };
+        /**
+         * DuplicateVerdictsResult
+         * @description Rows written (skips excluded) and kept records enrolled at title/abstract.
+         */
+        DuplicateVerdictsResult: {
+            /** Enrolled Kept */
+            enrolled_kept: number;
+            /** Written */
+            written: number;
+        };
+        /**
+         * DuplicatesRead
+         * @description Open pairs (tier, then kept title) and resolved pairs (newest first).
+         */
+        DuplicatesRead: {
+            /** Open */
+            open: components["schemas"]["DuplicatePair"][];
+            /** Resolved */
+            resolved: components["schemas"]["DuplicatePair"][];
+        };
         /** EligibilityCriteria */
         EligibilityCriteria: {
             /** Exclusion */
@@ -4790,7 +4993,7 @@ export interface components {
         ExtractionExportRequest: {
             /**
              * Anonymize Reviewer Names
-             * @description Only meaningful when mode=all_users; replaces names with Reviewer A/B/…
+             * @description Replaces names with Member A/B/… in every mode, adjudicators included.
              * @default false
              */
             anonymize_reviewer_names: boolean;
@@ -4806,7 +5009,7 @@ export interface components {
             article_scope: components["schemas"]["ExtractionArticleScope"];
             /**
              * Include Ai Metadata
-             * @description Adds the optional AI metadata sheet to the workbook.
+             * @description Adds the AI proposals sheet and, in All users mode, an AI column in Verification.
              * @default false
              */
             include_ai_metadata: boolean;
@@ -5717,7 +5920,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -6077,18 +6280,32 @@ export interface components {
             excluded_reasons_differ: number;
             /** Excluded Without Reason */
             excluded_without_reason: number;
+            /** Full Text In Progress */
+            full_text_in_progress: boolean | null;
             /** Identified */
             identified: components["schemas"]["PrismaSourceCount"][];
             /** Identified Total */
             identified_total: number;
-            /** Imported Not Enrolled */
-            imported_not_enrolled: number;
-            /** Not Retrieved */
-            not_retrieved: number;
+            /** Other Removed */
+            other_removed: number;
+            /** Records Not Found */
+            records_not_found: number;
+            /** Reports Assessed */
+            reports_assessed: number | null;
+            /** Reports Excluded By Reason */
+            reports_excluded_by_reason: components["schemas"]["PrismaReasonCount"][] | null;
+            /** Reports Included */
+            reports_included: number | null;
+            /** Reports Not Retrieved */
+            reports_not_retrieved: number | null;
             /** Screened */
             screened: number;
             /** Sought For Retrieval */
             sought_for_retrieval: number;
+            /** Ta Included */
+            ta_included: number;
+            /** Ta Maybe */
+            ta_maybe: number;
         };
         /** PrismaReasonCount */
         PrismaReasonCount: {
@@ -7137,7 +7354,7 @@ export interface components {
          */
         ScreeningArbitrationCreate: {
             /** Decision */
-            decision?: ("include" | "exclude" | "maybe") | null;
+            decision?: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** Exclusion Reason */
             exclusion_reason?: string | null;
             /** Rationale */
@@ -7223,6 +7440,14 @@ export interface components {
             enrolled: number;
             /** Exclusion Reasons */
             exclusion_reasons: string[];
+            /** Full Text Count Locked */
+            full_text_count_locked: boolean;
+            /** Full Text Enrolled */
+            full_text_enrolled: number;
+            /** Full Text Ready */
+            full_text_ready: number;
+            /** Full Text Reviewer Count */
+            full_text_reviewer_count: number | null;
             /** Not Enrolled */
             not_enrolled: number;
             /** Reviewer Capable */
@@ -7234,9 +7459,11 @@ export interface components {
         };
         /**
          * ScreeningConfigUpdate
-         * @description Reviewers per record (1 to 3).
+         * @description Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off.
          */
         ScreeningConfigUpdate: {
+            /** Full Text Reviewer Count */
+            full_text_reviewer_count?: number | null;
             /** Reviewer Count */
             reviewer_count: number;
         };
@@ -7249,7 +7476,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason?: string | null;
             /** Rationale */
@@ -7266,7 +7493,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7280,10 +7507,18 @@ export interface components {
         /**
          * ScreeningEnrollRequest
          * @description Articles to enroll; omit ``article_ids`` to enroll every article of the project.
+         *
+         *     ``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.
          */
         ScreeningEnrollRequest: {
             /** Article Ids */
             article_ids?: string[] | null;
+            /**
+             * Phase
+             * @default title_abstract
+             * @enum {string}
+             */
+            phase: "title_abstract" | "full_text";
         };
         /** ScreeningEnrollResult */
         ScreeningEnrollResult: {
@@ -7298,7 +7533,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7315,7 +7550,10 @@ export interface components {
          *
          *     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
          *     when the article is not enrolled; the ``outcome*`` fields are set only once
-         *     the record has an outcome.
+         *     the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
+         *     of a full-text row. ``phase`` is the phase the row's status and decisions
+         *     come from. ``queue_rank`` is the 0-based position in the returned list: the
+         *     phase's queue order, or the merged list's order on a read without ``phase``.
          */
         ScreeningRecordRow: {
             /**
@@ -7336,15 +7574,20 @@ export interface components {
             /** Journal Title */
             journal_title: string | null;
             /** My Decision */
-            my_decision: ("include" | "exclude" | "maybe") | null;
+            my_decision: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** My Exclusion Reason */
             my_exclusion_reason: string | null;
             /** Outcome */
-            outcome: ("include" | "exclude" | "maybe") | null;
+            outcome: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** Outcome Exclusion Reason */
             outcome_exclusion_reason: string | null;
             /** Outcome Kind */
             outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "title_abstract" | "full_text";
             /** Pmid */
             pmid: string | null;
             /** Publication Year */
@@ -7355,24 +7598,38 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe";
+            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe" | "not_retrieved";
+            /** Ta Outcome */
+            ta_outcome: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
+            /** Ta Outcome Kind */
+            ta_outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /** Ta Reviewer Count */
+            ta_reviewer_count: number | null;
             /** Title */
             title: string;
         };
         /**
          * ScreeningRecordsRead
          * @description Every article of the project in one phase, in queue order, with the protocol criteria.
+         *
+         *     Without ``phase`` (``phase is None``): one row per article in title/abstract
+         *     order, the full-text row replacing the title/abstract one once the article is
+         *     in full text; ``reviewer_count`` is the title/abstract count, and the removed
+         *     duplicates are listed by id only in ``removed_duplicate_ids`` (empty on a
+         *     phased read).
          */
         ScreeningRecordsRead: {
             /** Exclusion Reasons */
             exclusion_reasons: string[];
             /** Inclusion Criteria */
             inclusion_criteria: string[];
+            /** Phase */
+            phase: ("title_abstract" | "full_text") | null;
             /**
-             * Phase
-             * @constant
+             * Removed Duplicate Ids
+             * @default []
              */
-            phase: "title_abstract";
+            removed_duplicate_ids: string[];
             /** Reviewer Count */
             reviewer_count: number;
             /** Rows */
@@ -10453,6 +10710,93 @@ export interface operations {
             };
         };
     };
+    get_duplicates_api_v1_projects__project_id__duplicates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DuplicatesRead_"];
+                };
+            };
+            /** @description Only project managers review duplicates */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateVerdictsCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DuplicateVerdictsResult_"];
+                };
+            };
+            /** @description An article is not in this project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The record to remove has full-text or extraction work, or the record to keep was already removed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_extraction_export_api_v1_projects__project_id__extraction_export_post: {
         parameters: {
             query?: never;
@@ -11097,7 +11441,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Config frozen by a decision, or fewer reviewers than requested */
+            /** @description Config frozen by a decision (or by a record sent to full text), or fewer reviewers than requested */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11146,21 +11490,26 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Full-text screening is not set up, or the protocol has no exclusion reasons */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Article ids given when sending records to full text */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };
     get_screening_records_api_v1_projects__project_id__screening_records_get: {
         parameters: {
-            query: {
-                phase: "title_abstract";
+            query?: {
+                phase?: ("title_abstract" | "full_text") | null;
             };
             header?: never;
             path: {
@@ -12676,7 +13025,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12732,7 +13081,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED) */
             409: {
                 headers: {
                     [name: string]: unknown;

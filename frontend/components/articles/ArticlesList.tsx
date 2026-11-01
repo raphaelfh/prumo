@@ -50,6 +50,7 @@ import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {ArticlesListDialogs} from "./ArticlesListDialogs";
 import {ArticlesExportDialog} from "./ArticlesExportDialog";
+import {ArticleScreeningChip} from "./ArticleScreeningChip";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import type {Article} from "@/types/article";
 import {ARTICLES_DATA_COLUMN_DEFS, formatArticleListCell, matchesSourceFilter} from "@/lib/articlesListDisplay";
@@ -183,6 +184,7 @@ const TABLE_COLUMNS: Array<{
         visibleKey: 'year',
         breakpoint: 'md'
     },
+    {id: 'screening', label: t('screening', 'columnScreening'), visibleKey: 'screening', breakpoint: 'md'},
     {id: 'keywords', label: 'Keywords', filterKey: 'keywords', visibleKey: 'keywords', breakpoint: 'lg'},
     {id: 'doi', label: 'DOI', visibleKey: 'doi', breakpoint: 'lg'},
     {id: 'abstract', label: 'Abstract', visibleKey: 'abstract', breakpoint: 'lg'},
@@ -203,6 +205,7 @@ function buildDefaultVisibleColumns(): Record<string, boolean> {
         authors: true,
         journal: true,
         year: true,
+        screening: true,
         keywords: true,
         doi: true,
         abstract: false,
@@ -222,6 +225,7 @@ const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
     authors: 140,
     journal: 160,
     year: 100,
+    screening: 150,
     keywords: 160,
     doi: 200,
     abstract: 220,
@@ -927,6 +931,13 @@ export function ArticlesList({
                                           ) : (
                                               <span className="text-[12px] text-muted-foreground/50">–</span>
                                           )}
+                                      </TableCell>
+                                  )}
+
+                                  {visibleColumns.screening === true && (
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('md')}`}
+                                                 style={getColumnStyle('screening')}>
+                                          <ArticleScreeningChip projectId={projectId} articleId={article.id}/>
                                       </TableCell>
                                   )}
 

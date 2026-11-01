@@ -59,14 +59,14 @@ test.describe("Quality assessment export — UI flow", () => {
     await expect(exportBtn).toBeVisible();
   });
 
-  test("the shared dialog opens with the complete workbook selected", async ({ page }) => {
+  test("the shared dialog opens with the review workbook selected", async ({ page }) => {
     const env = loadE2EEnv();
     const exportBtn = await openQaExportButton(page, env);
     await exportBtn.click();
 
     await expect(page.getByText(/Export to Excel/i)).toBeVisible();
     await expect(page.getByLabel("Consensus")).toBeChecked();
-    await expect(page.getByLabel(/Complete workbook/i)).toBeChecked();
+    await expect(page.getByLabel(/Review workbook/i)).toBeChecked();
     await expect(page.getByTestId("extraction-export-preview")).toBeVisible();
     // The deleted "Articles to export" radio never renders on either surface.
     await expect(page.getByLabel(/Selected only/i)).toHaveCount(0);
@@ -76,7 +76,7 @@ test.describe("Quality assessment export — UI flow", () => {
     const env = loadE2EEnv();
     const exportBtn = await openQaExportButton(page, env);
     await exportBtn.click();
-    await page.getByLabel(/Data dictionary only/i).check();
+    await page.getByLabel(/^Codebook$/i).check();
 
     const [request] = await Promise.all([
       page.waitForRequest(

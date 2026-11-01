@@ -1,4 +1,4 @@
-/** Copy for title/abstract screening (screening v1). */
+/** Copy for screening: title/abstract and full text. */
 export const screening = {
   // Tab states
   loading: 'Loading screening…',
@@ -6,10 +6,16 @@ export const screening = {
 
   // Sub-views and the Settings sub-view
   tabTitleAbstract: 'Title/abstract',
+  tabFullText: 'Full text',
   tabSettings: 'Settings',
   notConfiguredManagerTitle: 'Screening is not set up',
   openSettings: 'Open Settings',
   settingsReviewersTitle: 'Reviewers per article — title/abstract',
+  settingsPhasesTitle: 'Phases',
+  phaseTaOnly: 'Title/abstract only',
+  phaseTaThenFt: 'Title/abstract, then full text',
+  settingsFtReviewersTitle: 'Reviewers per article — full text',
+  settingsFtLocked: 'Locked once a record was sent to full text',
   settingsReviewersLocked: 'Locked after the first title/abstract decision',
   settingsReasonsTitle: 'Exclusion reasons',
   settingsReasonsEmpty: 'The protocol lists no exclusion reasons',
@@ -26,6 +32,19 @@ export const screening = {
   configSavedToast: 'Screening is set up',
   notConfiguredTitle: 'Screening is not set up yet',
   notConfiguredMember: 'A project manager chooses how many reviewers screen each record.',
+
+  // Full text: the sub-view, its empty state and "Send to full text"
+  ftOffTitle: 'Full-text screening is off',
+  ftOffManager: 'Turn it on in Settings.',
+  ftOffMember: 'A manager turns it on in Settings.',
+  ftEmptyTitle: 'No records in full text yet',
+  ftEmptyMember: 'A manager sends records to full text.',
+  sendToFullText: 'Send {{n}} to full text',
+  sentToFullText: 'Sent {{n}} to full text',
+  sendDisabledOff: 'Full-text screening is off',
+  sendDisabledReasons: 'Add exclusion reasons to the protocol first',
+  sendDisabledNone: 'No records are ready for full text',
+  exportExcludedReports: 'Export excluded reports',
 
   // Enrollment
   enrollAll: 'Enroll all articles',
@@ -77,8 +96,11 @@ export const screening = {
   decisionInclude: 'Include',
   decisionExclude: 'Exclude',
   decisionMaybe: 'Maybe',
+  decisionNotRetrieved: 'Not retrieved',
   excludeWithReason: 'Exclude with reason',
   reasonsTitle: 'Exclusion reason',
+  keyboardHintFullText: '1 include · 2 or E exclude with reason',
+  reportNotRetrieved: 'Report not retrieved',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',
 
   // Keyboard shortcuts popover (`ShortcutsHelp`)
@@ -91,6 +113,7 @@ export const screening = {
   shortcutMaximize: 'Maximize the panel',
   shortcutPanel: 'Show or hide the panel',
   shortcutDecide: 'Include · Exclude · Maybe',
+  shortcutDecideFullText: 'Include · Exclude',
   shortcutReason: 'Exclude with a reason',
   shortcutSearch: 'Search',
   shortcutFilter: 'Filter',
@@ -129,6 +152,16 @@ export const screening = {
   peerDecisionsTitle: 'Other reviewers',
   peerUnnamed: 'Another reviewer',
 
+  // Full-text record panel
+  viewAbstract: 'Abstract',
+  viewPdf: 'PDF',
+  noPdfAttached: 'No PDF attached',
+  taProvenance: 'Included at title/abstract · {{n}} reviewers, {{kind}}',
+  taProvenanceSolo: 'Included at title/abstract · 1 reviewer',
+  taProvenanceMaybe: 'Maybe at title/abstract · {{n}} reviewers, {{kind}}',
+  taProvenanceMaybeSolo: 'Maybe at title/abstract · 1 reviewer',
+  pdfFoundLater: 'PDF found later? Rule on this report.',
+
   // Conflicts and arbitration
   useDecisionOf: "Use {{name}}'s decision",
   decideDifferently: 'Decide differently',
@@ -146,14 +179,26 @@ export const screening = {
   prismaSourceManual: 'Manual',
   prismaIdentifiedTotal: 'Records identified',
   prismaDuplicates: 'Duplicates removed',
-  prismaNotRetrieved: 'Records not retrieved from the source',
-  prismaNotEnrolled: 'Imported but not enrolled',
+  prismaRecordsNotFound: 'Records not retrieved from the source',
+  prismaOtherRemoved: 'Records removed for other reasons',
   prismaScreening: 'Title and abstract screening',
   prismaScreened: 'Records screened',
   prismaExcluded: 'Records excluded',
   prismaReasonsDiffer: 'Reasons differ',
   prismaNoReason: 'No reason given',
-  prismaSought: 'Sought for retrieval',
+  prismaTaIncluded: 'Records included at title/abstract',
+  prismaTaMaybe: 'Maybe (not assessed)',
+  prismaFullText: 'Full-text screening',
+  prismaReportsSought: 'Reports sought for retrieval',
+  prismaReportsNotRetrieved: 'Reports not retrieved',
+  prismaReportsAssessed: 'Reports assessed for eligibility',
+  prismaReportsExcluded: 'Reports excluded',
+  prismaReportsIncluded: 'Reports included',
+  prismaInProgress: 'In progress',
+  prismaMethodTaOne: '{{n}} independent reviewer at title/abstract',
+  prismaMethodTaMany: '{{n}} independent reviewers at title/abstract',
+  prismaMethodFtClause: ', {{n}} at full text',
+  prismaMethodArbitrator: '; conflicts resolved by an arbitrator',
 
   // Record list (title/abstract workspace)
   statusAll: 'All',
@@ -163,6 +208,7 @@ export const screening = {
   statusIncluded: 'Included',
   statusExcluded: 'Excluded',
   statusMaybe: 'Maybe',
+  statusNotRetrieved: 'Not retrieved',
   statusNotEnrolled: 'Not enrolled',
   statusArbitrated: 'Arbitrated',
   statusViewsLabel: 'Status views',
@@ -175,6 +221,9 @@ export const screening = {
   filterMyDecision: 'My decision',
   filterExclusionReason: 'Exclusion reason',
   filterSource: 'Source',
+  filterPdf: 'PDF',
+  pdfAttached: 'Attached',
+  pdfMissing: 'Missing',
   sourceUnknown: 'Unknown',
   myDecisionNone: 'Not decided',
   sortQueue: 'Queue order',
@@ -189,10 +238,14 @@ export const screening = {
   columnJournal: 'Journal',
   columnMine: 'Mine',
   columnStatus: 'Status',
+  columnScreening: 'Screening',
+  stageDuplicate: 'Duplicate',
   columnReason: 'Reason',
+  columnPdf: 'PDF',
   listRecordsLabel: 'records',
   progressDecided: '{{x}} of {{n}} decided',
   progressYouLeft: 'you: {{m}} left',
+  progressToFullText: '{{k}} to full text →',
   emptyView: 'No records in this view',
   noRecordsMatch: 'No records match',
   clearFilters: 'Clear filters',
@@ -226,6 +279,9 @@ export const screening = {
   errDecisionFinal: 'You already decided on this record. Decisions are final.',
   errSelfArbitration:
     'You screened this record, so a manager or consensus member who did not screen it resolves the conflict.',
+  errPhaseAdvanced: 'This article is already in full-text screening.',
+  errDecisionNotInPhase: 'That decision is not available in this phase.',
+  errReasonRequired: 'Pick an exclusion reason.',
   errQueueUnavailable: 'The import queue is unavailable. The import may not have started. Try again later.',
   errorValidation: 'That was not accepted. Check what you entered and try again.',
   errorForbidden: 'You do not have permission to do this.',

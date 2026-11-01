@@ -56,17 +56,30 @@ describe('SectionViewSwitcher', () => {
     // per container width (the hidden one is `display:none`).
     expect(screen.getByRole('button', { name: /assessment/i })).toBeInTheDocument();
   });
-  it('renders Title/abstract and Settings for a screening manager', () => {
+  it('lists Duplicates, Title/abstract, Full text, Settings for a manager; Title/abstract is the default', () => {
     roleMock.mockReturnValue({ isManager: true, role: 'manager', loading: false });
     renderWith('screening');
-    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'tabSettings' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'tabDuplicates',
+      'tabTitleAbstract',
+      'tabFullText',
+      'tabSettings',
+    ]);
+    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'tabDuplicates' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('hides Duplicates for a member', () => {
+    roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
+    renderWith('screening');
+    expect(screen.queryByRole('tab', { name: 'tabDuplicates' })).toBeNull();
   });
 
   it('hides Settings for a screening member', () => {
     roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
     renderWith('screening');
     expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'tabFullText' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'tabSettings' })).toBeNull();
   });
 

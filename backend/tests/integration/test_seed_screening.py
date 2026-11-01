@@ -22,11 +22,13 @@ from tests.integration.helpers.screening_fixtures import add_member
 from tests.integration.helpers.shared_fixtures import make_project
 
 
-async def _rows(db: AsyncSession, user: UUID, project_id: UUID) -> list[dict[str, Any]]:
+async def _rows(
+    db: AsyncSession, user: UUID, project_id: UUID, phase: str = "title_abstract"
+) -> list[dict[str, Any]]:
     try:
         async with client_as(str(user), db) as client:
             response = await client.get(
-                f"/api/v1/projects/{project_id}/screening/records?phase=title_abstract"
+                f"/api/v1/projects/{project_id}/screening/records?phase={phase}"
             )
     finally:
         app.dependency_overrides.clear()
@@ -51,14 +53,35 @@ async def test_seed_builds_a_conflict_the_manager_can_rule(db_session: AsyncSess
     assert copies == 1
     manager_rows = await _rows(db_session, manager, project_id)
     counts = Counter(row["status"] for row in manager_rows)
-    assert len(manager_rows) == 12
+    assert len(manager_rows) == 17  # #18 is a removed duplicate
     assert counts["conflict"] >= 1
     assert counts["to_screen"] >= 1
     assert counts["included"] >= 1
-    assert counts["not_enrolled"] == 2
+    assert counts["not_enrolled"] == 5  # #13-#17
     (conflict,) = [row for row in manager_rows if row["status"] == "conflict"]
     by_article = {row["article_id"]: row for row in await _rows(db_session, r1, project_id)}
     assert by_article[conflict["article_id"]]["status"] == "waiting"
+
+    full_text = await _rows(db_session, manager, project_id, "full_text")
+    assert len(full_text) == 3
+    assert sum(row["has_pdf"] for row in full_text) == 1
+    assert [row["status"] for row in full_text] == ["to_screen"] * 3
+    ft_by_r1 = {
+        row["article_id"]: row for row in await _rows(db_session, r1, project_id, "full_text")
+    }
+    (waiting,) = [row for row in ft_by_r1.values() if row["status"] == "waiting"]
+    assert waiting["my_exclusion_reason"] == "Wrong outcome"
+    assert await _enrolled_full_text(db_session, manager, project_id) == 3
+
+
+async def _enrolled_full_text(db: AsyncSession, user: UUID, project_id: UUID) -> int:
+    try:
+        async with client_as(str(user), db) as client:
+            response = await client.get(f"/api/v1/projects/{project_id}/screening/config")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    return int(response.json()["data"]["full_text_enrolled"])
 
 
 async def test_seed_carries_the_reading_states(db_session: AsyncSession) -> None:
@@ -117,3 +140,27 @@ async def test_resolve_profiles_by_email_and_by_age(db_session: AsyncSession) ->
 
     with pytest.raises(SystemExit):
         await resolve_profiles(db_session, "nobody@nowhere.invalid")
+
+
+async def test_seed_has_an_open_and_a_resolved_duplicate_pair(db_session: AsyncSession) -> None:
+    manager = SEED.primary_profile
+    scratch = await make_project(db_session)
+    r1 = await add_member(db_session, scratch, "reviewer")
+    r2 = await add_member(db_session, scratch, "reviewer")
+    project_id = await build(db_session, manager_id=manager, reviewer_ids=(r1, r2))
+
+    try:
+        async with client_as(str(manager), db_session) as client:
+            response = await client.get(f"/api/v1/projects/{project_id}/duplicates")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+
+    (open_pair,) = data["open"]
+    (resolved,) = data["resolved"]
+    assert (open_pair["tier"], open_pair["basis"]) == ("exact", "pmid")
+    assert (resolved["verdict"], resolved["basis"]) == ("duplicate", "doi")
+    rows = {row["article_id"] for row in await _rows(db_session, manager, project_id)}
+    assert resolved["article_id"] not in rows
+    assert resolved["kept_article_id"] in rows

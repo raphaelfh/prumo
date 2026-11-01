@@ -1,35 +1,35 @@
 """Workbook orchestrator for extraction exports.
 
 Owns the PUBLIC ``build_workbook(layout, shape, *, include_matrix) -> bytes`` signature
-consumed by the endpoint and the Celery worker. It assembles the workbook by calling
-each pure sub-builder in §4 spec order via ``_ordered_specs`` — README /
-Methods (#1), Summary (#2), the extraction matrix (#3), the per-section
-tidy tables (#4..k), the Data dictionary (#k+2) and its co-located
-Dropdown lists catalogue — rendering every non-``None`` ``SheetSpec``
-through the single ``_render_sheet_spec`` writer; the matrix is included
-or omitted by ``matrix_fits`` (§5.5). Every title is allocated first by ``allocate_titles``
-and each sub-builder reads its own from the resulting ``SheetTitles``.
-The README sub-builder absorbs the old Notes sheet;
-the optional AI proposals sheet is the trailing sub-builder, emitted only
-when ``include_ai_metadata`` is set. ``shape`` (§3) narrows that order to
-a subset of the same sheets, skipping the filtered-out builders entirely.
+consumed by the endpoint and the Celery worker. It calls each pure sub-builder
+in §3 order via ``_ordered_specs``: README, Summary, [Matrix], Articles and one
+sheet per repeating level, Data, [Verification], [AI proposals], [Appraisal],
+Codebook, [Options].
+Every non-``None`` ``SheetSpec`` goes through the single ``_render_sheet_spec``
+writer; the matrix is included or omitted by ``matrix_fits`` (§5.5). Every title
+is allocated first by ``allocate_titles`` and each sub-builder reads its own
+from the resulting ``SheetTitles``. ``shape`` (§3) narrows that order to a
+subset of the same sheets, skipping the filtered-out builders entirely.
 """
 
 from __future__ import annotations
 
 import io
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
 from openpyxl import Workbook
 
-from app.services.exports.extraction.ai_metadata import build_ai_metadata
+from app.models.extraction import ExtractionCardinality
+from app.services.exports.descriptors import ancestry, iter_records, level_of, walk_sections
+from app.services.exports.extraction.ai_proposals import AI_PROPOSAL_COLUMNS, build_ai_proposals
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
-from app.services.exports.extraction.data_dictionary import build_data_dictionary
-from app.services.exports.extraction.dropdown_lists import build_dropdown_lists
+from app.services.exports.extraction.codebook import build_codebook, build_options
+from app.services.exports.extraction.data_sheet import DATA_COLUMNS, build_data_sheet
 from app.services.exports.extraction.front_matter import build_front_matter
+from app.services.exports.extraction.level_tables import build_level_tables
 from app.services.exports.extraction.matrix import (
     _FIRST_DATA_COL,
     _article_fanout_count,
@@ -42,7 +42,7 @@ from app.services.exports.extraction.sheet_spec import (
     safe_sheet_title,
 )
 from app.services.exports.extraction.summary import build_summary
-from app.services.exports.extraction.tidy_tables import build_tidy_tables
+from app.services.exports.extraction.verification import build_verification
 from app.services.extraction_export_service import ExportLayout, ExportMode
 
 
@@ -95,8 +95,8 @@ def matrix_fits(layout: ExportLayout) -> bool:
 
 #: Which sub-builders each shape keeps (§3). Keyed on BUILDER IDENTITY, never
 #: on sheet title: ``SheetSpec`` carries only a title, so a title-matching
-#: filter would misfire on an instrument with a section named "Data
-#: dictionary". A builder absent from the set is never called — the shape
+#: filter would misfire on an instrument with a section named
+#: "Codebook". A builder absent from the set is never called — the shape
 #: saves the work rather than discarding its output.
 _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
     ExportShape.COMPLETE: frozenset(
@@ -104,15 +104,17 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
             "front_matter",
             "summary",
             "matrix",
-            "tidy_tables",
-            "appraisal_summary",
-            "data_dictionary",
-            "dropdown_lists",
+            "level_tables",
+            "data",
+            "verification",
             "ai_proposals",
+            "appraisal_summary",
+            "codebook",
+            "options",
         }
     ),
-    ExportShape.DICTIONARY: frozenset({"front_matter", "data_dictionary", "dropdown_lists"}),
-    ExportShape.PUBLICATION: frozenset({"front_matter", "tidy_tables", "appraisal_summary"}),
+    ExportShape.DICTIONARY: frozenset({"front_matter", "codebook", "options"}),
+    ExportShape.PUBLICATION: frozenset({"front_matter", "level_tables", "appraisal_summary"}),
 }
 
 
@@ -121,14 +123,22 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
 #: a future shape's answer follows from the sheets it was given instead of
 #: needing a second list somebody can forget to update.
 _ARTICLE_BUILDERS: frozenset[str] = frozenset(
-    {"summary", "matrix", "tidy_tables", "appraisal_summary", "ai_proposals"}
+    {
+        "summary",
+        "matrix",
+        "level_tables",
+        "data",
+        "verification",
+        "appraisal_summary",
+        "ai_proposals",
+    }
 )
 
 
 def shape_needs_articles(shape: ExportShape) -> bool:
     """Whether any sheet in ``shape`` reads resolved article values.
 
-    False for the dictionary shape: README, Data dictionary and Dropdown lists
+    False for the dictionary shape: README, Codebook and Options
     are all projections of the TEMPLATE, so that workbook is meaningful before
     anyone has finalized a single run — which is exactly when you want it, while
     wiring another tool to the template. Callers use this to decide whether an
@@ -142,26 +152,26 @@ _FIXED_TITLES: dict[str, str] = {
     "front_matter": "README",
     "summary": "Summary",
     "matrix": "Matrix",
-    "appraisal_summary": "Appraisal",
-    "data_dictionary": "Data dictionary",
-    "dropdown_lists": "Dropdown lists",
+    "data": "Data",
+    "verification": "Verification",
     "ai_proposals": "AI proposals",
+    "appraisal_summary": "Appraisal",
+    "codebook": "Codebook",
+    "options": "Options",
 }
 
-#: Fixed titles outside ``RESERVED_TITLES`` that a section title must still
-#: never take, whether or not their sheet is emitted.
-_NON_RESERVED_FIXED: tuple[str, ...] = ("Data dictionary", "Dropdown lists")
-
-#: §4 sheet order; ``tidy_tables`` expands to one sheet per section.
+#: §3 sheet order; ``level_tables`` expands to Articles plus one sheet per level.
 _ROLE_ORDER: tuple[str, ...] = (
     "front_matter",
     "summary",
     "matrix",
-    "tidy_tables",
-    "appraisal_summary",
-    "data_dictionary",
-    "dropdown_lists",
+    "level_tables",
+    "data",
+    "verification",
     "ai_proposals",
+    "appraisal_summary",
+    "codebook",
+    "options",
 )
 
 
@@ -171,14 +181,26 @@ class SheetTitles:
 
     ``fixed`` maps each PRESENT fixed role (builder id) to its title; a
     conditional builder whose role is absent returns ``None``. ``levels`` maps
-    ``TidyTable.section_id`` to its de-duplicated title. ``order`` is the
-    rendered sheet list, which the README Contents block prints verbatim.
+    each repeating section to its de-duplicated title, allocated in every
+    shape; ``level_by_section`` maps every walked section to its level
+    (``None`` = Articles). ``order`` is the rendered sheet list, which the
+    README Contents block prints verbatim.
     """
 
     fixed: Mapping[str, str]
     levels: Mapping[UUID, str]
     order: tuple[str, ...]
     matrix_omitted: bool
+    level_by_section: Mapping[UUID, UUID | None] = field(default_factory=dict)
+
+    def sheet_for(self, section_id: UUID | None) -> str | None:
+        """The level sheet a section's fields land on (R8); ``None`` = not walked."""
+        if section_id is None:
+            return "Articles"
+        if section_id not in self.level_by_section:
+            return None
+        level = self.level_by_section[section_id]
+        return "Articles" if level is None else self.levels[level]
 
 
 def _role_present(role: str, layout: ExportLayout, *, include_matrix: bool) -> bool:
@@ -186,10 +208,12 @@ def _role_present(role: str, layout: ExportLayout, *, include_matrix: bool) -> b
         return include_matrix
     if role == "appraisal_summary":
         return layout.appraisal is not None
-    if role == "dropdown_lists":
-        return any(e.allowed_values for e in layout.data_dictionary)
+    if role == "options":
+        return any(e.options for e in layout.codebook)
     if role == "ai_proposals":
         return layout.include_ai_metadata
+    if role == "verification":
+        return layout.mode is ExportMode.ALL_USERS
     return True
 
 
@@ -198,26 +222,29 @@ def allocate_titles(
 ) -> SheetTitles:
     """Allocate every sheet title of ``shape`` in one pass (§4 order).
 
-    Reserved and fixed titles are claimed first, so a section labelled
-    "History" or "data dictionary" gets a suffixed title instead of
-    colliding with a fixed sheet.
+    Reserved titles are claimed first, so a section coded "options" or
+    "History" gets a suffixed title instead of colliding with a fixed sheet.
     """
     keep = _SHAPE_BUILDERS[shape]
-    taken: list[str] = [*RESERVED_TITLES, *_NON_RESERVED_FIXED]
+    taken: list[str] = list(RESERVED_TITLES)
+    walked = walk_sections(layout.sections)
+    level_by_section = {s.entity_type_id: level_of(s, layout.sections) for s in walked}
     levels: dict[UUID, str] = {}
-    if "tidy_tables" in keep:
-        for i, table in enumerate(layout.tidy_tables):
-            title = safe_sheet_title(table.title, taken, fallback=f"Table {i + 1}")
-            taken.append(title)
-            levels[table.section_id] = title
+    repeating = [s for s in walked if s.cardinality is ExtractionCardinality.MANY]
+    for i, section in enumerate(repeating):
+        raw = section.label if shape is ExportShape.PUBLICATION else section.name
+        title = safe_sheet_title(raw, taken, fallback=f"Level {i + 1}")
+        taken.append(title)
+        levels[section.entity_type_id] = title
 
     fixed: dict[str, str] = {}
     order: list[str] = []
     for role in _ROLE_ORDER:
         if role not in keep:
             continue
-        if role == "tidy_tables":
-            order.extend(levels.values())
+        if role == "level_tables":
+            fixed["articles"] = "Articles"
+            order.extend((fixed["articles"], *levels.values()))
         elif _role_present(role, layout, include_matrix=include_matrix):
             fixed[role] = _FIXED_TITLES[role]
             order.append(fixed[role])
@@ -226,21 +253,20 @@ def allocate_titles(
         levels=levels,
         order=tuple(order),
         matrix_omitted="matrix" in keep and not include_matrix,
+        level_by_section=level_by_section,
     )
 
 
 def _ordered_specs(
     layout: ExportLayout, shape: ExportShape, titles: SheetTitles
 ) -> list[SheetSpec]:
-    """Sheets in §4 order; ``None``-returning conditional builders are skipped.
+    """Sheets in §3 order; ``None``-returning conditional builders are skipped.
 
-    README/Methods (#1) absorbs the old Notes sheet; the Summary (#2) carries
-    the omitted-by-stage tally. The matrix (#3) is followed by one tidy table
-    per section (#4..k), the conditional Appraisal sheet (#k+1, emitted only
-    for quality-assessment templates where ``layout.appraisal`` is set), then
-    the Data dictionary (#k+2) and its co-located Dropdown lists catalogue
-    (emitted only when some field carries allowed values), and finally the
-    optional AI proposals sheet (emitted only when ``include_ai_metadata``).
+    README, Summary, [Matrix], Articles and one sheet per repeating level,
+    Data, [Verification] (all_users), [AI proposals] (when
+    ``include_ai_metadata``), [Appraisal] (when
+    ``layout.appraisal`` is set), Codebook, then [Options] (when some field
+    carries coded options).
 
     ``shape`` narrows that order to a subset (§3). Order is preserved: a shape
     only removes sheets, it never reorders or adds one. Which conditional
@@ -249,21 +275,25 @@ def _ordered_specs(
     keep = _SHAPE_BUILDERS[shape]
     specs: list[SheetSpec | None] = []
     if "front_matter" in keep:
-        specs.append(build_front_matter(layout, titles))  # #1 README / Methods
+        specs.append(build_front_matter(layout, titles))
     if "summary" in keep:
-        specs.append(build_summary(layout, titles))  # #2 Summary
+        specs.append(build_summary(layout, titles))
     if "matrix" in keep:
-        specs.append(build_matrix(layout, titles))  # #3 Extraction matrix
-    if "tidy_tables" in keep:
-        specs.extend(build_tidy_tables(layout, titles))  # #4..k tidy tables
-    if "appraisal_summary" in keep:
-        specs.append(build_appraisal_summary(layout, titles))  # #k+1 Appraisal
-    if "data_dictionary" in keep:
-        specs.append(build_data_dictionary(layout, titles))  # #k+2 Data dictionary
-    if "dropdown_lists" in keep:
-        specs.append(build_dropdown_lists(layout, titles))  # co-located catalogue
+        specs.append(build_matrix(layout, titles))
+    if "level_tables" in keep:
+        specs.extend(build_level_tables(layout, titles, shape))
+    if "data" in keep:
+        specs.append(build_data_sheet(layout, titles))
+    if "verification" in keep:
+        specs.append(build_verification(layout, titles))
     if "ai_proposals" in keep:
-        specs.append(build_ai_metadata(layout, titles))  # optional trailing sheet
+        specs.append(build_ai_proposals(layout, titles))
+    if "appraisal_summary" in keep:
+        specs.append(build_appraisal_summary(layout, titles, shape))
+    if "codebook" in keep:
+        specs.append(build_codebook(layout, titles))
+    if "options" in keep:
+        specs.append(build_options(layout, titles))
     return [spec for spec in specs if spec is not None]
 
 
@@ -285,12 +315,87 @@ def build_workbook(layout: ExportLayout, shape: ExportShape, *, include_matrix: 
     return buf.getvalue()
 
 
+def _level_bounds(layout: ExportLayout) -> tuple[dict[UUID | None, int], dict[UUID, int]]:
+    """``(fields per level, records per repeating level)``; ``None`` = Articles."""
+    walked = walk_sections(layout.sections)
+    fields: dict[UUID | None, int] = {}
+    for s in walked:
+        level = level_of(s, layout.sections)
+        fields[level] = fields.get(level, 0) + len(s.fields)
+    records = {
+        s.entity_type_id: sum(len(iter_records(s, a, layout.sections)) for a in layout.articles)
+        for s in walked
+        if s.cardinality is ExtractionCardinality.MANY
+    }
+    return fields, records
+
+
+def estimate_sheet_cells(layout: ExportLayout, shape: ExportShape) -> dict[str | UUID, int]:
+    """An upper bound of ``rows × columns`` per present sheet (R9), keyed like
+    ``SheetTitles``: fixed roles by builder id (``articles`` included), level
+    sheets by ``entity_type_id``. Read before any sheet is built, so the
+    budget refuses an oversized export without paying for it."""
+    titles = allocate_titles(layout, shape, include_matrix=matrix_fits(layout))
+    by_id = {s.entity_type_id: s for s in layout.sections}
+    fields, records = _level_bounds(layout)
+    raters = 1 + len(layout.reviewers) if layout.mode is ExportMode.ALL_USERS else 1
+    footnotes = 5 if shape is ExportShape.PUBLICATION else 0  # blank + NI, NA, NE, NA* (D7)
+    n_articles = len(layout.articles)
+    n_records = sum(records.values())
+    n_reviewers = len(layout.reviewers)
+
+    def readme_rows() -> int:
+        # Variable blocks: Contents, code clashes, AI tools, rule notes.
+        variable = len(titles.order) + len(layout.codebook) + len(layout.ai_proposal_rows)
+        return variable + len(layout.appraisal_notes) + 200
+
+    def appraisal_cells() -> int:
+        a = layout.appraisal
+        if a is None:
+            return 0
+        width = 1 + len(a.domain_labels) + max(1, len(a.derived_labels)) + n_reviewers
+        return (len(a.rows) + 1 + footnotes) * width
+
+    walked = walk_sections(layout.sections)
+    bounds: dict[str, int] = {
+        "front_matter": readme_rows() * 4,
+        "summary": (n_articles + n_records + len(layout.omitted) + 200) * 5,
+        "matrix": _matrix_column_count(layout)
+        * (sum(len(s.fields) for s in walked) + len(walked) + 2),
+        "articles": (n_articles * raters + 1 + footnotes) * (5 + 1 + 3 * fields.get(None, 0)),
+        "data": (len(layout.value_map) + 1) * len(DATA_COLUMNS),
+        "verification": (len({k[:3] for k in layout.cells}) + 1) * (13 + n_reviewers),
+        "ai_proposals": (len(layout.ai_proposal_rows) + 1) * len(AI_PROPOSAL_COLUMNS),
+        "appraisal_summary": appraisal_cells(),
+        "codebook": (len(layout.codebook) + 1) * 17,
+        "options": (sum(len(e.options) for e in layout.codebook) + 1) * 5,
+    }
+    out: dict[str | UUID, int] = {role: bounds[role] for role in titles.fixed}
+    if "articles" in titles.fixed:
+        for level_id in titles.levels:
+            above = sum(
+                1
+                for s in ancestry(by_id[level_id], layout.sections)[:-1]
+                if s.cardinality is ExtractionCardinality.MANY
+            )
+            width = 5 + above + 1 + 3 * fields.get(level_id, 0)
+            out[level_id] = (records[level_id] * raters + 1 + footnotes) * width
+    return out
+
+
+def estimate_cells(layout: ExportLayout, shape: ExportShape) -> int:
+    """The whole workbook's cell upper bound: the budget's measure."""
+    return sum(estimate_sheet_cells(layout, shape).values())
+
+
 __all__ = [
     "EXCEL_MAX_COLUMNS",
     "ExportShape",
     "SheetTitles",
     "allocate_titles",
     "build_workbook",
+    "estimate_cells",
+    "estimate_sheet_cells",
     "matrix_fits",
     "shape_needs_articles",
 ]

@@ -7,6 +7,7 @@ counts read are the ones the importer really writes.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +16,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
+from app.models.article_author import ArticleSyncEvent
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.repositories.article_repository import ArticleSyncRunRepository
 from app.schemas.prisma import PrismaCountsRead
 from app.services.prisma_service import prisma_counts
@@ -75,8 +78,8 @@ async def test_pubmed_only_import_identified_equals_screened(db_session: AsyncSe
     assert counts.identified_total == 3
     assert counts.duplicates_removed == 0
     assert counts.screened == 3
-    assert counts.not_retrieved == 0
-    assert counts.imported_not_enrolled == 0
+    assert counts.records_not_found == 0
+    assert counts.other_removed == 0
 
 
 async def test_pubmed_matching_a_ris_article_counts_one_duplicate(
@@ -132,7 +135,7 @@ async def test_unchanged_pubmed_record_counts_like_a_resolved_one(
         {"source": "ris", "count": 1},
     ]
     assert counts.duplicates_removed == 1
-    assert counts.not_retrieved == 0
+    assert counts.records_not_found == 0
 
 
 async def test_reimporting_the_same_file_changes_nothing(db_session: AsyncSession) -> None:
@@ -154,12 +157,14 @@ async def test_not_found_pmids_are_not_duplicates(db_session: AsyncSession) -> N
 
     counts = await prisma_counts(db_session, project_id)
 
-    assert counts.not_retrieved == 1
+    assert counts.records_not_found == 1
     assert counts.duplicates_removed == 0
     assert counts.identified_total == 1
 
 
-async def test_imported_but_not_enrolled_is_not_identified(db_session: AsyncSession) -> None:
+async def test_imported_but_not_enrolled_is_identified_and_removed_for_other_reasons(
+    db_session: AsyncSession,
+) -> None:
     project_id = await make_project(db_session)
     await _import(db_session, project_id, FOUND)
     first = (
@@ -172,11 +177,13 @@ async def test_imported_but_not_enrolled_is_not_identified(db_session: AsyncSess
 
     counts = await prisma_counts(db_session, project_id)
 
-    assert counts.identified_total == 1
-    assert counts.imported_not_enrolled == 2
+    assert counts.identified_total == 3
+    assert counts.duplicates_removed == 0
+    assert counts.other_removed == 2
+    assert counts.screened == 1
 
 
-async def test_deleted_article_is_not_counted_as_not_retrieved(db_session: AsyncSession) -> None:
+async def test_deleted_article_is_not_counted_as_not_found(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     await _import(db_session, project_id, FOUND)
     await db_session.execute(
@@ -189,7 +196,7 @@ async def test_deleted_article_is_not_counted_as_not_retrieved(db_session: Async
 
     counts = await prisma_counts(db_session, project_id)
 
-    assert counts.not_retrieved == 0
+    assert counts.records_not_found == 0
 
 
 async def test_moved_article_is_not_counted(db_session: AsyncSession) -> None:
@@ -204,8 +211,8 @@ async def test_moved_article_is_not_counted(db_session: AsyncSession) -> None:
     in_p = await prisma_counts(db_session, p)
     in_q = await prisma_counts(db_session, q)
 
-    assert (in_p.identified_total, in_p.screened, in_p.imported_not_enrolled) == (1, 1, 0)
-    assert (in_q.identified_total, in_q.screened, in_q.imported_not_enrolled) == (0, 0, 1)
+    assert (in_p.identified_total, in_p.screened, in_p.other_removed) == (1, 1, 0)
+    assert (in_q.identified_total, in_q.screened, in_q.other_removed) == (1, 0, 1)
 
 
 async def test_screening_box_from_rows(db_session: AsyncSession) -> None:
@@ -279,5 +286,190 @@ async def test_prisma_route_guard(db_session: AsyncSession) -> None:
     refused = await _get_prisma(db_session, outsider, project_id)
 
     assert member.status_code == 200
-    assert member.json()["data"]["imported_not_enrolled"] == 1
+    assert member.json()["data"]["other_removed"] == 1
     assert refused.status_code == 403
+
+
+async def _ta_and_ft(
+    db: AsyncSession, ta: list[str], sent: list[int], *, ft_count: int | None = 1
+) -> tuple[UUID, list[UUID], list[UUID]]:
+    """A project with solo TA decisions ``ta`` and FT assignments for ``sent`` (indexes into ``ta``).
+
+    Returns the project, the TA assignment ids and the FT assignment ids.
+    """
+    project_id = await make_project(db)
+    await set_reviewer_count(db, project_id, 1)
+    if ft_count is not None:
+        await set_reviewer_count(db, project_id, ft_count, key="full_text_reviewer_count")
+    articles = [await make_screening_article(db, project_id) for _ in ta]
+    ta_ids = await enroll_articles(db, project_id, articles, by=MANAGER)
+    for assignment_id, decision in zip(ta_ids, ta, strict=True):
+        await add_decision(
+            db, assignment_id, MANAGER, decision, reason="Not ML" if decision == "exclude" else None
+        )
+    ft_ids = await enroll_articles(
+        db, project_id, [articles[i] for i in sent], by=MANAGER, phase="full_text"
+    )
+    return project_id, ta_ids, ft_ids
+
+
+async def test_reports_box_adds_up_while_in_progress(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(
+        db_session, ["include", "maybe", "include", "include"], sent=[0, 1, 2]
+    )
+    await add_decision(db_session, ft[0], MANAGER, "include")
+    await add_decision(db_session, ft[1], MANAGER, "not_retrieved")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.sought_for_retrieval == 4
+    assert counts.reports_not_retrieved == 1
+    assert counts.reports_assessed == 1
+    assert counts.reports_included == 1
+    assert counts.reports_excluded_by_reason == []
+    assert counts.full_text_in_progress is True
+    # 1 not retrieved + 1 assessed + 1 pending + 1 ready (the unsent include)
+    assert counts.sought_for_retrieval == 1 + 1 + 1 + 1
+
+
+async def test_reports_box_adds_up_when_done(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(db_session, ["include", "maybe"], sent=[0, 1])
+    await add_decision(db_session, ft[0], MANAGER, "exclude", reason="Wrong outcome")
+    await add_decision(db_session, ft[1], MANAGER, "not_retrieved")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.full_text_in_progress is False
+    assert counts.sought_for_retrieval == counts.reports_not_retrieved + counts.reports_assessed
+    assert counts.reports_included == 0
+    assert [r.model_dump() for r in counts.reports_excluded_by_reason or []] == [
+        {"reason": "Wrong outcome", "count": 1}
+    ]
+
+
+async def test_flag_true_while_unsent_include_exists(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(db_session, ["include", "include"], sent=[0])
+    await add_decision(db_session, ft[0], MANAGER, "include")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.full_text_in_progress is True
+
+
+async def test_full_text_off_payload(db_session: AsyncSession) -> None:
+    project_id, _, _ = await _ta_and_ft(
+        db_session, ["include", "maybe", "exclude"], sent=[], ft_count=None
+    )
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert counts.ta_included == 1
+    assert counts.ta_maybe == 1
+    assert counts.reports_not_retrieved is None
+    assert counts.reports_assessed is None
+    assert counts.reports_excluded_by_reason is None
+    assert counts.reports_included is None
+    assert counts.full_text_in_progress is None
+
+
+async def test_title_abstract_box_ignores_full_text_rows(db_session: AsyncSession) -> None:
+    project_id, _, ft = await _ta_and_ft(db_session, ["include", "maybe", "exclude"], sent=[0, 1])
+    before = await prisma_counts(db_session, project_id)
+
+    await add_decision(db_session, ft[0], MANAGER, "exclude", reason="Wrong outcome")
+    await add_decision(db_session, ft[1], MANAGER, "not_retrieved")
+    after = await prisma_counts(db_session, project_id)
+
+    ta_fields = {
+        "screened", "excluded", "excluded_by_reason", "excluded_reasons_differ",
+        "excluded_without_reason", "sought_for_retrieval", "ta_included", "ta_maybe",
+    }  # fmt: skip
+    assert after.model_dump(include=ta_fields) == before.model_dump(include=ta_fields)
+
+
+async def _pubmed_event(
+    db: AsyncSession, project_id: UUID, article_id: UUID, pmid: str | None, status: str
+) -> None:
+    """One PubMed sync event linking ``pmid`` to ``article_id``, as the importer writes it."""
+    run = await ArticleSyncRunRepository(db).create_run(
+        project_id=project_id,
+        requested_by_user_id=MANAGER,
+        source="pubmed",
+        source_collection_key=None,
+    )
+    db.add(
+        ArticleSyncEvent(
+            project_id=project_id,
+            sync_run_id=run.id,
+            article_id=article_id,
+            status=status,
+            event_payload={"pmid": pmid},
+            processed_at=datetime.now(UTC),
+        )
+    )
+    await db.flush()
+
+
+async def test_cross_source_a_pubmed_match_of_a_ris_article(db_session: AsyncSession) -> None:
+    project_id = await make_project(db_session)
+    ris = await make_screening_article(db_session, project_id, pmid="11", ingestion_source="RIS")
+    await _pubmed_event(db_session, project_id, ris, "11", "updated")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert _identified(counts) == [
+        {"source": "pubmed", "count": 1},
+        {"source": "ris", "count": 1},
+    ]
+    assert counts.identified_total == 2
+    assert counts.duplicates_removed == 1
+
+
+async def test_cross_source_b_two_articles_same_pmid(db_session: AsyncSession) -> None:
+    project_id = await make_project(db_session)
+    ris = await make_screening_article(db_session, project_id, pmid="22", ingestion_source="RIS")
+    pubmed = await make_screening_article(
+        db_session, project_id, pmid="22", ingestion_source="PUBMED"
+    )
+    await _pubmed_event(db_session, project_id, pubmed, "22", "inserted")
+
+    before = await prisma_counts(db_session, project_id)
+    db_session.add(
+        ArticleDuplicateVerdict(
+            project_id=project_id,
+            article_id=ris,
+            kept_article_id=pubmed,
+            verdict="duplicate",
+            basis="pmid",
+            decided_by=MANAGER,
+        )
+    )
+    await db_session.flush()
+    after = await prisma_counts(db_session, project_id)
+
+    assert (before.identified_total, before.duplicates_removed) == (2, 0)
+    assert (after.identified_total, after.duplicates_removed, after.other_removed) == (2, 1, 1)
+
+
+async def test_cross_source_c_pubmed_article_without_event(db_session: AsyncSession) -> None:
+    project_id = await make_project(db_session)
+    await make_screening_article(db_session, project_id, pmid="33", ingestion_source="PubMed")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert _identified(counts) == [{"source": "pubmed", "count": 1}]
+    assert counts.duplicates_removed == 0
+    assert counts.other_removed == 1
+
+
+async def test_pubmed_article_linked_only_by_a_null_pmid_event_counts_once(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await make_project(db_session)
+    article = await make_screening_article(db_session, project_id, ingestion_source="PubMed")
+    await _pubmed_event(db_session, project_id, article, None, "inserted")
+
+    counts = await prisma_counts(db_session, project_id)
+
+    assert _identified(counts) == [{"source": "pubmed", "count": 1}]
+    assert counts.duplicates_removed == 0

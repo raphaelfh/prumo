@@ -18,7 +18,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.screening import ScreeningArbitration, ScreeningAssignment, ScreeningDecision
+from app.services.project_delete_service import delete_project_row
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article
 
@@ -115,6 +117,29 @@ async def _arbitration(
     return row
 
 
+async def _verdict(
+    db: AsyncSession,
+    *,
+    verdict: str = "duplicate",
+    basis: str = "title",
+    article_id: UUID | None = None,
+    kept_article_id: UUID | None = None,
+) -> ArticleDuplicateVerdict:
+    removed = article_id or await make_article(db, SEED.primary_project, title="removed record")
+    kept = kept_article_id or await make_article(db, SEED.primary_project, title="kept record")
+    row = ArticleDuplicateVerdict(
+        project_id=SEED.primary_project,
+        article_id=removed,
+        kept_article_id=kept,
+        verdict=verdict,
+        basis=basis,
+        decided_by=SEED.primary_profile,
+    )
+    db.add(row)
+    await db.flush()
+    return row
+
+
 # --- Posture -----------------------------------------------------------------
 
 
@@ -179,20 +204,24 @@ async def test_deny_all_policy_hides_rows_even_with_grant(db_session: AsyncSessi
 # --- Append-only -------------------------------------------------------------
 
 
-@pytest.mark.parametrize("table", ["screening_decisions", "screening_arbitrations"])
+@pytest.mark.parametrize(
+    "table", ["screening_decisions", "screening_arbitrations", "article_duplicate_verdicts"]
+)
 @pytest.mark.parametrize("op", ["update", "delete"])
 async def test_append_only_trigger_refuses_non_owner(
     db_session: AsyncSession, table: str, op: str
 ) -> None:
     assignment = await _assignment(db_session)
-    row: ScreeningDecision | ScreeningArbitration
+    row: ScreeningDecision | ScreeningArbitration | ArticleDuplicateVerdict
     if table == "screening_decisions":
         row = await _decision(db_session, assignment.id)
-    else:
+    elif table == "screening_arbitrations":
         row = await _arbitration(db_session, assignment.id)
+    else:
+        row = await _verdict(db_session)
     await db_session.commit()
     sql = (
-        f"UPDATE public.{table} SET rationale = 'x' WHERE id = :id"
+        f"UPDATE public.{table} SET {'basis' if table == 'article_duplicate_verdicts' else 'rationale'} = 'x' WHERE id = :id"
         if op == "update"
         else f"DELETE FROM public.{table} WHERE id = :id"
     )
@@ -230,6 +259,29 @@ async def test_decision_value_is_checked(db_session: AsyncSession) -> None:
     with pytest.raises(IntegrityError, match="ck_screening_decisions_decision"):
         async with db_session.begin_nested():
             await _decision(db_session, assignment.id, "skip")
+
+
+async def test_full_text_and_not_retrieved_are_accepted(db_session: AsyncSession) -> None:
+    ta = await _assignment(db_session)
+    full_text = ScreeningAssignment(
+        project_id=ta.project_id,
+        article_id=ta.article_id,
+        phase="full_text",
+        enrolled_by=SEED.primary_profile,
+    )
+    db_session.add(full_text)
+    await db_session.flush()
+    await _decision(db_session, full_text.id, "not_retrieved")
+    await _arbitration(db_session, ta.id, "not_retrieved")
+
+    with pytest.raises(IntegrityError, match="ck_screening_assignments_phase"):
+        async with db_session.begin_nested():
+            db_session.add(
+                ScreeningAssignment(
+                    project_id=ta.project_id, article_id=ta.article_id, phase="other"
+                )
+            )
+            await db_session.flush()
 
 
 async def test_one_assignment_per_article_and_phase(db_session: AsyncSession) -> None:
@@ -341,7 +393,8 @@ async def test_every_foreign_key_leads_an_index(db_session: AsyncSession) -> Non
                     "SELECT c.conname FROM pg_constraint c WHERE c.contype = 'f' "
                     "AND c.conrelid IN ('public.screening_assignments'::regclass, "
                     "'public.screening_decisions'::regclass, "
-                    "'public.screening_arbitrations'::regclass) "
+                    "'public.screening_arbitrations'::regclass, "
+                    "'public.article_duplicate_verdicts'::regclass) "
                     "AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid "
                     "AND (string_to_array(i.indkey::text, ' ')::int2[])"
                     "[1:cardinality(c.conkey)] = c.conkey)"
@@ -352,3 +405,66 @@ async def test_every_foreign_key_leads_an_index(db_session: AsyncSession) -> Non
         .all()
     )
     assert unindexed == []
+
+
+# --- Duplicate verdicts (migration 0095) ---------------------------------------
+
+
+async def test_duplicate_verdicts_deny_all_and_revoked(db_session: AsyncSession) -> None:
+    policy = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM pg_policies WHERE schemaname = 'public' "
+                "AND tablename = 'article_duplicate_verdicts' AND policyname = 'deny_all'"
+            )
+        )
+    ).scalar_one()
+    assert policy == 1
+    for role in ("authenticated", "anon"):
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            assert not await _privilege(db_session, role, "article_duplicate_verdicts", privilege)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"verdict": "merged"}, {"basis": "isbn"}, {"same_article": True}],
+    ids=["verdict", "basis", "not_self"],
+)
+async def test_duplicate_verdict_checks(db_session: AsyncSession, bad: dict[str, Any]) -> None:
+    same = bad.get("same_article")
+    kept = await make_article(db_session, SEED.primary_project, title="kept")
+    with pytest.raises(IntegrityError, match="ck_article_duplicate_verdicts_"):
+        async with db_session.begin_nested():
+            await _verdict(
+                db_session,
+                verdict=bad.get("verdict", "duplicate"),
+                basis=bad.get("basis", "title"),
+                article_id=kept,
+                kept_article_id=kept if same else None,
+            )
+
+
+async def test_duplicate_verdict_created_at_is_clock_timestamp(db_session: AsyncSession) -> None:
+    first = await _verdict(db_session)
+    second = await _verdict(db_session)
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.created_at != second.created_at
+
+
+async def test_kept_article_delete_revives_the_removed_record(db_session: AsyncSession) -> None:
+    row = await _verdict(db_session)
+    await db_session.execute(
+        text("DELETE FROM public.articles WHERE id = :id"), {"id": str(row.kept_article_id)}
+    )
+    assert (
+        await _count_for(db_session, "article_duplicate_verdicts", "article_id", row.article_id)
+        == 0
+    )
+
+
+async def test_project_delete_cascades_verdicts(db_session: AsyncSession) -> None:
+    row = await _verdict(db_session)
+    assert await _count_for(db_session, "article_duplicate_verdicts", "id", row.id) == 1
+    await delete_project_row(db_session, SEED.primary_project)
+    assert await _count_for(db_session, "article_duplicate_verdicts", "id", row.id) == 0

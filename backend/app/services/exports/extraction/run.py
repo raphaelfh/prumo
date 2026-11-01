@@ -15,6 +15,7 @@ from app.services.exports.extraction.workbook import (
     _SHAPE_BUILDERS,
     ExportShape,
     build_workbook,
+    estimate_cells,
     matrix_fits,
     shape_needs_articles,
 )
@@ -23,6 +24,9 @@ from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
 )
+
+#: The most cells one export may write (spec §13). 2026-11-01: 1 GiB worker, ~340 B/cell, ~6.7 s per 1M cells.
+EXPORT_CELL_BUDGET: Final[int] = 1_500_000
 
 XLSX_MIME: Final[str] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -85,6 +89,17 @@ class EmptyExportError(AppError):
         super().__init__(code="EMPTY_ELIGIBLE_ARTICLES", message=message, status_code=422)
 
 
+class ExportTooLargeError(AppError):
+    """The export's cell estimate is over ``EXPORT_CELL_BUDGET``.
+
+    One positional ``message`` (Celery's JSON backend rebuilds it with
+    ``cls(*args)``); the stable code prefix rides in the message.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(code="EXPORT_TOO_LARGE", message=message, status_code=422)
+
+
 async def build_export(
     db: AsyncSession, req: ExportRequest, *, user_id: str, trace_id: str | None = None
 ) -> ExportFile:
@@ -102,6 +117,12 @@ async def build_export(
     )
     if not layout.articles and shape_needs_articles(req.shape):
         raise EmptyExportError()
+    cells = estimate_cells(layout, req.shape)
+    if cells > EXPORT_CELL_BUDGET:
+        raise ExportTooLargeError(
+            f"EXPORT_TOO_LARGE: this export would write {cells:,} cells; "
+            f"the limit is {EXPORT_CELL_BUDGET:,}. Export fewer articles or a smaller shape."
+        )
     include_matrix = "matrix" in _SHAPE_BUILDERS[req.shape] and matrix_fits(layout)
     content = await asyncio.to_thread(
         build_workbook, layout, req.shape, include_matrix=include_matrix
@@ -110,6 +131,6 @@ async def build_export(
         project_name=layout.project_name,
         template_name=layout.template_name,
         mode=req.mode,
-        generated_at=layout.notes.generated_at,
+        generated_at=layout.generated_at,
     )
     return ExportFile(content=content, filename=filename)

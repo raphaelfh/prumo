@@ -37,7 +37,6 @@ from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -114,7 +113,7 @@ class _Charms:
                 entries[(child, entry)] = (self.child_instances[(entry, child)],)
         return ArticleDescriptor(
             article_id=uuid4(),
-            header_label="Gaca, 2011",
+            article_label="Gaca, 2011",
             run_id=self.run_id,
             version_id=None,
             entries=entries,
@@ -143,7 +142,7 @@ class _Charms:
             mode=ExportMode.CONSENSUS,
             include_ai_metadata=False,
             anonymize_reviewer_names=False,
-            notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+            generated_at=datetime(2026, 6, 14, tzinfo=UTC),
             value_map=value_map,
         )
 

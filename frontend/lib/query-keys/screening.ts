@@ -9,7 +9,7 @@ import type {QueryClient} from '@tanstack/react-query';
 
 import type {components} from '@/types/api/schema';
 
-type ScreeningPhase = components['schemas']['ScreeningRecordsRead']['phase'];
+type ScreeningPhase = components['schemas']['ScreeningRecordRow']['phase'];
 
 export const screeningKeys = {
   all: ['screening'] as const,
@@ -22,6 +22,7 @@ export const screeningKeys = {
       ? ([...screeningKeys.project(projectId), 'records', phase] as const)
       : ([...screeningKeys.project(projectId), 'records'] as const),
   prisma: (projectId: string) => [...screeningKeys.project(projectId), 'prisma'] as const,
+  duplicates: (projectId: string) => [...screeningKeys.project(projectId), 'duplicates'] as const,
   assignment: (assignmentId: string) => [...screeningKeys.all, 'assignment', assignmentId] as const,
 } as const;
 

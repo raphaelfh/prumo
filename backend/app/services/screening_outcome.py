@@ -72,12 +72,14 @@ def derive_state(
     reviewer_count: int,
     decisions: Sequence[CurrentDecision],
     ruling: CurrentRuling | None,
+    reasons_must_match: bool = False,
 ) -> AssignmentState:
     """The assignment's phase and outcome; ``decisions`` holds each reviewer's decision.
 
     A reviewer's latest decision is their current one: final in dual review,
     re-decidable by a solo reviewer until a ruling (§6.3); the latest ruling is
-    the last word.
+    the last word. With ``reasons_must_match`` (full text), differing exclusion
+    reasons are a conflict too.
     """
     if ruling is not None:
         return AssignmentState(
@@ -90,6 +92,8 @@ def derive_state(
         return _CONFLICT
     reasons = {d.exclusion_reason for d in decisions}
     differ = len(reasons) > 1
+    if reasons_must_match and differ:
+        return _CONFLICT
     kind: ScreeningOutcomeKind = "solo" if reviewer_count == 1 else "consensus"
     reason = None if differ else next(iter(reasons))
     return AssignmentState("decided", Outcome(kind, values.pop(), reason, differ))
@@ -119,6 +123,7 @@ _DECIDED_STATUS: dict[ScreeningDecisionValue, ScreeningRecordStatus] = {
     "include": "included",
     "exclude": "excluded",
     "maybe": "maybe",
+    "not_retrieved": "not_retrieved",
 }
 
 

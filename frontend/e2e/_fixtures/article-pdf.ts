@@ -50,16 +50,16 @@ export function fixtureArticlePdfKey(articleId: string): string {
 }
 
 /**
- * Idempotently ensure the fixture article's MAIN file has real PDF bytes
+ * Idempotently ensure the given article's MAIN file has real PDF bytes
  * behind it — the shared E2E fixture provisioner creates the `article_files`
  * row but never uploads the object. Upserts, so specs running in parallel
  * can both find it missing without the second upload failing as a duplicate.
  */
-export async function ensureArticlePdfBytes(): Promise<void> {
+export async function ensureArticlePdfBytes(articleId: string): Promise<void> {
   const env = loadE2EEnv();
   const base = env.supabaseUrl!;
   const key = env.supabaseServiceRoleKey!;
-  const objectPath = fixtureArticlePdfKey(env.articleId!);
+  const objectPath = fixtureArticlePdfKey(articleId);
   const fileName = objectPath.split("/").pop()!;
 
   const existing = await fetch(`${base}/storage/v1/object/list/articles`, {

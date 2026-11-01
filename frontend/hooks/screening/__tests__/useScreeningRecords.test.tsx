@@ -17,6 +17,7 @@ const RECORDS_URL = '*/api/v1/projects/:projectId/screening/records';
 const ROW: ScreeningRecordRow = {
   article_id: 'art-1',
   assignment_id: 'as-1',
+  phase: 'title_abstract',
   doi: null,
   first_author: 'Smith',
   has_pdf: false,
@@ -27,6 +28,9 @@ const ROW: ScreeningRecordRow = {
   outcome: null,
   outcome_exclusion_reason: null,
   outcome_kind: null,
+  ta_outcome: null,
+  ta_outcome_kind: null,
+  ta_reviewer_count: null,
   pmid: null,
   publication_year: 2020,
   queue_rank: 1,
@@ -36,6 +40,7 @@ const ROW: ScreeningRecordRow = {
 
 const RECORDS: ScreeningRecordsRead = {
   phase: 'title_abstract',
+  removed_duplicate_ids: [],
   rows: [ROW],
   exclusion_reasons: [],
   inclusion_criteria: [],

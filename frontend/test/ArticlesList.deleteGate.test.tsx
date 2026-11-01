@@ -14,6 +14,8 @@ import {createQueryWrapper} from "@/test/helpers/queryClientWrapper";
 import {screeningKeys} from "@/lib/query-keys/screening";
 import type {Article} from "@/types/article";
 
+vi.mock("@/components/articles/ArticleScreeningChip", () => ({ArticleScreeningChip: () => null}));
+
 vi.mock("@/integrations/supabase/client", () => ({supabase: {}}));
 
 vi.mock("@/services/articlesService", () => ({

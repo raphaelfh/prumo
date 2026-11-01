@@ -27,6 +27,7 @@ const DECISION_LABEL: Record<NonNullable<ScreeningRecordRow['my_decision']>, key
   include: 'decisionInclude',
   exclude: 'decisionExclude',
   maybe: 'decisionMaybe',
+  not_retrieved: 'decisionNotRetrieved',
 };
 
 const HEAD_CLASS = cn(TABLE_CELL_CLASS, 'h-8 text-[11px] font-medium uppercase tracking-wider text-muted-foreground');
@@ -43,6 +44,8 @@ interface ScreeningRecordTableProps {
   isNarrow: boolean;
   showMine: boolean;
   showReason: boolean;
+  /** Full text: the Attached / Missing PDF column. */
+  showPdf: boolean;
   activeArticleId: string | null;
   cursorArticleId: string | null;
   checkedIds: ReadonlySet<string>;
@@ -75,6 +78,7 @@ export function ScreeningRecordTable({
   isNarrow,
   showMine,
   showReason,
+  showPdf,
   activeArticleId,
   cursorArticleId,
   checkedIds,
@@ -122,6 +126,7 @@ export function ScreeningRecordTable({
             {t('screening', 'columnJournal')}
           </TableHead>
           {showMine && <TableHead className={cn(HEAD_CLASS, 'w-[84px]')}>{t('screening', 'columnMine')}</TableHead>}
+          {showPdf && <TableHead className={cn(HEAD_CLASS, 'w-[84px]')}>{t('screening', 'columnPdf')}</TableHead>}
           <TableHead className={cn(HEAD_CLASS, 'w-[176px]')}>{t('screening', 'columnStatus')}</TableHead>
           {showReason && <TableHead className={cn(HEAD_CLASS, 'hidden w-[160px] @2xl:table-cell')}>{t('screening', 'columnReason')}</TableHead>}
         </TableRow>
@@ -169,6 +174,11 @@ export function ScreeningRecordTable({
                   {row.my_decision && t('screening', DECISION_LABEL[row.my_decision])}
                 </TableCell>
               )}
+              {showPdf && (
+                <TableCell className={cn(CELL_CLASS, 'text-muted-foreground')}>
+                  {t('screening', row.has_pdf ? 'pdfAttached' : 'pdfMissing')}
+                </TableCell>
+              )}
               <TableCell className={CELL_CLASS}>
                 <RecordStatusChip status={row.status} arbitrated={row.outcome_kind === 'arbitrated'} />
               </TableCell>
@@ -189,9 +199,18 @@ export function ScreeningRecordTable({
       {mounted.map((index) => {
         const row = rows[index];
         return (
-          <div key={row.article_id} ref={rowWindow.measureElement} data-index={index}>
+          <div
+            key={row.article_id}
+            ref={rowWindow.measureElement}
+            data-index={index}
+            data-record-row={row.article_id}
+            data-cursor={row.article_id === cursorArticleId || undefined}
+          >
             <ListRowCard
-              className={cn(row.article_id === activeArticleId && 'bg-muted/60')}
+              className={cn(
+                row.article_id === activeArticleId && 'bg-muted/60',
+                row.article_id === cursorArticleId && 'ring-1 ring-inset ring-ring/60',
+              )}
               leading={<RowCheckbox row={row} checked={checkedIds.has(row.article_id)} onToggleRow={onToggleRow} />}
               title={row.title}
               subtitle={row.first_author ?? undefined}
@@ -222,11 +241,11 @@ function Spacer({height, as: Tag}: {height: number; as: 'tr' | 'div'}) {
   return <Tag aria-hidden="true" style={{height}} />;
 }
 
-function downloadCsv(rows: ScreeningRecordRow[]) {
-  const url = URL.createObjectURL(new Blob([recordsToCsv(rows)], {type: 'text/csv;charset=utf-8'}));
+export function downloadCsv(csv: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'screening-records.csv';
+  anchor.download = filename;
   anchor.click();
   // Revoking synchronously can cancel the download in Safari and Firefox.
   setTimeout(() => URL.revokeObjectURL(url), 0);
@@ -236,12 +255,13 @@ interface RecordBulkBarProps {
   projectId: string;
   rows: ScreeningRecordRow[];
   checkedIds: ReadonlySet<string>;
-  canManage: boolean;
+  /** A manager at title/abstract: full text enrolls from the TA outcomes, never by row. */
+  canEnroll: boolean;
   onCheckedChange: (ids: ReadonlySet<string>) => void;
 }
 
-/** "N selected" with Enroll selected (manager; not-enrolled rows only) and Export selected (CSV). */
-export function RecordBulkBar({projectId, rows, checkedIds, canManage, onCheckedChange}: RecordBulkBarProps) {
+/** "N selected" with Enroll selected (title/abstract manager; not-enrolled rows only) and Export selected (CSV). */
+export function RecordBulkBar({projectId, rows, checkedIds, canEnroll, onCheckedChange}: RecordBulkBarProps) {
   const enroll = useEnrollArticles(projectId);
   const checkedRows = rows.filter((row) => checkedIds.has(row.article_id));
   const enrollIds = checkedRows.filter((row) => row.status === 'not_enrolled').map((row) => row.article_id);
@@ -261,12 +281,12 @@ export function RecordBulkBar({projectId, rows, checkedIds, canManage, onChecked
       <span className="text-[11px] font-medium tabular-nums text-foreground">
         {t('screening', 'selectedCount').replace('{{n}}', String(checkedRows.length))}
       </span>
-      {canManage && (
+      {canEnroll && (
         <Button size="xs" variant="ghost" onClick={enrollSelected} disabled={enrollIds.length === 0 || enroll.isPending}>
           {t('screening', 'enrollSelected')}
         </Button>
       )}
-      <Button size="xs" variant="ghost" onClick={() => downloadCsv(checkedRows)}>
+      <Button size="xs" variant="ghost" onClick={() => downloadCsv(recordsToCsv(checkedRows), 'screening-records.csv')}>
         {t('screening', 'exportSelected')}
       </Button>
     </>

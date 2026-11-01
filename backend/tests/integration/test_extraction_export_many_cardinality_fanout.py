@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionCardinality
+from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.services.extraction_export_service import ExtractionExportService
 from tests.integration.conftest import SEED
 
@@ -198,6 +199,8 @@ async def test_many_cardinality_section_keeps_all_instances(
         template_id=ctx.template_id,
         project_id=ctx.project_id,
         candidate_ids=[ctx.article_id],
+        refs={},
+        version_numbers={},
     )
     assert len(descriptors) == 1
     section_instances = descriptors[0].entries[(ctx.many_entity_type_id, None)]
@@ -208,13 +211,13 @@ async def test_many_cardinality_section_keeps_all_instances(
     await db_session.rollback()
 
 
-async def test_load_sections_surfaces_entity_cardinality(
+async def test_load_pinned_versions_surfaces_entity_cardinality(
     db_session: AsyncSession,
 ) -> None:
-    """``_load_sections`` must carry each section's ``cardinality`` onto the
-    ``SectionDescriptor`` (was defaulting to ONE, losing the MANY fan-out key).
+    """``_load_pinned_versions`` must carry each section's ``cardinality`` onto
+    the ``SectionDescriptor`` (was defaulting to ONE, losing the MANY fan-out key).
 
-    The seed version snapshot is the empty (narrow) tree, so ``_load_sections``
+    The seed version snapshot is the empty (narrow) tree, so the loader
     falls through to the live ``extraction_entity_types`` tables where the
     fixture seeds the MANY section.
     """
@@ -231,7 +234,11 @@ async def test_load_sections_surfaces_entity_cardinality(
         section_cardinality=ExtractionCardinality.MANY,
         instance_count=2,
     )
-    sections = await ctx.service._load_sections(ctx.version_id)
+    version = await db_session.get(ExtractionTemplateVersion, ctx.version_id)
+    (loaded,) = await ctx.service._load_pinned_versions(
+        template_id=ctx.template_id, versions=(version,)
+    )
+    sections = loaded.sections
     many = next(s for s in sections if s.entity_type_id == ctx.many_entity_type_id)
     assert many.cardinality is ExtractionCardinality.MANY
 

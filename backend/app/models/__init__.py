@@ -21,6 +21,7 @@ from app.models.article_author import (
     ArticleSyncEvent,
     ArticleSyncRun,
 )
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 from app.models.extraction import (
     ExtractionCardinality,
@@ -115,6 +116,7 @@ __all__ = [
     "UUIDMixin",
     "AgentAction",
     "AiUsageLedger",
+    "ArticleDuplicateVerdict",
     "ScreeningArbitration",
     "ScreeningAssignment",
     "ScreeningDecision",

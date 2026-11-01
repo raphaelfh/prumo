@@ -1,5 +1,5 @@
 /**
- * The title/abstract workspace's side panel: the selected record. No row →
+ * A screening workspace's side panel: the selected record. No row →
  * the placeholder; a not-enrolled article → its metadata (and "Enroll" for a
  * manager); otherwise the assignment-backed body (`AssignmentView`), keyed by
  * assignment so a record change resets its in-flight and ruling state.
@@ -10,7 +10,7 @@ import {Button} from '@/components/ui/button';
 import {useEnrollArticles} from '@/hooks/screening/useScreeningConfig';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
-import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
+import type {ScreeningConfigRead, ScreeningPhase, ScreeningRecordRow} from '@/services/screeningService';
 
 import {AssignmentView} from './AssignmentView';
 import type {ScreeningCriteria} from './CriteriaPanel';
@@ -23,9 +23,10 @@ export interface ScreeningRecordPanelProps {
   /** `null` → the placeholder. */
   row: ScreeningRecordRow | null;
   config: ScreeningConfigRead;
+  phase: ScreeningPhase;
   /** The protocol criteria, shown beside an enrolled record (never on the placeholder or a not-enrolled one). */
   criteria: ScreeningCriteria;
-  /** The workspace's maximized state: picks the criteria rail over the disclosure. */
+  /** The workspace's controlled shell state: the criteria rail over the disclosure; at full text the PDF beside the pane. */
   maximized: boolean;
   /** After a successful decision (auto-advance and the announcement are the caller's). */
   onDecided: (row: ScreeningRecordRow) => void;
@@ -76,6 +77,7 @@ export function ScreeningRecordPanel({
   projectId,
   row,
   config,
+  phase,
   criteria,
   maximized,
   onDecided,
@@ -93,6 +95,7 @@ export function ScreeningRecordPanel({
       assignmentId={row.assignment_id}
       row={row}
       config={config}
+      phase={phase}
       criteria={criteria}
       maximized={maximized}
       onDecided={onDecided}

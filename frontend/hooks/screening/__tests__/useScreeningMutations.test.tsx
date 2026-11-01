@@ -31,7 +31,7 @@ function serveReads() {
   server.use(
     http.get(RECORDS_URL, () => {
       calls.records += 1;
-      return ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', reviewer_count: 2, rows: []});
+      return ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', removed_duplicate_ids: [], reviewer_count: 2, rows: []});
     }),
     http.get(ASSIGNMENT_URL, () => {
       calls.assignment += 1;

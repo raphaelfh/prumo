@@ -3,8 +3,9 @@
 Local only: it refuses any database that is not on this machine, and it is
 never called from ``app.seed``, which runs on every production boot
 (``backend/Dockerfile``, ``railway.toml``). It creates no auth users: it seats
-existing local profiles. It grows per slice (S2 a duplicate pair, S3 a
-full-text record with a PDF).
+existing local profiles. It grows per slice: S2 duplicate pairs (#15/#16 an
+open exact PMID pair, #17/#18 a merged DOI pair with #18 removed); S3 full-text
+records, one with a PDF uploaded to the local ``articles`` bucket.
 
 The project is rebuilt, not duplicated: a second run deletes the first.
 """
@@ -16,6 +17,7 @@ import asyncio
 import contextlib
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlparse
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import select
@@ -24,20 +26,36 @@ from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import AsyncSessionLocal
+from app.core.deps import AsyncSessionLocal, get_supabase_client
 from app.core.error_handler import NotFoundError
-from app.models.article import Article
+from app.core.factories import create_storage_adapter
+from app.models.article import Article, ArticleFile
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.project import Project, ProjectMember
-from app.models.screening import ScreeningAssignment
+from app.models.screening import FULL_TEXT, TITLE_ABSTRACT
 from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import ScreeningRepository
 from app.services.project_delete_service import delete_project_row
+from app.services.screening_config_service import ScreeningConfigService
 
 PROJECT_ID = uuid5(NAMESPACE_URL, "prumo:seed-screening")
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
-# (title, authors, journal, year); the first ten are enrolled, the last two are not.
+# The one full-text record with a PDF: a fixed article id makes the storage key known to ``_run``.
+_PDF_ARTICLE_ID = uuid5(NAMESPACE_URL, "prumo:seed-screening:pdf-article")
+SEED_PDF_KEY = f"{PROJECT_ID}/{_PDF_ARTICLE_ID}/seed-screening.pdf"
+SEED_PDF_BYTES = (
+    b"%PDF-1.4\n"
+    b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+    b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
+    b"trailer<</Root 1 0 R>>\n"
+    b"%%EOF\n"
+)
+_ARTICLES_BUCKET = "articles"
+
+# (title, authors, journal, year); the first twelve are enrolled, the last two are not.
 _ARTICLES = (
     ("Early antibiotics in adult sepsis", ["Silva A", "Costa B"], "Critical Care", 2019),
     ("Fluid resuscitation volumes in septic shock", ["Moreau C"], "Intensive Care Med", 2020),
@@ -49,10 +67,50 @@ _ARTICLES = (
     ("Paediatric sepsis screening tools", ["Murphy L"], "Pediatrics", 2020),
     ("A narrative review of sepsis biomarkers", ["Schmidt M"], "Clin Chem", 2015),
     ("Machine learning for sepsis onset", ["Chen N", "Wang O"], "Nature Medicine", 2023),
+    ("Early mobilisation in septic adults", ["Hart S", "Lund T"], "Crit Care Med", 2022),
+    ("Balanced crystalloids in adult sepsis", ["Weber U"], "Intensive Care Med", 2021),
     ("Long-term outcomes after sepsis", ["Dubois P"], "BMJ", 2019),
     ("Cost of sepsis care in adults", ["Rossi Q", "Bianchi R"], "Health Econ", 2021),
 )
-_ENROLLED = 10
+_ENROLLED = 12
+_PDF_ARTICLE_INDEX = 11  # a full-text record
+# (title, authors, journal, year, pmid, doi), never enrolled: #15/#16 share a
+# PMID (an open exact pair); #17/#18 share a DOI and title (#18 merged into #17).
+_DUPLICATE_ARTICLES = (
+    (
+        "Delirium in critically ill adults with sepsis",
+        ["Kowalski S"],
+        "Crit Care Med",
+        2022,
+        "39000001",
+        None,
+    ),
+    (
+        "Delirium in critically ill septic adults",
+        ["Kowalski S"],
+        "Crit Care Med",
+        2022,
+        "39000001",
+        None,
+    ),
+    (
+        "Thiamine supplementation in septic shock",
+        ["Haddad T"],
+        "Chest",
+        2020,
+        None,
+        "10.1000/seed.sepsis.2020",
+    ),
+    (
+        "Thiamine supplementation in septic shock",
+        ["Haddad T"],
+        "Chest",
+        2020,
+        None,
+        "10.1000/seed.sepsis.2020",
+    ),
+)
+
 # Reading-surface states merged into ``_ARTICLES[index]``: a PubMed-style structured
 # abstract with MeSH and keywords, and a non-English trial.
 _READING: dict[int, dict[str, Any]] = {
@@ -78,6 +136,13 @@ def assert_local_database(url: str) -> None:
         host = None
     if host not in _LOCAL_HOSTS:
         raise SystemExit(f"seed_screening is local only; refusing database host {host!r}")
+
+
+def assert_local_storage(url: str) -> None:
+    """Exit unless the Supabase storage URL points at ``localhost`` or ``127.0.0.1``."""
+    host = urlparse(url).hostname
+    if host not in _LOCAL_HOSTS:
+        raise SystemExit(f"seed_screening is local only; refusing storage host {host!r}")
 
 
 async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID, UUID]) -> UUID:
@@ -109,6 +174,7 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
     )
     articles = [
         Article(
+            **({"id": _PDF_ARTICLE_ID} if index == _PDF_ARTICLE_INDEX else {}),
             project_id=PROJECT_ID,
             title=title,
             authors=authors,
@@ -120,21 +186,46 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
     ]
     db.add_all(articles)
     await db.flush()
+    duplicates = [
+        Article(
+            project_id=PROJECT_ID,
+            title=title,
+            authors=authors,
+            journal_title=journal,
+            publication_year=year,
+            pmid=pmid,
+            doi=doi,
+        )
+        for title, authors, journal, year, pmid, doi in _DUPLICATE_ARTICLES
+    ]
+    db.add_all(duplicates)
+    await db.flush()
+    db.add(
+        ArticleDuplicateVerdict(
+            project_id=PROJECT_ID,
+            article_id=duplicates[3].id,
+            kept_article_id=duplicates[2].id,
+            verdict="duplicate",
+            basis="doi",
+            decided_by=manager_id,
+        )
+    )
+    await db.flush()
     screening = ScreeningRepository(db)
     await screening.enroll(
         project_id=PROJECT_ID,
         enrolled_by=manager_id,
         article_ids=[a.id for a in articles[:_ENROLLED]],
+        phase=TITLE_ABSTRACT,
     )
     await ProjectRepository(db).update_settings_key(
-        PROJECT_ID, "screening", lambda old: {**(old or {}), "reviewer_count": 2}
+        PROJECT_ID,
+        "screening",
+        lambda old: {**(old or {}), "reviewer_count": 2, "full_text_reviewer_count": 2},
     )
-    enrolled = await db.execute(
-        select(ScreeningAssignment.article_id, ScreeningAssignment.id).where(
-            ScreeningAssignment.project_id == PROJECT_ID
-        )
+    assignment_of = await screening.live_assignment_ids_by_article(
+        project_id=PROJECT_ID, phase=TITLE_ABSTRACT
     )
-    assignment_of: dict[UUID, UUID] = dict(enrolled.tuples().all())
     decisions = (
         (0, r1, "include", None, "Adults with sepsis, meets inclusion"),  # conflict
         (0, r2, "exclude", "Wrong population", "Paediatric cohort"),
@@ -143,11 +234,32 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
         (2, r1, "exclude", "Not a primary study", None),  # consensus exclude
         (2, r2, "exclude", "Not a primary study", None),
         (3, r1, "include", None, None),  # one of two reviewers
+        (10, r1, "include", None, None),  # two more consensus includes, sent to full text below
+        (10, r2, "include", None, None),
+        (11, r1, "include", None, None),
+        (11, r2, "include", None, None),
     )
     for index, reviewer, decision, reason, rationale in decisions:
         await screening.add_decision(
             assignment_of[articles[index].id], reviewer, decision, reason, rationale
         )
+    await ScreeningConfigService(db).enroll(PROJECT_ID, manager_id, None, FULL_TEXT)
+    full_text_of = await screening.live_assignment_ids_by_article(
+        project_id=PROJECT_ID, phase=FULL_TEXT
+    )
+    await screening.add_decision(
+        full_text_of[articles[10].id], r1, "exclude", "Wrong outcome", None
+    )
+    db.add(
+        ArticleFile(
+            project_id=PROJECT_ID,
+            article_id=_PDF_ARTICLE_ID,
+            file_type="pdf",
+            storage_key=SEED_PDF_KEY,
+            file_role="MAIN",
+        )
+    )
+    await db.flush()
     return PROJECT_ID
 
 
@@ -179,6 +291,9 @@ async def _run(manager_email: str | None) -> UUID:
         manager, reviewers = await resolve_profiles(session, manager_email)
         project_id = await build(session, manager_id=manager, reviewer_ids=reviewers)
         await session.commit()
+    storage = create_storage_adapter(get_supabase_client())
+    await storage.delete(_ARTICLES_BUCKET, SEED_PDF_KEY)  # a rerun rebuilds the project
+    await storage.upload(_ARTICLES_BUCKET, SEED_PDF_KEY, SEED_PDF_BYTES, "application/pdf")
     return project_id
 
 
@@ -187,6 +302,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--manager-email", default=None)
     args = parser.parse_args(argv)
     assert_local_database(str(settings.DATABASE_URL))
+    assert_local_storage(settings.SUPABASE_URL)
     project_id = asyncio.run(_run(args.manager_email))
     print(f"/projects/{project_id}?tab=screening")
 

@@ -49,6 +49,9 @@ export interface UseArticleDocumentsResult {
    * use this instead of `readerLoading`, which would never settle.
    */
   filesLoading: boolean;
+  /** The files read failed: a caller must not read this as "no files". */
+  filesError: boolean;
+  refetchFiles: () => void;
 }
 
 export function useArticleDocuments(
@@ -110,5 +113,7 @@ export function useArticleDocuments(
     // "requires indexing" empty state.
     readerLoading: filesLoading || blocksQuery.isPending,
     filesLoading,
+    filesError: filesQuery.isError,
+    refetchFiles: () => void filesQuery.refetch(),
   };
 }

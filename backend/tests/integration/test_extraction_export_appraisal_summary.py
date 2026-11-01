@@ -7,8 +7,8 @@ the real local Supabase Postgres (RLS, CHECK constraints, the real
 * **Emission gate** — a QA template with risk-label SELECT verdict fields
   yields ``layout.appraisal is not None``; the project's plain
   ``extraction`` template under the same fixture yields
-  ``layout.appraisal is None`` (the sections then ship as ordinary tidy
-  tables).
+  ``layout.appraisal is None`` (the sections then ship on their level
+  sheets only).
 * **Mode-aware Overall (§7)** —
     * consensus → one final-score ``Overall`` per record (worst-case
       rollup over the published domain verdicts);
@@ -59,7 +59,11 @@ from app.models.extraction_workflow import (
 from app.services.exports.descriptors import root_instance, value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
-from app.services.extraction_export_service import ExportMode, ExtractionExportService
+from app.services.extraction_export_service import (
+    ExportMode,
+    ExtractionExportService,
+    _is_risk_verdict,
+)
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -453,8 +457,9 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
 
     The QA template's two domains roll up to a single worst-case
     ``Overall`` per record (``Low`` ∨ ``High`` → ``High``). The same
-    project's plain ``extraction`` template yields ``appraisal is None``
-    (emission gate — the sections ship as ordinary tidy tables).
+    project's ``extraction`` template has no root SELECT field in the
+    risk-of-bias vocabulary, so it yields ``appraisal is None`` (rule 8:
+    detection by vocabulary, not by template kind).
     """
     fx = await _seed_finalized_qa_run(db_session)
     if fx is None:
@@ -477,8 +482,7 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
     assert row.overall == "High"
     assert row.per_reviewer_overall == {}
 
-    # Emission gate: the project's extraction template carries no
-    # appraisal layer.
+    # Rule 8: detection is by vocabulary at the root, not by template kind.
     extraction_layout = await _service(db_session, fx).resolve_layout(
         project_id=fx.project_id,
         template_id=fx.extraction_template_id,
@@ -487,7 +491,11 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
     )
+    roots = [s for s in extraction_layout.sections if s.parent_entity_type_id is None]
+    assert roots, "precondition: the extraction template has root sections"
+    assert not any(_is_risk_verdict(f) for s in roots for f in s.fields)
     assert extraction_layout.appraisal is None
+    assert extraction_layout.appraisal_notes == ()
 
     await db_session.rollback()
 
@@ -634,7 +642,7 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     A domain the article's own classification takes out of play used to export
     as a BLANK cell while the run view showed a "Not applicable" badge. The
     marking happens once on ``value_map``, so the appraisal sheet AND the
-    per-section tidy table inherit it without a builder signature change.
+    level sheet inherit it without a builder signature change.
 
     Domain 2 carries a POISON verdict ("High", the fixture default) that was
     recorded before the reclassification: a blank and "Not applicable" both
@@ -686,13 +694,21 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     ]
     assert (kept.value_text, kept.out_of_scope) == ("High", True)
 
-    # 2. The same correction on the per-section tidy table, for free.
-    tidy = list(wb[fx.domain2_label].iter_rows(values_only=True))
-    assert tidy[0] == ("Record", "Signalling question", "Risk of bias")
-    assert tidy[1][2] == "Not applicable"
-
+    # 2. The publication Articles sheet: both root domains land there, their
+    # "Risk of bias" columns in walk order (the second deduplicated); the
+    # recorded out-of-scope value shows the scope marker (D7).
+    pub = load_workbook(
+        __import__("io").BytesIO(
+            build_workbook(layout, ExportShape.PUBLICATION, include_matrix=False)
+        )
+    )
+    header, row = list(pub["Articles"].iter_rows(values_only=True))[:2]
+    rob1, rob2 = header.index("Risk of bias"), header.index("Risk of bias (2)")
+    assert row[rob2] == "NA*"
     # 3. The in-scope section is not touched.
-    tidy1 = list(wb[fx.domain1_label].iter_rows(values_only=True))
-    assert tidy1[1][2] == "Low"
+    assert row[rob1] == "Low"
+    # 4. The review workbook blanks an out-of-scope recorded value.
+    review = list(wb["Articles"].iter_rows(values_only=True))
+    assert review[1][rob2 + 2] is None and review[1][rob1 + 2] == "Low"
 
     await db_session.rollback()

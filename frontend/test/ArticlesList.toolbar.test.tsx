@@ -20,6 +20,8 @@ import {fetchArticleIdsWithMainFile, fetchArticlePdfSignedUrl} from "@/services/
 // The component tree reaches `@/integrations/supabase/client`, which builds a
 // real client at module scope. CI has no env for it, so the import throws there
 // and only there — stub it up front.
+vi.mock("@/components/articles/ArticleScreeningChip", () => ({ArticleScreeningChip: () => null}));
+
 vi.mock("@/integrations/supabase/client", () => ({supabase: {}}));
 
 vi.mock("@/services/articlesService", () => ({

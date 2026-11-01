@@ -41,6 +41,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
+import {articleKeys} from '@/lib/query-keys';
 import {screeningKeys} from '@/lib/query-keys/screening';
 import {createQueryWrapper} from '@/test/helpers/queryClientWrapper';
 import {
@@ -165,6 +166,19 @@ describe('ArticleForm — staged files', () => {
         finishUpload({ok: true, data: undefined});
         await waitFor(() => expect(onComplete).toHaveBeenCalled());
         expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project('proj-SENTINEL')});
+    });
+
+    it('invalidates the screening family and the article files after a staged upload', async () => {
+        vi.mocked(insertArticle).mockResolvedValue({ok: true, data: {id: 'srv-files'}} as never);
+        const query = createQueryWrapper();
+        const invalidate = vi.spyOn(query.queryClient, 'invalidateQueries');
+        const {user, onComplete} = await stageOnePdf(vi.fn(), vi.fn(), query);
+
+        await user.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => expect(onComplete).toHaveBeenCalled());
+        expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project('proj-SENTINEL')});
+        expect(invalidate).toHaveBeenCalledWith({queryKey: articleKeys.files('srv-files')});
     });
 
     it('attempts no upload when the article could not be created', async () => {
