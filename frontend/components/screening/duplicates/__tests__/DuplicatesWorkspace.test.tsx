@@ -283,6 +283,26 @@ describe('DuplicatesWorkspace — verdicts', () => {
     expect(bodies[1]).toEqual([{article_id: 'r1', kept_article_id: 'k1', verdict: 'cleared'}]);
   });
 
+  it('after a merge, skips next pairs that hold the just-removed record', async () => {
+    const a = side('A', 'Alpha original');
+    const b = side('B', 'Alpha copy');
+    const c = side('C', 'Alpha second copy');
+    const d = side('D', 'Delta trial');
+    const e = side('E', 'Delta trial copy');
+    serveDuplicates({
+      open: [pair(b, a, 'exact', 'pmid'), pair(c, b, 'exact', 'pmid'), pair(e, d, 'exact', 'pmid')],
+      resolved: [],
+    });
+    captureVerdicts();
+    const user = userEvent.setup();
+    renderWorkspace('&article=B&kept=A');
+    await user.click(await screen.findByRole('button', {name: 'Merge, keep selected'}));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Merged', expect.anything()));
+    // C~B vanishes on refetch (B is removed): the next pair is E~D.
+    await waitFor(() => expect(search().get('article')).toBe('E'));
+    expect(search().get('kept')).toBe('D');
+  });
+
   it('marks not duplicates', async () => {
     serveDuplicates();
     const bodies = captureVerdicts();

@@ -156,11 +156,15 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
     else setListCursor(pairKey(target));
   };
 
-  /** The pair after `from` in list order, wrapping; none left → the selection clears. */
-  const advance = (from: DuplicatePair) => {
+  /**
+   * The pair after `from` in list order, wrapping, skipping pairs that hold
+   * `removedId` (they leave the read on refetch); none left → the selection clears.
+   */
+  const advance = (from: DuplicatePair, removedId?: string) => {
     const at = visible.findIndex((pair) => pairKey(pair) === pairKey(from));
     const next = [...visible.slice(at + 1), ...visible.slice(0, Math.max(at, 0))].find(
-      (pair) => pairKey(pair) !== pairKey(from),
+      (pair) =>
+        pairKey(pair) !== pairKey(from) && pair.article_id !== removedId && pair.kept_article_id !== removedId,
     );
     if (next) selectPair(next);
     else updateParams(clearSelection);
@@ -187,7 +191,7 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
     ];
     post(items, () => {
       toastWithUndo(t('duplicates', 'merged'), items);
-      advance(pair);
+      advance(pair, removedId);
     });
   };
   const markDistinct = (pair: DuplicatePair) => {
