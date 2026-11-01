@@ -4,8 +4,8 @@ Real local Supabase (autouse SEED). Scopes all queries by project_id.
 
 End-to-end coverage for Task 54: a Consensus layout resolved for a
 finalized run must populate the new service-side projections
-(``front_matter`` / ``data_dictionary``) and the
-orchestrator must render them as the README / Summary / Data dictionary /
+(``front_matter`` / ``codebook``) and the
+orchestrator must render them as the README / Summary / Codebook /
 Articles and repeating-level sheets, carrying baked data.
 """
 
@@ -131,7 +131,7 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
 
 
 async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> None:
-    """README, Summary, the level sheets, and Data dictionary render with data."""
+    """README, Summary, the level sheets, and the Codebook render with data."""
     fx = await _seed_finalized_charms_run(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -148,14 +148,14 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
 
     # Projections are populated.
     assert layout.front_matter is not None
-    assert layout.data_dictionary  # >=1 field
+    assert layout.codebook  # >=1 field
 
     wb = load_workbook(
         io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
     )
     assert "README" in wb.sheetnames
     assert "Summary" in wb.sheetnames
-    assert "Data dictionary" in wb.sheetnames
+    assert "Codebook" in wb.sheetnames
     # Articles carries one row per exported article.
     articles = list(wb["Articles"].iter_rows(values_only=True))
     assert articles[0][:2] == ("article_id", "article_label")

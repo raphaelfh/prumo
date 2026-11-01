@@ -31,6 +31,7 @@ from app.models.extraction import (
 from app.models.extraction_instance import ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.project import ProjectMemberRole
+from app.services.exports.codebook_model import VersionSections
 from app.services.exports.descriptors import value_key
 from app.services.exports.values import display_value, to_export_value
 from app.services.extraction_export_service import (
@@ -1853,18 +1854,6 @@ class TestLoadActiveTemplateVersion:
 
 
 # ===========================================================================
-# Service: _load_sections
-# ===========================================================================
-
-
-# NOTE: ``_load_sections`` is now snapshot-driven (spec §5.1) — it reads the
-# active-version snapshot via ``load_export_sections`` rather than the live
-# ``extraction_entity_types`` / ``extraction_fields`` tables. Its unit coverage
-# lives in ``test_extraction_export_load_sections.py``; the integration parity
-# check is ``test_extraction_export_snapshot_diff.py``.
-
-
-# ===========================================================================
 # Service: resolve_layout — AI target-reviewer threading (A3)
 # ===========================================================================
 
@@ -1886,7 +1875,8 @@ class TestResolveLayoutAiTarget:
         version.version = 1
         svc._load_active_template_version = AsyncMock(return_value=(template, version))
         svc._resolve_project_name = AsyncMock(return_value="Project")
-        svc._load_sections = AsyncMock(return_value=())
+        svc._pinned_version_rows = AsyncMock(return_value=())
+        svc._load_pinned_versions = AsyncMock(return_value=(VersionSections(uuid4(), 1, (), {}),))
         svc._load_article_refs = AsyncMock(return_value={})
         svc._resolve_articles_for_consensus = AsyncMock(return_value=([], {}))
         svc._build_consensus_value_map = AsyncMock(return_value={})

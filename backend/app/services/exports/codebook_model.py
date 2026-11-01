@@ -103,8 +103,12 @@ def build_codebook_entries(
     pinned_latest_first: Sequence[VersionSections],
     labels: OptionLabels,
 ) -> tuple[CodebookEntry, ...]:
-    """One entry per field of any version, in field-code candidate order."""
-    by_latest = (active, *sorted(pinned_latest_first, key=lambda v: -v.version_label))
+    """One entry per field of any version, in field-code candidate order.
+
+    ``pinned_latest_first`` is taken as given: the loader sorts it once and hands
+    the same sequence to ``build_option_labels``, so labels and metadata agree.
+    """
+    by_latest = (active, *pinned_latest_first)
     source: dict[UUID, tuple[VersionSections, SectionDescriptor, FieldDescriptor]] = {}
     versions: dict[UUID, set[int]] = {}
     for version in by_latest:

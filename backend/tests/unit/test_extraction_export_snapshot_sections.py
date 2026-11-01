@@ -14,8 +14,8 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     SnapshotField,
     SnapshotSection,
-    _section_from_view,
     load_export_sections,
+    section_from_view,
 )
 
 
@@ -37,13 +37,13 @@ def _container_view(payload: dict) -> RunViewEntityType:
 
 
 def test_section_from_view_maps_entry_label() -> None:
-    section = _section_from_view(_container_view({"entry_label": "algorithm"}))
+    section = section_from_view(_container_view({"entry_label": "algorithm"}))
     assert section.entry_label == "algorithm"
 
 
 def test_section_from_view_defaults_entry_label_for_old_snapshots() -> None:
     # Pre-0051 snapshot dicts have no entry_label key at all.
-    section = _section_from_view(_container_view({}))
+    section = section_from_view(_container_view({}))
     assert section.entry_label is None
 
 
@@ -105,7 +105,7 @@ def test_field_view_carries_units_key_and_absent_codes() -> None:
             ]
         }
     )
-    f = _section_from_view(view).fields[0]
+    f = section_from_view(view).fields[0]
     assert f.allowed_units == ("mg", "g")
     assert f.is_entity_key is True
     assert f.allowed_absent_codes == ("no_information", "not_applicable")
@@ -129,7 +129,7 @@ def test_field_view_defaults_units_key_and_absent_codes() -> None:
             ]
         }
     )
-    f = _section_from_view(view).fields[0]
+    f = section_from_view(view).fields[0]
     assert f.allowed_units == ()
     assert f.is_entity_key is False
     assert f.allowed_absent_codes == ("no_information",)

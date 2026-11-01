@@ -134,10 +134,9 @@ def test_build_workbook_returns_valid_xlsx_bytes():
     assert isinstance(data, bytes)
     assert data[:4] == b"PK\x03\x04"
     wb = _open(data)
-    # §4 order: README (absorbs the old Notes sheet) → Summary → matrix →
-    # Articles → Data dictionary. The empty layout has no repeating level and
-    # an empty data dictionary (no Dropdown lists sheet).
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data dictionary"]
+    # §3 order: README → Summary → Matrix → Articles → Codebook. The empty
+    # layout has no repeating level and no coded option (no Options sheet).
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Codebook"]
 
 
 def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
@@ -145,14 +144,14 @@ def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
         _layout(include_ai_metadata=True), ExportShape.COMPLETE, include_matrix=True
     )
     wb = _open(data)
-    # AI proposals is the trailing optional sheet, appended after the §4 specs.
+    # §3: AI proposals sits after the level sheets and before the Codebook.
     assert wb.sheetnames == [
         "README",
         "Summary",
         "Matrix",
         "Articles",
-        "Data dictionary",
         "AI proposals",
+        "Codebook",
     ]
 
 
@@ -544,12 +543,14 @@ def test_ai_metadata_value_columns_pass_rendered_values_through():
 
 
 def test_workbook_emits_sheets_in_section4_order():
-    """README → Summary → matrix → Articles → levels → Data dictionary → Dropdown lists."""
+    """README → Summary → Matrix → Articles → levels → Codebook → Options."""
     from app.models.extraction import (
         ExtractionCardinality,
         ExtractionFieldType,
     )
+    from app.services.exports.codebook_model import VersionSections, build_codebook_entries
     from app.services.exports.extraction.workbook import build_workbook
+    from app.services.exports.values import build_option_labels
     from app.services.extraction_export_service import (
         AllowedValue,
         ArticleDescriptor,
@@ -557,7 +558,6 @@ def test_workbook_emits_sheets_in_section4_order():
         ExportMode,
         ExportNotes,
         FieldDescriptor,
-        FieldDictEntry,
         FrontMatter,
         SectionDescriptor,
     )
@@ -600,16 +600,8 @@ def test_workbook_emits_sheets_in_section4_order():
         caveats=(),
         obsolete_fields_per_article={},
     )
-    dict_entry = FieldDictEntry(
-        field_id=fid,
-        section_label="Study",
-        label="Design",
-        type=ExtractionFieldType.SELECT,
-        unit=None,
-        description=None,
-        allowed_values=(AllowedValue(value="Cohort", label="Cohort"),),
-        is_required=False,
-        allow_other=False,
+    codebook = build_codebook_entries(
+        VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
     )
     layout = ExportLayout(
         project_name="P",
@@ -624,7 +616,7 @@ def test_workbook_emits_sheets_in_section4_order():
         notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
         value_map={value_key(run, inst, fid): _ev(section.fields[0], "Cohort")},
         front_matter=fm,
-        data_dictionary=(dict_entry,),
+        codebook=codebook,
     )
     wb = load_workbook(
         io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
@@ -634,8 +626,8 @@ def test_workbook_emits_sheets_in_section4_order():
         "Summary",
         "Matrix",
         "Articles",
-        "Data dictionary",
-        "Dropdown lists",
+        "Codebook",
+        "Options",
     ]
 
 

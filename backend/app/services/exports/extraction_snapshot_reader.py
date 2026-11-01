@@ -94,10 +94,10 @@ async def load_export_sections(
     views = await entity_types_for_version(
         db, version_id=version_id, template_id=version.project_template_id
     )
-    return tuple(_section_from_view(view) for view in views)
+    return tuple(section_from_view(view) for view in views)
 
 
-def _section_from_view(view: RunViewEntityType) -> SnapshotSection:
+def section_from_view(view: RunViewEntityType) -> SnapshotSection:
     return SnapshotSection(
         entity_type_id=view.id,
         name=view.name,

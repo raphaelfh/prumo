@@ -117,18 +117,18 @@ def _appraisal_model() -> AppraisalModel:
 
 
 def test_sheet_order_without_ai() -> None:
-    # §4 order: README (absorbs Notes) → Summary → matrix → Articles → Data
-    # dictionary. The fielded root ONE section lands on Articles; there is no
-    # repeating level and no non-empty data dictionary.
+    # §3 order: README → Summary → Matrix → Articles → Codebook. The fielded
+    # root ONE section lands on Articles; there is no repeating level and no
+    # coded option, so no Options sheet.
     data = build_workbook(
         _one_field_layout(include_ai=False), ExportShape.COMPLETE, include_matrix=True
     )
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data dictionary"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Codebook"]
 
 
 def test_sheet_order_with_ai() -> None:
-    # AI proposals is the trailing optional sheet, after the §4 specs.
+    # §3: AI proposals sits after the level sheets and before the Codebook.
     data = build_workbook(
         _one_field_layout(include_ai=True), ExportShape.COMPLETE, include_matrix=True
     )
@@ -138,8 +138,8 @@ def test_sheet_order_with_ai() -> None:
         "Summary",
         "Matrix",
         "Articles",
-        "Data dictionary",
         "AI proposals",
+        "Codebook",
     ]
 
 
@@ -157,7 +157,7 @@ def test_sections_named_history_and_data_get_suffixed_titles() -> None:
         "Articles",
         "history (2)",
         "data (2)",
-        "Data dictionary",
+        "Codebook",
     ]
 
 

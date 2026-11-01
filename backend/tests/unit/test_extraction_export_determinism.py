@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -28,6 +29,7 @@ from app.models.extraction import (
     ExtractionFieldType,
 )
 from app.models.extraction_workflow import ExtractionProposalRecord
+from app.services.exports.codebook_model import VersionSections, build_codebook_entries
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
 # orchestrator package.
@@ -39,14 +41,13 @@ from app.services.exports.extraction.workbook import (
     matrix_fits,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
-from app.services.exports.values import ExportValue, to_export_value
+from app.services.exports.values import ExportValue, build_option_labels, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
     ExportNotes,
     FieldDescriptor,
-    FieldDictEntry,
     FrontMatter,
     ReviewerDescriptor,
     SectionDescriptor,
@@ -79,7 +80,7 @@ def _fixed_layout() -> ExportLayout:
     same workbook bytes (mod doc-properties).
 
     Populates the §4 publication projections — ``front_matter`` (README /
-    Methods), ``data_dictionary``, a repeating section (its level sheet), and an explicit ``None``
+    Methods), ``codebook``, a repeating section (its level sheet), and an explicit ``None``
     ``appraisal`` — so the new sub-builder sheets actually render and their
     XML parts are covered by the structural-determinism assertion below.
     """
@@ -120,23 +121,25 @@ def _fixed_layout() -> ExportLayout:
         caveats=("Reviewer outcomes are best-effort.",),
         obsolete_fields_per_article={},
     )
-    # Data dictionary (§4 #k+2): one entry with a select option set so a
-    # Dropdown lists sheet co-renders and is covered by the structural diff.
-    data_dictionary = (
-        FieldDictEntry(
-            field_id=_FIELD_ID,
-            section_label="1. Source of data",
-            label="1.1 Source of data",
-            type=ExtractionFieldType.SELECT,
-            unit=None,
-            description="Where the predictor data came from.",
-            allowed_values=(
-                AllowedValue(value="registry", label="Existing registry"),
-                AllowedValue(value="cohort", label="New cohort"),
+    # Codebook (§4.4): the field as a select with an option set, so an
+    # Options sheet co-renders and is covered by the structural diff.
+    coded = replace(
+        section,
+        fields=(
+            replace(
+                field,
+                type=ExtractionFieldType.SELECT,
+                description="Where the predictor data came from.",
+                allowed_values=(
+                    AllowedValue(value="registry", label="Existing registry"),
+                    AllowedValue(value="cohort", label="New cohort"),
+                ),
+                is_required=True,
             ),
-            is_required=True,
-            allow_other=False,
         ),
+    )
+    codebook = build_codebook_entries(
+        VersionSections(_SECTION_ID, 1, (coded,), {}), (), build_option_labels((coded,))
     )
     return ExportLayout(
         project_name="Test Project",
@@ -153,7 +156,7 @@ def _fixed_layout() -> ExportLayout:
         ),
         value_map={value_key(_RUN_ID, _INST_ID, _FIELD_ID): _tv("Existing registry")},
         front_matter=front_matter,
-        data_dictionary=data_dictionary,
+        codebook=codebook,
         appraisal=None,
     )
 
@@ -428,7 +431,7 @@ def test_column_guard_boundary() -> None:
 
 # ----------------------------------------------------------------------
 # S8 / Task 73: extend structural determinism to the new publication sheets
-# (README/Methods, Data dictionary, level sheets, Dropdown lists) + a
+# (README/Methods, Codebook, level sheets, Options) + a
 # 500×100 all-users case that blows past the 16,384-column guard.
 # ----------------------------------------------------------------------
 
@@ -463,11 +466,11 @@ def test_new_sheets_are_structurally_deterministic() -> None:
 
     # The new sub-builder sheets are present in the rendered workbook.
     names = _sheet_titles(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
-    assert "Data dictionary" in names
+    assert "Codebook" in names
     assert any(n.startswith("README") or "Methods" in n for n in names)
-    # The level sheets + co-located dropdown catalogue render too (the
-    # _fixed_layout dictionary entry carries select options).
-    assert "Dropdown lists" in names
+    # The level sheets and the Options sheet render too (the _fixed_layout
+    # codebook entry carries select options).
+    assert "Options" in names
     assert {"Articles", "source_of_data"} <= set(names)
 
 

@@ -3,7 +3,7 @@
 Three shapes are subsets of the sheets the workbook already builds. The
 filter keys on BUILDER IDENTITY, not on sheet title: ``SheetSpec`` carries
 only a title, and a title-matching filter would misfire on an instrument
-with a section literally named "Data dictionary". These tests pin both
+with a section literally named "Codebook". These tests pin both
 halves — the emitted sheet set, and that a filtered-out builder is never
 called (the filter must save the work, not discard it afterwards).
 """
@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 from openpyxl import load_workbook
 
 from app.models.extraction import ExtractionFieldType
+from app.services.exports.codebook_model import VersionSections, build_codebook_entries
 from app.services.exports.descriptors import value_key
 from app.services.exports.extraction import workbook as workbook_module
 from app.services.exports.extraction.sheet_spec import Cell, SheetSpec
@@ -26,7 +27,7 @@ from app.services.exports.extraction.workbook import (
     shape_needs_articles,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
-from app.services.exports.values import ExportValue, to_export_value
+from app.services.exports.values import ExportValue, build_option_labels, to_export_value
 from app.services.extraction_export_service import (
     AppraisalModel,
     AppraisalRow,
@@ -35,7 +36,6 @@ from app.services.extraction_export_service import (
     ExportMode,
     ExportNotes,
     FieldDescriptor,
-    FieldDictEntry,
     SectionDescriptor,
 )
 
@@ -61,7 +61,7 @@ def _tv(raw: object) -> ExportValue:
 def _every_sheet_layout() -> ExportLayout:
     """A layout that makes EVERY conditional builder emit.
 
-    Appraisal, dropdown lists and AI metadata are each conditional; a layout
+    Appraisal, Options and AI metadata are each conditional; a layout
     that skipped any of them would let a shape look correct for the wrong
     reason (an absent sheet rather than a filtered one).
     """
@@ -97,21 +97,8 @@ def _every_sheet_layout() -> ExportLayout:
         anonymize_reviewer_names=False,
         notes=ExportNotes(),
         value_map={value_key(article.run_id, instance_id, _FIELD_ID): _tv("Low")},
-        data_dictionary=(
-            FieldDictEntry(
-                field_id=_FIELD_ID,
-                section_label="Participants",
-                label="Risk of bias",
-                type=ExtractionFieldType.SELECT,
-                unit=None,
-                description=None,
-                allowed_values=(
-                    AllowedValue(value="low", label="Low"),
-                    AllowedValue(value="high", label="High"),
-                ),
-                is_required=True,
-                allow_other=False,
-            ),
+        codebook=build_codebook_entries(
+            VersionSections(uuid4(), 1, (section,), {}), (), build_option_labels((section,))
         ),
         appraisal=AppraisalModel(
             domain_section_ids=(_SECTION_ID,),
@@ -141,18 +128,18 @@ def test_complete_emits_every_sheet() -> None:
         "Summary",
         "Matrix",
         "Articles",
-        "Appraisal",
-        "Data dictionary",
-        "Dropdown lists",
         "AI proposals",
+        "Appraisal",
+        "Codebook",
+        "Options",
     ]
 
 
 def test_dictionary_keeps_readme_and_the_catalogue_only() -> None:
     assert _sheetnames(ExportShape.DICTIONARY) == [
         "README",
-        "Data dictionary",
-        "Dropdown lists",
+        "Codebook",
+        "Options",
     ]
 
 
@@ -187,8 +174,8 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
         ("summary", "build_summary", one),
         ("matrix", "build_matrix", one),
         ("appraisal_summary", "build_appraisal_summary", one),
-        ("data_dictionary", "build_data_dictionary", one),
-        ("dropdown_lists", "build_dropdown_lists", one),
+        ("codebook", "build_codebook", one),
+        ("options", "build_options", one),
         # The role id is ``ai_proposals``; the module keeps its name until PR5.
         ("ai_proposals", "build_ai_metadata", one),
     ):
@@ -203,7 +190,7 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
 
 def test_dictionary_shape_never_calls_the_filtered_out_builders(monkeypatch) -> None:
     called = _spy_builders(monkeypatch, ExportShape.DICTIONARY)
-    assert called == {"front_matter", "data_dictionary", "dropdown_lists"}
+    assert called == {"front_matter", "codebook", "options"}
 
 
 def test_publication_shape_never_calls_the_filtered_out_builders(monkeypatch) -> None:
@@ -219,8 +206,8 @@ def test_complete_shape_calls_every_builder(monkeypatch) -> None:
         "matrix",
         "level_tables",
         "appraisal_summary",
-        "data_dictionary",
-        "dropdown_lists",
+        "codebook",
+        "options",
         "ai_proposals",
     }
 
@@ -241,11 +228,11 @@ def _no_article_layout() -> ExportLayout:
 def test_dictionary_shape_builds_with_no_articles() -> None:
     data = build_workbook(_no_article_layout(), ExportShape.DICTIONARY, include_matrix=True)
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["README", "Data dictionary", "Dropdown lists"]
+    assert wb.sheetnames == ["README", "Codebook", "Options"]
     # The catalogue is the point: it must carry the field, not just a header.
     assert any(
         "Risk of bias" in [str(c) for c in row]
-        for row in wb["Data dictionary"].iter_rows(values_only=True)
+        for row in wb["Codebook"].iter_rows(values_only=True)
     )
 
 

@@ -25,6 +25,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.codebook_model import VersionSections
 from app.services.exports.descriptors import ValueKey, value_key
 from app.services.exports.extraction_scope_marking import (
     mark_out_of_scope_values,
@@ -525,7 +526,12 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
         service, "_load_active_template_version", AsyncMock(return_value=(MagicMock(), MagicMock()))
     )
     monkeypatch.setattr(service, "_resolve_project_name", AsyncMock(return_value="P"))
-    monkeypatch.setattr(service, "_load_sections", AsyncMock(return_value=()))
+    monkeypatch.setattr(service, "_pinned_version_rows", AsyncMock(return_value=()))
+    monkeypatch.setattr(
+        service,
+        "_load_pinned_versions",
+        AsyncMock(return_value=(VersionSections(uuid4(), 1, (), {}),)),
+    )
     monkeypatch.setattr(service, "_load_article_refs", AsyncMock(return_value={}))
     monkeypatch.setattr(
         service, "_resolve_articles_for_single_user", AsyncMock(return_value=((), {}))

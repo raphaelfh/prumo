@@ -41,13 +41,14 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_instance import ExtractionInstance
-from app.models.extraction_versioning import TemplateKind
+from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.models.project import ProjectMemberRole
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.schemas.extraction_run import RunViewEntityType
 from app.services.current_run import CurrentRunResolver
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
@@ -63,7 +64,12 @@ from app.services.exports.ai_proposal_projection import (
     load_evidence_summaries,
     proposal_model_used,
 )
-from app.services.exports.codebook_model import CodebookEntry
+from app.services.exports.codebook_model import (
+    CodebookEntry,
+    VersionSections,
+    apply_field_codes,
+    build_codebook_entries,
+)
 from app.services.exports.descriptors import (
     ValueKey,
     build_entries,
@@ -80,6 +86,7 @@ from app.services.exports.extraction_scope_marking import (
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
+    section_from_view,
 )
 from app.services.exports.values import (
     ExportValue,
@@ -88,7 +95,11 @@ from app.services.exports.values import (
     display_value,
     to_export_value,
 )
-from app.services.extraction_snapshot import pinned_template_rules
+from app.services.extraction_snapshot import (
+    entity_types_for_version,
+    pinned_template_rules,
+    snapshot_is_narrow,
+)
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     owned_template,
@@ -263,29 +274,6 @@ class AIProposalRow:
 
 
 @dataclass(frozen=True)
-class FieldDictEntry:
-    """One row of the Data dictionary / dropdown catalogue (§4 #k+2).
-
-    Flattened from the per-Run version snapshot field metadata: label, type,
-    unit, ``description`` (falling back to ``llm_description``), the ordered
-    ``allowed_values`` value+label pairs, and the ``is_required`` /
-    ``allow_other`` flags. Built service-side in ``resolve_layout`` (T51) and
-    consumed by the pure ``build_data_dictionary`` + ``build_dropdown_lists``
-    sub-builders.
-    """
-
-    field_id: UUID
-    section_label: str
-    label: str
-    type: ExtractionFieldType
-    unit: str | None
-    description: str | None  # field.description, else field.llm_description
-    allowed_values: tuple[AllowedValue, ...]  # value+label, ordered
-    is_required: bool
-    allow_other: bool
-
-
-@dataclass(frozen=True)
 class AppraisalRow:
     """One record's appraisal roll-up (§7). ``domain_verdicts`` aligns to
     ``AppraisalModel.domain_fields``; ``overall`` is the worst-case rollup of
@@ -344,9 +332,9 @@ class ExportLayout:
     # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
     # None => the sub-builder falls back to the bare layout identity fields.
     front_matter: FrontMatter | None = None
-    # Data-dictionary / dropdown catalogue (§4 #k+2), one entry per snapshot field.
-    data_dictionary: tuple[FieldDictEntry, ...] = ()
     codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
+    versions: tuple[VersionSections, ...] = ()  # active first, then pinned latest-first (R14)
+    narrow_pinned_versions: tuple[int, ...] = ()  # pinned snapshots skipped as narrow (D5)
     # Per-domain risk-of-bias / appraisal roll-up with mode-aware ``Overall``
     # (§7). None unless the exported template carries an appraisal layer
     # (``kind == TemplateKind.QUALITY_ASSESSMENT``); ``build_appraisal_summary``
@@ -449,15 +437,26 @@ class ExtractionExportService(LoggerMixin):
         """
         template, version = await self._load_active_template_version(template_id, project_id)
         project_name = await self._resolve_project_name(project_id)
-        sections = await self._load_sections(version.id)
-        data_dictionary = _build_data_dictionary(sections)
+        rows = await self._pinned_version_rows(
+            project_id=project_id, template_id=template_id, active_version_id=version.id
+        )
+        wide = [
+            r for r in rows if not snapshot_is_narrow((r.schema_ or {}).get("entity_types", []))
+        ]
+        narrow_pinned_versions = tuple(r.version for r in rows if r not in wide)  # D5
+        # ``rows`` is highest-first; the label chain and the codebook read that one order.
+        active, *pinned = await self._load_pinned_versions(
+            template_id=template_id, versions=(version, *wide)
+        )
+        labels = build_option_labels(active.sections, [v.sections for v in pinned])
+        codebook = build_codebook_entries(active, pinned, labels)
+        sections = apply_field_codes(active.sections, {e.field_id: e.field_code for e in codebook})
         fields_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
-        labels = build_option_labels(sections)
         primary = primary_rater(mode, reviewer_id)
         refs = await self._load_article_refs(project_id=project_id)
-        version_numbers = {version.id: version.version}
+        version_numbers = {version.id: version.version, **{r.id: r.version for r in rows}}
         reviewers: tuple[ReviewerDescriptor, ...] = ()
         raters_by_run: dict[UUID, tuple[UUID, ...]] = {}
 
@@ -594,7 +593,9 @@ class ExtractionExportService(LoggerMixin):
             notes=notes,
             value_map=value_map,
             ai_proposal_rows=ai_rows,
-            data_dictionary=data_dictionary,
+            codebook=codebook,
+            versions=(active, *pinned),
+            narrow_pinned_versions=narrow_pinned_versions,
             front_matter=front_matter,
             appraisal=appraisal,
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
@@ -840,18 +841,47 @@ class ExtractionExportService(LoggerMixin):
             )
         return template, version
 
-    async def _load_sections(
-        self,
-        version_id: UUID,
-    ) -> tuple[SectionDescriptor, ...]:
-        """Load the column-layout sections from the ACTIVE version snapshot.
+    async def _pinned_version_rows(
+        self, *, project_id: UUID, template_id: UUID, active_version_id: UUID
+    ) -> tuple[ExtractionTemplateVersion, ...]:
+        """Every non-active version a run of this template pins, highest first."""
+        stmt = (
+            select(ExtractionTemplateVersion)
+            .join(ExtractionRun, ExtractionRun.version_id == ExtractionTemplateVersion.id)
+            .where(
+                ExtractionRun.project_id == project_id,
+                ExtractionRun.template_id == template_id,
+                ExtractionTemplateVersion.id != active_version_id,
+            )
+            .distinct()
+            .order_by(ExtractionTemplateVersion.version.desc())
+        )
+        return tuple((await self.db.execute(stmt)).scalars().all())
 
-        Snapshot-driven (spec §5.1): reads the frozen entity_types tree via
-        ``load_export_sections`` (mirrors the run-read path), not the live
-        ``extraction_entity_types`` / ``extraction_fields`` tables. Carries
-        parent + cardinality + full field metadata onto the descriptors.
-        """
-        snapshot_sections = await load_export_sections(self.db, version_id=version_id)
+    async def _load_pinned_versions(
+        self, *, template_id: UUID, versions: Sequence[ExtractionTemplateVersion]
+    ) -> tuple[VersionSections, ...]:
+        """One snapshot read per version, in input order (R14)."""
+        loaded: list[VersionSections] = []
+        for v in versions:
+            views = await entity_types_for_version(
+                self.db, version_id=v.id, template_id=template_id
+            )
+            loaded.append(
+                VersionSections(
+                    version_id=v.id,
+                    version_label=v.version,
+                    sections=self._sections_from_views(views),
+                    run_view_fields={f.id: f for et in views for f in et.fields},
+                )
+            )
+        return tuple(loaded)
+
+    @staticmethod
+    def _sections_from_views(
+        views: Sequence[RunViewEntityType],
+    ) -> tuple[SectionDescriptor, ...]:
+        """Project a snapshot tree onto the export descriptors (spec §5.1)."""
         return tuple(
             SectionDescriptor(
                 entity_type_id=s.entity_type_id,
@@ -880,7 +910,7 @@ class ExtractionExportService(LoggerMixin):
                 name=s.name,
                 entry_label=s.entry_label,
             )
-            for s in snapshot_sections
+            for s in map(section_from_view, views)
         )
 
     async def _compute_obsolete_fields_per_article(
@@ -1857,36 +1887,6 @@ def _build_front_matter(
             aid: tuple(labels) for aid, labels in obsolete_fields_per_article.items()
         },
     )
-
-
-def _build_data_dictionary(
-    sections: tuple[SectionDescriptor, ...],
-) -> tuple[FieldDictEntry, ...]:
-    """Flatten the snapshot sections into one ``FieldDictEntry`` per field (§4 #k+2).
-
-    Order follows section then field order as already resolved on the
-    descriptors (snapshot ``sort_order``). ``allowed_values`` are the snapshot's
-    (value, label) pairs, in option order. The
-    ``description`` is already the ``field.description`` (falling back to
-    ``field.llm_description``) collapsed on the descriptor at load time.
-    """
-    entries: list[FieldDictEntry] = []
-    for section in sections:
-        for field_ in section.fields:
-            entries.append(
-                FieldDictEntry(
-                    field_id=field_.field_id,
-                    section_label=section.label,
-                    label=field_.label,
-                    type=field_.type,
-                    unit=field_.unit,
-                    description=field_.description,
-                    allowed_values=field_.allowed_values,
-                    is_required=field_.is_required,
-                    allow_other=field_.allow_other,
-                )
-            )
-    return tuple(entries)
 
 
 def _infer_reviewer_outcome(
