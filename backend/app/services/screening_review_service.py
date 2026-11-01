@@ -240,6 +240,7 @@ def _peer_read(decision: CurrentDecision, names: dict[UUID, str | None]) -> Peer
 
 def _record_row(
     rank: int,
+    phase: ScreeningPhase,
     source: RecordSource,
     snapshot: AssignmentSnapshot | None,
     viewer_id: UUID,
@@ -260,6 +261,7 @@ def _record_row(
     return ScreeningRecordRow(
         article_id=source.article_id,
         assignment_id=source.assignment_id if snapshot is not None else None,
+        phase=phase,
         queue_rank=rank,
         title=source.title,
         first_author=source.authors[0] if source.authors else None,
@@ -290,6 +292,18 @@ def _record_row(
     )
 
 
+def _merge_phases(
+    title_abstract: list[ScreeningRecordRow], full_text: list[ScreeningRecordRow]
+) -> list[ScreeningRecordRow]:
+    """One row per article in title/abstract order, the full-text row replacing the
+    title/abstract one; ``queue_rank`` re-ranked to the merged position."""
+    by_article = {row.article_id: row for row in full_text}
+    # A full-text row with no title/abstract counterpart exists only through read skew.
+    merged = [by_article.pop(row.article_id, row) for row in title_abstract]
+    merged.extend(by_article.values())
+    return [row.model_copy(update={"queue_rank": rank}) for rank, row in enumerate(merged)]
+
+
 class ScreeningReviewService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -301,37 +315,70 @@ class ScreeningReviewService:
         return reviewer_count_of(project.settings if project else None, phase)
 
     async def records(
-        self, project_id: UUID, viewer_id: UUID, phase: ScreeningPhase
+        self, project_id: UUID, viewer_id: UUID, phase: ScreeningPhase | None
     ) -> ScreeningRecordsRead:
-        """Every article of the project in ``phase``, in queue order, as ``viewer_id`` may see it."""
-        reviewer_count = await self._reviewer_count(project_id, phase)
+        """Every article of the project in ``phase``, in queue order, as ``viewer_id`` may see it.
+
+        Without ``phase``: the title/abstract rows, each replaced by the article's
+        full-text row once full text is on and the article is enrolled there,
+        re-ranked, plus the removed duplicates' ids. Each row keeps its own
+        phase's snapshot and reviewer count. The phase reads share no snapshot: a
+        transition committed between them can show an overlap for one fetch;
+        read-only, it self-heals on the next fetch.
+        """
+        reviewer_count = await self._reviewer_count(project_id, phase or TITLE_ABSTRACT)
         if reviewer_count is None:
             raise _not_configured()
-        snapshots = await assignment_states(
-            self.db, project_id=project_id, phase=phase, reviewer_count=reviewer_count
-        )
         roles = await screening_roles(self.db, project_id, viewer_id)
-        sources = await self.screening.record_rows(project_id=project_id, phase=phase)
-        ta_count, ta_outcomes = (
-            await self._title_abstract_outcomes(project_id) if phase == FULL_TEXT else (None, None)
+        rows = await self._phase_rows(
+            project_id, viewer_id, phase or TITLE_ABSTRACT, reviewer_count, roles
         )
+        removed: list[UUID] = []
+        if phase is None:
+            full_text_count = await self._reviewer_count(project_id, FULL_TEXT)
+            if full_text_count is not None:
+                full_text_rows = await self._phase_rows(
+                    project_id, viewer_id, FULL_TEXT, full_text_count, roles
+                )
+                rows = _merge_phases(rows, full_text_rows)
+            removed = await self.screening.removed_duplicate_ids(project_id=project_id)
         return ScreeningRecordsRead(
             phase=phase,
             reviewer_count=reviewer_count,
             inclusion_criteria=await load_inclusion_criteria(self.db, project_id),
             exclusion_reasons=await load_exclusion_reasons(self.db, project_id),
-            rows=[
-                _record_row(
-                    rank,
-                    source,
-                    snapshots.get(source.assignment_id) if source.assignment_id else None,
-                    viewer_id,
-                    roles,
-                    None if ta_outcomes is None else (ta_outcomes.get(source.article_id), ta_count),
-                )
-                for rank, source in enumerate(sources)
-            ],
+            rows=rows,
+            removed_duplicate_ids=removed,
         )
+
+    async def _phase_rows(
+        self,
+        project_id: UUID,
+        viewer_id: UUID,
+        phase: ScreeningPhase,
+        reviewer_count: int,
+        roles: ScreeningRoles,
+    ) -> list[ScreeningRecordRow]:
+        """The ``phase`` rows in queue order, from that phase's own snapshots."""
+        snapshots = await assignment_states(
+            self.db, project_id=project_id, phase=phase, reviewer_count=reviewer_count
+        )
+        sources = await self.screening.record_rows(project_id=project_id, phase=phase)
+        ta_count, ta_outcomes = (
+            await self._title_abstract_outcomes(project_id) if phase == FULL_TEXT else (None, None)
+        )
+        return [
+            _record_row(
+                rank,
+                phase,
+                source,
+                snapshots.get(source.assignment_id) if source.assignment_id else None,
+                viewer_id,
+                roles,
+                None if ta_outcomes is None else (ta_outcomes.get(source.article_id), ta_count),
+            )
+            for rank, source in enumerate(sources)
+        ]
 
     async def _title_abstract_outcomes(
         self, project_id: UUID

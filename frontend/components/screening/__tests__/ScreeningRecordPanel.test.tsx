@@ -43,6 +43,7 @@ function row(overrides: Partial<ScreeningRecordRow> = {}): ScreeningRecordRow {
   return {
     article_id: 'art1',
     assignment_id: 'a1',
+    phase: 'title_abstract',
     doi: null,
     first_author: 'Smith J',
     has_pdf: false,

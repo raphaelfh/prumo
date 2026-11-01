@@ -17,6 +17,7 @@ const RECORDS_URL = '*/api/v1/projects/:projectId/screening/records';
 const ROW: ScreeningRecordRow = {
   article_id: 'art-1',
   assignment_id: 'as-1',
+  phase: 'title_abstract',
   doi: null,
   first_author: 'Smith',
   has_pdf: false,
@@ -39,6 +40,7 @@ const ROW: ScreeningRecordRow = {
 
 const RECORDS: ScreeningRecordsRead = {
   phase: 'title_abstract',
+  removed_duplicate_ids: [],
   rows: [ROW],
   exclusion_reasons: [],
   inclusion_criteria: [],

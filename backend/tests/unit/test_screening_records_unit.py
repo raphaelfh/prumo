@@ -22,6 +22,7 @@ CALLER = uuid4()
 _WIRE_FIELDS = {
     "article_id",
     "assignment_id",
+    "phase",
     "queue_rank",
     "title",
     "first_author",
@@ -68,7 +69,7 @@ async def test_records_handler_returns_the_read(monkeypatch: pytest.MonkeyPatch)
     request = SimpleNamespace(state=SimpleNamespace(trace_id="trace-1"))
 
     result = await endpoint.get_screening_records.__wrapped__(
-        request, PROJECT, "title_abstract", MagicMock(), CALLER
+        request=request, project_id=PROJECT, db=MagicMock(), user_sub=CALLER, phase="title_abstract"
     )
 
     assert result.ok
@@ -92,8 +93,32 @@ async def test_records_handler_passes_full_text(monkeypatch: pytest.MonkeyPatch)
     request = SimpleNamespace(state=SimpleNamespace(trace_id="trace-1"))
 
     result = await endpoint.get_screening_records.__wrapped__(
-        request, PROJECT, "full_text", MagicMock(), CALLER
+        request=request, project_id=PROJECT, db=MagicMock(), user_sub=CALLER, phase="full_text"
     )
 
     assert result.data is read
     service.records.assert_awaited_once_with(PROJECT, CALLER, "full_text")
+
+
+async def test_records_handler_passes_no_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    read = ScreeningRecordsRead(
+        phase=None,
+        reviewer_count=2,
+        inclusion_criteria=[],
+        exclusion_reasons=[],
+        rows=[],
+        removed_duplicate_ids=[uuid4()],
+    )
+    service = MagicMock()
+    service.records = AsyncMock(return_value=read)
+    monkeypatch.setattr(endpoint, "ScreeningReviewService", MagicMock(return_value=service))
+    request = SimpleNamespace(state=SimpleNamespace(trace_id="trace-1"))
+
+    result = await endpoint.get_screening_records.__wrapped__(
+        request=request, project_id=PROJECT, db=MagicMock(), user_sub=CALLER, phase=None
+    )
+
+    assert result.ok
+    assert result.data is read
+    assert result.trace_id == "trace-1"
+    service.records.assert_awaited_once_with(PROJECT, CALLER, None)

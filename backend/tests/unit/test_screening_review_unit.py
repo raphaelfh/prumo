@@ -107,6 +107,7 @@ def test_reason_only_on_exclude() -> None:
         "latest_rulings",
         "assignments_with_articles",
         "record_rows",
+        "removed_duplicate_ids",
     ],
 )
 def test_screening_reads_require_a_project_scope(method: str) -> None:

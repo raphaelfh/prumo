@@ -28,6 +28,7 @@ function row(overrides: Partial<Row> = {}): Row {
   return {
     article_id: `a-${seq}`,
     assignment_id: `as-${seq}`,
+    phase: 'title_abstract',
     doi: null,
     first_author: null,
     has_pdf: false,

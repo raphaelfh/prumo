@@ -59,6 +59,7 @@ const VIEWER = {can_manage: false, can_review: false, can_arbitrate: false};
 const ROW: Row = {
   article_id: 'art1',
   assignment_id: 'as1',
+  phase: 'title_abstract',
   doi: null,
   first_author: null,
   has_pdf: false,
@@ -90,7 +91,7 @@ function serveConfig(read: ConfigRead) {
 function serveRecords(rows: Row[] = [ROW]) {
   server.use(
     http.get(RECORDS_URL, () =>
-      ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', reviewer_count: 2, rows}),
+      ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', removed_duplicate_ids: [], reviewer_count: 2, rows}),
     ),
   );
 }

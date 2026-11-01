@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.screening import (
     TITLE_ABSTRACT,
     ScreeningArbitration,
@@ -25,6 +26,7 @@ from app.models.screening import (
     ScreeningDecision,
 )
 from app.repositories.project_repository import ProjectRepository
+from tests.integration.conftest import SEED
 
 
 async def add_member(db: AsyncSession, project_id: UUID, role: str) -> UUID:
@@ -136,6 +138,23 @@ async def add_ruling(
     db.add(row)
     await db.flush()
     return row.id
+
+
+async def remove_duplicate(
+    db: AsyncSession, project_id: UUID, article_id: UUID, kept_article_id: UUID
+) -> None:
+    """A manual ``duplicate`` verdict removing ``article_id`` in favour of ``kept_article_id``."""
+    db.add(
+        ArticleDuplicateVerdict(
+            project_id=project_id,
+            article_id=article_id,
+            kept_article_id=kept_article_id,
+            verdict="duplicate",
+            basis="manual",
+            decided_by=SEED.primary_profile,
+        )
+    )
+    await db.flush()
 
 
 async def move_article(db: AsyncSession, article_id: UUID, to_project: UUID) -> None:

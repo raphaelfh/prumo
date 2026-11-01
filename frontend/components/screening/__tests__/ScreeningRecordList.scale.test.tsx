@@ -29,6 +29,7 @@ function rows(decidedEvery: number): ScreeningRecordRow[] {
   return Array.from({length: ROWS}, (_, index) => ({
     article_id: `art${index}`,
     assignment_id: `as${index}`,
+    phase: 'title_abstract',
     doi: null,
     first_author: `Author ${index}`,
     has_pdf: false,
@@ -54,6 +55,7 @@ const read = (decidedEvery: number): ScreeningRecordsRead => ({
   exclusion_reasons: [],
   inclusion_criteria: [],
   phase: 'title_abstract',
+  removed_duplicate_ids: [],
   reviewer_count: 2,
   rows: rows(decidedEvery),
 });

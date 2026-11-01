@@ -225,7 +225,7 @@ export function nextToScreen(rows: Row[], currentArticleId: string | null): Row 
   return queue[0] ?? null;
 }
 
-/** The §5 row fields in wire order; the records payload carries no abstract. */
+/** The §5 row fields in wire order, except `phase` (a phase export needs no phase column); the records payload carries no abstract. */
 export const RECORD_CSV_COLUMNS: readonly (keyof Row)[] = [
   'article_id', 'assignment_id', 'queue_rank', 'title', 'first_author', 'publication_year', 'journal_title',
   'pmid', 'doi', 'ingestion_source', 'has_pdf', 'status', 'my_decision', 'my_exclusion_reason', 'outcome',

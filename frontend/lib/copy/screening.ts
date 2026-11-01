@@ -238,6 +238,8 @@ export const screening = {
   columnJournal: 'Journal',
   columnMine: 'Mine',
   columnStatus: 'Status',
+  columnScreening: 'Screening',
+  stageDuplicate: 'Duplicate',
   columnReason: 'Reason',
   columnPdf: 'PDF',
   listRecordsLabel: 'records',
