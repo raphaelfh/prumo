@@ -39,6 +39,19 @@ def export_value(status: ExportStatus = "answered", **over: Any) -> ExportValue:
     return ExportValue(**{"raw": None, "status": status, **over})
 
 
+def make_article(*, section_id: UUID, label: str) -> tuple[ArticleDescriptor, UUID, UUID]:
+    """An article with a run and one instance of a root section: (article, run_id, instance_id)."""
+    run_id, instance_id = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label=label,
+        run_id=run_id,
+        version_id=None,
+        entries={(section_id, None): (instance_id,)},
+    )
+    return article, run_id, instance_id
+
+
 def make_run_view_field(**kw: Any) -> RunViewField:
     base: dict[str, Any] = {
         "id": uuid4(),

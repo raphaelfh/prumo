@@ -694,16 +694,17 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     ]
     assert (kept.value_text, kept.out_of_scope) == ("High", True)
 
-    # 2. The same correction on the publication Articles sheet, for free: both
-    # root domains land there, their "Risk of bias" columns in walk order.
+    # 2. The publication Articles sheet: both root domains land there, their
+    # "Risk of bias" columns in walk order (the second deduplicated); the
+    # recorded out-of-scope value shows the scope marker (D7).
     pub = load_workbook(
         __import__("io").BytesIO(
             build_workbook(layout, ExportShape.PUBLICATION, include_matrix=False)
         )
     )
     header, row = list(pub["Articles"].iter_rows(values_only=True))[:2]
-    rob1, rob2 = [i for i, h in enumerate(header) if h == "Risk of bias"]
-    assert row[rob2] == "Not applicable"
+    rob1, rob2 = header.index("Risk of bias"), header.index("Risk of bias (2)")
+    assert row[rob2] == "NA*"
     # 3. The in-scope section is not touched.
     assert row[rob1] == "Low"
     # 4. The review workbook blanks an out-of-scope recorded value.
