@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.article import Article
 from app.models.article_author import ArticleSyncEvent, ArticleSyncRun
 from app.repositories.project_repository import ProjectRepository
-from app.repositories.screening_repository import ScreeningRepository, live_assignments
+from app.repositories.screening_repository import ScreeningRepository
 from app.schemas.prisma import PrismaCountsRead, PrismaReasonCount, PrismaSourceCount
 from app.services.screening_config_service import reviewer_count_of
 from app.services.screening_outcome import AssignmentState
@@ -76,30 +76,43 @@ def screening_box(states: Sequence[AssignmentState]) -> ScreeningBox:
 
 
 async def _pubmed_identified(db: AsyncSession, project_id: UUID) -> int:
-    """Distinct PMIDs the project's PubMed imports found AND whose article is enrolled here."""
-    enrolled = live_assignments(project_id).subquery()
-    stmt = (
-        select(func.count(func.distinct(ArticleSyncEvent.event_payload["pmid"].astext)))
-        .select_from(ArticleSyncEvent)
+    """Distinct PMIDs the project's PubMed imports found for an article in the project,
+    plus PubMed-sourced project articles no such event links (each counted once)."""
+    found = (
+        select(ArticleSyncEvent)
         .join(ArticleSyncRun, ArticleSyncRun.id == ArticleSyncEvent.sync_run_id)
         .where(
             ArticleSyncRun.project_id == project_id,
             ArticleSyncRun.source == PUBMED,
             ArticleSyncEvent.status.in_(_IDENTIFIED_STATUSES),
-            ArticleSyncEvent.article_id.in_(select(enrolled.c.article_id)),
+            ArticleSyncEvent.article_id.in_(
+                select(Article.id).where(Article.project_id == project_id)
+            ),
         )
     )
-    return int((await db.execute(stmt)).scalar_one())
+    pmids = found.with_only_columns(
+        func.count(func.distinct(ArticleSyncEvent.event_payload["pmid"].astext))
+    )
+    unlinked = (
+        select(func.count())
+        .select_from(Article)
+        .where(
+            Article.project_id == project_id,
+            func.lower(Article.ingestion_source) == PUBMED,
+            Article.id.not_in(found.with_only_columns(ArticleSyncEvent.article_id)),
+        )
+    )
+    return int((await db.execute(pmids)).scalar_one()) + int(
+        (await db.execute(unlinked)).scalar_one()
+    )
 
 
 async def _other_sources(db: AsyncSession, project_id: UUID) -> list[PrismaSourceCount]:
-    """Enrolled articles not ingested from PubMed, by lower-cased ingestion source."""
+    """Project articles not ingested from PubMed, by lower-cased ingestion source."""
     source = func.lower(func.coalesce(Article.ingestion_source, _MANUAL))
-    enrolled = live_assignments(project_id).subquery()
     stmt = (
         select(source.label("source"), func.count().label("n"))
         .select_from(Article)
-        .join(enrolled, enrolled.c.article_id == Article.id)
         .where(Article.project_id == project_id, source != PUBMED)
         .group_by(source)
         .order_by(source)
@@ -133,13 +146,17 @@ async def _not_retrieved(db: AsyncSession, project_id: UUID) -> int:
 async def prisma_counts(db: AsyncSession, project_id: UUID) -> PrismaCountsRead:
     """The project's PRISMA identification and screening counts.
 
-    Invariant: every enrolled article is counted at least once under
-    ``identified``, so ``duplicates_removed`` (identified minus enrolled) is
-    never negative; it is not clamped, so a break of the invariant shows.
+    ``identified`` counts every project article (enrolled, removed duplicate or
+    not enrolled), so ``identified_total == duplicates_removed + other_removed
+    + screened``. Invariant: identified >= total - removed while no PMID is
+    linked by PubMed sync events to two project articles (``articles`` has no
+    unique (project_id, pmid)), so ``duplicates_removed`` is never negative;
+    it is not clamped, so a break of the invariant shows.
     """
     screening = ScreeningRepository(db)
     enrolled = await screening.count_enrolled(project_id=project_id)
-    total_articles = await screening.count_project_articles(project_id=project_id)
+    total = await screening.count_project_articles(project_id=project_id)
+    removed = await screening.count_removed(project_id=project_id)
 
     identified = await _other_sources(db, project_id)
     pubmed = await _pubmed_identified(db, project_id)
@@ -158,9 +175,9 @@ async def prisma_counts(db: AsyncSession, project_id: UUID) -> PrismaCountsRead:
     return PrismaCountsRead(
         identified=identified,
         identified_total=identified_total,
-        duplicates_removed=identified_total - enrolled,
+        duplicates_removed=identified_total - total + removed,
         not_retrieved=await _not_retrieved(db, project_id),
-        imported_not_enrolled=total_articles - enrolled,
+        other_removed=total - enrolled - removed,
         screened=box.screened,
         excluded=box.excluded,
         excluded_by_reason=[

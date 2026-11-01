@@ -3,8 +3,9 @@
 Local only: it refuses any database that is not on this machine, and it is
 never called from ``app.seed``, which runs on every production boot
 (``backend/Dockerfile``, ``railway.toml``). It creates no auth users: it seats
-existing local profiles. It grows per slice (S2 a duplicate pair, S3 a
-full-text record with a PDF).
+existing local profiles. It grows per slice: S2 duplicate pairs (#13/#14 an
+open exact PMID pair, #15/#16 a merged DOI pair with #16 removed); S3 will add
+a full-text record with a PDF.
 
 The project is rebuilt, not duplicated: a second run deletes the first.
 """
@@ -27,6 +28,7 @@ from app.core.config import settings
 from app.core.deps import AsyncSessionLocal
 from app.core.error_handler import NotFoundError
 from app.models.article import Article
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.project import Project, ProjectMember
 from app.models.screening import ScreeningAssignment
 from app.models.user import Profile
@@ -53,6 +55,42 @@ _ARTICLES = (
     ("Cost of sepsis care in adults", ["Rossi Q", "Bianchi R"], "Health Econ", 2021),
 )
 _ENROLLED = 10
+# (title, authors, journal, year, pmid, doi), never enrolled: #13/#14 share a
+# PMID (an open exact pair); #15/#16 share a DOI and title (#16 merged into #15).
+_DUPLICATE_ARTICLES = (
+    (
+        "Delirium in critically ill adults with sepsis",
+        ["Kowalski S"],
+        "Crit Care Med",
+        2022,
+        "39000001",
+        None,
+    ),
+    (
+        "Delirium in critically ill septic adults",
+        ["Kowalski S"],
+        "Crit Care Med",
+        2022,
+        "39000001",
+        None,
+    ),
+    (
+        "Thiamine supplementation in septic shock",
+        ["Haddad T"],
+        "Chest",
+        2020,
+        None,
+        "10.1000/seed.sepsis.2020",
+    ),
+    (
+        "Thiamine supplementation in septic shock",
+        ["Haddad T"],
+        "Chest",
+        2020,
+        None,
+        "10.1000/seed.sepsis.2020",
+    ),
+)
 
 
 def assert_local_database(url: str) -> None:
@@ -103,6 +141,31 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
         for title, authors, journal, year in _ARTICLES
     ]
     db.add_all(articles)
+    await db.flush()
+    duplicates = [
+        Article(
+            project_id=PROJECT_ID,
+            title=title,
+            authors=authors,
+            journal_title=journal,
+            publication_year=year,
+            pmid=pmid,
+            doi=doi,
+        )
+        for title, authors, journal, year, pmid, doi in _DUPLICATE_ARTICLES
+    ]
+    db.add_all(duplicates)
+    await db.flush()
+    db.add(
+        ArticleDuplicateVerdict(
+            project_id=PROJECT_ID,
+            article_id=duplicates[3].id,
+            kept_article_id=duplicates[2].id,
+            verdict="duplicate",
+            basis="doi",
+            decided_by=manager_id,
+        )
+    )
     await db.flush()
     screening = ScreeningRepository(db)
     await screening.enroll(

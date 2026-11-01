@@ -6277,10 +6277,10 @@ export interface components {
             identified: components["schemas"]["PrismaSourceCount"][];
             /** Identified Total */
             identified_total: number;
-            /** Imported Not Enrolled */
-            imported_not_enrolled: number;
             /** Not Retrieved */
             not_retrieved: number;
+            /** Other Removed */
+            other_removed: number;
             /** Screened */
             screened: number;
             /** Sought For Retrieval */

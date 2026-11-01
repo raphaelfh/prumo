@@ -9533,12 +9533,12 @@
             "title": "Identified Total",
             "type": "integer"
           },
-          "imported_not_enrolled": {
-            "title": "Imported Not Enrolled",
-            "type": "integer"
-          },
           "not_retrieved": {
             "title": "Not Retrieved",
+            "type": "integer"
+          },
+          "other_removed": {
+            "title": "Other Removed",
             "type": "integer"
           },
           "screened": {
@@ -9555,7 +9555,7 @@
           "identified_total",
           "duplicates_removed",
           "not_retrieved",
-          "imported_not_enrolled",
+          "other_removed",
           "screened",
           "excluded",
           "excluded_by_reason",

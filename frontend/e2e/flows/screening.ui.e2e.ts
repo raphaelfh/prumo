@@ -45,7 +45,7 @@ interface ConfigResponse {
 
 interface PrismaResponse {
   screened: number;
-  imported_not_enrolled: number;
+  other_removed: number;
 }
 
 async function apiGet<T>(path: string, token: string): Promise<T> {
@@ -182,5 +182,5 @@ test("a reset after the full flow starts clean", async () => {
 
   const prisma = await apiGet<PrismaResponse>(`/projects/${SCREENING_PROJECT_ID}/prisma`, ownerToken);
   expect(prisma.screened).toBe(0);
-  expect(prisma.imported_not_enrolled).toBe(2);
+  expect(prisma.other_removed).toBe(2);
 });
