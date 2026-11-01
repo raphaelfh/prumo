@@ -12,11 +12,12 @@
  * Every verdict is one `useDuplicateVerdicts` call; the controls and keys rest
  * while one is in flight. Merge and Not duplicates toast with an Undo
  * (`cleared` for the same ids) and move to the next pair in list order, as Skip
- * does without a request. A refusal toasts its mapped copy; the hook refetches
+ * does without a request; a toast's Undo is a no-op while another verdict is
+ * in flight. A refusal toasts its mapped copy; the hook refetches
  * the screening family on every settle. Keys: j/k move, Enter opens, Esc is the
  * shell's chain (panel → selection).
  */
-import {useEffect, useState, type ReactNode} from 'react';
+import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {useSearchParams} from 'react-router';
 import {toast} from 'sonner';
 
@@ -88,6 +89,12 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
   const verdicts = useDuplicateVerdicts(projectId);
   const busy = verdicts.isPending;
   const data = query.data;
+  // A toast's Undo outlives the render that made it: it reads the live flag.
+  // A second mutate on the observer would drop the in-flight call's callbacks.
+  const busyRef = useRef(busy);
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   const [panelOpen, setPanelOpen] = useState(() => articleId !== null);
   const [listCursor, setListCursor] = useState<string | null>(null);
@@ -159,13 +166,20 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
     else updateParams(clearSelection);
   };
 
-  const post = (items: DuplicateVerdictCreate[], onSuccess?: () => void) =>
+  const post = (items: DuplicateVerdictCreate[], onSuccess?: (written: number) => void) =>
     verdicts.mutate(items, {
-      onSuccess: () => onSuccess?.(),
+      onSuccess: (result) => onSuccess?.(result.written),
       onError: (error) => toast.error(duplicatesErrorMessage(error)),
     });
   const toastWithUndo = (message: string, items: DuplicateVerdictCreate[]) =>
-    toast.success(message, {action: {label: t('duplicates', 'undo'), onClick: () => post(cleared(items))}});
+    toast.success(message, {
+      action: {
+        label: t('duplicates', 'undo'),
+        onClick: () => {
+          if (!busyRef.current) post(cleared(items));
+        },
+      },
+    });
 
   const merge = (pair: DuplicatePair, removedId: string, keptArticleId: string) => {
     const items: DuplicateVerdictCreate[] = [
@@ -183,13 +197,12 @@ export function DuplicatesWorkspace({projectId}: {projectId: string}) {
       advance(pair);
     });
   };
-  const acceptExact = () => {
-    const n = acceptable.length;
+  // The count is the server's: it skips a pair whose record is already removed.
+  const acceptExact = () =>
     post(
       acceptable.map((pair) => verdictFor(pair, 'duplicate')),
-      () => toast.success(t('duplicates', 'mergedMany').replace('{{n}}', String(n))),
+      (written) => toast.success(t('duplicates', 'mergedMany').replace('{{n}}', String(written))),
     );
-  };
 
   useKeyboardShortcuts({
     enabled: data !== undefined && !busy,

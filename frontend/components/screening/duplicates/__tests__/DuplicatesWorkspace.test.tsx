@@ -272,7 +272,7 @@ describe('DuplicatesWorkspace — verdicts', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Merged', expect.anything()));
     expect(bodies).toEqual([[{article_id: 'r1', kept_article_id: 'k1', verdict: 'duplicate'}]]);
     // The next open pair in list order is selected.
-    expect(search().get('article')).toBe('r2');
+    await waitFor(() => expect(search().get('article')).toBe('r2'));
     expect(search().get('kept')).toBe('k2');
 
     const {action} = vi.mocked(toast.success).mock.calls[0][1] as {action: {label: string; onClick: () => void}};
@@ -361,6 +361,50 @@ describe('DuplicatesWorkspace — verdicts', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('The record you chose to keep was already removed as a duplicate.'),
     );
+    await waitFor(() => expect(current.gets).toBeGreaterThanOrEqual(2));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("a toast's Undo does nothing while another verdict is in flight", async () => {
+    serveDuplicates();
+    let calls = 0;
+    const bodies = captureVerdicts(() => {
+      calls += 1;
+      return calls === 1 ? ok({written: 1, enrolled_kept: 0}) : new Promise<Response>(() => {});
+    });
+    const user = userEvent.setup();
+    renderWorkspace('&article=r1&kept=k1');
+    await user.click(await screen.findByRole('button', {name: 'Merge, keep selected'}));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Merged', expect.anything()));
+    const {action} = vi.mocked(toast.success).mock.calls[0][1] as {action: {onClick: () => void}};
+
+    await waitFor(() => expect(search().get('article')).toBe('r2'));
+    await user.click(await screen.findByRole('button', {name: 'Not duplicates'}));
+    await waitFor(() => expect(screen.getByRole('button', {name: 'Not duplicates'})).toBeDisabled());
+    expect(bodies).toHaveLength(2);
+
+    action.onClick();
+    // Give a stray request time to land before asserting none did.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bodies).toHaveLength(2);
+  });
+
+  it('a refused Accept N exact batch toasts the mapped copy and refetches', async () => {
+    const a = side('A', 'Alpha original');
+    const b = side('B', 'Alpha copy one');
+    const current = serveDuplicates({open: [pair(b, a, 'exact', 'pmid')], resolved: []});
+    const bodies = captureVerdicts(() => fail(409, 'DUPLICATE_HAS_REVIEW_WORK'));
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(await screen.findByRole('button', {name: 'Accept 1 exact'}));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', {name: 'Accept 1 exact'}));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'This record already has full-text or extraction work, so keep it instead.',
+      ),
+    );
+    expect(bodies).toEqual([[{article_id: 'B', kept_article_id: 'A', verdict: 'duplicate'}]]);
     await waitFor(() => expect(current.gets).toBeGreaterThanOrEqual(2));
     expect(toast.success).not.toHaveBeenCalled();
   });
