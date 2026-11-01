@@ -1,10 +1,11 @@
-"""Title/abstract screening: project config, enrollment, the blind queue, decisions, arbitration."""
+"""Title/abstract screening: project config, enrollment, the blind records, decisions, arbitration."""
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.deps.scope import load_assignment_for_member
 from app.api.deps.security import (
@@ -21,11 +22,11 @@ from app.schemas.screening import (
     ScreeningAssignmentRead,
     ScreeningConfigRead,
     ScreeningConfigUpdate,
-    ScreeningConflictsRead,
     ScreeningDecisionCreate,
     ScreeningEnrollRequest,
     ScreeningEnrollResult,
-    ScreeningQueueRead,
+    ScreeningPhase,
+    ScreeningRecordsRead,
 )
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.screening_config_service import ProjectNotFoundError, ScreeningConfigService
@@ -105,22 +106,23 @@ async def enroll_screening(
 
 
 @router.get(
-    "/projects/{project_id}/screening/queue",
-    responses={
-        403: {"description": "Reviewer role required"},
-        409: {"description": "Screening is not set up for this project"},
-    },
+    "/projects/{project_id}/screening/records",
+    responses={409: {"description": "Screening is not set up for this project"}},
 )
 @limiter.limit("120/minute")
-async def get_screening_queue(
+async def get_screening_records(
     request: Request,
     project_id: UUID,
+    phase: Annotated[ScreeningPhase, Query()],
     db: DbSession,
-    user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[ScreeningQueueRead]:
-    await ensure_project_reviewer(db, project_id, user_sub)
-    queue = await ScreeningReviewService(db).queue(project_id, user_sub)
-    return ApiResponse.success(queue, trace_id=getattr(request.state, "trace_id", None))
+    user_sub: UUID = Depends(require_project_scope),
+) -> ApiResponse[ScreeningRecordsRead]:
+    """Every article of the project in one phase with the caller's blind-safe status.
+
+    One row per article, in queue order, never a peer's decision.
+    """
+    records = await ScreeningReviewService(db).records(project_id, user_sub, phase)
+    return ApiResponse.success(records, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.get(
@@ -154,8 +156,9 @@ async def get_screening_assignment(
         404: {"description": "Assignment not found, or its article left the project"},
         409: {
             "description": (
-                "Screening not set up, the caller already decided (a decision is final), "
-                "the record has all its reviewers, or the exclusion reason is not in the protocol"
+                "Screening not set up, the caller already decided (final in dual review; "
+                "a solo reviewer may decide again until the record is arbitrated), the record "
+                "has all its reviewers, or the exclusion reason is not in the protocol"
             )
         },
     },
@@ -178,22 +181,6 @@ async def post_screening_decision(
         ) from exc
     await db.commit()
     return ApiResponse.success(assignment, trace_id=getattr(request.state, "trace_id", None))
-
-
-@router.get(
-    "/projects/{project_id}/screening/conflicts",
-    responses={403: {"description": "Manager or consensus role required"}},
-)
-@limiter.limit("60/minute")
-async def get_screening_conflicts(
-    request: Request,
-    project_id: UUID,
-    db: DbSession,
-    user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[ScreeningConflictsRead]:
-    await ensure_project_arbitrator(db, project_id, user_sub)
-    conflicts = await ScreeningReviewService(db).conflicts(project_id, user_sub)
-    return ApiResponse.success(conflicts, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.post(

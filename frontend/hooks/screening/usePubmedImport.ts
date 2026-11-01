@@ -59,8 +59,8 @@ export function useImportRun(projectId: string, syncRunId: string | null) {
   return useQuery({
     queryKey: screeningKeys.importRun(projectId, syncRunId ?? ''),
     enabled: Boolean(syncRunId),
-    // No article writer (Zotero/RIS import, manual create, delete) invalidates
-    // the screening keys: under the app's 5-minute staleTime a remount would
+    // Writes made elsewhere (a co-reviewer's decision, another session's
+    // import) never reach this cache: under the app's 5-minute staleTime a remount would
     // otherwise keep a pre-import run and its counts.
     refetchOnMount: 'always',
     // A run that is gone will not come back: do not retry its 404.

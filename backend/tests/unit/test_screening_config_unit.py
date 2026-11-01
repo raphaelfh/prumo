@@ -42,6 +42,7 @@ def _config() -> ScreeningConfigRead:
         can_manage=True,
         can_review=True,
         can_arbitrate=True,
+        exclusion_reasons=[],
     )
 
 

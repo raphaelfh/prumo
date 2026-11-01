@@ -1,4 +1,4 @@
-"""Screening arbitration: the ruling body, and the conflict/arbitration handlers called directly.
+"""Screening arbitration: the ruling body, and the arbitration handler called directly.
 
 Handler lines driven through httpx ASGITransport register no coverage, so each
 branch of the arbitration endpoints is called here with the service and guards patched.
@@ -20,7 +20,6 @@ from app.schemas.screening import (
     ScreeningArticle,
     ScreeningAssignmentRead,
     ScreeningAssignmentRef,
-    ScreeningConflictsRead,
 )
 from app.services.screening_review_service import AssignmentNotFoundError, DecisionNotFoundError
 
@@ -31,7 +30,6 @@ ARTICLE = uuid4()
 D1 = uuid4()
 D2 = uuid4()
 
-_conflicts = endpoint.get_screening_conflicts.__wrapped__
 _arbitrate = endpoint.post_screening_arbitration.__wrapped__
 
 
@@ -48,6 +46,10 @@ def _read() -> ScreeningAssignmentRead:
             publication_year=None,
             pmid=None,
             doi=None,
+            mesh_terms=None,
+            keywords=None,
+            article_type=None,
+            language=None,
         ),
         status="decided",
         my_decision=None,
@@ -57,10 +59,6 @@ def _read() -> ScreeningAssignmentRead:
     )
 
 
-def _conflicts_read() -> ScreeningConflictsRead:
-    return ScreeningConflictsRead(items=[], exclusion_reasons=["Not ML"])
-
-
 def _body() -> ScreeningArbitrationCreate:
     return ScreeningArbitrationCreate(ruled_on_decision_ids=[D1, D2], selected_decision_id=D2)
 
@@ -68,7 +66,6 @@ def _body() -> ScreeningArbitrationCreate:
 @pytest.fixture
 def service(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     instance = MagicMock()
-    instance.conflicts = AsyncMock(return_value=_conflicts_read())
     instance.arbitrate = AsyncMock(return_value=_read())
     monkeypatch.setattr(endpoint, "ScreeningReviewService", MagicMock(return_value=instance))
     return instance
@@ -131,20 +128,6 @@ def test_ruled_on_ids_are_bounded_and_extra_fields_refused() -> None:
         ScreeningArbitrationCreate.model_validate(
             {"ruled_on_decision_ids": [str(D1)], "decision": "include", "decided_by": str(CALLER)}
         )
-
-
-async def test_conflicts_handler_returns_the_list(
-    service: MagicMock, guards: SimpleNamespace
-) -> None:
-    db = AsyncMock()
-
-    result = await _conflicts(_request(), PROJECT, db, CALLER)
-
-    assert result.ok is True
-    assert result.data == _conflicts_read()
-    assert result.trace_id == "trace-1"
-    guards.arbitrator.assert_awaited_once_with(db, PROJECT, CALLER)
-    service.conflicts.assert_awaited_once_with(PROJECT, CALLER)
 
 
 async def test_arbitration_handler_commits_and_returns(

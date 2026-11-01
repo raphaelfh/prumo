@@ -1154,23 +1154,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{project_id}/screening/conflicts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Screening Conflicts */
-        get: operations["get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/projects/{project_id}/screening/enroll": {
         parameters: {
             query?: never;
@@ -1188,15 +1171,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{project_id}/screening/queue": {
+    "/api/v1/projects/{project_id}/screening/records": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Screening Queue */
-        get: operations["get_screening_queue_api_v1_projects__project_id__screening_queue_get"];
+        /**
+         * Get Screening Records
+         * @description Every article of the project in one phase with the caller's blind-safe status.
+         *
+         *     One row per article, in queue order, never a peer's decision.
+         */
+        get: operations["get_screening_records_api_v1_projects__project_id__screening_records_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3258,23 +3246,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[ScreeningConflictsRead] */
-        ApiResponse_ScreeningConflictsRead_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["ScreeningConflictsRead"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[ScreeningEnrollResult] */
         ApiResponse_ScreeningEnrollResult_: {
             /** @description Dados da resposta */
@@ -3292,10 +3263,10 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[ScreeningQueueRead] */
-        ApiResponse_ScreeningQueueRead_: {
+        /** ApiResponse[ScreeningRecordsRead] */
+        ApiResponse_ScreeningRecordsRead_: {
             /** @description Dados da resposta */
-            data?: components["schemas"]["ScreeningQueueRead"] | null;
+            data?: components["schemas"]["ScreeningRecordsRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -7183,6 +7154,8 @@ export interface components {
         ScreeningArticle: {
             /** Abstract */
             abstract: string | null;
+            /** Article Type */
+            article_type: string | null;
             /** Authors */
             authors: string[] | null;
             /** Doi */
@@ -7194,6 +7167,12 @@ export interface components {
             id: string;
             /** Journal Title */
             journal_title: string | null;
+            /** Keywords */
+            keywords: string[] | null;
+            /** Language */
+            language: string | null;
+            /** Mesh Terms */
+            mesh_terms: string[] | null;
             /** Pmid */
             pmid: string | null;
             /** Publication Year */
@@ -7242,6 +7221,8 @@ export interface components {
             can_review: boolean;
             /** Enrolled */
             enrolled: number;
+            /** Exclusion Reasons */
+            exclusion_reasons: string[];
             /** Not Enrolled */
             not_enrolled: number;
             /** Reviewer Capable */
@@ -7258,30 +7239,6 @@ export interface components {
         ScreeningConfigUpdate: {
             /** Reviewer Count */
             reviewer_count: number;
-        };
-        /**
-         * ScreeningConflictItem
-         * @description One unruled conflict with every reviewer's current decision.
-         */
-        ScreeningConflictItem: {
-            article: components["schemas"]["ScreeningArticle"];
-            /**
-             * Assignment Id
-             * Format: uuid
-             */
-            assignment_id: string;
-            /** Decisions */
-            decisions: components["schemas"]["PeerDecisionRead"][];
-        };
-        /**
-         * ScreeningConflictsRead
-         * @description The project's unruled conflicts, and the protocol reasons an override may cite.
-         */
-        ScreeningConflictsRead: {
-            /** Exclusion Reasons */
-            exclusion_reasons: string[];
-            /** Items */
-            items: components["schemas"]["ScreeningConflictItem"][];
         };
         /**
          * ScreeningDecisionCreate
@@ -7352,28 +7309,74 @@ export interface components {
             /** Reasons Differ */
             reasons_differ: boolean;
         };
-        /** ScreeningQueueItem */
-        ScreeningQueueItem: {
-            article: components["schemas"]["ScreeningArticle"];
+        /**
+         * ScreeningRecordRow
+         * @description One project article in a screening phase as the caller may see it.
+         *
+         *     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
+         *     when the article is not enrolled; the ``outcome*`` fields are set only once
+         *     the record has an outcome.
+         */
+        ScreeningRecordRow: {
             /**
-             * Assignment Id
+             * Article Id
              * Format: uuid
              */
-            assignment_id: string;
+            article_id: string;
+            /** Assignment Id */
+            assignment_id: string | null;
+            /** Doi */
+            doi: string | null;
+            /** First Author */
+            first_author: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /** Ingestion Source */
+            ingestion_source: string | null;
+            /** Journal Title */
+            journal_title: string | null;
+            /** My Decision */
+            my_decision: ("include" | "exclude" | "maybe") | null;
+            /** My Exclusion Reason */
+            my_exclusion_reason: string | null;
+            /** Outcome */
+            outcome: ("include" | "exclude" | "maybe") | null;
+            /** Outcome Exclusion Reason */
+            outcome_exclusion_reason: string | null;
+            /** Outcome Kind */
+            outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /** Pmid */
+            pmid: string | null;
+            /** Publication Year */
+            publication_year: number | null;
+            /** Queue Rank */
+            queue_rank: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe";
+            /** Title */
+            title: string;
         };
         /**
-         * ScreeningQueueRead
-         * @description The caller's next records to screen, with the counts around them.
+         * ScreeningRecordsRead
+         * @description Every article of the project in one phase, in queue order, with the protocol criteria.
          */
-        ScreeningQueueRead: {
-            /** Awaiting Me */
-            awaiting_me: number;
-            /** Awaiting Others */
-            awaiting_others: number;
+        ScreeningRecordsRead: {
             /** Exclusion Reasons */
             exclusion_reasons: string[];
-            /** Items */
-            items: components["schemas"]["ScreeningQueueItem"][];
+            /** Inclusion Criteria */
+            inclusion_criteria: string[];
+            /**
+             * Phase
+             * @constant
+             */
+            phase: "title_abstract";
+            /** Reviewer Count */
+            reviewer_count: number;
+            /** Rows */
+            rows: components["schemas"]["ScreeningRecordRow"][];
         };
         /**
          * SectionCreateRequest
@@ -11112,44 +11115,6 @@ export interface operations {
             };
         };
     };
-    get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ScreeningConflictsRead_"];
-                };
-            };
-            /** @description Manager or consensus role required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     enroll_screening_api_v1_projects__project_id__screening_enroll_post: {
         parameters: {
             query?: never;
@@ -11192,9 +11157,11 @@ export interface operations {
             };
         };
     };
-    get_screening_queue_api_v1_projects__project_id__screening_queue_get: {
+    get_screening_records_api_v1_projects__project_id__screening_records_get: {
         parameters: {
-            query?: never;
+            query: {
+                phase: "title_abstract";
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -11209,15 +11176,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse_ScreeningQueueRead_"];
+                    "application/json": components["schemas"]["ApiResponse_ScreeningRecordsRead_"];
                 };
-            };
-            /** @description Reviewer role required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Screening is not set up for this project */
             409: {
@@ -12772,7 +12732,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the caller already decided (a decision is final), the record has all its reviewers, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, or the exclusion reason is not in the protocol */
             409: {
                 headers: {
                     [name: string]: unknown;

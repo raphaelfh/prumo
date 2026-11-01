@@ -268,3 +268,133 @@ describe('ListDetailSplitShell Escape chain', () => {
         expect(spy).not.toHaveBeenCalled();
     });
 });
+
+const onMaximizedChange = vi.fn();
+
+/** Controlled maximize: the caller owns both flags and clears `maximized` when it closes the panel. */
+function ControlledHarness({initialOpen = false, sibling}: {initialOpen?: boolean; sibling?: ReactNode}) {
+    const [open, setOpen] = useState(initialOpen);
+    const [maximized, setMaximized] = useState(false);
+    return (
+        <HeaderActionsProvider>
+            <ListDetailSplitShell
+                list={<input aria-label="search"/>}
+                panel={<div data-testid="panel-body"><input aria-label="field"/></div>}
+                panelOpen={open}
+                onPanelOpenChange={(o) => {
+                    spy(o);
+                    setOpen(o);
+                    if (!o) setMaximized(false);
+                }}
+                maximized={maximized}
+                onMaximizedChange={(m) => {
+                    onMaximizedChange(m);
+                    setMaximized(m);
+                }}
+                idPrefix="t-shell"
+                toggleLabel="Toggle panel"
+                maximizable
+                escapeCloses
+            />
+            <button
+                type="button"
+                onClick={() => {
+                    setMaximized(true);
+                    setOpen(true);
+                }}
+            >
+                start
+            </button>
+            {sibling}
+        </HeaderActionsProvider>
+    );
+}
+
+const handle = () => document.querySelector('[role="separator"]');
+
+describe('ListDetailSplitShell controlled maximize', () => {
+    it('opens maximized when the caller sets both in one update', () => {
+        render(<ControlledHarness/>);
+        fireEvent.click(screen.getByRole('button', {name: 'start'}));
+        expect(panelEl()).toHaveAttribute('data-maximized', 'true');
+        expect(list()).not.toBeVisible();
+    });
+
+    it('opens maximized from ⇧⌘\\ on a closed panel in controlled mode', () => {
+        render(<ControlledHarness/>);
+        pressMaximize();
+        expect(onMaximizedChange).toHaveBeenCalledWith(true);
+        expect(spy).toHaveBeenCalledWith(true);
+        expect(panelEl()).toHaveAttribute('data-maximized', 'true');
+        expect(list()).not.toBeVisible();
+    });
+
+    it('toggles through onMaximizedChange on an open panel', () => {
+        render(<ControlledHarness initialOpen/>);
+        pressMaximize();
+        expect(onMaximizedChange).toHaveBeenLastCalledWith(true);
+        pressMaximize();
+        expect(onMaximizedChange).toHaveBeenLastCalledWith(false);
+        expect(list()).toBeVisible();
+    });
+
+    it('restores on Escape through onMaximizedChange(false)', () => {
+        render(<ControlledHarness initialOpen/>);
+        pressMaximize();
+        pressEscape();
+        expect(onMaximizedChange).toHaveBeenLastCalledWith(false);
+        expect(spy).not.toHaveBeenCalledWith(false);
+        expect(list()).toBeVisible();
+        expect(panelEl()).not.toHaveAttribute('data-maximized');
+    });
+
+    it('hides the resize handle while maximized', () => {
+        render(<ControlledHarness initialOpen/>);
+        expect(handle()).toBeVisible();
+        pressMaximize();
+        expect(handle()).not.toBeVisible();
+        pressMaximize();
+        expect(handle()).toBeVisible();
+    });
+});
+
+describe('ListDetailSplitShell Escape and focus', () => {
+    it('yields Escape to an open tooltip', () => {
+        const {rerender} = render(<ControlledHarness initialOpen sibling={<div role="tooltip"/>}/>);
+        const ev = createEvent.keyDown(window, {key: 'Escape'});
+        fireEvent(window, ev);
+        expect(spy).not.toHaveBeenCalled();
+        expect(ev.defaultPrevented).toBe(false);
+
+        rerender(<ControlledHarness initialOpen/>);
+        pressEscape();
+        expect(spy).toHaveBeenCalledWith(false);
+    });
+
+    it('moves focus into the panel when maximizing from the list', () => {
+        render(<ControlledHarness initialOpen/>);
+        const search = screen.getByLabelText('search');
+        search.focus();
+        fireEvent.keyDown(search, {key: '\\', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
+        expect(panelEl()).toHaveAttribute('data-maximized', 'true');
+        expect(document.activeElement).not.toBe(document.body);
+        expect(panelEl()?.contains(document.activeElement)).toBe(true);
+    });
+
+    it('moves focus into the panel when maximizing from the list, uncontrolled', () => {
+        render(<Harness maximizable/>);
+        const search = screen.getByLabelText('search');
+        search.focus();
+        fireEvent.keyDown(search, {key: '\\', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
+        expect(panelEl()?.contains(document.activeElement)).toBe(true);
+    });
+
+    it('leaves focus alone when maximizing from the panel', () => {
+        render(<ControlledHarness initialOpen/>);
+        const field = screen.getByLabelText('field');
+        field.focus();
+        fireEvent.keyDown(field, {key: '\\', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
+        expect(panelEl()).toHaveAttribute('data-maximized', 'true');
+        expect(document.activeElement).toBe(field);
+    });
+});

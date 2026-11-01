@@ -1,31 +1,36 @@
 /**
- * One record as the caller may see it. Blindness is the server's: this view
- * renders `peer_decisions` and `outcome` exactly as the API returns them.
- * A reviewer the record awaits (`status === 'awaiting_me'`) may decide here;
- * a decision is final, so once made it is read-only, as is everything for
- * anyone else (including a reviewer not seated on a decided record).
+ * The record panel's body for an enrolled record: the assignment read decides
+ * what the caller may do. A reviewer the record awaits decides here; an
+ * unseated arbitrator rules a conflict here; on a solo record the caller's own
+ * decision stays changeable (the recorded-choice ring). Everything else is
+ * read-only and renders `peer_decisions` and `outcome` exactly as the API
+ * returns them (blindness is the server's). The status chip is the records
+ * row's server-computed status, never re-derived here.
  */
-import {ArrowLeft} from 'lucide-react';
-import {useRef, type ReactNode} from 'react';
+import {useEffect, useRef, type ReactNode} from 'react';
 import {toast} from 'sonner';
 
 import {ErrorState} from '@/components/patterns/ErrorState';
-import {Button} from '@/components/ui/button';
 import {useScreeningAssignment} from '@/hooks/screening/useScreeningAssignment';
-import {useDecide} from '@/hooks/screening/useScreeningQueue';
+import {useArbitrate, useDecide} from '@/hooks/screening/useScreeningMutations';
+import {ApiError} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
-import type {ScreeningAssignmentRead, ScreeningDecisionCreate} from '@/services/screeningService';
+import {cn} from '@/lib/utils';
+import type {
+  ScreeningArbitrationCreate,
+  ScreeningAssignmentRead,
+  ScreeningConfigRead,
+  ScreeningDecisionCreate,
+  ScreeningRecordRow,
+} from '@/services/screeningService';
 
+import {ConflictRulingForm} from './ConflictRulingForm';
+import {CriteriaPanel, criteriaCount, type ScreeningCriteria} from './CriteriaPanel';
 import {DecisionButtons} from './DecisionButtons';
+import {DecisionNote, useDecisionNoteForm} from './DecisionNote';
+import {RecordStatusChip} from './RecordStatusChip';
 import {decisionLabel, LoadingState, RecordBody} from './ScreeningParts';
-
-const STATUS_LABEL = {
-  awaiting_me: 'statusAwaitingMe',
-  awaiting_others: 'statusAwaitingOthers',
-  conflict: 'statusConflict',
-  decided: 'statusDecided',
-} as const;
 
 const OUTCOME_KIND_LABEL = {
   solo: 'outcomeSolo',
@@ -97,66 +102,151 @@ function AssignmentDetails({read}: {read: ScreeningAssignmentRead}) {
   );
 }
 
-interface AssignmentViewProps {
-  assignmentId: string;
-  canReview: boolean;
-  onBack: () => void;
+/** The record is gone from this phase for the caller (deleted, moved, or refused). */
+function isNotInPhase(error: unknown, statuses: readonly number[]): boolean {
+  return error instanceof ApiError && statuses.includes(error.status);
 }
 
-export function AssignmentView({assignmentId, canReview, onBack}: AssignmentViewProps) {
+interface AssignmentViewProps {
+  assignmentId: string;
+  row: ScreeningRecordRow;
+  config: ScreeningConfigRead;
+  criteria: ScreeningCriteria;
+  /** Maximized → the criteria rail beside the record; docked → the disclosure above it. */
+  maximized: boolean;
+  onDecided: (row: ScreeningRecordRow) => void;
+  onNotInPhase: () => void;
+}
+
+export function AssignmentView({
+  assignmentId,
+  row,
+  config,
+  criteria,
+  maximized,
+  onDecided,
+  onNotInPhase,
+}: AssignmentViewProps) {
   const query = useScreeningAssignment(assignmentId);
-  const decide = useDecide(query.data?.project_id ?? '');
+  const projectId = query.data?.project_id ?? '';
+  const decide = useDecide(projectId);
+  const arbitrate = useArbitrate(projectId);
+  // Before the early returns; the panel keys this view by assignment, so another record starts blank.
+  const noteForm = useDecisionNoteForm();
   // `isPending` reaches the buttons only after a re-render; two keys pressed
   // before it would both post. This flag flips at once.
   const inFlight = useRef(false);
+  const readGone = query.isError && isNotInPhase(query.error, [403, 404]);
 
-  const back = (
-    <Button variant="ghost" onClick={onBack} className="self-start">
-      <ArrowLeft />
-      {t('screening', 'backToQueue')}
-    </Button>
-  );
+  useEffect(() => {
+    if (readGone) onNotInPhase();
+  }, [readGone, onNotInPhase]);
 
-  if (query.isPending) return <LoadingState />;
+  if (query.isPending || readGone) return <LoadingState />;
   if (query.isError) {
     return (
-      <div className="flex flex-col p-2">
-        {back}
-        <ErrorState message={screeningErrorMessage(query.error)} />
-      </div>
+      <ErrorState
+        title={t('screening', 'loadErrorTitle')}
+        message={screeningErrorMessage(query.error)}
+        onRetry={() => void query.refetch()}
+      />
     );
   }
 
   const read = query.data;
+  const busy = decide.isPending || arbitrate.isPending;
+  const onWriteError = (error: Error) => {
+    if (isNotInPhase(error, [404])) onNotInPhase();
+    else toast.error(screeningErrorMessage(error));
+  };
+  const release = () => {
+    inFlight.current = false;
+  };
+
+  const solo =
+    config.can_review && config.reviewer_count === 1 && read.my_decision !== null && read.outcome?.kind === 'solo';
+  const canDecide = solo || (config.can_review && read.status === 'awaiting_me');
+  const canRule = config.can_arbitrate && read.status === 'conflict';
+
   const onDecide = (body: ScreeningDecisionCreate) => {
     if (inFlight.current) return;
     inFlight.current = true;
+    const rationale = noteForm.getValues('note').trim();
     decide.mutate(
-      {assignmentId, body},
+      {assignmentId, body: rationale ? {...body, rationale} : body},
       {
-        onError: (error) => toast.error(screeningErrorMessage(error)),
-        onSettled: () => {
-          inFlight.current = false;
+        onSuccess: () => {
+          noteForm.reset();
+          if (solo) toast.success(t('screening', 'changedTo').replace('{{decision}}', decisionLabel(body.decision)));
+          onDecided(row);
         },
+        onError: onWriteError,
+        onSettled: release,
       },
     );
   };
 
+  const onRule = (body: ScreeningArbitrationCreate) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    arbitrate.mutate(
+      {assignmentId, body},
+      {
+        onSuccess: () => toast.success(t('screening', 'rulingSaved')),
+        onError: onWriteError,
+        onSettled: release,
+      },
+    );
+  };
+
+  const body = canDecide ? (
+    <RecordBody article={read.article} />
+  ) : canRule ? (
+    <div className="flex flex-col gap-4">
+      <RecordBody article={read.article} />
+      <Section title={t('screening', 'peerDecisionsTitle')}>
+        <ConflictRulingForm read={read} busy={busy} onRule={onRule} />
+      </Section>
+    </div>
+  ) : (
+    <AssignmentDetails read={read} />
+  );
+  // Maximized with a rail: wide enough for the 68ch reading column plus the 18rem rail.
+  const withRail = maximized && criteriaCount(criteria) > 0;
+  const columnWidth = withRail ? 'max-w-5xl' : 'max-w-3xl';
+
   return (
-    <div className="flex min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-3 px-2 pt-2">
-        {back}
-        <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-foreground">
-          {t('screening', STATUS_LABEL[read.status])}
-        </span>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={cn('mx-auto flex w-full flex-col gap-3 px-4 py-4', columnWidth)}>
+          <div>
+            <RecordStatusChip status={row.status} arbitrated={row.outcome_kind === 'arbitrated'} />
+          </div>
+          {withRail ? (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+              <div className="min-w-0">{body}</div>
+              <CriteriaPanel criteria={criteria} variant="rail" />
+            </div>
+          ) : (
+            <>
+              {!maximized && <CriteriaPanel criteria={criteria} variant="disclosure" />}
+              {body}
+            </>
+          )}
+        </div>
       </div>
-      <div className="mx-auto w-full max-w-3xl px-4 py-4">
-        <AssignmentDetails read={read} />
-      </div>
-      {canReview && read.status === 'awaiting_me' && (
-        <div className="sticky bottom-0 border-t border-border/40 bg-background px-4 py-3">
-          <div className="mx-auto w-full max-w-3xl">
-            <DecisionButtons reasons={read.exclusion_reasons} disabled={decide.isPending} onDecide={onDecide} />
+      {canDecide && (
+        <div className="shrink-0 border-t border-border/40 bg-background px-4 py-3">
+          <div className={cn('mx-auto flex w-full flex-col gap-2', columnWidth)}>
+            <DecisionNote form={noteForm} disabled={busy} />
+            <DecisionButtons
+              reasons={read.exclusion_reasons}
+              disabled={busy}
+              onDecide={onDecide}
+              phase="title_abstract"
+              recorded={solo ? read.my_decision?.decision : null}
+              recordedReason={solo ? read.my_decision?.exclusion_reason : null}
+            />
           </div>
         </div>
       )}

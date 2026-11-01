@@ -22,8 +22,8 @@ export function useScreeningConfig(projectId: string) {
   return useQuery({
     queryKey: screeningKeys.config(projectId),
     enabled: Boolean(projectId),
-    // No article writer (Zotero/RIS import, manual create, delete) invalidates
-    // the screening keys: under the app's 5-minute staleTime a remount would
+    // Writes made elsewhere (a co-reviewer's decision, another session's
+    // import) never reach this cache: under the app's 5-minute staleTime a remount would
     // otherwise keep pre-import enroll and PRISMA numbers.
     refetchOnMount: 'always',
     queryFn: async (): Promise<ScreeningConfigRead> => {
@@ -56,7 +56,8 @@ export function useEnrollArticles(projectId: string) {
       if (!result.ok) throw result.error;
       return result.data;
     },
-    onSuccess: () => {
+    // A refusal means the counts moved under the caller: refetch them too.
+    onSettled: () => {
       void queryClient.invalidateQueries({queryKey: screeningKeys.project(projectId)});
     },
   });

@@ -22,7 +22,6 @@ from app.schemas.screening import (
     ScreeningAssignmentRead,
     ScreeningAssignmentRef,
     ScreeningDecisionCreate,
-    ScreeningQueueRead,
 )
 from app.services.screening_review_service import AssignmentNotFoundError, assignment_states
 
@@ -31,7 +30,6 @@ CALLER = uuid4()
 ASSIGNMENT = uuid4()
 ARTICLE = uuid4()
 
-_queue = endpoint.get_screening_queue.__wrapped__
 _assignment = endpoint.get_screening_assignment.__wrapped__
 _decide = endpoint.post_screening_decision.__wrapped__
 
@@ -46,6 +44,10 @@ def _article() -> ScreeningArticle:
         publication_year=None,
         pmid=None,
         doi=None,
+        mesh_terms=None,
+        keywords=None,
+        article_type=None,
+        language=None,
     )
 
 
@@ -62,14 +64,9 @@ def _read() -> ScreeningAssignmentRead:
     )
 
 
-def _queue_read() -> ScreeningQueueRead:
-    return ScreeningQueueRead(items=[], awaiting_me=0, awaiting_others=0, exclusion_reasons=[])
-
-
 @pytest.fixture
 def service(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     instance = MagicMock()
-    instance.queue = AsyncMock(return_value=_queue_read())
     instance.get_assignment = AsyncMock(return_value=_read())
     instance.decide = AsyncMock(return_value=_read())
     monkeypatch.setattr(endpoint, "ScreeningReviewService", MagicMock(return_value=instance))
@@ -107,8 +104,7 @@ def test_reason_only_on_exclude() -> None:
         "current_decisions",
         "latest_rulings",
         "assignments_with_articles",
-        "queue_page",
-        "count_awaiting_me",
+        "record_rows",
     ],
 )
 def test_screening_reads_require_a_project_scope(method: str) -> None:
@@ -123,18 +119,6 @@ def test_assignment_states_requires_a_project_scope() -> None:
 
     assert param.kind is inspect.Parameter.KEYWORD_ONLY
     assert param.default is inspect.Parameter.empty
-
-
-async def test_queue_handler_returns_the_queue(service: MagicMock, guards: SimpleNamespace) -> None:
-    db = AsyncMock()
-
-    result = await _queue(_request(), PROJECT, db, CALLER)
-
-    assert result.ok is True
-    assert result.data == _queue_read()
-    assert result.trace_id == "trace-1"
-    guards.reviewer.assert_awaited_once_with(db, PROJECT, CALLER)
-    service.queue.assert_awaited_once_with(PROJECT, CALLER)
 
 
 async def test_assignment_handler_returns_the_assignment(

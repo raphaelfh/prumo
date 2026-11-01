@@ -10,6 +10,8 @@ import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import {toast} from "sonner";
 import {ArticlesList} from "@/components/articles/ArticlesList";
+import {createQueryWrapper} from "@/test/helpers/queryClientWrapper";
+import {screeningKeys} from "@/lib/query-keys/screening";
 import type {Article} from "@/types/article";
 
 vi.mock("@/integrations/supabase/client", () => ({supabase: {}}));
@@ -69,9 +71,12 @@ function listElement(list: Article[], onArticlesChange: () => void) {
 
 function renderList() {
     const onArticlesChange = vi.fn();
-    const {rerender} = render(listElement(articles, onArticlesChange));
+    const {queryClient, wrapper} = createQueryWrapper();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const {rerender} = render(listElement(articles, onArticlesChange), {wrapper});
     return {
         onArticlesChange,
+        invalidate,
         showOnly: (list: Article[]) => rerender(listElement(list, onArticlesChange)),
     };
 }
@@ -119,7 +124,7 @@ describe("ArticlesList delete gate", () => {
         asRole(true);
         vi.mocked(deleteArticles).mockResolvedValue({ok: true, data: {deleted: 2, storage_failures: 0}});
         const user = userEvent.setup();
-        const {onArticlesChange} = renderList();
+        const {onArticlesChange, invalidate} = renderList();
 
         await user.click(screen.getByRole("checkbox", {name: /First/}));
         await user.click(screen.getByRole("checkbox", {name: /Second/}));
@@ -131,13 +136,15 @@ describe("ArticlesList delete gate", () => {
         expect(deleteArticles).toHaveBeenCalledWith("p1", {mode: "ids", ids: ["a1", "a2"]});
         expect(toast.success).toHaveBeenCalledWith("2 article(s) deleted successfully!");
         expect(screen.queryByText(/selected/)).toBeNull();
+        // The deleted records leave every screening read of the project.
+        expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project("p1")});
     });
 
     it("deletes one article from its row menu through the API", async () => {
         asRole(true);
         vi.mocked(deleteArticles).mockResolvedValue({ok: true, data: {deleted: 1, storage_failures: 0}});
         const user = userEvent.setup();
-        const {onArticlesChange} = renderList();
+        const {onArticlesChange, invalidate} = renderList();
 
         await openRowMenu(user);
         await user.click(await screen.findByRole("menuitem", {name: "Delete"}));
@@ -147,6 +154,7 @@ describe("ArticlesList delete gate", () => {
         await vi.waitFor(() => expect(onArticlesChange).toHaveBeenCalledTimes(1));
         expect(deleteArticles).toHaveBeenCalledWith("p1", {mode: "ids", ids: ["a1"]});
         expect(toast.success).toHaveBeenCalledWith("Article deleted successfully!");
+        expect(invalidate).toHaveBeenCalledWith({queryKey: screeningKeys.project("p1")});
     });
 
     it("keeps the selection and skips the refresh when the API refuses", async () => {
@@ -156,7 +164,7 @@ describe("ArticlesList delete gate", () => {
             error: {message: "Only managers can delete articles"},
         } as Awaited<ReturnType<typeof deleteArticles>>);
         const user = userEvent.setup();
-        const {onArticlesChange} = renderList();
+        const {onArticlesChange, invalidate} = renderList();
 
         await user.click(screen.getByRole("checkbox", {name: /First/}));
         await user.click(screen.getByRole("button", {name: "Delete"}));
@@ -165,6 +173,7 @@ describe("ArticlesList delete gate", () => {
 
         await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
         expect(onArticlesChange).not.toHaveBeenCalled();
+        expect(invalidate).not.toHaveBeenCalled();
         expect(screen.getByText(/1 selected/)).toBeTruthy();
     });
 
