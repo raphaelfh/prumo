@@ -195,4 +195,85 @@ mk_gh 'case "$1" in repo) echo raphaelfh/prumo ;; api) case "$2" in *protection*
 out=$(PATH="$STUB:$PATH" bash "$SHIP" ci deadbeef 2>/dev/null)
 ok "red names the context" "$out" "RED@deadbeef:Backend Lint"
 
+echo "# dev: one owner per fix (pure — duplicate PRs #1081/#1082, 2026-11-01)"
+PRS=$'12\tfix/a\tfix(ci): pin node\t.github/workflows/ci.yml\n13\tfeat/b\tfeat(x): thing\tbackend/app/x.py,backend/app/y.py\n14\tme/branch\tfeat(me): mine\tbackend/app/x.py'
+ok "no conflict -> silent" "$(_dev_conflicts me/branch 'feat(z): other' 'frontend/z.tsx' "$PRS")" ""
+ok "same title -> conflict" "$(_dev_conflicts me/branch 'fix(ci): pin node' 'docs/a.md' "$PRS")" "#12 same title"
+ok "shared file -> conflict" "$(_dev_conflicts me/branch 'feat(z): z' $'backend/app/y.py\nfrontend/q.ts' "$PRS")" "#13 shares backend/app/y.py"
+ok "own branch's PR is not a conflict" "$(_dev_conflicts me/branch 'feat(me): mine' 'frontend/q.ts' "$PRS")" ""
+
+echo "# multi-slice: one session, waves, one queue, one promote"
+# A second orchestrator checkout of the same repo: ownership keys on $PWD.
+ORCH="$SANDBOX/orch"; mkdir -p "$ORCH"; cd "$ORCH" || exit 1
+SB="$SANDBOX/.superpowers/ship-spec"
+sstate() { sed -n "s/^$2=//p" "$SB/$1/state" | tail -1 | tr -d '[:space:]'; }
+mk_gh 'case "$1 $2" in "pr view") echo "${GH_PR_STATE:-OPEN}" ;; *) exit 1 ;; esac'
+
+bash "$SHIP" init wspec --to prod --slices "S1 | S2, S1" >/dev/null 2>&1
+ok "a slice named twice is refused" "$?" "2"
+bash "$SHIP" init wspec --to prod --slices "S1 || S2" >/dev/null 2>&1
+ok "an empty wave is refused" "$?" "2"
+bash "$SHIP" init wspec --to prod --slices "S1 | S2,S3" >/dev/null
+ok "init --slices writes a manifest"   "$(sed -n 's/^wave2=//p' "$SB/wspec/manifest")" "S2,S3"
+ok "init --slices starts no run"       "$([ -e "$SB/wspec/state" ] && echo yes || echo no)" "no"
+
+bash "$SHIP" slice wspec S9 --worktree "$SANDBOX" >/dev/null 2>&1
+ok "a slice not in the manifest is refused" "$?" "1"
+bash "$SHIP" slice wspec S2 --worktree "$SANDBOX" >/dev/null 2>&1
+ok "wave 2 refused while wave 1 has not landed" "$?" "1"
+
+bash "$SHIP" slice wspec S1 --worktree "$SANDBOX" >/dev/null
+ok "slice run starts at plan"         "$(sstate wspec-S1 phase)"   "plan"
+ok "slice run inherits the ceiling"   "$(sstate wspec-S1 ceiling)" "prod"
+ok "slice run names its spec"         "$(sstate wspec-S1 spec)"    "wspec"
+ok "slice run is owned by this checkout" "$(sstate wspec-S1 orchestrator)" "$ORCH"
+
+bash "$SHIP" init stray --to dev >/dev/null 2>&1
+ok "plain init refused while a slice is live" "$?" "1"
+
+bash "$SHIP" done >/dev/null 2>&1
+ok "a slice without a PR cannot be done" "$?" "1"
+printf 'pr=https://x/pull/1\n' >> "$SB/wspec-S1/state"
+GH_PR_STATE=OPEN PATH="$STUB:$PATH" bash "$SHIP" done >/dev/null 2>&1
+ok "a slice whose PR is still open cannot be done" "$?" "1"
+GH_PR_STATE=MERGED PATH="$STUB:$PATH" bash "$SHIP" done >/dev/null 2>&1
+ok "a slice whose PR merged is done" "$(sstate wspec-S1 phase)" "done"
+
+bash "$SHIP" slice wspec S2 --worktree "$SANDBOX" >/dev/null
+bash "$SHIP" slice wspec S3 --worktree "$SANDBOX" >/dev/null
+ok "a wave's slices run concurrently" "$(sstate wspec-S3 phase)" "plan"
+
+bash "$SHIP" phase build >/dev/null 2>&1
+ok "two live slices: a verb without --run is refused" "$?" "1"
+bash "$SHIP" --run wspec-S2 phase build >/dev/null
+ok "--run addresses one slice" "$(sstate wspec-S2 phase)" "build"
+ok "and leaves its sibling alone" "$(sstate wspec-S3 phase)" "plan"
+bash "$SHIP" --run demo phase build >/dev/null 2>&1
+ok "--run cannot address another checkout's run" "$?" "1"
+
+yes_ "status lists every slice" "$(bash "$SHIP" status wspec | grep -c 'S[123]' | grep -x 3)"
+
+for ph in harden ship; do bash "$SHIP" --run wspec-S2 phase $ph >/dev/null; done
+printf 'ci=GREEN@%s\n' "$DEV_SHA" >> "$SB/wspec-S2/state"
+bash "$SHIP" --run wspec-S2 preflight-record GREEN "$DEV_SHA" >/dev/null
+bash "$SHIP" --run wspec-S2 phase promote >/dev/null 2>&1
+ok "promote refused while a sibling slice is live" "$?" "1"
+printf 'pr=https://x/pull/3\n' >> "$SB/wspec-S3/state"
+GH_PR_STATE=MERGED PATH="$STUB:$PATH" bash "$SHIP" --run wspec-S3 done >/dev/null
+bash "$SHIP" phase promote >/dev/null 2>&1
+ok "the last live slice promotes once every sibling landed" "$(sstate wspec-S2 phase)" "promote"
+cd "$SANDBOX" || exit 1
+
+echo "# dev: the overlap guard runs BEFORE the push (stub gh)"
+# Run state and the stub are untracked here; in prumo .superpowers/ is ignored.
+printf '.superpowers/\nstub/\norch/\n' >> "$(sgit "$SANDBOX" rev-parse --git-dir)/info/exclude"
+mk_gh 'case "$1 $2" in "pr list") printf "12\tfix/a\tfix(ci): pin node\tx.yml\n" ;; *) exit 1 ;; esac'
+err=$(PATH="$STUB:$PATH" bash "$SHIP" dev "fix(ci): pin node" 2>&1 >/dev/null)
+yes_ "a duplicate title is refused, naming the owner" "$(printf '%s' "$err" | grep 'already owns' )"
+err=$(PATH="$STUB:$PATH" bash "$SHIP" dev "fix(ci): pin node" --allow-overlap 12 2>&1 >/dev/null)
+ok "an acknowledged overlap passes the guard" "$(printf '%s' "$err" | grep -c 'already owns')" "0"
+mk_gh 'exit 1'
+err=$(PATH="$STUB:$PATH" bash "$SHIP" dev "feat: y" 2>&1 >/dev/null)
+yes_ "an unlistable PR set is refused, not assumed empty" "$(printf '%s' "$err" | grep 'cannot list')"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]

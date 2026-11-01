@@ -21,6 +21,7 @@ ok() { if [ "$2" = "$3" ]; then pass=$((pass+1)); echo "ok   $1"; else fail=$((f
 
 echo "# the state file is machine-owned"
 ok "state file denied"            "$(decide /r/.superpowers/ship-spec/demo/state)"          deny
+ok "slice manifest denied"        "$(decide /r/.superpowers/ship-spec/spec/manifest)"       deny
 ok "state in a worktree denied"   "$(decide /w/wt/.superpowers/ship-spec/2026-01-x/state)"  deny
 
 echo "# everything else stays writable"

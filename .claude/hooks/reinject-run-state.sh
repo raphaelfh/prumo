@@ -49,6 +49,16 @@ $(tail -40 "$ledger")
   fi
 done
 
+# A multi-slice spec's wave manifest: the dependency order the orchestrator
+# must resume from. `ship.sh slice` touches it, so a stale one is a dead spec.
+for m in "$ROOT"/.superpowers/ship-spec/*/manifest; do
+  [ -f "$m" ] || continue
+  [ -n "$(find "$m" -mmin +1440 2>/dev/null)" ] && continue
+  ctx="${ctx}MULTI-SLICE SPEC — ${m} (\`bash scripts/ship.sh status $(basename "$(dirname "$m")")\` for every slice)
+$(cat "$m")
+"
+done
+
 [ -z "$ctx" ] && exit 0
 
 ctx="${ctx}
