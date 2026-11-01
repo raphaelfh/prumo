@@ -266,6 +266,34 @@ describe('TitleAbstractWorkspace — selection', () => {
     expect(await screen.findByRole('heading', {name: 'Alpha trial'})).toBeInTheDocument();
   });
 
+  it('passes the protocol criteria from the records read to the panel', async () => {
+    server.use(
+      http.get(RECORDS_URL, () =>
+        ok({...records([ALPHA, BETA]), inclusion_criteria: ['Adults'], exclusion_reasons: ['Not ML']}),
+      ),
+    );
+    serveAssignments([ALPHA, BETA]);
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(await screen.findByRole('button', {name: 'Beta cohort'}));
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', {name: 'Screening criteria'})).toBeNull();
+  });
+
+  it('passes maximized to the panel', async () => {
+    server.use(
+      http.get(RECORDS_URL, () =>
+        ok({...records([ALPHA, BETA]), inclusion_criteria: ['Adults'], exclusion_reasons: ['Not ML']}),
+      ),
+    );
+    serveAssignments([ALPHA, BETA]);
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(await screen.findByRole('button', {name: 'Start screening'}));
+    expect(await screen.findByRole('complementary', {name: 'Screening criteria'})).toHaveTextContent('Not ML');
+    expect(screen.queryByRole('button', {name: 'Criteria (2)'})).toBeNull();
+  });
+
   it('hides Start screening when nothing is left for me', async () => {
     serveRecords([GAMMA]);
     renderWorkspace();

@@ -200,6 +200,32 @@ describe('TitleAbstractWorkspace — keyboard', () => {
     await waitFor(() => expect(box('Beta cohort')).not.toBeChecked());
   });
 
+  it('? opens the shortcuts popover from the toolbar and Esc closes only it', async () => {
+    const user = userEvent.setup();
+    renderAll('/projects/p1?tab=screening&article=art1');
+    await screen.findByRole('heading', {name: 'Alpha trial'});
+    // The list stays mounted but hidden while maximized: hold the checkbox node.
+    const betaBox = box('Beta cohort');
+    await user.click(betaBox);
+    // The help button sits in the toolbar row, beside the other toolbar actions.
+    const toolbarRow = screen.getByRole('button', {name: 'Import from PubMed'}).parentElement!;
+    expect(within(toolbarRow).getByRole('button', {name: 'Keyboard shortcuts'})).toBeInTheDocument();
+    // Maximized, the list (and its toolbar) is hidden, yet `?` still opens the popover.
+    fireEvent.keyDown(window, {key: '|', code: 'Backslash', ctrlKey: true, metaKey: true, shiftKey: true});
+    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+
+    fireEvent.keyDown(window, {key: '?', code: 'Slash', shiftKey: true});
+    expect(await screen.findByRole('dialog', {name: 'Keyboard shortcuts'})).toBeInTheDocument();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {key: 'Escape'});
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: 'Keyboard shortcuts'})).toBeNull());
+    expect(document.querySelector('[data-maximized="true"]')).not.toBeNull();
+    expect(panel()).not.toBeNull();
+    expect(search().get('article')).toBe('art1');
+    expect(screen.getByRole('heading', {name: 'Alpha trial'})).toBeInTheDocument();
+    expect(betaBox).toBeChecked();
+  });
+
   it('Esc in the search field clears nothing', async () => {
     const user = userEvent.setup();
     renderAll('/projects/p1?tab=screening&article=art1');
