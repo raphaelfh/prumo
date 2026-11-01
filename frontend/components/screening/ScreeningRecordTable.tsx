@@ -117,13 +117,13 @@ export function ScreeningRecordTable({
             />
           </TableHead>
           <TableHead className={HEAD_CLASS}>{t('screening', 'columnTitle')}</TableHead>
-          <TableHead className={cn(HEAD_CLASS, 'hidden w-[64px] md:table-cell')}>{t('screening', 'columnYear')}</TableHead>
-          <TableHead className={cn(HEAD_CLASS, 'hidden w-[160px] lg:table-cell')}>
+          <TableHead className={cn(HEAD_CLASS, 'hidden w-[64px] @xl:table-cell')}>{t('screening', 'columnYear')}</TableHead>
+          <TableHead className={cn(HEAD_CLASS, 'hidden w-[160px] @3xl:table-cell')}>
             {t('screening', 'columnJournal')}
           </TableHead>
           {showMine && <TableHead className={cn(HEAD_CLASS, 'w-[84px]')}>{t('screening', 'columnMine')}</TableHead>}
           <TableHead className={cn(HEAD_CLASS, 'w-[176px]')}>{t('screening', 'columnStatus')}</TableHead>
-          {showReason && <TableHead className={cn(HEAD_CLASS, 'w-[160px]')}>{t('screening', 'columnReason')}</TableHead>}
+          {showReason && <TableHead className={cn(HEAD_CLASS, 'hidden w-[160px] @2xl:table-cell')}>{t('screening', 'columnReason')}</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -158,10 +158,10 @@ export function ScreeningRecordTable({
                   {row.title}
                 </button>
               </TableCell>
-              <TableCell className={cn(CELL_CLASS, 'hidden tabular-nums text-muted-foreground md:table-cell')}>
+              <TableCell className={cn(CELL_CLASS, 'hidden tabular-nums text-muted-foreground @xl:table-cell')}>
                 {row.publication_year}
               </TableCell>
-              <TableCell className={cn(CELL_CLASS, 'hidden truncate text-muted-foreground lg:table-cell')}>
+              <TableCell className={cn(CELL_CLASS, 'hidden truncate text-muted-foreground @3xl:table-cell')}>
                 {row.journal_title}
               </TableCell>
               {showMine && (
@@ -173,7 +173,7 @@ export function ScreeningRecordTable({
                 <RecordStatusChip status={row.status} arbitrated={row.outcome_kind === 'arbitrated'} />
               </TableCell>
               {showReason && (
-                <TableCell className={cn(CELL_CLASS, 'truncate text-muted-foreground')}>{reason}</TableCell>
+                <TableCell className={cn(CELL_CLASS, 'hidden truncate text-muted-foreground @2xl:table-cell')}>{reason}</TableCell>
               )}
             </TableRow>
           );

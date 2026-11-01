@@ -257,7 +257,11 @@ export function ScreeningRecordList({
         <p className="flex h-7 items-center truncate text-[11px] tabular-nums text-muted-foreground">{progressText}</p>
       </div>
 
-      <div ref={setScroller} className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
+      {/* @container: the table drops columns on its own width (the docked panel halves it), not the viewport's. */}
+      <div
+        ref={setScroller}
+        className="@container flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40"
+      >
         {visible.length > 0 ? (
           <ScreeningRecordTable
             rows={visible}
