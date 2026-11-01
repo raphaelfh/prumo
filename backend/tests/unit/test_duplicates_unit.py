@@ -11,11 +11,21 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 
 from app.api.deps.security import require_project_manager
 from app.api.v1.endpoints import duplicates as endpoint
 from app.main import app
-from app.schemas.duplicates import DuplicateSide, DuplicatesRead
+from app.schemas.common import ApiErrorCode
+from app.schemas.duplicates import (
+    DuplicateSide,
+    DuplicatesRead,
+    DuplicateVerdictCreate,
+    DuplicateVerdictsCreate,
+    DuplicateVerdictsResult,
+)
+from app.services.article_read_service import ArticleNotFoundError
+from app.services.screening_config_service import ProjectNotFoundError
 from app.utils.rate_limiter import limiter
 
 PROJECT = uuid4()
@@ -64,3 +74,67 @@ def test_duplicates_route_limit() -> None:
     limits = limiter._route_limits["app.api.v1.endpoints.duplicates.get_duplicates"]
 
     assert [str(limit.limit) for limit in limits] == ["60 per 1 minute"]
+
+
+USER = uuid4()
+
+
+def _body() -> DuplicateVerdictsCreate:
+    return DuplicateVerdictsCreate(
+        items=[
+            DuplicateVerdictCreate(article_id=uuid4(), kept_article_id=uuid4(), verdict="duplicate")
+        ]
+    )
+
+
+def _patched_service(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> MagicMock:
+    service = MagicMock()
+    service.write_verdicts = AsyncMock(**kwargs)
+    monkeypatch.setattr(endpoint, "DuplicateService", MagicMock(return_value=service))
+    return service
+
+
+def test_verdicts_route_limit() -> None:
+    limits = limiter._route_limits["app.api.v1.endpoints.duplicates.post_duplicate_verdicts"]
+
+    assert [str(limit.limit) for limit in limits] == ["10 per 1 minute"]
+
+
+async def test_verdicts_handler_commits_and_returns(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = DuplicateVerdictsResult(written=2, enrolled_kept=1)
+    service = _patched_service(monkeypatch, return_value=result)
+    db = MagicMock(commit=AsyncMock())
+    body = _body()
+    request = SimpleNamespace(state=SimpleNamespace(trace_id="trace-2"))
+
+    response = await endpoint.post_duplicate_verdicts.__wrapped__(request, PROJECT, body, db, USER)
+
+    assert response.ok
+    assert response.data is result
+    assert response.trace_id == "trace-2"
+    service.write_verdicts.assert_awaited_once_with(PROJECT, USER, body.items)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ArticleNotFoundError("Article x not found"), ProjectNotFoundError()],
+    ids=["article", "project"],
+)
+async def test_verdicts_handler_maps_missing_to_404(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    _patched_service(monkeypatch, side_effect=error)
+    db = MagicMock(commit=AsyncMock())
+    request = SimpleNamespace(state=SimpleNamespace(trace_id=None))
+
+    with pytest.raises(HTTPException) as raised:
+        await endpoint.post_duplicate_verdicts.__wrapped__(request, PROJECT, _body(), db, USER)
+
+    assert raised.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+def test_error_codes_exist() -> None:
+    assert ApiErrorCode.DUPLICATE_HAS_REVIEW_WORK == "DUPLICATE_HAS_REVIEW_WORK"
+    assert ApiErrorCode.DUPLICATE_KEPT_IS_REMOVED == "DUPLICATE_KEPT_IS_REMOVED"

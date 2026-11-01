@@ -23,7 +23,11 @@ from app.models.extraction_instance import ExtractionInstance
 from app.models.screening import SCREENING_PHASE, ScreeningAssignment, ScreeningDecision
 from app.repositories.article_repository import doi_match_key
 from app.repositories.duplicate_predicates import removed_duplicate
-from app.repositories.screening_repository import ARTICLE_STILL_IN_PROJECT, has_main_pdf
+from app.repositories.screening_repository import (
+    ARTICLE_STILL_IN_PROJECT,
+    has_main_pdf,
+    live_assignments,
+)
 from app.schemas.duplicates import DuplicateSide
 
 
@@ -116,6 +120,35 @@ def _source(row: Any) -> CandidateSource:
     return CandidateSource(article_id, title, (pmid or "").strip() or None, doi_key or None, *rest)
 
 
+_LOW = func.least(ArticleDuplicateVerdict.article_id, ArticleDuplicateVerdict.kept_article_id)
+_HIGH = func.greatest(ArticleDuplicateVerdict.article_id, ArticleDuplicateVerdict.kept_article_id)
+
+
+def _latest_stmt(project_id: UUID) -> Select[Any]:
+    """One row per unordered pair, its latest verdict; both articles bound to the project."""
+    verdict = ArticleDuplicateVerdict
+    removed, kept = aliased(Article), aliased(Article)
+    return (
+        select(
+            verdict.article_id,
+            verdict.kept_article_id,
+            verdict.verdict,
+            verdict.basis,
+            verdict.decided_by,
+            verdict.created_at,
+        )
+        .join(removed, removed.id == verdict.article_id)
+        .join(kept, kept.id == verdict.kept_article_id)
+        .where(
+            verdict.project_id == project_id,
+            removed.project_id == project_id,
+            kept.project_id == project_id,
+        )
+        .distinct(_LOW, _HIGH)
+        .order_by(_LOW, _HIGH, verdict.created_at.desc(), verdict.id.desc())
+    )
+
+
 class DuplicateRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -134,30 +167,72 @@ class DuplicateRepository:
 
     async def latest_verdicts(self, *, project_id: UUID) -> list[LatestVerdict]:
         """The latest verdict of each unordered pair whose two articles are in the project."""
+        rows = (await self.db.execute(_latest_stmt(project_id))).all()
+        return [LatestVerdict(*row) for row in rows]
+
+    async def latest_pair_verdict(
+        self, *, project_id: UUID, article_id: UUID, other_article_id: UUID
+    ) -> LatestVerdict | None:
+        """The latest verdict of one unordered pair of project articles, if any."""
         verdict = ArticleDuplicateVerdict
-        removed, kept = aliased(Article), aliased(Article)
-        low = func.least(verdict.article_id, verdict.kept_article_id)
-        high = func.greatest(verdict.article_id, verdict.kept_article_id)
-        stmt = (
-            select(
-                verdict.article_id,
-                verdict.kept_article_id,
-                verdict.verdict,
-                verdict.basis,
-                verdict.decided_by,
-                verdict.created_at,
-            )
-            .join(removed, removed.id == verdict.article_id)
-            .join(kept, kept.id == verdict.kept_article_id)
-            .where(
-                verdict.project_id == project_id,
-                removed.project_id == project_id,
-                kept.project_id == project_id,
-            )
-            .distinct(low, high)
-            .order_by(low, high, verdict.created_at.desc(), verdict.id.desc())
+        stmt = _latest_stmt(project_id).where(
+            verdict.article_id.in_([article_id, other_article_id]),
+            verdict.kept_article_id.in_([article_id, other_article_id]),
         )
-        return [LatestVerdict(*row) for row in (await self.db.execute(stmt)).all()]
+        row = (await self.db.execute(stmt)).first()
+        return None if row is None else LatestVerdict(*row)
+
+    async def removed_among(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> set[UUID]:
+        """The given project articles that are the removed side of a live ``duplicate``."""
+        stmt = select(Article.id).where(
+            Article.project_id == project_id,
+            Article.id.in_(article_ids),
+            removed_duplicate(Article),
+        )
+        return set((await self.db.execute(stmt)).scalars())
+
+    async def has_refusing_work(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> bool:
+        """Any of the given project articles has :func:`refusing_work`."""
+        stmt = select(
+            exists().where(
+                Article.project_id == project_id,
+                Article.id.in_(article_ids),
+                refusing_work(Article),
+            )
+        )
+        return bool((await self.db.execute(stmt)).scalar_one())
+
+    async def enrolled_among(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> set[UUID]:
+        """The given articles with a live title/abstract assignment in the project."""
+        stmt = (
+            live_assignments(project_id)
+            .where(ScreeningAssignment.article_id.in_(article_ids))
+            .with_only_columns(ScreeningAssignment.article_id)
+        )
+        return set((await self.db.execute(stmt)).scalars())
+
+    async def add_verdict(
+        self,
+        *,
+        project_id: UUID,
+        article_id: UUID,
+        kept_article_id: UUID,
+        verdict: str,
+        basis: str,
+        decided_by: UUID,
+    ) -> None:
+        """Append one verdict row (flushed, so the next read in the batch sees it)."""
+        self.db.add(
+            ArticleDuplicateVerdict(
+                project_id=project_id,
+                article_id=article_id,
+                kept_article_id=kept_article_id,
+                verdict=verdict,
+                basis=basis,
+                decided_by=decided_by,
+            )
+        )
+        await self.db.flush()
 
     async def compare_fields(
         self, *, project_id: UUID, article_ids: Sequence[UUID]

@@ -899,6 +899,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/duplicates/verdicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Duplicate Verdicts
+         * @description Record a batch of rulings in order, in one transaction; a refusal writes nothing.
+         */
+        post: operations["post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extraction-export": {
         parameters: {
             query?: never;
@@ -2570,6 +2590,23 @@ export interface components {
         ApiResponse_DiscardDraftResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["DiscardDraftResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DuplicateVerdictsResult] */
+        ApiResponse_DuplicateVerdictsResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DuplicateVerdictsResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4445,6 +4482,47 @@ export interface components {
             screening_decisions: number;
             /** Title */
             title: string;
+        };
+        /**
+         * DuplicateVerdictCreate
+         * @description One ruling: ``article_id`` is removed (or judged distinct), ``kept_article_id`` stays.
+         *
+         *     The basis is derived by the server from today's metadata, never sent.
+         */
+        DuplicateVerdictCreate: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /**
+             * Kept Article Id
+             * Format: uuid
+             */
+            kept_article_id: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "duplicate" | "distinct" | "cleared";
+        };
+        /**
+         * DuplicateVerdictsCreate
+         * @description A batch of rulings, applied in order in one transaction.
+         */
+        DuplicateVerdictsCreate: {
+            /** Items */
+            items: components["schemas"]["DuplicateVerdictCreate"][];
+        };
+        /**
+         * DuplicateVerdictsResult
+         * @description Rows written (skips excluded) and kept records enrolled at title/abstract.
+         */
+        DuplicateVerdictsResult: {
+            /** Enrolled Kept */
+            enrolled_kept: number;
+            /** Written */
+            written: number;
         };
         /**
          * DuplicatesRead
@@ -10585,6 +10663,55 @@ export interface operations {
             };
             /** @description Only project managers review duplicates */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateVerdictsCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DuplicateVerdictsResult_"];
+                };
+            };
+            /** @description An article is not in this project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The record to remove has full-text or extraction work, or the record to keep was already removed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -956,6 +956,54 @@
         "title": "ApiResponse[DiscardDraftResponse]",
         "type": "object"
       },
+      "ApiResponse_DuplicateVerdictsResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DuplicateVerdictsResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DuplicateVerdictsResult]",
+        "type": "object"
+      },
       "ApiResponse_DuplicatesRead_": {
         "properties": {
           "data": {
@@ -5763,6 +5811,77 @@
           "has_review_work"
         ],
         "title": "DuplicateSide",
+        "type": "object"
+      },
+      "DuplicateVerdictCreate": {
+        "additionalProperties": false,
+        "description": "One ruling: ``article_id`` is removed (or judged distinct), ``kept_article_id`` stays.\n\nThe basis is derived by the server from today's metadata, never sent.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "kept_article_id": {
+            "format": "uuid",
+            "title": "Kept Article Id",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "duplicate",
+              "distinct",
+              "cleared"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "kept_article_id",
+          "verdict"
+        ],
+        "title": "DuplicateVerdictCreate",
+        "type": "object"
+      },
+      "DuplicateVerdictsCreate": {
+        "additionalProperties": false,
+        "description": "A batch of rulings, applied in order in one transaction.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateVerdictCreate"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DuplicateVerdictsCreate",
+        "type": "object"
+      },
+      "DuplicateVerdictsResult": {
+        "description": "Rows written (skips excluded) and kept records enrolled at title/abstract.",
+        "properties": {
+          "enrolled_kept": {
+            "title": "Enrolled Kept",
+            "type": "integer"
+          },
+          "written": {
+            "title": "Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "written",
+          "enrolled_kept"
+        ],
+        "title": "DuplicateVerdictsResult",
         "type": "object"
       },
       "DuplicatesRead": {
@@ -17979,6 +18098,71 @@
           }
         ],
         "summary": "Get Duplicates",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/duplicates/verdicts": {
+      "post": {
+        "description": "Record a batch of rulings in order, in one transaction; a refusal writes nothing.",
+        "operationId": "post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateVerdictsCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DuplicateVerdictsResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "An article is not in this project"
+          },
+          "409": {
+            "description": "The record to remove has full-text or extraction work, or the record to keep was already removed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Post Duplicate Verdicts",
         "tags": [
           "duplicates"
         ]

@@ -11,13 +11,18 @@ import contextlib
 from collections.abc import AsyncIterator
 from uuid import UUID
 
+import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.models.article import Article
 from app.models.project import Project
 from app.models.screening import ScreeningDecision
+from app.repositories.duplicate_predicates import removed_duplicate
 from app.repositories.screening_repository import ScreeningRepository
+from app.schemas.duplicates import DuplicateVerdictCreate
 from app.schemas.screening import ScreeningDecisionCreate
+from app.services.duplicate_service import DuplicateService
 from app.services.screening_config_service import ScreeningConfigService, reviewer_count_of
 from app.services.screening_errors import ScreeningStateError
 from app.services.screening_outcome import Outcome
@@ -267,3 +272,64 @@ async def test_latest_ruling_is_the_last_committed_not_the_first_started(
             await first.commit()
 
         assert await _latest_ruling_of(session_factory, project_id, assignment) == "include"
+
+
+@pytest.mark.parametrize(
+    ("second", "expected"),
+    [("AC", None), ("CB", "DUPLICATE_KEPT_IS_REMOVED")],
+    ids=["chain_sees_the_first", "kept_removed_by_the_first"],
+)
+async def test_concurrent_batches_serialize_on_the_project_lock(
+    session_factory: Factory, second: str, expected: str | None
+) -> None:
+    """Two managers merge overlapping pairs: the second batch parks on the project lock
+    and then reads the first's removal of B."""
+    async with throwaway_project(session_factory) as project_id:
+        async with session_factory() as s:
+            ids = {
+                name: await make_screening_article(s, project_id, title=name, pmid="77")
+                for name in "ABC"
+            }
+            await s.commit()
+
+        def item(pair: str) -> DuplicateVerdictCreate:
+            return DuplicateVerdictCreate(
+                article_id=ids[pair[0]], kept_article_id=ids[pair[1]], verdict="duplicate"
+            )
+
+        locked = asyncio.Event()
+        saw_waiter: list[bool] = []
+
+        async def first() -> None:
+            async with session_factory() as s1:
+                await DuplicateService(s1).write_verdicts(project_id, MANAGER, [item("BA")])
+                locked.set()
+                saw_waiter.append(await _wait_for_a_lock_waiter(session_factory))
+                await s1.commit()
+
+        async def then() -> None:
+            await locked.wait()
+            async with session_factory() as s2:
+                await DuplicateService(s2).write_verdicts(project_id, MANAGER, [item(second)])
+                await s2.commit()
+
+        results = await asyncio.gather(first(), then(), return_exceptions=True)
+
+        assert saw_waiter == [True]
+        assert results[0] is None
+        if expected is None:
+            assert results[1] is None
+        else:
+            assert isinstance(results[1], ScreeningStateError)
+            assert results[1].code == expected
+        async with session_factory() as s:
+            removed = set(
+                (
+                    await s.execute(
+                        select(Article.title).where(
+                            Article.project_id == project_id, removed_duplicate(Article)
+                        )
+                    )
+                ).scalars()
+            )
+        assert removed == ({"A", "B"} if expected is None else {"B"})
