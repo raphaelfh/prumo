@@ -2,11 +2,14 @@
  * Title/abstract screening end to end on the list-first workspace, on its own
  * project (SCREENING_PROJECT_ID): the owner lands on Settings (first run),
  * sets two reviewers per record and enrolls from the Title/abstract list;
- * reviewer B starts screening and includes both records by keyboard (the
- * panel auto-advances); reviewer C decides by API (agreeing on Alpha,
- * disagreeing on Beta); the owner opens the conflict view, rules Beta with
+ * reviewer B starts screening and includes all three records by keyboard (the
+ * panel auto-advances); reviewer C decides by API (agreeing on Alpha and
+ * Gamma, disagreeing on Beta); the owner opens the conflict view, rules Beta with
  * reviewer C's decision ("Reviewer B", the second decision in server order);
- * the PRISMA tab counts the outcomes.
+ * then the owner turns full text on (one reviewer) and sends the two
+ * title/abstract includes there; reviewer B opens the first report with its
+ * PDF and excludes it with a reason, rules the report without a PDF "not
+ * retrieved"; the PRISMA tab counts the outcomes of both phases.
  *
  * Runs in `local-ui` (CI's "Frontend E2E (ephemeral stack)"). Serial: the
  * second test proves `resetScreeningProject` returns the project to a clean
@@ -28,10 +31,12 @@ import {
 } from "../_fixtures/fixture-ids";
 import { resetScreeningProject } from "../_fixtures/screening";
 
-const [ALPHA, BETA] = SCREENING_ARTICLES;
+const [ALPHA, BETA, GAMMA] = SCREENING_ARTICLES;
 const SCREENING_URL = `/projects/${SCREENING_PROJECT_ID}?tab=screening`;
+const FULL_TEXT_URL = `/projects/${SCREENING_PROJECT_ID}?tab=screening&screeningTab=full_text`;
+const SETTINGS_URL = `/projects/${SCREENING_PROJECT_ID}?tab=screening&screeningTab=settings`;
 const PRISMA_URL = `/projects/${SCREENING_PROJECT_ID}?tab=prisma`;
-const RECORD_TITLE = /^E2E Screening (Alpha|Beta)$/;
+const RECORD_TITLE = /^E2E Screening (Alpha|Beta|Gamma)$/;
 
 interface RecordsResponse {
   rows: Array<{ article_id: string; assignment_id: string | null }>;
@@ -66,6 +71,13 @@ async function decideByApi(token: string, assignmentId: string, decision: "inclu
   expect(res.status, await res.clone().text()).toBe(200);
 }
 
+/** Wait for the next decision POST of the screening panel. */
+function decisionSaved(page: Page) {
+  return page.waitForResponse(
+    (r) => r.request().method() === "POST" && /\/screening\/assignments\/[^/]+\/decisions$/.test(r.url()),
+  );
+}
+
 /** The title of the record open in the panel (its `h2`). */
 async function openRecordTitle(page: Page): Promise<string> {
   const heading = page.getByRole("heading", { name: RECORD_TITLE });
@@ -80,9 +92,7 @@ async function openRecordTitle(page: Page): Promise<string> {
  */
 async function includeOpenRecord(page: Page) {
   await expect(page.getByRole("button", { name: "Include", exact: true })).toBeEnabled();
-  const saved = page.waitForResponse(
-    (r) => r.request().method() === "POST" && /\/screening\/assignments\/[^/]+\/decisions$/.test(r.url()),
-  );
+  const saved = decisionSaved(page);
   await page.keyboard.press("1");
   expect((await saved).status()).toBe(200);
 }
@@ -94,7 +104,7 @@ test.beforeAll(async () => {
 });
 
 test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
 
   // 1. Owner: the first run lands on Settings; two reviewers per record, then
   //    enroll both articles from the Title/abstract list.
@@ -108,11 +118,11 @@ test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   await expect(owner.getByText("Screening is set up")).toBeVisible();
   await owner.getByRole("tab", { name: "Title/abstract" }).click();
   await owner.getByRole("button", { name: "Enroll all articles" }).click();
-  await expect(owner.getByRole("tab", { name: "To screen 2", exact: true })).toBeVisible();
-  await expect(owner.getByRole("tab", { name: "All 2", exact: true })).toBeVisible();
+  await expect(owner.getByRole("tab", { name: "To screen 3", exact: true })).toBeVisible();
+  await expect(owner.getByRole("tab", { name: "All 3", exact: true })).toBeVisible();
 
   // 2. Reviewer B: "Start screening" opens the first record; "1" includes it
-  //    and the panel advances to the other one; "1" again, nothing left.
+  //    and the panel advances; two more times, nothing left.
   const reviewerContext = await browser.newContext();
   const reviewer = await reviewerContext.newPage();
   await loginViaUiAs(reviewer, REVIEWER_B_EMAIL, FIXTURE_PASSWORD);
@@ -120,16 +130,18 @@ test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   await reviewer.getByRole("button", { name: "Start screening" }).click();
   const first = await openRecordTitle(reviewer);
   await includeOpenRecord(reviewer);
-  const second = first === ALPHA.title ? BETA.title : ALPHA.title;
-  await expect(reviewer.getByRole("heading", { name: second, exact: true })).toBeVisible();
-  await expect(reviewer.getByTestId("next-record-announcement")).toHaveText(`Next record: ${second}`);
+  const next = await openRecordTitle(reviewer);
+  expect(next).not.toBe(first);
+  await expect(reviewer.getByTestId("next-record-announcement")).toHaveText(`Next record: ${next}`);
+  await includeOpenRecord(reviewer);
+  await openRecordTitle(reviewer);
   await includeOpenRecord(reviewer);
   // The panel opened maximized over the list; closing it shows the progress strip.
   await reviewer.getByRole("button", { name: "Toggle the record panel" }).click();
   await expect(reviewer.getByText(/you: 0 left/)).toBeVisible();
   await reviewerContext.close();
 
-  // 3. Reviewer C by API: agrees on Alpha, disagrees on Beta.
+  // 3. Reviewer C by API: agrees on Alpha and Gamma, disagrees on Beta.
   const reviewerCToken = await login(REVIEWER_C_EMAIL, FIXTURE_PASSWORD);
   const records = await apiGet<RecordsResponse>(
     `/projects/${SCREENING_PROJECT_ID}/screening/records?phase=title_abstract`,
@@ -141,6 +153,7 @@ test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
     return row!.assignment_id!;
   };
   await decideByApi(reviewerCToken, assignmentOf(ALPHA.id), "include");
+  await decideByApi(reviewerCToken, assignmentOf(GAMMA.id), "include");
   await decideByApi(reviewerCToken, assignmentOf(BETA.id), "exclude");
 
   // 4. Owner: open the conflict view and Beta, rule with reviewer C's
@@ -155,16 +168,63 @@ test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   await expect(owner.getByText("Conflict resolved")).toBeVisible();
   await expect(panel.getByText("Excluded", { exact: true })).toBeVisible();
 
-  // 5. Owner: PRISMA counts the outcomes.
+  // 5. Owner: full text on with one reviewer; the strip offers the two
+  //    title/abstract includes, "Send 2 to full text" enrolls them.
+  await owner.goto(SETTINGS_URL);
+  await owner.getByRole("radio", { name: "Title/abstract, then full text" }).check();
+  await owner
+    .getByRole("radiogroup", { name: "Reviewers per article — full text" })
+    .getByRole("radio", { name: "1 reviewer" })
+    .check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Screening is set up")).toBeVisible();
+  await owner.getByRole("tab", { name: "Title/abstract" }).click();
+  await expect(owner.getByText("2 to full text →")).toBeVisible();
+  await owner.getByRole("tab", { name: "Full text" }).click();
+  await expect(owner).toHaveURL(/[?&]screeningTab=full_text\b/);
+  await owner.getByRole("button", { name: "Send 2 to full text" }).first().click();
+  await expect(owner.getByText("Sent 2 to full text")).toBeVisible();
+
+  // 6. Reviewer B at full text: the first report opens maximized. The one
+  //    with a PDF shows the viewer and is excluded with a reason by key "2";
+  //    the one without says so and is ruled "not retrieved".
+  const ftContext = await browser.newContext();
+  const ftReviewer = await ftContext.newPage();
+  await loginViaUiAs(ftReviewer, REVIEWER_B_EMAIL, FIXTURE_PASSWORD);
+  await ftReviewer.goto(FULL_TEXT_URL);
+  await ftReviewer.getByRole("button", { name: "Start screening" }).click();
+  for (let report = 0; report < 2; report++) {
+    const title = await openRecordTitle(ftReviewer);
+    expect([ALPHA.title, GAMMA.title]).toContain(title);
+    if (title === ALPHA.title) {
+      await expect(ftReviewer.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
+      await expect(ftReviewer.getByRole("button", { name: "Include", exact: true })).toBeEnabled();
+      await ftReviewer.keyboard.press("2");
+      const saved = decisionSaved(ftReviewer);
+      await ftReviewer.getByRole("button", { name: "Wrong outcome" }).click();
+      expect((await saved).status()).toBe(200);
+    } else {
+      await expect(ftReviewer.getByText("No PDF attached")).toBeVisible();
+      const saved = decisionSaved(ftReviewer);
+      await ftReviewer.getByRole("button", { name: "Report not retrieved" }).click();
+      expect((await saved).status()).toBe(200);
+    }
+  }
+  await ftContext.close();
+
+  // 7. Owner: PRISMA counts the outcomes of both phases.
   await owner.goto(PRISMA_URL);
   await expect(owner.getByRole("heading", { name: "PRISMA counts" })).toBeVisible();
   for (const name of [
-    "Manual 2",
-    "Records identified 2",
+    "Manual 3",
+    "Records identified 3",
     "Duplicates removed 0",
-    "Records screened 2",
+    "Records screened 3",
     "Records excluded 1",
-    "Sought for retrieval 1",
+    "Reports sought for retrieval 2",
+    "Reports not retrieved 1",
+    "Reports excluded 1",
+    "Reports included 0",
   ]) {
     await expect(owner.getByRole("row", { name, exact: true })).toBeVisible();
   }
@@ -178,9 +238,9 @@ test("a reset after the full flow starts clean", async () => {
   const config = await apiGet<ConfigResponse>(`/projects/${SCREENING_PROJECT_ID}/screening/config`, ownerToken);
   expect(config.reviewer_count).toBeNull();
   expect(config.enrolled).toBe(0);
-  expect(config.not_enrolled).toBe(2);
+  expect(config.not_enrolled).toBe(3);
 
   const prisma = await apiGet<PrismaResponse>(`/projects/${SCREENING_PROJECT_ID}/prisma`, ownerToken);
   expect(prisma.screened).toBe(0);
-  expect(prisma.imported_not_enrolled).toBe(2);
+  expect(prisma.imported_not_enrolled).toBe(3);
 });

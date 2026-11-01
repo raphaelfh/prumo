@@ -82,7 +82,7 @@ test.describe("PDF viewer — page and scroll stay in sync", () => {
  */
 async function openLongDocument(page: Page): Promise<{ body: Locator; pageInput: Locator }> {
   const env = loadE2EEnv();
-  await ensureArticlePdfBytes();
+  await ensureArticlePdfBytes(env.articleId!);
 
   const signedPath = `/storage/v1/object/sign/articles/${fixtureArticlePdfKey(env.articleId!)}`;
   const longPdf = Buffer.from(pdfBytes({ pages: PAGE_COUNT, width: 595, height: 842 }));
