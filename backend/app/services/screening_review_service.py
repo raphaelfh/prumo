@@ -347,7 +347,9 @@ class ScreeningReviewService:
             project_id=project_id, phase=TITLE_ABSTRACT
         )
         return count, {
-            article_id: snapshots[assignment_id].state.outcome
+            # The two reads are unlocked: an assignment live in the second may be absent
+            # from the first, and has no outcome yet.
+            article_id: snap.state.outcome if (snap := snapshots.get(assignment_id)) else None
             for article_id, assignment_id in by_article.items()
         }
 

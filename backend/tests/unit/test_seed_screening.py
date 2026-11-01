@@ -117,3 +117,28 @@ def test_main_does_not_upload_when_build_raises(monkeypatch: pytest.MonkeyPatch)
         seed_screening.main([])
 
     storage.upload.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://abc.supabase.co", "http://10.0.0.4:54321", ""],
+    ids=["hosted", "private-ip", "empty"],
+)
+def test_refuses_a_remote_storage_url(url: str) -> None:
+    with pytest.raises(SystemExit):
+        seed_screening.assert_local_storage(url)
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:54321", "http://localhost:54321"])
+def test_accepts_a_local_storage_url(url: str) -> None:
+    assert seed_screening.assert_local_storage(url) is None
+
+
+def test_main_checks_storage_before_any_storage_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@localhost:5432/x")
+    monkeypatch.setattr(settings, "SUPABASE_URL", "https://abc.supabase.co")
+    run = Mock()
+    monkeypatch.setattr(seed_screening, "_run", run)
+    with pytest.raises(SystemExit):
+        seed_screening.main([])
+    run.assert_not_called()

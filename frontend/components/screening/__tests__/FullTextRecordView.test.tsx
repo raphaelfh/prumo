@@ -332,6 +332,7 @@ describe('FullTextRecordView provenance', () => {
     [{ta_outcome: 'include', ta_outcome_kind: 'consensus', ta_reviewer_count: 2}, 'Included at title/abstract · 2 reviewers, consensus'],
     [{ta_outcome: 'include', ta_outcome_kind: 'solo', ta_reviewer_count: 1}, 'Included at title/abstract · 1 reviewer'],
     [{ta_outcome: 'maybe', ta_outcome_kind: 'arbitrated', ta_reviewer_count: 2}, 'Maybe at title/abstract · 2 reviewers, arbitrated'],
+    [{ta_outcome: 'maybe', ta_outcome_kind: 'solo', ta_reviewer_count: 1}, 'Maybe at title/abstract · 1 reviewer'],
   ] as const)('shows the TA provenance line (%o)', async (ta, line) => {
     serve(assignment(), {current: []});
     renderPanel({row: row(ta)});

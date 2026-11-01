@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlparse
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import select
@@ -81,6 +82,13 @@ def assert_local_database(url: str) -> None:
         host = None
     if host not in _LOCAL_HOSTS:
         raise SystemExit(f"seed_screening is local only; refusing database host {host!r}")
+
+
+def assert_local_storage(url: str) -> None:
+    """Exit unless the Supabase storage URL points at ``localhost`` or ``127.0.0.1``."""
+    host = urlparse(url).hostname
+    if host not in _LOCAL_HOSTS:
+        raise SystemExit(f"seed_screening is local only; refusing storage host {host!r}")
 
 
 async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID, UUID]) -> UUID:
@@ -214,6 +222,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--manager-email", default=None)
     args = parser.parse_args(argv)
     assert_local_database(str(settings.DATABASE_URL))
+    assert_local_storage(settings.SUPABASE_URL)
     project_id = asyncio.run(_run(args.manager_email))
     print(f"/projects/{project_id}?tab=screening")
 
