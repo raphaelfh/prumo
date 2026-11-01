@@ -25,8 +25,8 @@ from app.services.project_template_active_service import (
     owned_template,
 )
 
-#: The most cells one export may write (spec §13); Task 11 sets it from a measured build.
-EXPORT_CELL_BUDGET: Final[int] = 5_000_000
+#: The most cells one export may write (spec §13). 2026-11-01: 1 GiB worker, ~340 B/cell, ~6.7 s per 1M cells.
+EXPORT_CELL_BUDGET: Final[int] = 1_500_000
 
 XLSX_MIME: Final[str] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
