@@ -7,7 +7,7 @@
  */
 import {zodResolver} from '@hookform/resolvers/zod';
 import {useState} from 'react';
-import {useForm, type UseFormReturn} from 'react-hook-form';
+import {useForm, useWatch, type UseFormReturn} from 'react-hook-form';
 import {z} from 'zod';
 
 import {Button} from '@/components/ui/button';
@@ -27,12 +27,16 @@ export function useDecisionNoteForm(): DecisionNoteForm {
 }
 
 export function DecisionNote({form, disabled}: {form: DecisionNoteForm; disabled?: boolean}) {
-  const [open, setOpen] = useState(() => form.getValues('note') !== '');
+  const [opened, setOpened] = useState(false);
+  // The caller's form outlives this field (its error and loading returns
+  // unmount it); a note already written must stay visible, since it is sent.
+  const note = useWatch({control: form.control, name: 'note'});
+  const open = opened || note !== '';
 
   if (!open) {
     return (
       <div>
-        <Button size="sm" variant="ghost" disabled={disabled} onClick={() => setOpen(true)}>
+        <Button size="sm" variant="ghost" disabled={disabled} onClick={() => setOpened(true)}>
           {t('screening', 'noteAdd')}
         </Button>
       </div>

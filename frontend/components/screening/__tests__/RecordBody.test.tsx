@@ -68,20 +68,23 @@ describe('RecordBody', () => {
 
   it('shows a language chip only for a non-English record', () => {
     const {unmount} = render(<RecordBody article={article({language: 'spa'})} />);
-    expect(screen.getByTitle('Language: Spanish')).toHaveTextContent('Spanish');
+    const language = screen.getByText('Language: Spanish');
+    expect(language.parentElement).toHaveTextContent('Spanish');
+    // The sr-only text is the name; a duplicate `title` would be read twice.
+    expect(language.parentElement).not.toHaveAttribute('title');
     unmount();
     render(<RecordBody article={article({language: 'eng'})} />);
-    expect(screen.queryByTitle(/^Language:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Language:/)).not.toBeInTheDocument();
   });
 
   it('shows a type chip unless it is a generic journal article', () => {
     const {unmount} = render(<RecordBody article={article({article_type: 'Randomized Controlled Trial'})} />);
-    expect(screen.getByTitle('Article type: Randomized Controlled Trial')).toHaveTextContent(
-      'Randomized Controlled Trial',
-    );
+    const type = screen.getByText('Article type: Randomized Controlled Trial');
+    expect(type.parentElement).toHaveTextContent('Randomized Controlled Trial');
+    expect(type.parentElement).not.toHaveAttribute('title');
     unmount();
     render(<RecordBody article={article({article_type: 'Journal Article'})} />);
-    expect(screen.queryByTitle(/^Article type:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Article type:/)).not.toBeInTheDocument();
   });
 
   it('shows MeSH and keyword lines, hidden when empty', () => {

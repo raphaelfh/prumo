@@ -42,10 +42,10 @@ export function RecordIdentifiers({article}: {article: Pick<ScreeningArticle, 'p
   );
 }
 
-function Chip({label, title}: {label: string; title: string}) {
+function Chip({label, srLabel}: {label: string; srLabel: string}) {
   return (
-    <Badge variant="outline" title={title} className="font-medium">
-      <span className="sr-only">{title}</span>
+    <Badge variant="outline" className="font-medium">
+      <span className="sr-only">{srLabel}</span>
       <span aria-hidden="true">{label}</span>
     </Badge>
   );
@@ -58,9 +58,9 @@ export function RecordChips({article}: {article: Pick<ScreeningArticle, 'article
   if (type === null && language === null) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
-      {type && <Chip label={type} title={t('screening', 'typeChipAria').replace('{{type}}', type)} />}
+      {type && <Chip label={type} srLabel={t('screening', 'typeChipAria').replace('{{type}}', type)} />}
       {language && (
-        <Chip label={language} title={t('screening', 'languageChipAria').replace('{{language}}', language)} />
+        <Chip label={language} srLabel={t('screening', 'languageChipAria').replace('{{language}}', language)} />
       )}
     </div>
   );
