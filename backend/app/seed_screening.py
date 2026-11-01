@@ -3,8 +3,9 @@
 Local only: it refuses any database that is not on this machine, and it is
 never called from ``app.seed``, which runs on every production boot
 (``backend/Dockerfile``, ``railway.toml``). It creates no auth users: it seats
-existing local profiles. It grows per slice (S2 a duplicate pair; S3 full-text
-records, one with a PDF uploaded to the local ``articles`` bucket).
+existing local profiles. It grows per slice: S2 duplicate pairs (#15/#16 an
+open exact PMID pair, #17/#18 a merged DOI pair with #18 removed); S3 full-text
+records, one with a PDF uploaded to the local ``articles`` bucket.
 
 The project is rebuilt, not duplicated: a second run deletes the first.
 """
@@ -29,6 +30,7 @@ from app.core.deps import AsyncSessionLocal, get_supabase_client
 from app.core.error_handler import NotFoundError
 from app.core.factories import create_storage_adapter
 from app.models.article import Article, ArticleFile
+from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.project import Project, ProjectMember
 from app.models.screening import FULL_TEXT, TITLE_ABSTRACT
 from app.models.user import Profile
@@ -72,6 +74,43 @@ _ARTICLES = (
 )
 _ENROLLED = 12
 _PDF_ARTICLE_INDEX = 11  # a full-text record
+# (title, authors, journal, year, pmid, doi), never enrolled: #15/#16 share a
+# PMID (an open exact pair); #17/#18 share a DOI and title (#18 merged into #17).
+_DUPLICATE_ARTICLES = (
+    (
+        "Delirium in critically ill adults with sepsis",
+        ["Kowalski S"],
+        "Crit Care Med",
+        2022,
+        "39000001",
+        None,
+    ),
+    (
+        "Delirium in critically ill septic adults",
+        ["Kowalski S"],
+        "Crit Care Med",
+        2022,
+        "39000001",
+        None,
+    ),
+    (
+        "Thiamine supplementation in septic shock",
+        ["Haddad T"],
+        "Chest",
+        2020,
+        None,
+        "10.1000/seed.sepsis.2020",
+    ),
+    (
+        "Thiamine supplementation in septic shock",
+        ["Haddad T"],
+        "Chest",
+        2020,
+        None,
+        "10.1000/seed.sepsis.2020",
+    ),
+)
+
 # Reading-surface states merged into ``_ARTICLES[index]``: a PubMed-style structured
 # abstract with MeSH and keywords, and a non-English trial.
 _READING: dict[int, dict[str, Any]] = {
@@ -146,6 +185,31 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
         for index, (title, authors, journal, year) in enumerate(_ARTICLES)
     ]
     db.add_all(articles)
+    await db.flush()
+    duplicates = [
+        Article(
+            project_id=PROJECT_ID,
+            title=title,
+            authors=authors,
+            journal_title=journal,
+            publication_year=year,
+            pmid=pmid,
+            doi=doi,
+        )
+        for title, authors, journal, year, pmid, doi in _DUPLICATE_ARTICLES
+    ]
+    db.add_all(duplicates)
+    await db.flush()
+    db.add(
+        ArticleDuplicateVerdict(
+            project_id=PROJECT_ID,
+            article_id=duplicates[3].id,
+            kept_article_id=duplicates[2].id,
+            verdict="duplicate",
+            basis="doi",
+            decided_by=manager_id,
+        )
+    )
     await db.flush()
     screening = ScreeningRepository(db)
     await screening.enroll(

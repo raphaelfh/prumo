@@ -1,162 +1,361 @@
-"""Unit tests for the README/Methods (front-matter) sub-builder. Pure — no DB."""
+"""Unit tests for the README (front-matter) sub-builder (spec §4.5). Pure — no DB."""
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from app.services.exports.extraction.front_matter import build_front_matter
+from app.models.extraction import ExtractionCardinality, ExtractionFieldType
+from app.services.exports.ai_proposal_projection import EngineFacts
+from app.services.exports.descriptors import value_key
+from app.services.exports.extraction.data_sheet import LINEAGE_EXACT_SINCE
+from app.services.exports.extraction.front_matter import _LEGEND, build_front_matter
+from app.services.exports.extraction.sheet_spec import SheetSpec
 from app.services.exports.extraction.workbook import ExportShape, SheetTitles, allocate_titles
 from app.services.extraction_export_service import (
+    AIProposalRow,
+    ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
-    FrontMatter,
+    FieldDescriptor,
+    ReviewerDescriptor,
+    SectionDescriptor,
 )
+from tests.unit.helpers.export_layouts import export_value, make_cell, make_layout
+
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
-def _layout_with_front_matter(fm: FrontMatter) -> ExportLayout:
-    return ExportLayout(
-        project_name=fm.project_name,
-        template_name=fm.template_name,
-        template_version=fm.template_version,
-        sections=(),
-        articles=(),
-        reviewers=(),
-        mode=ExportMode.CONSENSUS,
-        include_ai_metadata=False,
-        anonymize_reviewer_names=False,
-        notes=ExportNotes(),
-        value_map={},
-        front_matter=fm,
+def _field(name: str = "x") -> FieldDescriptor:
+    return FieldDescriptor(
+        field_id=uuid4(), label=name.title(), type=ExtractionFieldType.TEXT, allowed_values=(),
+        name=name,
+    )  # fmt: skip
+
+
+def _one(name: str, field: str, order: int) -> SectionDescriptor:
+    return SectionDescriptor(
+        entity_type_id=uuid4(),
+        label=name.title(),
+        parent_entity_type_id=None,
+        fields=(_field(field),),
+        cardinality=ExtractionCardinality.ONE,
+        sort_order=order,
+        name=name,
     )
 
 
-def _front_matter() -> FrontMatter:
-    return FrontMatter(
+def _many(name: str, field: str) -> SectionDescriptor:
+    return replace(_one(name, field, 0), cardinality=ExtractionCardinality.MANY)
+
+
+def _rows(spec: SheetSpec) -> list[tuple[object, ...]]:
+    return [tuple(c.value for c in row if c.value not in (None, "")) for row in spec.rows]
+
+
+def _titles(layout: ExportLayout) -> SheetTitles:
+    return allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+
+
+def _readme(layout: ExportLayout) -> list[tuple[object, ...]]:
+    return _rows(build_front_matter(layout, _titles(layout)))
+
+
+def _coord() -> tuple[SectionDescriptor, ArticleDescriptor, UUID, UUID, UUID]:
+    section = _one("study", "x", 0)
+    run, inst = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label="Smith 2020",
+        run_id=run,
+        version_id=None,
+        entries={(section.entity_type_id, None): (inst,)},
+    )
+    return section, article, run, inst, section.fields[0].field_id
+
+
+def test_readme_renders_the_identity_block():
+    section = _many("models", "x")
+    run, inst = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label="Smith 2020",
+        run_id=run,
+        version_id=None,
+        entries={(section.entity_type_id, None): (inst, uuid4())},
+    )
+    layout = make_layout(
+        sections=(section,),
+        articles=(article,),
         project_name="My SR Project",
         template_name="CHARMS",
         template_version=3,
-        export_mode_label="Consensus",
-        generated_at=datetime(2026, 6, 14, 9, 30, 0, tzinfo=UTC),
-        article_count=12,
-        record_count=20,
-        legend=(("(blank)", "No value / rejected"), ("No information", "Reported as not stated")),
-        caveats=("Reviewer outcomes labelled best-effort rely on heuristics.",),
-        obsolete_fields_per_article={},
+        generated_at=datetime(2026, 6, 14, 9, 30, tzinfo=UTC),
     )
-
-
-def _flat(spec) -> str:
-    return " \n ".join(
-        " | ".join("" if c.value is None else str(c.value) for c in row) for row in spec.rows
-    )
-
-
-def test_front_matter_renders_identity_block():
-    layout = _layout_with_front_matter(_front_matter())
-    spec = build_front_matter(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
-    )
-    flat = _flat(spec)
+    spec = build_front_matter(layout, _titles(layout))
+    rows = _rows(spec)
     assert spec.title == "README"
-    assert "My SR Project" in flat
-    assert "CHARMS" in flat
-    assert "v3" in flat
-    assert "Consensus" in flat
-    assert "2026-06-14" in flat
-    assert "12" in flat  # article count
-    assert "20" in flat  # record count
+    assert ("Project", "My SR Project") in rows
+    assert ("Template", "CHARMS (v3)") in rows
+    assert ("Export mode", "Consensus") in rows
+    assert ("Generated at", "2026-06-14T09:30:00+00:00") in rows
+    assert ("Articles", 1) in rows
+    assert ("Records", 2) in rows
 
 
-def test_front_matter_lists_contents_and_legend():
+def test_readme_lists_contents_in_title_order():
+    layout = make_layout()
     titles = SheetTitles(
         fixed={"front_matter": "README"},
         levels={},
         order=("README", "Study characteristics", "Codebook (2)"),
         matrix_omitted=False,
     )
-    spec = build_front_matter(_layout_with_front_matter(_front_matter()), titles)
-    values = [tuple(c.value for c in row) for row in spec.rows]
-    start = values.index(("Contents",)) + 1
-    contents = [row[1] for row in values[start : start + len(titles.order)]]
-    assert contents == list(titles.order)
-    assert values[start + len(titles.order)] == ()  # nothing else in the block
-    flat = _flat(spec)
-    assert "No information" in flat
-    assert "Reported as not stated" in flat
-    assert "best-effort" in flat.lower()
+    rows = _rows(build_front_matter(layout, titles))
+    start = rows.index(("Contents",)) + 1
+    assert [r[0] for r in rows[start : start + 3]] == list(titles.order)
+    assert rows[start + 3] == ()
 
 
-def test_production_legend_carries_three_disposition_rows_matching_display_value():
-    # ADR-0016 Phase 4: the front-matter legend must explain all THREE coded
-    # dispositions with the EXACT label display_value emits into a cell, so a
-    # marker cell and its legend row can never drift. The label column is derived
-    # from the single ABSENT_REASON_LABELS source (see extraction_export_service);
-    # this pins both the frozen descriptions and the cell↔legend parity.
-    from app.models.extraction import ExtractionFieldType
+def test_readme_counts_values_by_status():
+    section, article, run, inst, fid = _coord()
+    vm = {
+        value_key(run, inst, fid): export_value("answered"),
+        value_key(run, uuid4(), fid): export_value("answered"),
+        value_key(run, uuid4(), fid): export_value("absent", absent_code="no_information"),
+    }
+    rows = _readme(make_layout(sections=(section,), articles=(article,), value_map=vm))
+    start = rows.index(("Values by status",)) + 1
+    assert rows[start : start + 5] == [
+        ("answered", 2),
+        ("absent", 1),
+        ("rejected", 0),
+        ("cleared", 0),
+        ("nonconforming", 0),
+    ]
+
+
+def test_readme_status_counts_ignore_reviewer_slots_in_all_users():  # Review Focus 5
+    section, article, run, inst, fid = _coord()
+    r1, r2 = uuid4(), uuid4()
+    vm = {
+        value_key(run, inst, fid): export_value("answered"),
+        value_key(run, inst, fid, r1): export_value("answered"),
+        value_key(run, inst, fid, r2): export_value("absent", absent_code="not_applicable"),
+    }
+    rows = _readme(
+        make_layout(
+            sections=(section,), articles=(article,), mode=ExportMode.ALL_USERS, value_map=vm
+        )
+    )
+    assert ("answered", 1) in rows
+    assert ("absent", 0) in rows
+
+
+def test_readme_status_counts_read_the_single_user_slot():  # Review Focus 6, R1
+    section, article, run, inst, fid = _coord()
+    r1 = uuid4()
+    vm = {
+        value_key(run, inst, fid, r1): export_value("absent", absent_code="no_information"),
+        value_key(run, inst, fid): export_value("answered"),
+    }
+    rows = _readme(
+        make_layout(
+            sections=(section,),
+            articles=(article,),
+            mode=ExportMode.SINGLE_USER,
+            reviewer_id=r1,
+            value_map=vm,
+        )
+    )
+    assert ("absent", 1) in rows
+    assert ("answered", 0) in rows
+
+
+def test_readme_counts_values_outside_level_sheets():  # R17
+    section, article, run, inst, fid = _coord()
+    gone = uuid4()
+    base = make_layout(sections=(section,))
+    removed = replace(base.codebook[0], field_id=gone, field_code="old.y", section_id=None)
+    vm = {
+        value_key(run, inst, fid): export_value("answered"),
+        value_key(run, inst, gone): export_value("answered"),
+        value_key(run, inst, gone, uuid4()): export_value("answered"),  # not the primary slot
+    }
+    layout = make_layout(
+        sections=(section,),
+        articles=(article,),
+        value_map=vm,
+        codebook=(*base.codebook, removed),
+    )
+    rows = _readme(layout)
+    assert [
+        r for r in rows if r and r[0] in ("Values only in Data", "Values outside any level sheet")
+    ] == [("Values only in Data", 1)]
+
+
+def test_readme_keeps_the_matrix_omitted_note():  # R6
+    layout = make_layout(sections=(_one("study", "x", 0),))
+    titles = allocate_titles(layout, ExportShape.COMPLETE, include_matrix=False)
+    assert titles.matrix_omitted
+    rows = _rows(build_front_matter(layout, titles))
+    assert any(str(v).startswith("Matrix omitted") for r in rows for v in r)
+
+
+def test_readme_lists_field_code_clashes_and_skipped_versions():  # D1, D5
+    layout = make_layout(
+        sections=(_one("dup", "x", order=0), _one("dup", "x", order=1)),
+        narrow_pinned_versions=(3,),
+    )
+    rows = _readme(layout)
+    clash = next(r for r in rows if r and r[0] == "dup.x")
+    assert clash[1].startswith("dup.x; dup.x__")
+    assert any(
+        r[:2] == ("Pinned versions not in Codebook (legacy snapshot)", 1) and r[2] == "v3"
+        for r in rows
+    )
+
+
+def test_readme_carries_the_rule_notes_and_caveats():
+    rows = _readme(make_layout())
+    flat = [str(v) for r in rows for v in r]
+    assert any(v.startswith("record_label is the name given at creation") for v in flat)
+    assert any(v.startswith("A field missing from a run's pinned version is blank") for v in flat)
+    assert any(v.startswith("article_label suffixes (b, c, …) follow import order") for v in flat)
+    assert any("companion reports" in v for v in flat)
+    assert any("trailing zeros" in v for v in flat)
+    assert any("vocabulary" in v for v in flat)
+    assert any("Member letters can shift" in v for v in flat)
+    assert not any("best-effort" in v.lower() for v in flat)
+
+
+def test_readme_has_no_uuid():  # Review Focus 4
+    section, article, run, inst, fid = _coord()
+    layout = make_layout(
+        sections=(section, _one("dup", "x", 1), _one("dup", "x", 2)),
+        articles=(article,),
+        value_map={value_key(run, inst, fid): export_value("answered")},
+        narrow_pinned_versions=(2,),
+    )
+    spec = build_front_matter(layout, _titles(layout))
+    assert not any(
+        _UUID_RE.search(str(c.value)) for r in spec.rows for c in r if c.value is not None
+    )
+
+
+def test_legend_carries_three_disposition_rows_matching_display_value():
+    # ADR-0016 Phase 4: each coded disposition's legend label IS the label
+    # display_value emits into a cell, so a marker cell and its legend row
+    # can never drift.
     from app.services.exports.values import display_value, to_export_value
-    from app.services.extraction_export_service import _FRONT_MATTER_LEGEND, FieldDescriptor
     from app.services.value_semantics import AbsentReason
 
-    legend = dict(_FRONT_MATTER_LEGEND)
+    legend = dict(_LEGEND)
     assert legend["No information"] == "The source does not state this item."
     assert legend["Not applicable"] == "The item does not apply to this study."
     assert legend["Not evaluated"] == "The item was not assessed."
-    # (blank) keeps its distinct "no value / rejected" meaning.
     assert "(blank)" in legend
-    # Anti-drift: the label display_value emits for every code IS a legend row.
-    field = FieldDescriptor(
-        field_id=uuid4(), label="F", type=ExtractionFieldType.TEXT, allowed_values=()
-    )
+    field = _field()
     for code in AbsentReason:
         marker = {"value": None, "absent_reason": code.value}
-        label = display_value(to_export_value(marker, field, {}), field)
+        label = display_value(to_export_value(marker, field, {}), field, target="matrix")
         assert label in legend, f"{code.value} label {label!r} missing from legend"
 
 
-def test_front_matter_renders_obsolete_fields_block():
-    aid = uuid4()
-    fm = _front_matter()
-    fm = FrontMatter(
-        project_name=fm.project_name,
-        template_name=fm.template_name,
-        template_version=fm.template_version,
-        export_mode_label=fm.export_mode_label,
-        generated_at=fm.generated_at,
-        article_count=fm.article_count,
-        record_count=fm.record_count,
-        legend=fm.legend,
-        caveats=fm.caveats,
-        obsolete_fields_per_article={aid: ("Old field A", "Old field B")},
-    )
-    layout = _layout_with_front_matter(fm)
-    spec = build_front_matter(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
-    )
-    flat = _flat(spec)
-    assert "Old field A" in flat
-    assert "Old field B" in flat
-    assert str(aid) in flat
+def _flat(layout: ExportLayout) -> str:
+    return "\n".join(str(v) for r in _readme(layout) for v in r)
 
 
-def test_front_matter_handles_missing_front_matter_gracefully():
-    layout = ExportLayout(
-        project_name="P",
-        template_name="T",
-        template_version=1,
-        sections=(),
-        articles=(),
-        reviewers=(),
-        mode=ExportMode.CONSENSUS,
-        include_ai_metadata=False,
-        anonymize_reviewer_names=False,
-        notes=ExportNotes(),
-        value_map={},
-        front_matter=None,
+def _two_rater_layout(values: tuple[int, int]) -> ExportLayout:
+    section, article, run, inst, fid = _coord()
+    a, b = uuid4(), uuid4()
+    cells = {
+        value_key(run, inst, fid, a): make_cell({"value": values[0]}, actor_id=a),
+        value_key(run, inst, fid, b): make_cell({"value": values[1]}, actor_id=b),
+    }
+    return make_layout(
+        sections=(section,),
+        articles=(article,),
+        mode=ExportMode.ALL_USERS,
+        reviewers=(ReviewerDescriptor(a, "Member A"), ReviewerDescriptor(b, "Member B")),
+        raters_by_run={run: (a, b)},
+        cells=cells,
+        value_map={k: export_value(value_text=str(c.envelope["value"])) for k, c in cells.items()},
     )
-    spec = build_front_matter(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+
+
+def test_readme_states_agreement_denominator_and_no_best_effort():
+    flat = _flat(_two_rater_layout((1, 1)))
+    assert "rows with n_raters ≥ 2" in flat
+    assert "Percent agreement\n100.0% (1 of 1 rows with n_raters ≥ 2)" in flat
+    assert "best-effort" not in flat.lower()
+    assert LINEAGE_EXACT_SINCE.isoformat() in flat
+
+
+def test_readme_agreement_line_only_with_verification():
+    assert "Percent agreement" not in _flat(make_layout())
+
+
+def test_readme_states_the_lineage_rules():
+    flat = _flat(make_layout())
+    assert "ai_accepted is exact in every period" in flat
+    assert f"Before {LINEAGE_EXACT_SINCE.isoformat()}" in flat
+    assert "ai_proposed=true" in flat
+    assert "unlinked re-save" in flat
+    assert "reopen" in flat
+
+
+def test_readme_counts_values_by_origin():
+    section, article, run, inst, fid = _coord()
+    k1, k2 = value_key(run, inst, fid), value_key(run, uuid4(), fid)
+    stamp = export_value("absent", absent_code="not_applicable", out_of_scope=True)
+    layout = make_layout(
+        sections=(section,),
+        articles=(article,),
+        value_map={k1: export_value(value_text="x"), k2: stamp},
+        cells={k1: make_cell({"value": "x"}, kind="manual_override")},
     )
-    # Falls back to layout fields; never raises.
-    assert "T" in _flat(spec)
+    rows = _readme(layout)
+    start = rows.index(("Values by origin",)) + 1
+    assert rows[start : start + 5] == [
+        ("ai_accepted", 0),
+        ("ai_edited", 0),
+        ("human", 1),
+        ("rule", 1),
+        ("mixed", 0),
+    ]
+
+
+def _ai_row(engine: EngineFacts) -> AIProposalRow:
+    return AIProposalRow(
+        article_id=uuid4(),
+        instance_id=uuid4(),
+        field_id=uuid4(),
+        ai_proposal_id=uuid4(),
+        created_at=datetime(2026, 5, 1, tzinfo=UTC),
+        engine=engine,
+        value=export_value(value_text="x"),
+        confidence=None,
+        rationale=None,
+        evidence_quote="",
+        page="",
+    )
+
+
+def test_readme_ai_tools_table_says_not_recorded():
+    layout = make_layout(
+        ai_proposal_rows=(
+            _ai_row(EngineFacts("openai", "gpt-4o", "v2")),
+            _ai_row(EngineFacts("openai", "gpt-4o", "v2")),
+            _ai_row(EngineFacts("openai", "gpt-4o-mini", "")),
+        )
+    )
+    rows = _readme(layout)
+    start = rows.index(("AI tools",)) + 1
+    assert rows[start : start + 3] == [
+        ("Provider", "Model", "Prompt version", "Proposals"),
+        ("openai", "gpt-4o", "v2", 2),
+        ("openai", "gpt-4o-mini", "not recorded", 1),
+    ]

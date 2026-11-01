@@ -1333,7 +1333,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0095_screening_full_text"
+    expected_head = "0096_screening_full_text"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -2906,52 +2906,52 @@ async def test_migration_0094_screening_v1_roundtrip(
 
 
 # --- 0095: full-text phase and the not_retrieved decision ----------------------
-_R95_PROFILE = "00950000-0000-4000-8000-00000000000a"
-_R95_PROJECT = "00950000-0000-4000-8000-000000000001"
-_R95_ARTICLES = (
-    "00950000-0000-4000-8000-0000000000a1",
-    "00950000-0000-4000-8000-0000000000a2",
+_R96_PROFILE = "00960000-0000-4000-8000-00000000000a"
+_R96_PROJECT = "00960000-0000-4000-8000-000000000001"
+_R96_ARTICLES = (
+    "00960000-0000-4000-8000-0000000000a1",
+    "00960000-0000-4000-8000-0000000000a2",
 )
-_R95_TA, _R95_FT, _R95_TA_ARB = (
-    "00950000-0000-4000-8000-0000000000b1",
-    "00950000-0000-4000-8000-0000000000b2",
-    "00950000-0000-4000-8000-0000000000b3",
+_R96_TA, _R96_FT, _R96_TA_ARB = (
+    "00960000-0000-4000-8000-0000000000b1",
+    "00960000-0000-4000-8000-0000000000b2",
+    "00960000-0000-4000-8000-0000000000b3",
 )
-_R95_TA_INCLUDE, _R95_FT_NOT_RETRIEVED = (
-    "00950000-0000-4000-8000-0000000000c1",
-    "00950000-0000-4000-8000-0000000000c2",
+_R96_TA_INCLUDE, _R96_FT_NOT_RETRIEVED = (
+    "00960000-0000-4000-8000-0000000000c1",
+    "00960000-0000-4000-8000-0000000000c2",
 )
-_R95_ARBITRATIONS = (
-    "00950000-0000-4000-8000-0000000000d1",
-    "00950000-0000-4000-8000-0000000000d2",
+_R96_ARBITRATIONS = (
+    "00960000-0000-4000-8000-0000000000d1",
+    "00960000-0000-4000-8000-0000000000d2",
 )
-_R95_SEED = (
+_R96_SEED = (
     "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
-    f"('{_R95_PROFILE}', 'ft-0095@integration-test.prumo.local', "
+    f"('{_R96_PROFILE}', 'ft-0095@integration-test.prumo.local', "
     "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
     "INSERT INTO public.profiles (id, email, full_name) VALUES "
-    f"('{_R95_PROFILE}', 'ft-0095@integration-test.prumo.local', 'FT 0095')",
+    f"('{_R96_PROFILE}', 'ft-0095@integration-test.prumo.local', 'FT 0095')",
     "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
-    f"('{_R95_PROJECT}', 'Full text 0095', '{_R95_PROFILE}', true)",
+    f"('{_R96_PROJECT}', 'Full text 0095', '{_R96_PROFILE}', true)",
     *(
         f"INSERT INTO public.articles (id, project_id, title) VALUES "
-        f"('{article}', '{_R95_PROJECT}', 'Article {article[-2:]}')"
-        for article in _R95_ARTICLES
+        f"('{article}', '{_R96_PROJECT}', 'Article {article[-2:]}')"
+        for article in _R96_ARTICLES
     ),
     "INSERT INTO public.screening_assignments (id, project_id, article_id, phase) VALUES "
-    f"('{_R95_TA}', '{_R95_PROJECT}', '{_R95_ARTICLES[0]}', 'title_abstract'), "
-    f"('{_R95_FT}', '{_R95_PROJECT}', '{_R95_ARTICLES[0]}', 'full_text'), "
-    f"('{_R95_TA_ARB}', '{_R95_PROJECT}', '{_R95_ARTICLES[1]}', 'title_abstract')",
+    f"('{_R96_TA}', '{_R96_PROJECT}', '{_R96_ARTICLES[0]}', 'title_abstract'), "
+    f"('{_R96_FT}', '{_R96_PROJECT}', '{_R96_ARTICLES[0]}', 'full_text'), "
+    f"('{_R96_TA_ARB}', '{_R96_PROJECT}', '{_R96_ARTICLES[1]}', 'title_abstract')",
     "INSERT INTO public.screening_decisions (id, assignment_id, reviewer_id, decision) VALUES "
-    f"('{_R95_TA_INCLUDE}', '{_R95_TA}', '{_R95_PROFILE}', 'include'), "
-    f"('{_R95_FT_NOT_RETRIEVED}', '{_R95_FT}', '{_R95_PROFILE}', 'not_retrieved')",
+    f"('{_R96_TA_INCLUDE}', '{_R96_TA}', '{_R96_PROFILE}', 'include'), "
+    f"('{_R96_FT_NOT_RETRIEVED}', '{_R96_FT}', '{_R96_PROFILE}', 'not_retrieved')",
     "INSERT INTO public.screening_arbitrations "
     "(id, assignment_id, decision, selected_decision_id, decided_by) VALUES "
-    f"('{_R95_ARBITRATIONS[0]}', '{_R95_TA_ARB}', 'not_retrieved', NULL, '{_R95_PROFILE}'), "
-    f"('{_R95_ARBITRATIONS[1]}', '{_R95_FT}', 'include', '{_R95_FT_NOT_RETRIEVED}', "
-    f"'{_R95_PROFILE}')",
+    f"('{_R96_ARBITRATIONS[0]}', '{_R96_TA_ARB}', 'not_retrieved', NULL, '{_R96_PROFILE}'), "
+    f"('{_R96_ARBITRATIONS[1]}', '{_R96_FT}', 'include', '{_R96_FT_NOT_RETRIEVED}', "
+    f"'{_R96_PROFILE}')",
 )
-_R95_COUNTS = text(
+_R96_COUNTS = text(
     "SELECT "
     "(SELECT count(*) FROM public.screening_assignments WHERE project_id = :pid), "
     "(SELECT count(*) FROM public.screening_assignments "
@@ -2966,40 +2966,40 @@ _R95_COUNTS = text(
     " JOIN public.screening_assignments a ON a.id = r.assignment_id "
     " WHERE a.project_id = :pid)"
 )
-_R95_FT_INSERT = text(
+_R96_FT_INSERT = text(
     "INSERT INTO public.screening_assignments (project_id, article_id, phase) "
     "VALUES (:pid, :aid, 'full_text')"
 )
 
 
 @pytest.mark.asyncio
-async def test_0095_screening_full_text_roundtrip(
+async def test_0096_screening_full_text_roundtrip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     """At head the full-text phase and ``not_retrieved`` are accepted; the downgrade to
-    0094 removes every full-text assignment, every ``not_retrieved`` decision and ruling
-    (and a ruling that selected one) and keeps the title/abstract include; the CHECKs
-    are narrowed again; the re-upgrade widens them."""
+    0095 (duplicate verdicts) removes every full-text assignment, every ``not_retrieved``
+    decision and ruling (and a ruling that selected one) and keeps the title/abstract
+    include; the CHECKs are narrowed again; the re-upgrade widens them."""
     session = migration_session
-    params = {"pid": _R95_PROJECT, "aid": _R95_ARTICLES[1]}
-    for stmt in _R95_SEED:
+    params = {"pid": _R96_PROJECT, "aid": _R96_ARTICLES[1]}
+    for stmt in _R96_SEED:
         await session.execute(text(stmt))
     await session.commit()
     # (assignments, full_text assignments, not_retrieved decisions, include decisions, rulings)
     seeded = (3, 1, 1, 1, 2)
-    assert tuple((await session.execute(_R95_COUNTS, params)).one()) == seeded
+    assert tuple((await session.execute(_R96_COUNTS, params)).one()) == seeded
     await session.rollback()
 
     try:
-        _run_alembic("downgrade", "0094_screening_v1", database_url=migration_db_url)
-        assert tuple((await session.execute(_R95_COUNTS, params)).one()) == (2, 0, 0, 1, 0)
+        _run_alembic("downgrade", "0095_article_duplicate_verdicts", database_url=migration_db_url)
+        assert tuple((await session.execute(_R96_COUNTS, params)).one()) == (2, 0, 0, 1, 0)
         with pytest.raises(IntegrityError, match="ck_screening_assignments_phase"):
-            await session.execute(_R95_FT_INSERT, params)
+            await session.execute(_R96_FT_INSERT, params)
         await session.rollback()
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
 
-    await session.execute(_R95_FT_INSERT, params)
+    await session.execute(_R96_FT_INSERT, params)
     await session.commit()
-    assert (await session.execute(_R95_COUNTS, params)).one()[1] == 1
+    assert (await session.execute(_R96_COUNTS, params)).one()[1] == 1
     await session.rollback()

@@ -454,9 +454,11 @@ PR2 ships early: every day without it adds unlinked data.
 - appraisal rows for nested domains;
 - a configurable appraisal vocabulary.
 
+**Verified in PR4:**
+- `section.name` is NOT unique within a template: no unique index or CHECK on it, `create_section` does no name check, and the name is immutable after create. Pinned by `test_two_sections_in_one_template_may_share_a_name`; §5 rule 3 applies D1.
+- A restored field gets its old id back (`template_versioning/_restore.py`), pinned by `test_draft_deleted_field_is_recreated`; rule 7's "moved fields keep their `field_id`" holds.
+
 **Unverified (each is checked in the PR that needs it):**
-- whether `section.name` is unique within a template version (PR4);
-- whether a restored field gets its old id back (PR4);
 - the cost of the provenance join and the cell-budget value (PR5).
 
 ## 14. Review log

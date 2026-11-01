@@ -21,6 +21,7 @@ const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
 export const DECIDE_URL = '*/api/v1/screening/assignments/:assignmentId/decisions';
 export const ARBITRATE_URL = '*/api/v1/screening/assignments/:assignmentId/arbitration';
 export const ENROLL_URL = '*/api/v1/projects/:projectId/screening/enroll';
+export const DUPLICATES_URL = '*/api/v1/projects/:projectId/duplicates';
 
 export const ok = (data: unknown) => HttpResponse.json({ok: true, data});
 export const fail = (status: number, code: string) =>

@@ -5,7 +5,8 @@
  *  - submit calls startExport and triggers the download (US1 happy path)
  *  - in-flight spinner + disabled submit (FR-030)
  *  - inline error renders error.message and exposes Retry (FR-031)
- *  - "Include AI metadata sheet" checkbox forwards the flag (FR-002 §3)
+ *  - "Include AI detail" checkbox forwards the flag (FR-002 §3)
+ *  - the shapes carry reader-facing labels; anonymize shows in every mode (§3)
  *  - the output-shape radio reaches the request (§3)
  *  - N selected tools issue N SEQUENTIAL requests, and a partial failure
  *    names the tool that failed without swallowing the ones that worked (§4)
@@ -224,7 +225,7 @@ describe("HITLExportDialog", () => {
         });
         const user = userEvent.setup();
         renderDialog();
-        await user.click(screen.getByLabelText(/Include AI metadata sheet/i));
+        await user.click(screen.getByLabelText(/Include AI detail/i));
         await user.click(screen.getByTestId("extraction-export-submit"));
         await waitFor(() => expect(startExportMock).toHaveBeenCalled());
         expect(startExportMock.mock.calls[0][1].include_ai_metadata).toBe(true);
@@ -298,19 +299,44 @@ describe("HITLExportDialog", () => {
         expect(screen.getByTestId("extraction-export-submit")).toBeDisabled();
     });
 
-    it("renders the anonymize-reviewers toggle only when All-users mode + manager (US3 / FR-028)", async () => {
+    it("labels the shapes for their readers (§3)", () => {
+        renderDialog();
+        expect(screen.getByLabelText(/Review workbook/i)).toBeChecked();
+        expect(screen.getByLabelText(/^Codebook$/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Publication tables/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Include AI detail/i)).not.toBeChecked();
+    });
+
+    it("offers anonymize in every mode and role (§3)", async () => {
+        const user = userEvent.setup();
+        renderDialog({isManager: false});
+        expect(
+            screen.getByLabelText(/Anonymize reviewer names/i),
+        ).toBeInTheDocument();
+        await user.click(screen.getByLabelText(/Single user/i));
+        expect(
+            screen.getByLabelText(/Anonymize reviewer names/i),
+        ).toBeInTheDocument();
+    });
+
+    it("keeps anonymize ticked and sent across a mode switch", async () => {
+        startExportMock.mockResolvedValueOnce({
+            kind: "sync",
+            blob: new Blob(["x"]),
+            filename: "x.xlsx",
+        });
         const user = userEvent.setup();
         renderDialog();
-        // Initially Consensus → no anonymize toggle
-        expect(
-            screen.queryByLabelText(/Anonymize reviewer names/i),
-        ).not.toBeInTheDocument();
         await user.click(screen.getByLabelText(/All users/i));
-        await waitFor(() =>
-            expect(
-                screen.getByLabelText(/Anonymize reviewer names/i),
-            ).toBeInTheDocument(),
-        );
+        await user.click(screen.getByLabelText(/Anonymize reviewer names/i));
+        await user.click(screen.getByLabelText("Consensus"));
+        expect(screen.getByLabelText(/Anonymize reviewer names/i)).toBeChecked();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        await waitFor(() => expect(startExportMock).toHaveBeenCalled());
+        expect(startExportMock.mock.calls[0][1]).toMatchObject({
+            mode: "consensus",
+            anonymize_reviewer_names: true,
+        });
     });
 
     it("forwards anonymize_reviewer_names=true when toggled (US3)", async () => {
@@ -447,17 +473,52 @@ describe("HITLExportDialog", () => {
     it("does not promise an article count for a dictionary-only export", async () => {
         const user = userEvent.setup();
         renderDialog();
-        // Complete workbook: the count is the right thing to promise.
+        // Review workbook: the count is the right thing to promise.
         expect(screen.getByTestId("extraction-export-preview")).toHaveTextContent(
             /3 articles/,
         );
 
-        await user.click(screen.getByLabelText(/Data dictionary only/i));
+        await user.click(screen.getByLabelText(/^Codebook$/i));
 
         // That workbook carries no article data at all, so a count describes
         // the wrong thing.
         const preview = screen.getByTestId("extraction-export-preview");
         expect(preview).not.toHaveTextContent(/3 articles/);
-        expect(preview).toHaveTextContent(/field catalogue/i);
+        expect(preview).toHaveTextContent(/codebook/i);
+    });
+    it("submits a Codebook export with zero articles (§3)", async () => {
+        startExportMock.mockResolvedValueOnce({
+            kind: "sync",
+            blob: new Blob(["x"]),
+            filename: "x.xlsx",
+        });
+        const user = userEvent.setup();
+        renderDialog({currentListIds: []});
+        expect(screen.getByTestId("extraction-export-submit")).toBeDisabled();
+        await user.click(screen.getByLabelText(/^Codebook$/i));
+        expect(screen.queryByText(/No articles in scope/i)).not.toBeInTheDocument();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        await waitFor(() => expect(startExportMock).toHaveBeenCalled());
+        expect(startExportMock.mock.calls[0][1]).toMatchObject({
+            shape: "dictionary",
+            article_ids: [],
+        });
+    });
+
+    it("names a too-large export in words, not a code", async () => {
+        // Review Focus 6: the sync path surfaces ExportTooLargeError as copy.
+        startExportMock.mockRejectedValueOnce(
+            new ApiError(
+                "EXPORT_TOO_LARGE",
+                "EXPORT_TOO_LARGE: this export would write 9,000,000 cells",
+                422,
+            ),
+        );
+        const user = userEvent.setup();
+        renderDialog();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        const failures = await screen.findByTestId("extraction-export-failures");
+        expect(failures).toHaveTextContent(/too large for one file/i);
+        expect(failures).not.toHaveTextContent(/EXPORT_TOO_LARGE/);
     });
 });

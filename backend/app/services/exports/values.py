@@ -1,8 +1,8 @@
 """Typed export values: one projection of a stored envelope for every export surface.
 
 ``to_export_value`` classifies a stored value envelope against its field into an
-``ExportValue`` (status plus typed columns); ``display_value`` renders it as the
-matrix cell. PURE: no DB, no storage, no openpyxl. Lives directly under
+``ExportValue`` (status plus typed columns); ``display_value`` renders it as a
+matrix cell or a Publication cell (``target``). PURE: no DB, no storage, no openpyxl. Lives directly under
 ``exports/`` (not ``exports/extraction/``): that package's ``__init__`` imports
 the workbook, which imports the export service, so a runtime import from it
 closes a cycle. The descriptors are therefore TYPE_CHECKING-only.
@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 from uuid import UUID
 
 from app.models.extraction import ExtractionFieldType
-from app.services.value_contract import is_envelope
+from app.services.value_contract import ValueContractError, canonicalize_value, is_envelope
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
     strip_verification,
@@ -26,6 +26,7 @@ from app.services.value_semantics import (
 )
 
 if TYPE_CHECKING:
+    from app.schemas.extraction_run import RunViewField
     from app.services.exports.extraction.sheet_spec import CellValue
     from app.services.extraction_export_service import FieldDescriptor, SectionDescriptor
 
@@ -66,6 +67,47 @@ def peel_envelope(raw: Any) -> PeeledValue:
         raw = raw["value"]
 
 
+def _peeled_form(raw: Any) -> dict[str, Any]:
+    p = peel_envelope(raw)
+    form = {"value": p.value, "unit": p.unit, "absent_reason": p.absent_reason}
+    return {k: v for k, v in form.items() if v is not None}
+
+
+def _canonical_form(raw: Any, field: RunViewField) -> dict[str, Any]:
+    """``canonicalize_value`` with a multiselect's codes sorted (set semantics)."""
+    canonical = canonicalize_value(raw, field)
+    value = canonical.get("value")
+    if isinstance(value, list):
+        canonical["value"] = sorted(value)
+    elif isinstance(value, dict) and isinstance(value.get("selected"), list):
+        canonical["value"] = {**value, "selected": sorted(value["selected"])}
+    return canonical
+
+
+def canonical_keys(raws: Sequence[Any], pinned_field: RunViewField | None) -> tuple[str, ...]:
+    """One comparison key per raw value, canonicalized against the run's pinned field.
+
+    N-ary on purpose: if ANY value breaks the pinned contract, or the pinned
+    field is unknown (a narrow legacy version), EVERY value falls back to its
+    peeled raw form, so the two sides of a comparison are always encoded alike.
+    ``verification`` is ignored; an absent marker compares by its code.
+    """
+    clean = [strip_verification(raw) for raw in raws]
+    forms: list[dict[str, Any]] | None = None
+    if pinned_field is not None:
+        try:
+            forms = [_canonical_form(raw, pinned_field) for raw in clean]
+        except ValueContractError:
+            forms = None
+    if forms is None:
+        forms = [_peeled_form(raw) for raw in clean]
+    return tuple(json.dumps(f, sort_keys=True, default=str) for f in forms)
+
+
+def canonical_equal(a: Any, b: Any, pinned_field: RunViewField | None) -> bool:
+    return len(set(canonical_keys((a, b), pinned_field))) == 1
+
+
 @dataclass(frozen=True, slots=True)
 class ExportValue:
     raw: Any  # the stored envelope, untouched
@@ -80,13 +122,18 @@ class ExportValue:
     out_of_scope: bool = False
 
 
-def build_option_labels(active: Sequence[SectionDescriptor]) -> OptionLabels:
-    return {
-        (f.field_id, av.value): av.label
-        for s in active
-        for f in s.fields
-        for av in f.allowed_values
-    }
+def build_option_labels(
+    active: Sequence[SectionDescriptor],
+    pinned_latest_first: Sequence[Sequence[SectionDescriptor]] = (),
+) -> OptionLabels:
+    """``(field_id, code) -> label``: the active label, else the latest pinned one."""
+    labels: dict[tuple[UUID, str], str] = {}
+    for version in (active, *pinned_latest_first):
+        for s in version:
+            for f in s.fields:
+                for av in f.allowed_values:
+                    labels.setdefault((f.field_id, av.value), av.label)
+    return labels
 
 
 def _is_finite(num: int | float) -> bool:
@@ -195,7 +242,71 @@ def to_export_value(
     return _nonconforming(raw, payload)
 
 
-def display_value(v: ExportValue, field: FieldDescriptor) -> CellValue:
+#: Statuses whose typed value a machine column carries.
+MACHINE_STATUSES: tuple[ExportStatus, ...] = ("answered", "nonconforming")
+
+
+def machine_value(v: ExportValue) -> CellValue:
+    """The machine scalar: the first of ``value_num``, ``value_bool``, ``value_text``
+    for an answered or nonconforming value in scope, else ``None``."""
+    if v.status not in MACHINE_STATUSES or v.out_of_scope:
+        return None
+    return next((x for x in (v.value_num, v.value_bool, v.value_text) if x is not None), None)
+
+
+#: Publication abbreviation of each absent code (spec §4.6).
+PUBLICATION_ABSENT_CODES: Final[Mapping[str, str]] = {
+    "no_information": "NI",
+    "not_applicable": "NA",
+    "not_evaluated": "NE",
+}
+#: A recorded value outside the template's scope rule, in a Publication cell (D7).
+SCOPE_MARKER: Final[str] = "NA*"
+_SCOPE_FOOTNOTE: Final[str] = (
+    f"{SCOPE_MARKER} = Not applicable under the template's scope rule; "
+    "the recorded value is kept in the Review workbook (Data sheet)."
+)
+
+DisplayTarget = Literal["matrix", "publication"]
+
+
+def footnote_key(v: ExportValue) -> str | None:
+    """The Publication marker a cell carries, if any: an absent code's
+    abbreviation (a scope stamp included), else ``SCOPE_MARKER`` for a recorded
+    out-of-scope value; rejected and cleared values carry none."""
+    if v.status in ("rejected", "cleared"):
+        return None
+    if v.status == "absent":
+        assert v.absent_code is not None
+        return PUBLICATION_ABSENT_CODES[v.absent_code]
+    return SCOPE_MARKER if v.out_of_scope else None
+
+
+def publication_footnotes(used: Collection[str]) -> tuple[str, ...]:
+    """One footnote line per used marker, in the fixed order NI, NA, NE, NA*."""
+    lines = [
+        f"{abbr} = {ABSENT_REASON_LABELS[code]}"
+        for code, abbr in PUBLICATION_ABSENT_CODES.items()
+        if abbr in used
+    ]
+    if SCOPE_MARKER in used:
+        lines.append(_SCOPE_FOOTNOTE)
+    return tuple(lines)
+
+
+def display_value(v: ExportValue, field: FieldDescriptor, *, target: DisplayTarget) -> CellValue:
+    if target == "publication":
+        if v.status in ("rejected", "cleared"):
+            return None
+        marker = footnote_key(v)
+        if marker is not None:
+            return marker
+        if v.status == "answered" and v.value_num is not None and not field.allowed_units:
+            return v.value_num
+    return _matrix_display(v, field)
+
+
+def _matrix_display(v: ExportValue, field: FieldDescriptor) -> CellValue:
     if v.out_of_scope:
         return ABSENT_REASON_LABELS["not_applicable"]
     if v.status == "absent":

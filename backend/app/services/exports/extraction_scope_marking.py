@@ -5,7 +5,7 @@ to export as a BLANK cell while the run view showed a "Not applicable" badge.
 This module marks that state on the typed ``value_map`` ONCE (empty cells are
 stamped, recorded answers are kept and flagged ``out_of_scope``), in
 ``resolve_layout``, before any sheet builder reads it — so the matrix, the
-per-section tidy tables and the appraisal summary all inherit the correction
+level sheets and the appraisal summary all inherit the correction
 without receiving the rules and without a signature change. The rules are
 each article's own: those frozen in its run's pinned template version.
 
@@ -23,12 +23,17 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from app.models.extraction import ExtractionCardinality
 from app.services.derived_judgment_service import (
     out_of_scope_sections,
     scope_classifier_coordinate,
 )
-from app.services.exports.descriptors import ValueKey, all_instances_of, root_instance, value_key
+from app.services.exports.descriptors import (
+    ValueKey,
+    all_instances_of,
+    root_instance,
+    value_key,
+    walk_sections,
+)
 from app.services.exports.values import ExportValue
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
@@ -74,14 +79,15 @@ def article_values_by_coord(
 def reader_instance_ids(
     section: SectionDescriptor,
     article: ArticleDescriptor,
+    sections: Sequence[SectionDescriptor],
 ) -> tuple[UUID, ...]:
-    """The instance ids the matrix and tidy builders read for this section.
+    """The instance ids the matrix and level builders read for this section.
 
     Every instance of the section across its parents, which is what a
-    records-as-rows sheet wants. A field-less repeating group contributes
-    nothing: it is the axis, not a record.
+    records-as-rows sheet wants, when the rule-2 walk keeps the section;
+    nothing when it skips it (a fieldless subtree).
     """
-    if section.cardinality is ExtractionCardinality.MANY and not section.fields:
+    if section not in walk_sections(sections):
         return ()
     return all_instances_of(article, section.entity_type_id)
 
@@ -93,6 +99,7 @@ def mark_out_of_scope_values(
     articles: tuple[ArticleDescriptor, ...],
     raters: Sequence[UUID | None],
     value_map: dict[ValueKey, ExportValue],
+    pinned_field_ids: Mapping[UUID, frozenset[UUID]],
 ) -> None:
     """Mark the cells an article's own scope takes out of play.
 
@@ -117,6 +124,11 @@ def mark_out_of_scope_values(
 
     *rules_by_article* maps ``article_id`` to the rules frozen in that
     article's pinned version; an article missing from it has no rules.
+
+    *pinned_field_ids* maps ``article_id`` to the field ids of the version its
+    run pins: a field outside it was never asked of that run, so it is neither
+    stamped nor flagged. An article missing from it (a narrow legacy version,
+    D5) is not filtered.
     """
 
     for article in articles:
@@ -124,6 +136,7 @@ def mark_out_of_scope_values(
         if run_id is None:
             continue
         rules = rules_by_article.get(article.article_id, {})
+        pinned = pinned_field_ids.get(article.article_id)
         # A version without scope rules skips the article before any
         # projection is built — an extraction export does the work it did before.
         classifier = scope_classifier_coordinate(rules)
@@ -142,8 +155,10 @@ def mark_out_of_scope_values(
             for section in sections:
                 if section.name not in out_of_scope or section.name == classifier[0]:
                     continue
-                for instance_id in reader_instance_ids(section, article):
+                for instance_id in reader_instance_ids(section, article, sections):
                     for section_field in section.fields:
+                        if pinned is not None and section_field.field_id not in pinned:
+                            continue
                         key = value_key(run_id, instance_id, section_field.field_id, rater)
                         existing = value_map.get(key)
                         value_map[key] = (

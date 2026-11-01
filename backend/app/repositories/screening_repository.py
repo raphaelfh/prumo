@@ -15,11 +15,12 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, Text, and_, cast, exists, func, literal, select
+from sqlalchemy import ColumnElement, Select, Text, and_, cast, exists, func, literal, select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute
+from sqlalchemy.orm.util import AliasedClass
 
 from app.models.article import Article, ArticleFile
 from app.models.screening import (
@@ -29,12 +30,15 @@ from app.models.screening import (
     ScreeningAssignment,
     ScreeningDecision,
 )
+from app.repositories.duplicate_predicates import removed_duplicate
 from app.schemas.screening import ScreeningPhase
 
 # THE assignment-to-article join condition. Members can move an article to
 # another project through PostgREST and nothing binds an assignment's
 # project_id to the article's current project, so a moved article must read as
-# missing. Use it as a ``.join(Article, ...)`` onclause only, never in ``.where``.
+# missing. Use it as a ``.join(Article, ...)`` onclause, or as the WHERE of an
+# EXISTS / scalar subquery correlated to an outer ``Article`` (duplicate_repository);
+# never in a top-level ``.where``.
 ARTICLE_STILL_IN_PROJECT = and_(
     Article.id == ScreeningAssignment.article_id,
     Article.project_id == ScreeningAssignment.project_id,
@@ -42,15 +46,22 @@ ARTICLE_STILL_IN_PROJECT = and_(
 
 
 def live_assignments(project_id: UUID, phase: ScreeningPhase) -> Select[tuple[ScreeningAssignment]]:
-    """The project's ``phase`` assignments whose article is still in the project."""
+    """The project's ``phase`` assignments whose article is still in the project
+    and is not a removed duplicate."""
     return (
         select(ScreeningAssignment)
         .join(Article, ARTICLE_STILL_IN_PROJECT)
         .where(
             ScreeningAssignment.project_id == project_id,
             ScreeningAssignment.phase == phase,
+            ~removed_duplicate(Article),
         )
     )
+
+
+def has_main_pdf(article: type[Article] | AliasedClass[Article]) -> ColumnElement[bool]:
+    """The article has a ``MAIN`` file (its PDF)."""
+    return exists().where(ArticleFile.article_id == article.id, ArticleFile.file_role == "MAIN")
 
 
 # Queue order: oldest enrollment first, then md5(assignment id) — a stable
@@ -94,7 +105,8 @@ class ScreeningRepository:
         article_ids: Sequence[UUID] | None,
         phase: ScreeningPhase,
     ) -> int:
-        """Insert one assignment per article, skipping the enrolled; returns the rows inserted.
+        """Insert one assignment per article, skipping the enrolled and removed duplicates
+        (explicit ``article_ids`` included); returns the rows inserted.
 
         The id is generated per row by ``gen_random_uuid()``: the model's Python
         default would render one id for every row of the INSERT ... SELECT.
@@ -105,7 +117,7 @@ class ScreeningRepository:
             Article.id,
             literal(phase),
             literal(enrolled_by, type_=PG_UUID(as_uuid=True)),
-        ).where(Article.project_id == project_id)
+        ).where(Article.project_id == project_id, ~removed_duplicate(Article))
         if article_ids is not None:
             source = source.where(Article.id.in_(article_ids))
         stmt = (
@@ -127,6 +139,24 @@ class ScreeningRepository:
     async def count_project_articles(self, *, project_id: UUID) -> int:
         stmt = select(func.count()).select_from(Article).where(Article.project_id == project_id)
         return int((await self.db.execute(stmt)).scalar_one())
+
+    async def count_removed(self, *, project_id: UUID) -> int:
+        """The project's articles that are removed duplicates."""
+        stmt = (
+            select(func.count())
+            .select_from(Article)
+            .where(Article.project_id == project_id, removed_duplicate(Article))
+        )
+        return int((await self.db.execute(stmt)).scalar_one())
+
+    async def removed_among(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> set[UUID]:
+        """The given project articles that are removed duplicates."""
+        stmt = select(Article.id).where(
+            Article.project_id == project_id,
+            Article.id.in_(article_ids),
+            removed_duplicate(Article),
+        )
+        return set((await self.db.execute(stmt)).scalars().all())
 
     async def project_has_decision(self, *, project_id: UUID) -> bool:
         """Any title/abstract decision ever recorded in the project, moved articles included."""
@@ -243,14 +273,11 @@ class ScreeningRepository:
         return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
 
     async def record_rows(self, *, project_id: UUID, phase: ScreeningPhase) -> list[RecordSource]:
-        """The project's articles for ``phase`` in queue order.
+        """The project's articles for ``phase`` in queue order, removed duplicates aside.
 
         Title/abstract lists every article, enrolled first, then by creation;
         full text lists only the articles with a live full-text assignment.
         """
-        has_pdf = exists().where(
-            ArticleFile.article_id == Article.id, ArticleFile.file_role == "MAIN"
-        )
         phase_assignment = and_(ARTICLE_STILL_IN_PROJECT, ScreeningAssignment.phase == phase)
         base = select(
             Article.id,
@@ -262,14 +289,14 @@ class ScreeningRepository:
             Article.pmid,
             Article.doi,
             Article.ingestion_source,
-            has_pdf,
+            has_main_pdf(Article),
         ).select_from(Article)
         joined = (
             base.join(ScreeningAssignment, phase_assignment)
             if phase == FULL_TEXT
             else base.outerjoin(ScreeningAssignment, phase_assignment)
         )
-        stmt = joined.where(Article.project_id == project_id).order_by(
+        stmt = joined.where(Article.project_id == project_id, ~removed_duplicate(Article)).order_by(
             ScreeningAssignment.id.is_(None), *_QUEUE_ORDER, Article.created_at, Article.id
         )
         return [RecordSource(*row) for row in (await self.db.execute(stmt)).all()]

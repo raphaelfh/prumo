@@ -5,8 +5,8 @@ the test is stable across seed-value churn. Scopes by project_id.
 Real local Supabase (autouse SEED). The layout is resolved from a freshly
 finalized CHARMS run (mirroring ``test_extraction_export_new_sheets.py``)
 and the workbook is built once per assertion; we pin the canonical sheet
-inventory and the exact header row of the matrix and Data-dictionary sheets
-emitted by ``matrix.py`` / ``data_dictionary.py`` / ``front_matter.py``.
+inventory and the exact header row of the matrix and Codebook sheets
+emitted by ``matrix.py`` / ``codebook.py`` / ``front_matter.py``.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKin
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
 )
+from app.services.exports.extraction.sheet_spec import RESERVED_TITLES
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
@@ -33,16 +34,8 @@ from tests.integration.conftest import SEED
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-#: Fixed sheets (every one but README); what is left is the per-section tidy
-#: tables.
-_RESERVED = {
-    "Summary",
-    "Matrix",
-    "Appraisal",
-    "Data dictionary",
-    "Dropdown lists",
-    "AI proposals",
-}
+#: Reserved titles (every one but README); anything else is a level sheet.
+_RESERVED = set(RESERVED_TITLES) - {"README"}
 
 
 @dataclass(frozen=True)
@@ -163,7 +156,7 @@ async def _charms_workbook(db: AsyncSession):
 
 
 async def test_workbook_has_the_expected_sheet_inventory(db_session: AsyncSession) -> None:
-    """README/Methods first, Summary + Data dictionary present, AI proposals last."""
+    """README first, Codebook last, AI proposals before the Codebook."""
     wb = await _charms_workbook(db_session)
     if wb is None:
         pytest.skip("Missing fixtures.")
@@ -173,33 +166,46 @@ async def test_workbook_has_the_expected_sheet_inventory(db_session: AsyncSessio
     # exactly "README".
     assert titles[0] == "README"
     assert "Summary" in titles
-    assert "Data dictionary" in titles
-    # The AI toggle is on, so AI proposals is appended last (after every §4 sheet).
-    assert titles[-1] == "AI proposals"
+    # §3: the catalogue closes the workbook; the AI toggle is on, so AI
+    # proposals sits after the level sheets and before the Codebook. The seed
+    # field is a number, so there is no coded option and no Options sheet.
+    assert titles[-1] == "Codebook"
+    assert "Options" not in titles
+    assert titles.index("Data") > titles.index("Articles")
+    assert titles.index("AI proposals") > titles.index("Data")
+    assert titles.index("AI proposals") < titles.index("Codebook")
     assert "Matrix" in titles
-    # At least one tidy table beyond the fixed sheets and README.
-    data_sheets = [t for t in titles if t not in _RESERVED and t != "README"]
-    assert len(data_sheets) >= 1
+    assert "Articles" in titles
+    # The seed tree has no repeating section: every sheet is a reserved one.
+    assert {t for t in titles if t not in _RESERVED} == {"README"}
 
     await db_session.rollback()
 
 
-async def test_data_dictionary_header_is_canonical(db_session: AsyncSession) -> None:
-    """The Data-dictionary header row is the exact canonical 8-column order."""
+async def test_codebook_header_is_canonical(db_session: AsyncSession) -> None:
+    """The Codebook header row is the exact §4.4 column order."""
     wb = await _charms_workbook(db_session)
     if wb is None:
         pytest.skip("Missing fixtures.")
-    ws = wb["Data dictionary"]
-    header = [c.value for c in ws[1]]
-    assert header[:8] == [
-        "Section",
-        "Field",
-        "Type",
-        "Unit",
-        "Description",
-        "Allowed values",
-        "Required",
-        "Allow other",
+    header = [c.value for c in wb["Codebook"][1]]
+    assert header == [
+        "field_code",
+        "field_id",
+        "sheet",
+        "section_code",
+        "section_label",
+        "parent_section_code",
+        "field_label",
+        "type",
+        "unit",
+        "allowed_units",
+        "required",
+        "is_entity_key",
+        "allowed_absent_codes",
+        "allow_other",
+        "description",
+        "in_current_version",
+        "versions",
     ]
 
     await db_session.rollback()

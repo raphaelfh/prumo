@@ -330,6 +330,18 @@ RETIRED: tuple[Retired, ...] = (
         "screening workspace S1",
         "the queue/conflicts reads were replaced by GET /screening/records",
     ),
+    # S2 — PRISMA counts every project article; the not-enrolled remainder is
+    # "Records removed for other reasons" (spec §8.4).
+    Retired(
+        "imported_not_enrolled",
+        "screening workspace S2",
+        "PRISMA's not-enrolled count became other_removed, which excludes removed duplicates",
+    ),
+    Retired(
+        "prismaNotEnrolled",
+        "screening workspace S2",
+        "the PRISMA label became prismaOtherRemoved (Records removed for other reasons)",
+    ),
 )
 
 # Where a LIVE reference could sit. Everything else — migrations, docs, this

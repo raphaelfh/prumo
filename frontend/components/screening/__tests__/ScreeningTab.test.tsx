@@ -8,7 +8,7 @@ import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {http, HttpResponse} from 'msw';
-import {MemoryRouter, useLocation} from 'react-router';
+import {MemoryRouter, useLocation, useSearchParams} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -32,6 +32,7 @@ type Row = components['schemas']['ScreeningRecordRow'];
 const CONFIG_URL = '*/api/v1/projects/:projectId/screening/config';
 const RECORDS_URL = '*/api/v1/projects/:projectId/screening/records';
 const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
+const DUPLICATES_URL = '*/api/v1/projects/:projectId/duplicates';
 
 function config(overrides: Partial<ConfigRead> = {}): ConfigRead {
   return {
@@ -96,7 +97,24 @@ function serveRecords(rows: Row[] = [ROW]) {
 
 function LocationProbe() {
   const location = useLocation();
-  return <output data-testid="location">{location.search}</output>;
+  const [, setSearchParams] = useSearchParams();
+  const switchTab = (value: string) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('screeningTab', value);
+        return next;
+      },
+      {replace: true},
+    );
+  return (
+    <>
+      <output data-testid="location">{location.search}</output>
+      <button type="button" onClick={() => switchTab('duplicates')}>
+        probe: go to duplicates
+      </button>
+    </>
+  );
 }
 const params = () => new URLSearchParams(screen.getByTestId('location').textContent ?? '');
 
@@ -161,6 +179,50 @@ describe('ScreeningTab', () => {
       await screen.findByRole('radiogroup', {name: 'Reviewers per article — title/abstract'}),
     ).toBeInTheDocument();
     expect(params().get('screeningTab')).toBe('settings');
+  });
+
+  it('redirects a member deep-linked to duplicates only after the config resolves', async () => {
+    serveConfig(config({reviewer_count: 2, enrolled: 1}));
+    serveRecords();
+    renderTab('/projects/p1?tab=screening&screeningTab=duplicates');
+    await waitFor(() => expect(params().get('screeningTab')).toBe('title_abstract'));
+    expect(await screen.findByText('Deep learning for sepsis')).toBeInTheDocument();
+  });
+
+  it("never bounces a manager's duplicates deep link", async () => {
+    serveConfig(config({...MANAGER, reviewer_count: null}));
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})));
+    renderTab('/projects/p1?tab=screening&screeningTab=duplicates');
+    await waitFor(() => expect(screen.queryByRole('region', {name: 'Loading screening…'})).toBeNull());
+    expect(screen.queryByText('Screening is not set up')).toBeNull();
+    expect(params().get('screeningTab')).toBe('duplicates');
+  });
+
+  it('renders the Duplicates sub-view for a manager', async () => {
+    serveConfig(config({...MANAGER, reviewer_count: null}));
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})));
+    renderTab('/projects/p1?tab=screening&screeningTab=duplicates');
+    expect(await screen.findByText('No open pairs')).toBeInTheDocument();
+    expect(screen.getByRole('tab', {name: 'Open 0'})).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('Screening is not set up')).toBeNull();
+  });
+
+  it('drops article, kept and status when the sub-view changes', async () => {
+    serveConfig(config({...MANAGER, reviewer_count: 2, enrolled: 1}));
+    serveRecords();
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})));
+    renderTab('/projects/p1?tab=screening&screeningTab=title_abstract&article=art1&kept=art2&status=all');
+    await screen.findByText('Deep learning for sepsis');
+    expect(params().get('article')).toBe('art1');
+    expect(params().get('status')).toBe('all');
+
+    await userEvent.setup().click(screen.getByRole('button', {name: 'probe: go to duplicates'}));
+
+    await waitFor(() => expect(params().get('screeningTab')).toBe('duplicates'));
+    expect(params().get('article')).toBeNull();
+    expect(params().get('kept')).toBeNull();
+    expect(params().get('status')).toBeNull();
+    expect(params().get('tab')).toBe('screening');
   });
 
   it('lands a manager with no config on Settings', async () => {

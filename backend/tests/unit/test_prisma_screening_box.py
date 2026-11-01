@@ -59,7 +59,7 @@ def test_prisma_payload_has_one_in_progress_flag_and_no_pending_or_conflict_coun
         "identified_total",
         "duplicates_removed",
         "records_not_found",
-        "imported_not_enrolled",
+        "other_removed",
         "screened",
         "excluded",
         "excluded_by_reason",

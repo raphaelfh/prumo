@@ -180,7 +180,7 @@ export const screening = {
   prismaIdentifiedTotal: 'Records identified',
   prismaDuplicates: 'Duplicates removed',
   prismaRecordsNotFound: 'Records not retrieved from the source',
-  prismaNotEnrolled: 'Imported but not enrolled',
+  prismaOtherRemoved: 'Records removed for other reasons',
   prismaScreening: 'Title and abstract screening',
   prismaScreened: 'Records screened',
   prismaExcluded: 'Records excluded',

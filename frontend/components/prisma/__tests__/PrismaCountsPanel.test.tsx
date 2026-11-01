@@ -41,7 +41,7 @@ const COUNTS = {
   identified_total: 4,
   duplicates_removed: 1,
   records_not_found: 1,
-  imported_not_enrolled: 2,
+  other_removed: 2,
   screened: 3,
   excluded: 2,
   excluded_by_reason: [{reason: 'Not ML', count: 1}],
@@ -84,7 +84,7 @@ const EMPTY = {
   identified_total: 0,
   duplicates_removed: 0,
   records_not_found: 0,
-  imported_not_enrolled: 3,
+  other_removed: 3,
   screened: 0,
   excluded: 0,
   excluded_by_reason: [],
@@ -136,14 +136,14 @@ describe('PrismaCountsPanel', () => {
     expect(await screen.findByText('You do not have permission to do this.')).toBeInTheDocument();
   });
 
-  it('shows the empty state with the not-enrolled count', async () => {
+  it('shows the empty state with the removed-for-other-reasons count', async () => {
     server.use(http.get(PRISMA_URL, () => ok(EMPTY)));
     renderPanel();
 
     expect(await screen.findByText('No records screened yet')).toBeInTheDocument();
     expect(screen.getByText('Counts appear once articles are enrolled for screening.')).toBeInTheDocument();
-    expect(screen.getByText('Imported but not enrolled').closest('p')).toHaveTextContent(
-      /^Imported but not enrolled\s*3$/,
+    expect(screen.getByText('Records removed for other reasons').closest('p')).toHaveTextContent(
+      /^Records removed for other reasons\s*3$/,
     );
     expect(screen.queryByText('Records screened')).toBeNull();
   });
@@ -161,7 +161,7 @@ describe('PrismaCountsPanel', () => {
       'Records identified 4',
       'Duplicates removed 1',
       'Records not retrieved from the source 1',
-      'Imported but not enrolled 2',
+      'Records removed for other reasons 2',
       'Records screened 3',
       'Records excluded 2',
       'Not ML 1',

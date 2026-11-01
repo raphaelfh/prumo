@@ -199,9 +199,18 @@ export function ScreeningRecordTable({
       {mounted.map((index) => {
         const row = rows[index];
         return (
-          <div key={row.article_id} ref={rowWindow.measureElement} data-index={index}>
+          <div
+            key={row.article_id}
+            ref={rowWindow.measureElement}
+            data-index={index}
+            data-record-row={row.article_id}
+            data-cursor={row.article_id === cursorArticleId || undefined}
+          >
             <ListRowCard
-              className={cn(row.article_id === activeArticleId && 'bg-muted/60')}
+              className={cn(
+                row.article_id === activeArticleId && 'bg-muted/60',
+                row.article_id === cursorArticleId && 'ring-1 ring-inset ring-ring/60',
+              )}
               leading={<RowCheckbox row={row} checked={checkedIds.has(row.article_id)} onToggleRow={onToggleRow} />}
               title={row.title}
               subtitle={row.first_author ?? undefined}

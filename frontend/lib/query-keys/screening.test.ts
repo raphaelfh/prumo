@@ -25,6 +25,13 @@ describe('screeningKeys.records', () => {
   });
 });
 
+describe('screeningKeys.duplicates', () => {
+  it('sits under the project prefix', () => {
+    expect(screeningKeys.duplicates('p')).toEqual(['screening', 'project', 'p', 'duplicates']);
+    expect(partialMatchKey(screeningKeys.duplicates('p'), screeningKeys.project('p'))).toBe(true);
+  });
+});
+
 describe('invalidateScreening', () => {
   it('invalidates a cached records query of the project', async () => {
     const client = new QueryClient();
