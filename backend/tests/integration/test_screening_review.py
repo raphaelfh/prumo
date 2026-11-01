@@ -509,3 +509,135 @@ async def test_viewer_reads_records_with_nothing_to_screen(db_session: AsyncSess
 
     assert response.status_code == 200
     assert await _statuses(db_session, viewer, project_id) == {str(assignment): "in_review"}
+
+
+FT_REASONS = ["Wrong population", "Wrong outcome"]
+
+
+async def _ft_project(
+    db: AsyncSession, *, ta_rc: int = 2, ft_rc: int = 2, reviewers: int = 3
+) -> tuple[UUID, list[UUID], UUID, UUID]:
+    """A project with TA and FT assignments on one article, the FT protocol reasons and both counts.
+
+    Returns (project, reviewer ids, TA assignment id, FT assignment id).
+    """
+    project_id = await make_project(db)
+    await db.execute(
+        text("UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb) WHERE id = :p"),
+        {"e": '{"exclusion": ["Wrong population", "Wrong outcome"]}', "p": str(project_id)},
+    )
+    members = [await add_member(db, project_id, "reviewer") for _ in range(reviewers)]
+    article = await make_screening_article(db, project_id)
+    (ta,) = await enroll_articles(db, project_id, [article], by=MANAGER)
+    (ft,) = await enroll_articles(db, project_id, [article], by=MANAGER, phase=FULL_TEXT)
+    await set_reviewer_count(db, project_id, ta_rc)
+    await set_reviewer_count(db, project_id, ft_rc, key="full_text_reviewer_count")
+    return project_id, members, ta, ft
+
+
+async def test_full_text_refuses_maybe(db_session: AsyncSession) -> None:
+    _, (a, *_), _, ft = await _ft_project(db_session)
+
+    refused = await _decide(db_session, a, ft, "maybe")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_DECISION_NOT_IN_PHASE"
+    assert await _rows_of(db_session, ft, a) == []
+
+
+async def test_title_abstract_refuses_not_retrieved(db_session: AsyncSession) -> None:
+    _, (a, *_), ta, _ = await _ft_project(db_session)
+
+    refused = await _decide(db_session, a, ta, "not_retrieved")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_DECISION_NOT_IN_PHASE"
+    assert await _rows_of(db_session, ta, a) == []
+
+
+async def test_full_text_exclude_needs_a_reason(db_session: AsyncSession) -> None:
+    _, (a, *_), _, ft = await _ft_project(db_session)
+
+    refused = await _decide(db_session, a, ft, "exclude")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_REASON_REQUIRED"
+    assert await _rows_of(db_session, ft, a) == []
+
+
+async def test_full_text_not_retrieved_takes_no_reason(db_session: AsyncSession) -> None:
+    _, (a, *_), _, ft = await _ft_project(db_session)
+
+    response = await _decide(db_session, a, ft, "not_retrieved")
+
+    assert response.status_code == 200, response.text
+    assert [(row[1], row[2]) for row in await _rows_of(db_session, ft, a)] == [
+        ("not_retrieved", None)
+    ]
+
+
+async def test_full_text_note_is_kept(db_session: AsyncSession) -> None:
+    _, (a, *_), _, ft = await _ft_project(db_session)
+
+    response = await _request(
+        db_session,
+        a,
+        "POST",
+        _decision_path(ft),
+        {"decision": "exclude", "exclusion_reason": "Wrong outcome", "rationale": "Case report"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["my_decision"]["rationale"] == "Case report"
+    stored = (
+        await db_session.execute(
+            select(ScreeningDecision.rationale).where(ScreeningDecision.assignment_id == ft)
+        )
+    ).scalar_one()
+    assert stored == "Case report"
+
+
+async def test_full_text_differing_reasons_conflict(db_session: AsyncSession) -> None:
+    _, (a, b, c), _, ft = await _ft_project(db_session)
+    assert (await _decide(db_session, a, ft, "exclude", "Wrong population")).status_code == 200
+    assert (await _decide(db_session, b, ft, "exclude", "Wrong outcome")).status_code == 200
+
+    third = (await _get(db_session, c, _assignment_path(ft))).json()["data"]
+    manager = (await _get(db_session, MANAGER, _assignment_path(ft))).json()["data"]
+
+    assert (third["status"], third["outcome"], third["peer_decisions"]) == (
+        "awaiting_others",
+        None,
+        [],
+    )
+    assert (manager["status"], manager["outcome"]) == ("conflict", None)
+    assert len(manager["peer_decisions"]) == 2
+
+
+async def test_full_text_uses_its_own_count(db_session: AsyncSession) -> None:
+    _, (a, b, *_), _, ft = await _ft_project(db_session, ta_rc=2, ft_rc=1)
+
+    first = await _decide(db_session, a, ft, "include")
+    assert first.status_code == 200, first.text
+    assert first.json()["data"]["outcome"]["kind"] == "solo"
+
+    capped = await _decide(db_session, b, ft, "include")
+    assert capped.status_code == 409
+    assert _error_code(capped) == "SCREENING_REVIEWER_CAP"
+
+    again = await _decide(db_session, a, ft, "exclude", "Wrong outcome")
+    assert again.status_code == 200, again.text
+
+
+async def test_title_abstract_re_decide_after_full_text_is_refused(
+    db_session: AsyncSession,
+) -> None:
+    _, (r, *_), ta, _ = await _ft_project(db_session, ta_rc=1)
+    await add_decision(db_session, ta, r, "include", created_at=JAN_1)
+    before = await _rows_of(db_session, ta, r)
+
+    refused = await _decide(db_session, r, ta, "exclude", "Wrong population")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_PHASE_ADVANCED"
+    assert await _rows_of(db_session, ta, r) == before

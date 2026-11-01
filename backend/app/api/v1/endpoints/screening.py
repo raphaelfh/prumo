@@ -172,7 +172,10 @@ async def get_screening_assignment(
             "description": (
                 "Screening not set up, the caller already decided (final in dual review; "
                 "a solo reviewer may decide again until the record is arbitrated), the record "
-                "has all its reviewers, or the exclusion reason is not in the protocol"
+                "has all its reviewers, the exclusion reason is not in the protocol, the "
+                "decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), "
+                "a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the "
+                "article is already in full text (SCREENING_PHASE_ADVANCED)"
             )
         },
     },
@@ -215,7 +218,11 @@ async def post_screening_decision(
         409: {
             "description": (
                 "Screening not set up, the record is not in conflict, the decisions "
-                "changed since it was opened, or the exclusion reason is not in the protocol"
+                "changed since it was opened, the exclusion reason is not in the protocol, "
+                "the decision is not available in this phase "
+                "(SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason "
+                "(SCREENING_REASON_REQUIRED), or the article is already in full text "
+                "(SCREENING_PHASE_ADVANCED)"
             )
         },
     },

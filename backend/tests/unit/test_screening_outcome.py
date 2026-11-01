@@ -112,6 +112,49 @@ def test_derive_state(
     assert state.outcome == (None if outcome is None else Outcome(*outcome))  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("decisions", "reasons_must_match", "phase", "outcome"),
+    [
+        (
+            [_d(A, "exclude", "A"), _d(B, "exclude", "B")],
+            True,
+            "conflict",
+            None,
+        ),
+        (
+            [_d(A, "exclude", "A"), _d(B, "exclude", "B")],
+            False,
+            "decided",
+            ("consensus", "exclude", None, True),
+        ),
+        (
+            [_d(A, "exclude", "A"), _d(B, "exclude", "A")],
+            True,
+            "decided",
+            ("consensus", "exclude", "A", False),
+        ),
+        ([_d(A, "not_retrieved"), _d(B, "include")], True, "conflict", None),
+        (
+            [_d(A, "not_retrieved"), _d(B, "not_retrieved")],
+            True,
+            "decided",
+            ("consensus", "not_retrieved", None, False),
+        ),
+    ],
+    ids=["differ-must-match", "differ-free", "same-reason", "not-retrieved-vs-include", "both-nr"],
+)
+def test_reasons_must_match(
+    decisions: list[CurrentDecision],
+    reasons_must_match: bool,
+    phase: str,
+    outcome: tuple[str, str, str | None, bool] | None,
+) -> None:
+    state = derive_state(2, decisions, None, reasons_must_match)
+
+    assert state.phase == phase
+    assert state.outcome == (None if outcome is None else Outcome(*outcome))  # type: ignore[arg-type]
+
+
 _PENDING = AssignmentState("pending", None)
 _CONFLICT = AssignmentState("conflict", None)
 _DECIDED = AssignmentState("decided", Outcome("consensus", "include", None, False))

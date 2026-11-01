@@ -77,6 +77,7 @@ export const screening = {
   decisionInclude: 'Include',
   decisionExclude: 'Exclude',
   decisionMaybe: 'Maybe',
+  decisionNotRetrieved: 'Not retrieved',
   excludeWithReason: 'Exclude with reason',
   reasonsTitle: 'Exclusion reason',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',

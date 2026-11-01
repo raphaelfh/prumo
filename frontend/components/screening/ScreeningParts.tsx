@@ -40,6 +40,7 @@ const DECISION_LABEL = {
   include: 'decisionInclude',
   exclude: 'decisionExclude',
   maybe: 'decisionMaybe',
+  not_retrieved: 'decisionNotRetrieved',
 } as const;
 
 export function decisionLabel(decision: ScreeningDecisionCreate['decision']): string {

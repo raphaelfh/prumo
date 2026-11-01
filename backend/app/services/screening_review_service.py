@@ -158,7 +158,9 @@ async def assignment_states(
         state = (
             _UNCONFIGURED
             if reviewer_count is None
-            else derive_state(reviewer_count, current, ruling)
+            else derive_state(
+                reviewer_count, current, ruling, reasons_must_match=phase == FULL_TEXT
+            )
         )
         snapshots[assignment_id] = AssignmentSnapshot(assignment_id, current, ruling, state)
     return snapshots
@@ -187,6 +189,29 @@ async def full_text_candidates(
         project_id=project_id, phase=TITLE_ABSTRACT, assignment_ids=sendable
     )
     return [article.id for _, article in queue if article.id not in sent]
+
+
+def _check_decision_for_phase(
+    phase: AssignmentPhase, decision: str, exclusion_reason: str | None
+) -> None:
+    """A decision the phase accepts: no ``not_retrieved`` at title/abstract, no ``maybe`` at full text."""
+    if (phase == TITLE_ABSTRACT and decision == "not_retrieved") or (
+        phase == FULL_TEXT and decision == "maybe"
+    ):
+        raise ScreeningStateError(
+            ApiErrorCode.SCREENING_DECISION_NOT_IN_PHASE,
+            "This decision is not available in this screening phase.",
+        )
+    if phase == FULL_TEXT and decision == "exclude" and exclusion_reason is None:
+        raise ScreeningStateError(
+            ApiErrorCode.SCREENING_REASON_REQUIRED, "Pick an exclusion reason."
+        )
+
+
+def _phase_advanced() -> ScreeningStateError:
+    return ScreeningStateError(
+        ApiErrorCode.SCREENING_PHASE_ADVANCED, "This article is already in full-text screening."
+    )
 
 
 def _not_configured() -> ScreeningStateError:
@@ -310,6 +335,7 @@ class ScreeningReviewService:
         )
         if reviewer_count is None:
             raise _not_configured()
+        _check_decision_for_phase(ref.phase, body.decision, body.exclusion_reason)
         await self.screening.lock_assignment(assignment_id)
         snapshot = (
             await assignment_states(
@@ -331,6 +357,15 @@ class ScreeningReviewService:
             )
         # Post-lock snapshot: a solo reviewer re-decides until a ruling lands (§6.3).
         re_deciding = snapshot.seats(reviewer_id)
+        # Race-free only because the project row is held FOR SHARE (settings_for_share,
+        # first read above) until commit, and a full-text send takes it FOR UPDATE.
+        if (
+            re_deciding
+            and reviewer_count == 1
+            and ref.phase == TITLE_ABSTRACT
+            and await self._sent_to_full_text(ref)
+        ):
+            raise _phase_advanced()
         if re_deciding and (reviewer_count != 1 or snapshot.ruling is not None):
             raise ScreeningStateError(
                 ApiErrorCode.SCREENING_DECISION_FINAL, "You already decided on this record."
@@ -369,13 +404,23 @@ class ScreeningReviewService:
         ).get(assignment_id)
         if snapshot is None:
             raise AssignmentNotFoundError
+        # Same lock dependency as ``decide``: the share lock orders this against a send.
+        if ref.phase == TITLE_ABSTRACT and await self._sent_to_full_text(ref):
+            raise _phase_advanced()
         ruled_on = await owned_decisions(
             self.db, assignment_id=assignment_id, decision_ids=body.ruled_on_decision_ids
         )
         if snapshot.seats(arbitrator_id):
             raise ScreeningSelfArbitrationError
         outcome = snapshot.state.outcome
-        if snapshot.state.phase != "conflict" and (outcome is None or outcome.kind != "arbitrated"):
+        pdf_found_later = (
+            ref.phase == FULL_TEXT and outcome is not None and outcome.decision == "not_retrieved"
+        )
+        if (
+            snapshot.state.phase != "conflict"
+            and not pdf_found_later
+            and (outcome is None or outcome.kind != "arbitrated")
+        ):
             raise ScreeningStateError(
                 ApiErrorCode.SCREENING_NOT_IN_CONFLICT, "This record is not in conflict."
             )
@@ -390,6 +435,7 @@ class ScreeningReviewService:
         else:
             assert body.decision is not None  # the schema requires one of the two
             decision, reason = body.decision, body.exclusion_reason
+            _check_decision_for_phase(ref.phase, decision, reason)
             if reason is not None and reason not in (
                 await load_exclusion_reasons(self.db, ref.project_id)
             ):
@@ -406,6 +452,11 @@ class ScreeningReviewService:
             decided_by=arbitrator_id,
         )
         return await self.get_assignment(assignment_id, arbitrator_id)
+
+    async def _sent_to_full_text(self, ref: ScreeningAssignmentRef) -> bool:
+        return await self.screening.has_assignment(
+            project_id=ref.project_id, phase=FULL_TEXT, article_id=ref.article_id
+        )
 
     async def _read(
         self, ref: ScreeningAssignmentRef, viewer_id: UUID, reviewer_count: int | None

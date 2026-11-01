@@ -5717,7 +5717,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7137,7 +7137,7 @@ export interface components {
          */
         ScreeningArbitrationCreate: {
             /** Decision */
-            decision?: ("include" | "exclude" | "maybe") | null;
+            decision?: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** Exclusion Reason */
             exclusion_reason?: string | null;
             /** Rationale */
@@ -7251,7 +7251,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason?: string | null;
             /** Rationale */
@@ -7268,7 +7268,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7308,7 +7308,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7346,11 +7346,11 @@ export interface components {
             /** Journal Title */
             journal_title: string | null;
             /** My Decision */
-            my_decision: ("include" | "exclude" | "maybe") | null;
+            my_decision: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** My Exclusion Reason */
             my_exclusion_reason: string | null;
             /** Outcome */
-            outcome: ("include" | "exclude" | "maybe") | null;
+            outcome: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** Outcome Exclusion Reason */
             outcome_exclusion_reason: string | null;
             /** Outcome Kind */
@@ -12691,7 +12691,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12747,7 +12747,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED) */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -357,3 +357,63 @@ async def test_full_text_enroll_and_config_serialize(session_factory: Factory) -
         assert isinstance(results[1], ScreeningStateError)
         assert results[1].code == "SCREENING_NOT_CONFIGURED"
         assert await _full_text_rows(session_factory, project_id) == 0
+
+
+async def test_title_abstract_re_decide_and_full_text_send_serialize(
+    session_factory: Factory,
+) -> None:
+    """A TA re-decide parked on the project's FOR SHARE lock sees the committed send and is refused."""
+    async with _sendable(session_factory) as project_id:
+        async with session_factory() as s:
+            first = (
+                await s.execute(
+                    select(ScreeningAssignment.id, ScreeningAssignment.article_id).where(
+                        ScreeningAssignment.project_id == project_id
+                    )
+                )
+            ).first()
+            assert first is not None
+            assignment = first.id
+            reviewer = (
+                await s.execute(
+                    select(ScreeningDecision.reviewer_id).where(
+                        ScreeningDecision.assignment_id == assignment
+                    )
+                )
+            ).scalar_one()
+        locked = asyncio.Event()
+        saw_waiter: list[bool] = []
+
+        async def send() -> None:
+            async with session_factory() as s1:
+                await s1.execute(
+                    text("SELECT id FROM public.projects WHERE id = :p FOR UPDATE"),
+                    {"p": str(project_id)},
+                )
+                locked.set()
+                saw_waiter.append(await _wait_for_a_lock_waiter(session_factory))
+                await ScreeningConfigService(s1).enroll(project_id, MANAGER, None, "full_text")
+                await s1.commit()
+
+        async def redecide() -> None:
+            await locked.wait()
+            async with session_factory() as s2:
+                await ScreeningReviewService(s2).decide(
+                    assignment,
+                    reviewer,
+                    ScreeningDecisionCreate(
+                        decision="exclude", exclusion_reason="Wrong population"
+                    ),
+                )
+                await s2.commit()
+
+        results = await asyncio.gather(send(), redecide(), return_exceptions=True)
+
+        assert saw_waiter == [True]
+        assert results[0] is None
+        assert isinstance(results[1], ScreeningStateError)
+        assert results[1].code == "SCREENING_PHASE_ADVANCED"
+        assert (
+            await _current_decision_of(session_factory, project_id, assignment, reviewer)
+            == "include"
+        )

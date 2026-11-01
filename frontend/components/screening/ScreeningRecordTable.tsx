@@ -27,6 +27,7 @@ const DECISION_LABEL: Record<NonNullable<ScreeningRecordRow['my_decision']>, key
   include: 'decisionInclude',
   exclude: 'decisionExclude',
   maybe: 'decisionMaybe',
+  not_retrieved: 'decisionNotRetrieved',
 };
 
 const HEAD_CLASS = cn(TABLE_CELL_CLASS, 'h-8 text-[11px] font-medium uppercase tracking-wider text-muted-foreground');

@@ -1,4 +1,4 @@
-"""Title/abstract screening: config, enrollment, records, decisions and arbitration. snake_case on the wire."""
+"""Title/abstract and full-text screening: config, enrollment, records, decisions and arbitration. snake_case on the wire."""
 
 from datetime import datetime
 from typing import Literal, Self
@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ScreeningDecisionValue = Literal["include", "exclude", "maybe"]
+ScreeningDecisionValue = Literal["include", "exclude", "maybe", "not_retrieved"]
 ScreeningOutcomeKind = Literal["solo", "consensus", "arbitrated"]
 ScreeningCallerStatus = Literal["awaiting_me", "awaiting_others", "conflict", "decided"]
 ScreeningPhase = Literal["title_abstract"]
