@@ -583,6 +583,17 @@ async def test_approve_and_finalize_publishes_agreed_and_finalizes(
     )
     assert len(published) == 1
 
+    from app.services.run_lifecycle_service import APPROVE_ALL_RATIONALE
+
+    assert APPROVE_ALL_RATIONALE == "Approved: reviewers agree (Phase 2 approve-all)."
+    rationale = (
+        await db_session.execute(
+            text("SELECT rationale FROM public.extraction_consensus_decisions WHERE run_id = :r"),
+            {"r": str(run.id)},
+        )
+    ).scalar_one()
+    assert rationale == APPROVE_ALL_RATIONALE
+
     await db_session.rollback()
 
 
