@@ -42,25 +42,21 @@ from app.models.extraction import (
     ExtractionEvidence,
     ExtractionFieldType,
     ExtractionRun,
-    TemplateKind,
 )
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
-    ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
-    ExtractionReviewerState,
 )
 from app.services.extraction_export_service import (
     AIProposalRow,
     ArticleDescriptor,
     ExportMode,
-    ExtractionExportService,
     FieldDescriptor,
     SectionDescriptor,
 )
-from app.services.hitl_session_service import HITLSessionService
 from tests.integration.conftest import SEED
+from tests.integration.helpers.export_fixtures import export_service, make_run, record_decision
 
 pytestmark = pytest.mark.asyncio
 
@@ -122,30 +118,6 @@ async def _coord(
     )
 
 
-async def _make_run(
-    db: AsyncSession, *, project_id: UUID, article_id: UUID, template_id: UUID, profile_id: UUID
-) -> ExtractionRun:
-    """Create a fresh PROPOSAL run for the coord (clearing leaked runs
-    first; the test's rolled-back session undoes both)."""
-    await db.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
-    )
-    session = await HITLSessionService(db).open_or_resume(
-        kind=TemplateKind.EXTRACTION,
-        project_id=project_id,
-        article_id=article_id,
-        user_id=profile_id,
-        project_template_id=template_id,
-    )
-    run = await db.get(ExtractionRun, session.run_id)
-    assert run is not None
-    return run
-
-
 def _ai_proposal(
     *,
     proposal_id: UUID,
@@ -186,54 +158,6 @@ def _human_proposal(
         proposed_value={"value": value},
         created_at=created_at,
     )
-
-
-async def _record_decision(
-    db: AsyncSession,
-    *,
-    run_id: UUID,
-    instance_id: UUID,
-    field_id: UUID,
-    reviewer_id: UUID,
-    decision: ExtractionReviewerDecisionType,
-    proposal_record_id: UUID | None = None,
-    value: dict[str, object] | None = None,
-) -> ExtractionReviewerDecision:
-    """Insert a reviewer decision + the matching ``current_decision_id``
-    state pointer for one reviewer on one (run, instance, field) coord.
-
-    The composite FK ``(run_id, current_decision_id)`` requires the
-    decision and state to agree on ``run_id``; we flush the decision
-    first so its id is available for the state pointer.
-    """
-    dec = ExtractionReviewerDecision(
-        id=uuid4(),
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        reviewer_id=reviewer_id,
-        decision=decision.value,
-        proposal_record_id=proposal_record_id,
-        value=value,
-    )
-    db.add(dec)
-    await db.flush()
-    db.add(
-        ExtractionReviewerState(
-            id=uuid4(),
-            run_id=run_id,
-            reviewer_id=reviewer_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            current_decision_id=dec.id,
-        )
-    )
-    await db.flush()
-    return dec
-
-
-def _service(db: AsyncSession, *, profile_id: UUID) -> ExtractionExportService:
-    return ExtractionExportService(db=db, user_id=str(profile_id), trace_id="t")
 
 
 def _article(
@@ -280,7 +204,7 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -303,7 +227,7 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
     reviewer_accept = profile_id
     # Seeded reviewer of the same project — distinct from the manager.
     reviewer_reject = SEED.reviewer_profile
-    await _record_decision(
+    await record_decision(
         db_session,
         run_id=run.id,
         instance_id=instance_id,
@@ -312,7 +236,7 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
         decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
         proposal_record_id=proposal_id,
     )
-    await _record_decision(
+    await record_decision(
         db_session,
         run_id=run.id,
         instance_id=instance_id,
@@ -321,7 +245,7 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
         decision=ExtractionReviewerDecisionType.REJECT,
     )
 
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
+    rows = await export_service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
         articles=(
             _article(
                 article_id=article_id,
@@ -358,7 +282,7 @@ async def test_ai_outcome_single_user_scoped_to_target(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -380,7 +304,7 @@ async def test_ai_outcome_single_user_scoped_to_target(
     target_reviewer = profile_id
     # Seeded reviewer of the same project — distinct from the manager.
     other_reviewer = SEED.reviewer_profile
-    await _record_decision(
+    await record_decision(
         db_session,
         run_id=run.id,
         instance_id=instance_id,
@@ -388,7 +312,7 @@ async def test_ai_outcome_single_user_scoped_to_target(
         reviewer_id=target_reviewer,
         decision=ExtractionReviewerDecisionType.REJECT,
     )
-    await _record_decision(
+    await record_decision(
         db_session,
         run_id=run.id,
         instance_id=instance_id,
@@ -400,7 +324,7 @@ async def test_ai_outcome_single_user_scoped_to_target(
 
     # Single-user value map: the target rejected, so there is no value for
     # the coord — ``final_value_used`` must come out None (blank cell).
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
+    rows = await export_service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
         articles=(
             _article(
                 article_id=article_id,
@@ -444,7 +368,7 @@ async def test_ai_outcome_not_selected_when_terminal_decision_exists(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -476,7 +400,7 @@ async def test_ai_outcome_not_selected_when_terminal_decision_exists(
 
     # Accept the SIBLING human proposal — the AI proposal on the same key
     # is touched-but-not-selected (a different proposal was accepted).
-    await _record_decision(
+    await record_decision(
         db_session,
         run_id=run.id,
         instance_id=instance_id,
@@ -486,7 +410,7 @@ async def test_ai_outcome_not_selected_when_terminal_decision_exists(
         proposal_record_id=sibling_human_id,
     )
 
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
+    rows = await export_service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
         articles=(
             _article(
                 article_id=article_id,
@@ -528,7 +452,7 @@ async def test_ai_evidence_ordered_and_deduped(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -570,7 +494,7 @@ async def test_ai_evidence_ordered_and_deduped(
         )
     await db_session.flush()
 
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
+    rows = await export_service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
         articles=(
             _article(
                 article_id=article_id,
@@ -630,7 +554,7 @@ async def _ai_metadata_rows(
     field_id: UUID,
 ) -> tuple[AIProposalRow, ...]:
     """AI-metadata rows for one single-section, single-proposal run."""
-    return await _service(db, profile_id=profile_id)._load_ai_proposal_rows(
+    return await export_service(db, profile_id=profile_id)._load_ai_proposal_rows(
         articles=(
             _article(
                 article_id=article_id,
@@ -656,7 +580,7 @@ async def test_model_used_ignores_mutable_run_provenance_and_forgeable_parameter
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -701,7 +625,7 @@ async def test_model_used_unavailable_without_per_proposal_facts_for_hitl_run(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -745,7 +669,7 @@ async def test_model_used_never_guesses_from_sibling_section_candidates(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -790,7 +714,7 @@ async def test_model_used_never_borrows_flat_run_snapshot(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -835,7 +759,7 @@ async def test_model_used_never_falls_back_to_parameters_for_legacy_rows(
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
     # Run A — legacy parameters, and explicitly no provenance.
-    run_a = await _make_run(
+    run_a = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -936,7 +860,7 @@ async def test_model_used_empty_when_neither_provenance_nor_parameters(
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
@@ -983,7 +907,7 @@ async def test_annotated_proposal_exports_the_value_not_the_verification_sibling
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    run = await _make_run(
+    run = await make_run(
         db_session,
         project_id=project_id,
         article_id=article_id,
