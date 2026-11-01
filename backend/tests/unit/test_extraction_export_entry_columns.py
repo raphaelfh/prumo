@@ -22,6 +22,7 @@ from app.services.exports.descriptors import (
     instance_in_record,
     iter_records,
     level_of,
+    record_label,
     root_instance,
     walk_sections,
 )
@@ -260,7 +261,10 @@ def test_records_for_a_root_group_number_its_entries_by_noun() -> None:
     e1, e2 = uuid4(), uuid4()
     article = _article({(g.entity_type_id, None): (e1, e2)})
 
-    assert iter_records(g, article, (g,)) == ((e1, ("Model 1",)), (e2, ("Model 2",)))
+    assert iter_records(g, article, (g,)) == (
+        (e1, ((e1, "Model 1"),)),
+        (e2, ((e2, "Model 2"),)),
+    )
 
 
 def test_records_for_a_singleton_child_carry_their_entry_in_the_label() -> None:
@@ -284,8 +288,8 @@ def test_records_for_a_singleton_child_carry_their_entry_in_the_label() -> None:
     )
 
     assert iter_records(child, article, sections) == (
-        (c1, ("Model 1",)),
-        (c2, ("Model 2",)),
+        (c1, ((e1, "Model 1"),)),
+        (c2, ((e2, "Model 2"),)),
     )
 
 
@@ -304,10 +308,35 @@ def test_records_for_a_nested_group_name_both_levels() -> None:
     )
 
     assert iter_records(nested, article, sections) == (
-        (p1, ("Model 1", "Predictor 1")),
-        (p2, ("Model 1", "Predictor 2")),
-        (p3, ("Model 2", "Predictor 1")),
+        (p1, ((e1, "Model 1"), (p1, "Predictor 1"))),
+        (p2, ((e1, "Model 1"), (p2, "Predictor 2"))),
+        (p3, ((e2, "Model 2"), (p3, "Predictor 1"))),
     )
+
+
+def test_record_label_prefers_the_trimmed_label_of_a_keyed_instance() -> None:
+    g = _labelled(uuid4(), many=True, noun="model")
+    e1, e2 = uuid4(), uuid4()
+    art = replace(_article({(g.entity_type_id, None): (e1, e2)}), keyed_labels={e1: "XGBoost"})
+
+    assert record_label(g, art, e1, 1) == "XGBoost"
+    assert record_label(g, art, e2, 2) == "Model 2"
+
+
+def test_blank_keyed_label_falls_back_to_position() -> None:  # Review Focus 3
+    g = _labelled(uuid4(), many=True, noun="model")
+    e1 = uuid4()
+    art = replace(_article({(g.entity_type_id, None): (e1,)}), keyed_labels={e1: ""})
+
+    assert record_label(g, art, e1, 1) == "Model 1"
+
+
+def test_records_carry_the_keyed_label_in_the_chain() -> None:
+    g = _labelled(uuid4(), many=True, noun="model")
+    e1, e2 = uuid4(), uuid4()
+    art = replace(_article({(g.entity_type_id, None): (e1, e2)}), keyed_labels={e2: "XGBoost"})
+
+    assert iter_records(g, art, (g,)) == ((e1, ((e1, "Model 1"),)), (e2, ((e2, "XGBoost"),)))
 
 
 def _fielded(s):

@@ -177,9 +177,10 @@ class ArticleDescriptor:
     header_label: str
     run_id: UUID | None
     version_id: UUID | None
-    # (entity_type_id, parent_instance_id) → ORDERED instance ids.
-    # See `exports/descriptors.py` for what reads it.
+    # (entity_type_id, parent_instance_id) → ORDERED instance ids; read in exports/descriptors.py.
     entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = field(default_factory=dict)
+    # Keyed instance id -> trimmed label (rule 6).
+    keyed_labels: Mapping[UUID, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1943,12 +1944,8 @@ def _build_tidy_tables(
     a nested group is labelled with every repeating level above it, so
     ``{article} - {root entry} - {nested entry}`` (spec §10).
 
-    Was selected by ROLE first: a model section fanned out one row per
-    ``model_instances`` entry, and that tuple held EVERY child instance of
-    EVERY entry — so an article with two models emitted twelve rows on each
-    child sheet, six of them empty. A field-less repeating group is skipped
-    because it is the axis, not a record; one WITH fields now gets its own
-    sheet, which it never did.
+    A field-less repeating group is skipped because it is the axis, not a
+    record; one WITH fields gets its own sheet.
     """
     tables: list[TidyTable] = []
     for section in sections:
@@ -1960,13 +1957,15 @@ def _build_tidy_tables(
         for article in articles:
             if article.run_id is None:
                 continue
-            for instance_id, label_parts in iter_records(section, article, sections):
+            for instance_id, chain in iter_records(section, article, sections):
                 rows.append(
                     _tidy_row(
                         section=section,
                         article=article,
                         instance_id=instance_id,
-                        record_label=" — ".join((article.header_label, *label_parts)),
+                        record_label=" — ".join(
+                            (article.header_label, *(label for _, label in chain))
+                        ),
                         value_map=value_map,
                         rater=rater,
                     )

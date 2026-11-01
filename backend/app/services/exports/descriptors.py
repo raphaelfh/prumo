@@ -343,16 +343,26 @@ def instance_in_record(
     return instance_id
 
 
+def record_label(
+    section: SectionDescriptor,
+    article: ArticleDescriptor,
+    instance_id: UUID,
+    position: int,
+) -> str:
+    """Rule 6: a keyed instance is called by its trimmed label; any other,
+    or a keyed one whose label is blank, by "{stem} {position}"."""
+    return article.keyed_labels.get(instance_id) or f"{_stem(section)} {position}"
+
+
 def iter_records(
     section: SectionDescriptor,
     article: ArticleDescriptor,
     sections: Sequence[SectionDescriptor],
-) -> tuple[tuple[UUID, tuple[str, ...]], ...]:
-    """``(instance_id, label parts)`` for every record of one section.
+) -> tuple[tuple[UUID, tuple[tuple[UUID, str], ...]], ...]:
+    """``(instance_id, chain)`` for every record of one section.
 
-    The records-as-rows grain of the tidy sheets (spec §10): a row under a
-    nested group reads ``{article} · {root entry} · {nested entry}``, so the
-    parts name every repeating level above the row, in order.
+    ``chain`` holds one ``(instance_id, record_label)`` per repeating level
+    above (and including) the row, root first (spec §10, rule 6).
 
     Each level of the chain multiplies the records below it, which is what
     the flat ``model_instances`` tuple could not express: every child row was
@@ -360,21 +370,24 @@ def iter_records(
     so an article with two models produced twelve "Model 1..12" rows on each
     child sheet, six of them empty.
     """
-    records: list[tuple[UUID | None, tuple[str, ...]]] = [(None, ())]
+    Chain = tuple[tuple[UUID, str], ...]
+    records: list[tuple[UUID | None, Chain]] = [(None, ())]
     for level in ancestry(section, sections):
-        grown: list[tuple[UUID | None, tuple[str, ...]]] = []
-        for parent_instance_id, parts in records:
+        grown: list[tuple[UUID | None, Chain]] = []
+        for parent_instance_id, chain in records:
             ids = article.entries.get((level.entity_type_id, parent_instance_id), ())
             if _repeats(level):
-                stem = _stem(level)
                 grown.extend(
-                    (instance_id, (*parts, f"{stem} {i}"))
+                    (
+                        instance_id,
+                        (*chain, (instance_id, record_label(level, article, instance_id, i))),
+                    )
                     for i, instance_id in enumerate(ids, start=1)
                 )
             elif ids:
-                grown.append((ids[0], parts))
+                grown.append((ids[0], chain))
         records = grown
-    return tuple((iid, parts) for iid, parts in records if iid is not None)
+    return tuple((iid, chain) for iid, chain in records if iid is not None)
 
 
 def descendant_instances(article: ArticleDescriptor, instance_id: UUID) -> set[UUID]:

@@ -53,7 +53,7 @@ def _completeness(
         return 0, 0
     rater = primary_rater(layout.mode, layout.reviewer_id)
     for section in layout.sections:
-        for instance_id, _parts in iter_records(section, article, layout.sections):
+        for instance_id, _chain in iter_records(section, article, layout.sections):
             if scope is not None and instance_id not in scope:
                 continue
             for field in section.fields:
@@ -78,10 +78,14 @@ def _record_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
     for article in layout.articles:
         rows.append(_row(article, "", *_completeness(layout, article, None)))
         for group in groups:
-            for instance_id, parts in iter_records(group, article, layout.sections):
+            for instance_id, chain in iter_records(group, article, layout.sections):
                 scope = descendant_instances(article, instance_id)
                 rows.append(
-                    _row(article, " · ".join(parts), *_completeness(layout, article, scope))
+                    _row(
+                        article,
+                        " · ".join(label for _, label in chain),
+                        *_completeness(layout, article, scope),
+                    )
                 )
     return rows
 
