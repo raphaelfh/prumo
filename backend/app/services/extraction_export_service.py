@@ -25,7 +25,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -100,6 +100,7 @@ from app.services.exports.extraction_snapshot_reader import (
     load_export_sections,
     section_from_view,
 )
+from app.services.exports.rater_labels import label_raters, letter_for, short_id
 from app.services.exports.values import (
     ExportValue,
     OptionLabels,
@@ -330,6 +331,8 @@ class ExportLayout:
     raters_by_run: Mapping[UUID, tuple[UUID, ...]] = field(default_factory=dict)
     # Every loaded cell under its ``value_map`` key; ``value_map`` projects it (D10).
     cells: Mapping[ValueKey, CellRecord] = field(default_factory=dict)
+    # One project map, in Member-letter order: rater id -> label (§6, D4).
+    rater_labels: Mapping[UUID, str] = field(default_factory=dict)
 
 
 # ----------------------------------------------------------------------
@@ -454,6 +457,16 @@ class ExtractionExportService(LoggerMixin):
         primary = primary_rater(mode, reviewer_id)
         refs = await self._load_article_refs(project_id=project_id)
         version_numbers = {version.id: version.version, **{r.id: r.version for r in rows}}
+        # D4: a non-manager exporter is the only person named in the export.
+        caller_id = UUID(self.user_id)
+        is_manager = await self._project_members_repo().has_role(
+            project_id, caller_id, ProjectMemberRole.MANAGER
+        )
+        rater_labels = await self._load_rater_labels(
+            project_id=project_id,
+            anonymize=anonymize_reviewer_names,
+            named_only=None if is_manager else caller_id,
+        )
         reviewers: tuple[ReviewerDescriptor, ...] = ()
         raters_by_run: dict[UUID, tuple[UUID, ...]] = {}
 
@@ -497,7 +510,7 @@ class ExtractionExportService(LoggerMixin):
             )
             reviewers, raters_by_run = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
-                anonymize=anonymize_reviewer_names,
+                labels=rater_labels,
             )
             run_ids = [a.run_id for a in articles if a.run_id is not None]
             cells = {
@@ -581,7 +594,7 @@ class ExtractionExportService(LoggerMixin):
             versions=(active, *pinned),
             narrow_pinned_versions=narrow_pinned_versions,
             omitted=tuple(
-                OmittedArticle(aid, refs[aid].label if aid in refs else _short_id(aid), reason)
+                OmittedArticle(aid, refs[aid].label if aid in refs else short_id(aid), reason)
                 for aid, reason in omitted
             ),
             appraisal=appraisal,
@@ -591,6 +604,7 @@ class ExtractionExportService(LoggerMixin):
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
             raters_by_run=raters_by_run,
             cells=cells,
+            rater_labels=rater_labels,
         )
 
     # ------------------------------------------------------------------
@@ -979,7 +993,7 @@ class ExtractionExportService(LoggerMixin):
             out.append(
                 ArticleDescriptor(
                     article_id=aid,
-                    article_label=ref.label if ref else _short_id(aid),
+                    article_label=ref.label if ref else short_id(aid),
                     run_id=run.id,
                     version_id=run.version_id,
                     doi=ref.doi if ref else None,
@@ -1226,7 +1240,7 @@ class ExtractionExportService(LoggerMixin):
 
         seen: dict[UUID, str] = {}
         for rid, name, email in rows:
-            seen.setdefault(rid, name or email or _short_id(rid))
+            seen.setdefault(rid, name or email or short_id(rid))
         ordered = sorted(seen.items(), key=lambda kv: kv[1].lower())
         return [{"id": str(rid), "name": label} for rid, label in ordered]
 
@@ -1283,38 +1297,52 @@ class ExtractionExportService(LoggerMixin):
         )
         return descriptors, omitted
 
-    async def _list_reviewers_for_runs(
-        self,
-        *,
-        run_ids: list[UUID],
-        anonymize: bool,
-    ) -> tuple[tuple[ReviewerDescriptor, ...], dict[UUID, tuple[UUID, ...]]]:
-        """Distinct reviewers with ≥ 1 non-reject decision on the run set, and
-        per run the reviewers that qualify there, in the same order (R16).
-
-        Stable ordering (FR-011):
-          * anonymize=False → alphabetical by display name
-          * anonymize=True  → stable by reviewer id (so re-runs of the
-            same export produce the same Reviewer A/B mapping)
-        """
+    async def _load_rater_labels(
+        self, *, project_id: UUID, anonymize: bool, named_only: UUID | None = None
+    ) -> dict[UUID, str]:
+        """The project's one rater label map (§6, D4): every reviewer or
+        consensus actor, by earliest decision; see ``label_raters``."""
         from app.models.user import Profile
 
+        actions = union_all(
+            select(
+                ExtractionReviewerDecision.reviewer_id.label("actor_id"),
+                ExtractionReviewerDecision.created_at.label("at"),
+            )
+            .join(ExtractionRun, ExtractionRun.id == ExtractionReviewerDecision.run_id)
+            .where(ExtractionRun.project_id == project_id),
+            select(
+                ExtractionConsensusDecision.consensus_user_id,
+                ExtractionConsensusDecision.created_at,
+            )
+            .join(ExtractionRun, ExtractionRun.id == ExtractionConsensusDecision.run_id)
+            .where(ExtractionRun.project_id == project_id),
+        ).subquery()
+        rows = (
+            await self.db.execute(
+                select(actions.c.actor_id, func.min(actions.c.at), Profile.full_name, Profile.email)
+                .outerjoin(Profile, Profile.id == actions.c.actor_id)
+                .group_by(actions.c.actor_id, Profile.full_name, Profile.email)
+            )
+        ).tuples()
+        return label_raters(rows, anonymize=anonymize, named_only=named_only)
+
+    async def _list_reviewers_for_runs(
+        self, *, run_ids: list[UUID], labels: Mapping[UUID, str]
+    ) -> tuple[tuple[ReviewerDescriptor, ...], dict[UUID, tuple[UUID, ...]]]:
+        """Distinct reviewers with >= 1 non-reject current decision on the run
+        set, and per run the reviewers that qualify there (R16). Both follow
+        the order of ``labels`` (Member-letter order), which names them."""
         if not run_ids:
             return (), {}
 
         rows = (
             await self.db.execute(
-                select(
-                    ExtractionReviewerState.reviewer_id,
-                    ExtractionReviewerState.run_id,
-                    Profile.full_name,
-                    Profile.email,
-                )
+                select(ExtractionReviewerState.reviewer_id, ExtractionReviewerState.run_id)
                 .join(
                     ExtractionReviewerDecision,
                     ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
-                .outerjoin(Profile, Profile.id == ExtractionReviewerState.reviewer_id)
                 .where(
                     ExtractionReviewerState.run_id.in_(run_ids),
                     ExtractionReviewerDecision.decision != "reject",
@@ -1323,26 +1351,15 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
 
-        by_id: dict[UUID, str] = {}
         runs_of: dict[UUID, set[UUID]] = {}
-        for rid, run_id, name, email in rows:
-            by_id.setdefault(rid, name or email or _short_id(rid))
+        for rid, run_id in rows:
             runs_of.setdefault(run_id, set()).add(rid)
-
-        if anonymize:
-            ordered_ids = sorted(by_id.keys(), key=lambda u: str(u))
-            reviewers = tuple(
-                ReviewerDescriptor(
-                    reviewer_id=rid,
-                    display_label=f"Reviewer {_letter_for(idx)}",
-                )
-                for idx, rid in enumerate(ordered_ids)
-            )
-        else:
-            ordered = sorted(by_id.items(), key=lambda kv: kv[1].lower())
-            reviewers = tuple(
-                ReviewerDescriptor(reviewer_id=rid, display_label=label) for rid, label in ordered
-            )
+        rater_ids = set().union(*runs_of.values())
+        reviewers = tuple(
+            ReviewerDescriptor(reviewer_id=rid, display_label=label)
+            for rid, label in labels.items()
+            if rid in rater_ids
+        )
         by_run = {
             run_id: tuple(r.reviewer_id for r in reviewers if r.reviewer_id in rids)
             for run_id, rids in runs_of.items()
@@ -1807,7 +1824,7 @@ def _base_label(
     surname = _extract_surname(authors[0] or "") if authors else ""
     if surname:
         return f"{surname} {year}" if year is not None else surname
-    return title[:60] if title else _short_id(article_id)
+    return title[:60] if title else short_id(article_id)
 
 
 def _suffix_labels(rows: Sequence[tuple[UUID, str, datetime]]) -> dict[UUID, str]:
@@ -1818,25 +1835,7 @@ def _suffix_labels(rows: Sequence[tuple[UUID, str, datetime]]) -> dict[UUID, str
     for aid, label, _ in sorted(rows, key=lambda r: (r[2], str(r[0]))):
         n = seen.get(label, 0)
         seen[label] = n + 1
-        out[aid] = label + _letter_for(n).lower() if n else label
-    return out
-
-
-def _short_id(value: UUID) -> str:
-    return str(value).split("-")[0]
-
-
-def _letter_for(idx: int) -> str:
-    """Convert ``0 → A``, ``1 → B``, … ``25 → Z``, ``26 → AA`` (anonymize)."""
-    if idx < 0:
-        return "?"
-    out = ""
-    n = idx
-    while True:
-        out = chr(ord("A") + (n % 26)) + out
-        n = n // 26 - 1
-        if n < 0:
-            break
+        out[aid] = label + letter_for(n).lower() if n else label
     return out
 
 

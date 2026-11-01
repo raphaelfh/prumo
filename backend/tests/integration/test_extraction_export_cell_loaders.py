@@ -6,7 +6,9 @@ through the real review and consensus services; the SAVEPOINT rollback drops it.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -269,3 +271,130 @@ async def test_value_for_field_outside_every_loaded_version_is_kept(
     assert all(f.field_id != new_fid for v in layout.versions for s in v.sections for f in s.fields)
     v = layout.value_map[value_key(run.id, _INST, new_fid, SEED.primary_profile)]
     assert v.status == "answered" and v.raw == {"value": "kept"}
+
+
+# ----------------------------------------------------------------------
+# Project rater/pseudonym map (§6, D4)
+# ----------------------------------------------------------------------
+
+
+async def _only_this_run(db: AsyncSession) -> ExtractionRun:
+    """A fresh EXTRACT run as the project's only run, so its actors are the
+    map's only actors (the SAVEPOINT rollback restores the rest)."""
+    await db.execute(
+        text("DELETE FROM public.extraction_runs WHERE project_id = :pid"),
+        {"pid": str(SEED.primary_project)},
+    )
+    return await _extract_run(db)
+
+
+async def _set_decided_at(db: AsyncSession, decision_id: UUID, ts: datetime) -> None:
+    await db.execute(
+        text("UPDATE public.extraction_reviewer_decisions SET created_at = :ts WHERE id = :id"),
+        {"ts": ts, "id": str(decision_id)},
+    )
+
+
+async def _set_full_name(db: AsyncSession, profile_id: UUID, name: str) -> None:
+    await db.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": name, "id": str(profile_id)},
+    )
+
+
+async def test_same_name_reviewers_get_distinct_raters(db_session: AsyncSession) -> None:
+    run = await _only_this_run(db_session)
+    for pid in (SEED.primary_profile, SEED.reviewer_profile):
+        await _set_full_name(db_session, pid, "Alex Doe")
+        await _decide(db_session, run.id, pid, "edit", value={"value": 1})
+
+    labels = await _svc(db_session)._load_rater_labels(
+        project_id=SEED.primary_project, anonymize=False
+    )
+
+    assert labels[SEED.primary_profile] != labels[SEED.reviewer_profile]
+    assert labels[SEED.primary_profile].startswith("Alex Doe ")
+    assert labels[SEED.reviewer_profile].startswith("Alex Doe ")
+
+
+async def test_member_letters_follow_earliest_decision(db_session: AsyncSession) -> None:
+    run = await _only_this_run(db_session)
+    a = await _decide(db_session, run.id, SEED.primary_profile, "edit", value={"value": 1})
+    b = await _decide(db_session, run.id, SEED.reviewer_profile, "edit", value={"value": 2})
+    await _set_decided_at(db_session, a.id, datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+    await _set_decided_at(db_session, b.id, datetime(2026, 1, 1, tzinfo=UTC))
+
+    labels = await _svc(db_session)._load_rater_labels(
+        project_id=SEED.primary_project, anonymize=True
+    )
+
+    assert (labels[SEED.reviewer_profile], labels[SEED.primary_profile]) == ("Member A", "Member B")
+
+
+async def test_adjudicator_without_reviewer_decisions_is_labelled(
+    db_session: AsyncSession,
+) -> None:
+    run = await _only_this_run(db_session)
+    await _to_consensus(db_session, run.id)
+    await _consensus(db_session, run.id, "manual_override", value={"value": 7})
+
+    labels = await _svc(db_session)._load_rater_labels(
+        project_id=SEED.primary_project, anonymize=True
+    )
+
+    assert labels == {SEED.primary_profile: "Member A"}
+
+
+async def test_name_equal_to_consensus_is_suffixed(db_session: AsyncSession) -> None:
+    run = await _only_this_run(db_session)
+    await _set_full_name(db_session, SEED.primary_profile, "Consensus")
+    await _decide(db_session, run.id, SEED.primary_profile, "edit", value={"value": 1})
+
+    labels = await _svc(db_session)._load_rater_labels(
+        project_id=SEED.primary_project, anonymize=False
+    )
+
+    assert labels[SEED.primary_profile] == f"Consensus {str(SEED.primary_profile).split('-')[0]}"
+
+
+async def test_non_manager_sees_only_own_name(db_session: AsyncSession) -> None:
+    run = await _only_this_run(db_session)
+    await _decide(db_session, run.id, SEED.primary_profile, "edit", value={"value": 1})
+    await _decide(db_session, run.id, SEED.reviewer_profile, "edit", value={"value": 2})
+
+    labels = await _svc(db_session)._load_rater_labels(
+        project_id=SEED.primary_project, anonymize=False, named_only=SEED.reviewer_profile
+    )
+
+    assert labels[SEED.reviewer_profile] == "Integration Reviewer"
+    assert re.fullmatch(r"Member [A-Z]+", labels[SEED.primary_profile])
+
+
+async def test_labels_ignore_other_projects(db_session: AsyncSession) -> None:
+    """The project predicate sits in the WHERE clause: no foreign actor leaks in."""
+    run = await _only_this_run(db_session)
+    await _decide(db_session, run.id, SEED.primary_profile, "edit", value={"value": 1})
+
+    labels = await _svc(db_session)._load_rater_labels(project_id=uuid4(), anonymize=True)
+
+    assert labels == {}
+
+
+async def test_non_manager_layout_pseudonymises_others(db_session: AsyncSession) -> None:
+    """D4 wiring: a reviewer's single_user export names only the exporter."""
+    run = await _only_this_run(db_session)
+    await _decide(db_session, run.id, SEED.primary_profile, "edit", value={"value": 1})
+    await _decide(db_session, run.id, SEED.reviewer_profile, "edit", value={"value": 2})
+
+    layout = await export_service(db_session, profile_id=SEED.reviewer_profile).resolve_layout(
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        mode=ExportMode.SINGLE_USER,
+        article_ids=[SEED.primary_article],
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+        reviewer_id=SEED.reviewer_profile,
+    )
+
+    assert layout.rater_labels[SEED.reviewer_profile] == "Integration Reviewer"
+    assert re.fullmatch(r"Member [A-Z]+", layout.rater_labels[SEED.primary_profile])

@@ -33,6 +33,7 @@ from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.project import ProjectMemberRole
 from app.services.exports.codebook_model import VersionSections
 from app.services.exports.descriptors import value_key
+from app.services.exports.rater_labels import letter_for, short_id
 from app.services.exports.values import display_value, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
@@ -42,8 +43,6 @@ from app.services.extraction_export_service import (
     FieldDescriptor,
     SectionDescriptor,
     _infer_reviewer_outcome,
-    _letter_for,
-    _short_id,
     _untyped_field,
 )
 from app.services.value_semantics import ABSENT_REASON_LABELS
@@ -1336,34 +1335,34 @@ class TestListEligibleReviewersForPicker:
 
 
 # ===========================================================================
-# Pure helpers: _short_id and _letter_for
+# Pure helpers: short_id and letter_for
 # ===========================================================================
 
 
 class TestShortId:
     def test_returns_first_segment_of_uuid(self):
         uid = UUID("abcdef01-1234-4000-8000-000000000000")
-        assert _short_id(uid) == "abcdef01"
+        assert short_id(uid) == "abcdef01"
 
 
 class TestLetterFor:
     def test_negative_returns_question_mark(self):
-        assert _letter_for(-1) == "?"
+        assert letter_for(-1) == "?"
 
     def test_zero_returns_a(self):
-        assert _letter_for(0) == "A"
+        assert letter_for(0) == "A"
 
     def test_25_returns_z(self):
-        assert _letter_for(25) == "Z"
+        assert letter_for(25) == "Z"
 
     def test_26_returns_aa(self):
-        assert _letter_for(26) == "AA"
+        assert letter_for(26) == "AA"
 
     def test_51_returns_az(self):
-        assert _letter_for(51) == "AZ"
+        assert letter_for(51) == "AZ"
 
     def test_52_returns_ba(self):
-        assert _letter_for(52) == "BA"
+        assert letter_for(52) == "BA"
 
 
 # ===========================================================================
@@ -1589,6 +1588,10 @@ class TestResolveLayoutAiTarget:
         svc._load_reviewer_cells = AsyncMock(return_value={})
         svc._load_consensus_cells = AsyncMock(return_value={})
         svc._resolve_articles_for_single_user = AsyncMock(return_value=([], {}))
+        svc._load_rater_labels = AsyncMock(return_value={})
+        member_repo = MagicMock()
+        member_repo.has_role = AsyncMock(return_value=True)
+        svc._project_members_repo = MagicMock(return_value=member_repo)
         ai_loader = AsyncMock(return_value=())
         svc._load_ai_proposal_rows = ai_loader
         return ai_loader
@@ -1943,12 +1946,12 @@ class TestResolveArticlesForAllUsers:
 
 
 class TestListReviewersForRuns:
-    """Tests for _list_reviewers_for_runs with anonymize flag."""
+    """_list_reviewers_for_runs labels and orders reviewers from the project map."""
 
     @pytest.mark.asyncio
     async def test_empty_run_ids_returns_empty_tuple(self):
         svc = _make_service()
-        result = await svc._list_reviewers_for_runs(run_ids=[], anonymize=False)
+        result = await svc._list_reviewers_for_runs(run_ids=[], labels={})
         assert result == ((), {})
 
     @pytest.mark.asyncio
@@ -1956,70 +1959,80 @@ class TestListReviewersForRuns:
         svc = _make_service()
         r1, r2, run_a, run_b = uuid4(), uuid4(), uuid4(), uuid4()
         svc.db.execute = AsyncMock(
-            return_value=_rows_result(
-                [(r1, run_a, "Bea", None), (r2, run_a, "Al", None), (r1, run_b, "Bea", None)]
-            )
+            return_value=_rows_result([(r1, run_a), (r2, run_a), (r1, run_b)])
         )
+        labels = {r2: "Member A", r1: "Member B"}  # the _load_rater_labels map, stubbed
         reviewers, by_run = await svc._list_reviewers_for_runs(
-            run_ids=[run_a, run_b], anonymize=False
+            run_ids=[run_a, run_b], labels=labels
         )
-        assert [r.display_label for r in reviewers] == ["Al", "Bea"]
+        assert [(r.reviewer_id, r.display_label) for r in reviewers] == [
+            (r2, "Member A"),
+            (r1, "Member B"),
+        ]
         assert by_run == {run_a: (r2, r1), run_b: (r1,)}
 
-    @pytest.mark.asyncio
-    async def test_anonymize_false_returns_named_reviewers(self):
-        """anonymize=False → reviewers sorted by name."""
+
+class TestLoadRaterLabels:
+    """The labelling rules over the loader's (actor, first_at, name, email) rows."""
+
+    @staticmethod
+    def _svc_with(rows: list) -> ExtractionExportService:
         svc = _make_service()
-        rid1, rid2 = uuid4(), uuid4()
-        run = uuid4()
-        svc.db.execute = AsyncMock(
-            return_value=_rows_result(
-                [
-                    (rid1, run, "Charlie", None),
-                    (rid2, run, "Alice", None),
-                ]
-            )
-        )
-
-        result, _ = await svc._list_reviewers_for_runs(run_ids=[run], anonymize=False)
-
-        assert len(result) == 2
-        assert result[0].display_label == "Alice"
-        assert result[1].display_label == "Charlie"
+        result = MagicMock()
+        result.tuples.return_value = rows
+        svc.db.execute = AsyncMock(return_value=result)
+        return svc
 
     @pytest.mark.asyncio
-    async def test_anonymize_true_returns_letter_labels(self):
-        """anonymize=True → reviewers labeled Reviewer A, B, etc."""
-        svc = _make_service()
-        rid1 = uuid4()
-        rid2 = uuid4()
-        run = uuid4()
-        svc.db.execute = AsyncMock(
-            return_value=_rows_result(
-                [
-                    (rid1, run, "Alice", None),
-                    (rid2, run, "Bob", None),
-                ]
-            )
-        )
+    async def test_name_falls_back_to_email_then_short_id(self):
+        a, b, c = uuid4(), uuid4(), uuid4()
+        t = datetime(2026, 1, 1, tzinfo=UTC)
+        svc = self._svc_with([(a, t, "Ann", None), (b, t, None, "b@x.org"), (c, t, None, None)])
 
-        result, _ = await svc._list_reviewers_for_runs(run_ids=[run], anonymize=True)
+        labels = await svc._load_rater_labels(project_id=uuid4(), anonymize=False)
 
-        assert len(result) == 2
-        labels = {r.display_label for r in result}
-        assert "Reviewer A" in labels
-        assert "Reviewer B" in labels
+        assert labels == {a: "Ann", b: "b@x.org", c: str(c).split("-")[0]}
 
     @pytest.mark.asyncio
-    async def test_email_fallback_when_no_name(self):
-        """No name → email used as display label."""
-        svc = _make_service()
-        rid = uuid4()
-        run = uuid4()
-        svc.db.execute = AsyncMock(return_value=_rows_result([(rid, run, None, "r@example.com")]))
+    async def test_anonymize_hides_even_the_named_only_exporter(self):
+        a = uuid4()
+        svc = self._svc_with([(a, datetime(2026, 1, 1, tzinfo=UTC), "Ann", None)])
 
-        result, _ = await svc._list_reviewers_for_runs(run_ids=[run], anonymize=False)
-        assert result[0].display_label == "r@example.com"
+        labels = await svc._load_rater_labels(project_id=uuid4(), anonymize=True, named_only=a)
+
+        assert labels == {a: "Member A"}
+
+    @pytest.mark.asyncio
+    async def test_same_name_takes_short_id_suffix(self):
+        t = datetime(2026, 1, 1, tzinfo=UTC)
+        a = UUID("aaaaaaaa-0000-4000-8000-000000000001")
+        b = UUID("bbbbbbbb-0000-4000-8000-000000000002")
+        svc = self._svc_with([(a, t, "Alex", None), (b, t, "alex", None)])
+
+        labels = await svc._load_rater_labels(project_id=uuid4(), anonymize=False)
+
+        assert labels == {a: "Alex aaaaaaaa", b: "alex bbbbbbbb"}
+
+    @pytest.mark.asyncio
+    async def test_same_name_and_short_id_takes_full_id_suffix(self):
+        t = datetime(2026, 1, 1, tzinfo=UTC)
+        a = UUID("ffffffff-9999-0000-0000-000000000001")
+        b = UUID("ffffffff-9999-0000-0000-000000000003")
+        svc = self._svc_with([(a, t, "Alex", None), (b, t, "Alex", None)])
+
+        labels = await svc._load_rater_labels(project_id=uuid4(), anonymize=False)
+
+        assert labels == {a: f"Alex {a}", b: f"Alex {b}"}
+
+    @pytest.mark.asyncio
+    async def test_letter_ties_break_on_id(self):
+        t = datetime(2026, 1, 1, tzinfo=UTC)
+        lo, hi = sorted((uuid4(), uuid4()), key=str)
+        svc = self._svc_with([(hi, t, "H", None), (lo, t, "L", None)])
+
+        labels = await svc._load_rater_labels(project_id=uuid4(), anonymize=True)
+
+        assert list(labels.items()) == [(lo, "Member A"), (hi, "Member B")]
 
 
 # ===========================================================================

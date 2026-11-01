@@ -521,7 +521,10 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
 
     monkeypatch.setattr(svc, "mark_out_of_scope_values", _spy)
     monkeypatch.setattr(svc, "pinned_template_rules", AsyncMock(return_value={}))
-    service = ExtractionExportService(db=MagicMock(), user_id="u")
+    service = ExtractionExportService(db=MagicMock(), user_id=str(uuid4()))
+    members = MagicMock(has_role=AsyncMock(return_value=True))
+    monkeypatch.setattr(service, "_project_members_repo", MagicMock(return_value=members))
+    monkeypatch.setattr(service, "_load_rater_labels", AsyncMock(return_value={}))
     monkeypatch.setattr(
         service, "_load_active_template_version", AsyncMock(return_value=(MagicMock(), MagicMock()))
     )
