@@ -15,11 +15,12 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, Text, and_, cast, exists, func, literal, select
+from sqlalchemy import ColumnElement, Select, Text, and_, cast, exists, func, literal, select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute
+from sqlalchemy.orm.util import AliasedClass
 
 from app.models.article import Article, ArticleFile
 from app.models.screening import (
@@ -32,7 +33,9 @@ from app.models.screening import (
 # THE assignment-to-article join condition. Members can move an article to
 # another project through PostgREST and nothing binds an assignment's
 # project_id to the article's current project, so a moved article must read as
-# missing. Use it as a ``.join(Article, ...)`` onclause only, never in ``.where``.
+# missing. Use it as a ``.join(Article, ...)`` onclause, or as the WHERE of an
+# EXISTS / scalar subquery correlated to an outer ``Article`` (duplicate_repository);
+# never in a top-level ``.where``.
 ARTICLE_STILL_IN_PROJECT = and_(
     Article.id == ScreeningAssignment.article_id,
     Article.project_id == ScreeningAssignment.project_id,
@@ -49,6 +52,11 @@ def live_assignments(project_id: UUID) -> Select[tuple[ScreeningAssignment]]:
             ScreeningAssignment.phase == SCREENING_PHASE,
         )
     )
+
+
+def has_main_pdf(article: type[Article] | AliasedClass[Article]) -> ColumnElement[bool]:
+    """The article has a ``MAIN`` file (its PDF)."""
+    return exists().where(ArticleFile.article_id == article.id, ArticleFile.file_role == "MAIN")
 
 
 # Queue order: oldest enrollment first, then md5(assignment id) — a stable
@@ -204,9 +212,6 @@ class ScreeningRepository:
 
     async def record_rows(self, *, project_id: UUID) -> list[RecordSource]:
         """Every article of the project, enrolled first in queue order, then by creation."""
-        has_pdf = exists().where(
-            ArticleFile.article_id == Article.id, ArticleFile.file_role == "MAIN"
-        )
         stmt = (
             select(
                 Article.id,
@@ -218,7 +223,7 @@ class ScreeningRepository:
                 Article.pmid,
                 Article.doi,
                 Article.ingestion_source,
-                has_pdf,
+                has_main_pdf(Article),
             )
             .select_from(Article)
             .outerjoin(
