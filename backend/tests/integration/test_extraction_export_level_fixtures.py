@@ -106,11 +106,12 @@ async def _materialize(
 
 
 @pytest.mark.parametrize(
-    ("global_id", "kind", "expected"),
+    ("global_id", "kind", "mode", "expected"),
     [
         (
             UUID("000c0000-0000-0000-0000-000000000001"),
             TemplateKind.EXTRACTION,
+            ExportMode.CONSENSUS,
             [
                 "README",
                 "Summary",
@@ -124,8 +125,26 @@ async def _materialize(
             ],
         ),
         (
+            UUID("000c0000-0000-0000-0000-000000000001"),
+            TemplateKind.EXTRACTION,
+            ExportMode.ALL_USERS,
+            [
+                "README",
+                "Summary",
+                "Matrix",
+                "Articles",
+                "prediction_models",
+                "final_predictors",
+                "Data",
+                "Verification",
+                "Codebook",
+                "Options",
+            ],
+        ),
+        (
             UUID("000e0000-0000-0000-0000-000000000001"),
             TemplateKind.EXTRACTION,
+            ExportMode.CONSENSUS,
             [
                 "README",
                 "Summary",
@@ -141,13 +160,18 @@ async def _materialize(
         (
             UUID("00ba0000-0000-0000-0000-000000000002"),
             TemplateKind.QUALITY_ASSESSMENT,
+            ExportMode.CONSENSUS,
             ["README", "Summary", "Matrix", "Articles", "Data", "Appraisal", "Codebook", "Options"],
         ),
     ],
-    ids=["charms", "charms_mm", "probast_ai"],
+    ids=["charms", "charms_all_users", "charms_mm", "probast_ai"],
 )
 async def test_real_templates_give_the_exact_sheet_set_unique_records_and_resolving_parents(
-    db_session: AsyncSession, global_id: UUID, kind: TemplateKind, expected: list[str]
+    db_session: AsyncSession,
+    global_id: UUID,
+    kind: TemplateKind,
+    mode: ExportMode,
+    expected: list[str],
 ) -> None:
     svc = ExtractionExportService(db=db_session, user_id=str(SEED.primary_profile))
     clone = await clone_template(
@@ -161,7 +185,7 @@ async def test_real_templates_give_the_exact_sheet_set_unique_records_and_resolv
     layout = await svc.resolve_layout(
         project_id=SEED.primary_project,
         template_id=clone.project_template_id,
-        mode=ExportMode.CONSENSUS,
+        mode=mode,
         article_ids=[SEED.primary_article],
         include_ai_metadata=False,
         anonymize_reviewer_names=False,

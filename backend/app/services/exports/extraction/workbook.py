@@ -3,7 +3,8 @@
 Owns the PUBLIC ``build_workbook(layout, shape, *, include_matrix) -> bytes`` signature
 consumed by the endpoint and the Celery worker. It calls each pure sub-builder
 in §3 order via ``_ordered_specs``: README, Summary, [Matrix], Articles and one
-sheet per repeating level, Data, [AI proposals], [Appraisal], Codebook, [Options].
+sheet per repeating level, Data, [Verification], [AI proposals], [Appraisal],
+Codebook, [Options].
 Every non-``None`` ``SheetSpec`` goes through the single ``_render_sheet_spec``
 writer; the matrix is included or omitted by ``matrix_fits`` (§5.5). Every title
 is allocated first by ``allocate_titles`` and each sub-builder reads its own
@@ -41,6 +42,7 @@ from app.services.exports.extraction.sheet_spec import (
     safe_sheet_title,
 )
 from app.services.exports.extraction.summary import build_summary
+from app.services.exports.extraction.verification import build_verification
 from app.services.extraction_export_service import ExportLayout, ExportMode
 
 
@@ -104,6 +106,7 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
             "matrix",
             "level_tables",
             "data",
+            "verification",
             "ai_proposals",
             "appraisal_summary",
             "codebook",
@@ -120,7 +123,15 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
 #: a future shape's answer follows from the sheets it was given instead of
 #: needing a second list somebody can forget to update.
 _ARTICLE_BUILDERS: frozenset[str] = frozenset(
-    {"summary", "matrix", "level_tables", "data", "appraisal_summary", "ai_proposals"}
+    {
+        "summary",
+        "matrix",
+        "level_tables",
+        "data",
+        "verification",
+        "appraisal_summary",
+        "ai_proposals",
+    }
 )
 
 
@@ -142,6 +153,7 @@ _FIXED_TITLES: dict[str, str] = {
     "summary": "Summary",
     "matrix": "Matrix",
     "data": "Data",
+    "verification": "Verification",
     "ai_proposals": "AI proposals",
     "appraisal_summary": "Appraisal",
     "codebook": "Codebook",
@@ -155,6 +167,7 @@ _ROLE_ORDER: tuple[str, ...] = (
     "matrix",
     "level_tables",
     "data",
+    "verification",
     "ai_proposals",
     "appraisal_summary",
     "codebook",
@@ -199,6 +212,8 @@ def _role_present(role: str, layout: ExportLayout, *, include_matrix: bool) -> b
         return any(e.options for e in layout.codebook)
     if role == "ai_proposals":
         return layout.include_ai_metadata
+    if role == "verification":
+        return layout.mode is ExportMode.ALL_USERS
     return True
 
 
@@ -248,7 +263,8 @@ def _ordered_specs(
     """Sheets in §3 order; ``None``-returning conditional builders are skipped.
 
     README, Summary, [Matrix], Articles and one sheet per repeating level,
-    Data, [AI proposals] (when ``include_ai_metadata``), [Appraisal] (when
+    Data, [Verification] (all_users), [AI proposals] (when
+    ``include_ai_metadata``), [Appraisal] (when
     ``layout.appraisal`` is set), Codebook, then [Options] (when some field
     carries coded options).
 
@@ -268,6 +284,8 @@ def _ordered_specs(
         specs.extend(build_level_tables(layout, titles, shape))
     if "data" in keep:
         specs.append(build_data_sheet(layout, titles))
+    if "verification" in keep:
+        specs.append(build_verification(layout, titles))
     if "ai_proposals" in keep:
         specs.append(build_ai_proposals(layout, titles))
     if "appraisal_summary" in keep:

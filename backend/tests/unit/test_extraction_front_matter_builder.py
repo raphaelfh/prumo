@@ -8,18 +8,22 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.models.extraction import ExtractionCardinality, ExtractionFieldType
+from app.services.exports.ai_proposal_projection import EngineFacts
 from app.services.exports.descriptors import value_key
+from app.services.exports.extraction.data_sheet import LINEAGE_EXACT_SINCE
 from app.services.exports.extraction.front_matter import _LEGEND, build_front_matter
 from app.services.exports.extraction.sheet_spec import SheetSpec
 from app.services.exports.extraction.workbook import ExportShape, SheetTitles, allocate_titles
 from app.services.extraction_export_service import (
+    AIProposalRow,
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
     FieldDescriptor,
+    ReviewerDescriptor,
     SectionDescriptor,
 )
-from tests.unit.helpers.export_layouts import export_value, make_layout
+from tests.unit.helpers.export_layouts import export_value, make_cell, make_layout
 
 _UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
@@ -186,7 +190,10 @@ def test_readme_counts_values_outside_level_sheets():  # R17
         value_map=vm,
         codebook=(*base.codebook, removed),
     )
-    assert ("Values outside any level sheet", 1) in _readme(layout)
+    rows = _readme(layout)
+    assert [
+        r for r in rows if r and r[0] in ("Values only in Data", "Values outside any level sheet")
+    ] == [("Values only in Data", 1)]
 
 
 def test_readme_keeps_the_matrix_omitted_note():  # R6
@@ -220,7 +227,8 @@ def test_readme_carries_the_rule_notes_and_caveats():
     assert any("companion reports" in v for v in flat)
     assert any("trailing zeros" in v for v in flat)
     assert any("vocabulary" in v for v in flat)
-    assert any("best-effort" in v for v in flat)
+    assert any("Member letters can shift" in v for v in flat)
+    assert not any("best-effort" in v.lower() for v in flat)
 
 
 def test_readme_has_no_uuid():  # Review Focus 4
@@ -254,3 +262,100 @@ def test_legend_carries_three_disposition_rows_matching_display_value():
         marker = {"value": None, "absent_reason": code.value}
         label = display_value(to_export_value(marker, field, {}), field)
         assert label in legend, f"{code.value} label {label!r} missing from legend"
+
+
+def _flat(layout: ExportLayout) -> str:
+    return "\n".join(str(v) for r in _readme(layout) for v in r)
+
+
+def _two_rater_layout(values: tuple[int, int]) -> ExportLayout:
+    section, article, run, inst, fid = _coord()
+    a, b = uuid4(), uuid4()
+    cells = {
+        value_key(run, inst, fid, a): make_cell({"value": values[0]}, actor_id=a),
+        value_key(run, inst, fid, b): make_cell({"value": values[1]}, actor_id=b),
+    }
+    return make_layout(
+        sections=(section,),
+        articles=(article,),
+        mode=ExportMode.ALL_USERS,
+        reviewers=(ReviewerDescriptor(a, "Member A"), ReviewerDescriptor(b, "Member B")),
+        raters_by_run={run: (a, b)},
+        cells=cells,
+        value_map={k: export_value(value_text=str(c.envelope["value"])) for k, c in cells.items()},
+    )
+
+
+def test_readme_states_agreement_denominator_and_no_best_effort():
+    flat = _flat(_two_rater_layout((1, 1)))
+    assert "rows with n_raters ≥ 2" in flat
+    assert "Percent agreement\n100.0% (1 of 1 rows with n_raters ≥ 2)" in flat
+    assert "best-effort" not in flat.lower()
+    assert LINEAGE_EXACT_SINCE.isoformat() in flat
+
+
+def test_readme_agreement_line_only_with_verification():
+    assert "Percent agreement" not in _flat(make_layout())
+
+
+def test_readme_states_the_lineage_rules():
+    flat = _flat(make_layout())
+    assert "ai_accepted is exact in every period" in flat
+    assert f"Before {LINEAGE_EXACT_SINCE.isoformat()}" in flat
+    assert "ai_proposed=true" in flat
+    assert "unlinked re-save" in flat
+    assert "reopen" in flat
+
+
+def test_readme_counts_values_by_origin():
+    section, article, run, inst, fid = _coord()
+    k1, k2 = value_key(run, inst, fid), value_key(run, uuid4(), fid)
+    stamp = export_value("absent", absent_code="not_applicable", out_of_scope=True)
+    layout = make_layout(
+        sections=(section,),
+        articles=(article,),
+        value_map={k1: export_value(value_text="x"), k2: stamp},
+        cells={k1: make_cell({"value": "x"}, kind="manual_override")},
+    )
+    rows = _readme(layout)
+    start = rows.index(("Values by origin",)) + 1
+    assert rows[start : start + 5] == [
+        ("ai_accepted", 0),
+        ("ai_edited", 0),
+        ("human", 1),
+        ("rule", 1),
+        ("mixed", 0),
+    ]
+
+
+def _ai_row(engine: EngineFacts) -> AIProposalRow:
+    return AIProposalRow(
+        article_id=uuid4(),
+        instance_id=uuid4(),
+        field_id=uuid4(),
+        ai_proposal_id=uuid4(),
+        created_at=datetime(2026, 5, 1, tzinfo=UTC),
+        engine=engine,
+        value=export_value(value_text="x"),
+        confidence=None,
+        rationale=None,
+        evidence_quote="",
+        page="",
+    )
+
+
+def test_readme_ai_tools_table_says_not_recorded():
+    layout = make_layout(
+        ai_proposal_rows=(
+            _ai_row(EngineFacts("openai", "gpt-4o", "v2")),
+            _ai_row(EngineFacts("openai", "gpt-4o", "v2")),
+            _ai_row(EngineFacts("openai", "gpt-4o-mini", "")),
+        )
+    )
+    rows = _readme(layout)
+    start = rows.index(("AI tools",)) + 1
+    assert rows[start : start + 3] == [
+        ("Provider", "Model", "Prompt version", "Proposals"),
+        ("openai", "gpt-4o", "v2", 2),
+        ("openai", "gpt-4o-mini", "not recorded", 1),
+    ]

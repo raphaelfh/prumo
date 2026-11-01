@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from app.services.extraction_export_service import (
         ArticleDescriptor,
         ExportLayout,
-        SectionDescriptor,
     )
 
 Origin = Literal["ai_accepted", "ai_edited", "human", "rule", "mixed"]
@@ -113,7 +112,7 @@ _CONSENSUS = "consensus"  # reserved rater literal on consensus rows
 _HEADER = CellStyle(bold=True, fill="EEEEEE")
 
 
-def _reviewer_cells(layout: ExportLayout) -> dict[tuple[UUID, UUID, UUID], list[CellRecord]]:
+def reviewer_cells(layout: ExportLayout) -> dict[tuple[UUID, UUID, UUID], list[CellRecord]]:
     """Each coordinate's reviewer cells (rater slot not ``None``)."""
     out: dict[tuple[UUID, UUID, UUID], list[CellRecord]] = {}
     for (run_id, instance_id, field_id, rater), cell in layout.cells.items():
@@ -136,7 +135,7 @@ def _cell_origin(
     return origin_of(cell, pinned_field), None
 
 
-def _pinned_field(
+def pinned_field_of(
     layout: ExportLayout, version_id: UUID | None, field_id: UUID
 ) -> RunViewField | None:
     """The run's pinned field; ``None`` for a narrow or unknown version (D5)."""
@@ -145,26 +144,62 @@ def _pinned_field(
     return layout.pinned_fields.get(version_id, {}).get(field_id)
 
 
-def _instance_order(layout: ExportLayout, article: ArticleDescriptor) -> dict[UUID, int]:
-    """Each instance's position in the rule-2 walk of the active sections."""
-    walked = (
-        iid
-        for s in walk_sections(layout.sections)
-        for iid in all_instances_of(article, s.entity_type_id)
-    )
-    return {iid: i for i, iid in enumerate(walked)}
+class CoordinateOrder:
+    """The Data sheet's order of a coordinate: the article's export position,
+    its instance's position in the rule-2 walk of the active sections (unknown
+    instances last, by id), then the field code."""
+
+    def __init__(self, layout: ExportLayout) -> None:
+        self._layout = layout
+        self._index = {a.article_id: i for i, a in enumerate(layout.articles)}
+        self._codes = {e.field_id: e.field_code for e in layout.codebook}
+        self._walks: dict[UUID, dict[UUID, int]] = {}
+
+    def _walk(self, article: ArticleDescriptor) -> dict[UUID, int]:
+        if article.article_id not in self._walks:
+            walked = (
+                iid
+                for s in walk_sections(self._layout.sections)
+                for iid in all_instances_of(article, s.entity_type_id)
+            )
+            self._walks[article.article_id] = {iid: i for i, iid in enumerate(walked)}
+        return self._walks[article.article_id]
+
+    def key(
+        self, article: ArticleDescriptor, instance_id: UUID, field_id: UUID
+    ) -> tuple[int, tuple[int, int, str], str]:
+        walk = self._walk(article)
+        position = (0, walk[instance_id], "") if instance_id in walk else (1, 0, str(instance_id))
+        return (self._index[article.article_id], position, self._codes.get(field_id) or "")
 
 
-class _RecordLabels:
-    """``record_label`` per (article, record_id): the label ``iter_records``
-    gives the record on its level sheet; the article label at the root."""
+class RecordLabels:
+    """Where a coordinate lands: its record keys, its ``sheet`` and the
+    ``record_label`` that sheet gives the record (the article label at the root).
 
-    def __init__(self, sections: Sequence[SectionDescriptor]) -> None:
-        self._sections = sections
-        self._by_id = {s.entity_type_id: s for s in sections}
+    ``sheet`` is blank, never ``sheet_for(None)`` (which answers "Articles"),
+    for an instance outside the active tree or a field not in its section (R8).
+    """
+
+    def __init__(self, layout: ExportLayout, titles: SheetTitles) -> None:
+        self._sections = layout.sections
+        self._titles = titles
+        self._by_id = {s.entity_type_id: s for s in layout.sections}
         self._by_level: dict[tuple[UUID, UUID], dict[UUID, str]] = {}
 
-    def get(self, article: ArticleDescriptor, section_id: UUID, record_id: UUID) -> str:
+    def place(
+        self, article: ArticleDescriptor, instance_id: UUID, field_id: UUID
+    ) -> tuple[UUID, UUID | None, str | None, str]:
+        """``(record_id, parent_record_id, sheet, record_label)``."""
+        record_id, parent_id, section = record_keys(article, instance_id, self._sections)
+        if section is None or not any(f.field_id == field_id for f in section.fields):
+            return record_id, parent_id, None, ""
+        sheet = self._titles.sheet_for(section.entity_type_id)
+        if not sheet:
+            return record_id, parent_id, sheet, ""
+        return record_id, parent_id, sheet, self._label(article, section.entity_type_id, record_id)
+
+    def _label(self, article: ArticleDescriptor, section_id: UUID, record_id: UUID) -> str:
         level = level_of(self._by_id[section_id], self._sections)
         if level is None:
             return article.article_label
@@ -182,27 +217,21 @@ def _naive_utc(at: datetime) -> datetime:
 
 def data_rows(layout: ExportLayout, titles: SheetTitles) -> tuple[DataRow, ...]:
     """One row per ``value_map`` entry of an exported article, §4.1 order."""
-    articles = {a.run_id: (i, a) for i, a in enumerate(layout.articles) if a.run_id is not None}
+    articles = {a.run_id: a for a in layout.articles if a.run_id is not None}
     codes = {e.field_id: e.field_code for e in layout.codebook}
-    reviewers_of = _reviewer_cells(layout)
-    record_labels = _RecordLabels(layout.sections)
-    orders: dict[UUID, dict[UUID, int]] = {}
+    reviewers_of = reviewer_cells(layout)
+    record_labels = RecordLabels(layout, titles)
+    order = CoordinateOrder(layout)
     keyed: list[tuple[tuple[object, ...], DataRow]] = []
     for key, v in layout.value_map.items():
         run_id, instance_id, field_id, rater = key
         if run_id not in articles:
             continue
-        index, article = articles[run_id]
-        record_id, parent_id, section = record_keys(article, instance_id, layout.sections)
-        # Never ``sheet_for(None)``: it answers "Articles" (R8 guard).
-        sheet, label = None, ""
-        if section is not None and any(f.field_id == field_id for f in section.fields):
-            sheet = titles.sheet_for(section.entity_type_id)
-            if sheet:
-                label = record_labels.get(article, section.entity_type_id, record_id)
+        article = articles[run_id]
+        record_id, parent_id, sheet, label = record_labels.place(article, instance_id, field_id)
         cell = layout.cells.get(key)
         coord_reviewers = reviewers_of.get((run_id, instance_id, field_id), [])
-        pinned = _pinned_field(layout, article.version_id, field_id)
+        pinned = pinned_field_of(layout, article.version_id, field_id)
         origin, method = _cell_origin(key, cell, coord_reviewers, pinned)
         link = cell.linked_proposal if cell is not None else None
         ai_link = link if link is not None and link.source == "ai" else None
@@ -231,11 +260,7 @@ def data_rows(layout: ExportLayout, titles: SheetTitles) -> tuple[DataRow, ...]:
             if rater is None
             else None,
         )
-        if article.article_id not in orders:
-            orders[article.article_id] = _instance_order(layout, article)
-        order = orders[article.article_id]
-        position = (0, order[instance_id], "") if instance_id in order else (1, 0, str(instance_id))
-        sort_key = (index, position, codes.get(field_id) or "", rater is not None, rater_label)
+        sort_key = (*order.key(article, instance_id, field_id), rater is not None, rater_label)
         keyed.append((sort_key, row))
     keyed.sort(key=lambda kr: kr[0])
     return tuple(row for _, row in keyed)
@@ -274,7 +299,7 @@ def build_data_sheet(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | N
 def origin_counts(layout: ExportLayout) -> Mapping[Origin, int]:
     """Origins over the ``primary_rater`` slot (R1), stamps included as ``rule``."""
     primary = primary_rater(layout.mode, layout.reviewer_id)
-    reviewers_of = _reviewer_cells(layout)
+    reviewers_of = reviewer_cells(layout)
     articles = {a.run_id: a for a in layout.articles if a.run_id is not None}
     counts: Counter[Origin] = Counter()
     for key in layout.value_map:
@@ -285,7 +310,7 @@ def origin_counts(layout: ExportLayout) -> Mapping[Origin, int]:
             key,
             layout.cells.get(key),
             reviewers_of.get((run_id, instance_id, field_id), []),
-            _pinned_field(layout, articles[run_id].version_id, field_id),
+            pinned_field_of(layout, articles[run_id].version_id, field_id),
         )
         counts[origin] += 1
     return counts
