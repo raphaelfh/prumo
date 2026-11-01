@@ -24,6 +24,7 @@ import {useSearchParams} from 'react-router';
 import {toast} from 'sonner';
 
 import {ListDetailSplitShell} from '@/components/layout/ListDetailSplitShell';
+import {ShortcutsHelp} from '@/components/screening/ShortcutsHelp';
 import {ErrorState} from '@/components/patterns/ErrorState';
 import {EmptyListState} from '@/components/shared/list';
 import {Skeleton} from '@/components/ui/skeleton';
@@ -271,6 +272,7 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
         />
       )}
       {!readOnly && myLeft > 0 && <StartScreeningButton onStart={start} />}
+      <ShortcutsHelp />
     </>
   );
 

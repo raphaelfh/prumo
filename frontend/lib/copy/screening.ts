@@ -80,6 +80,22 @@ export const screening = {
   excludeWithReason: 'Exclude with reason',
   reasonsTitle: 'Exclusion reason',
   keyboardHint: '1 include · 2 exclude · 3 maybe · E exclude with reason',
+
+  // Keyboard shortcuts popover (`ShortcutsHelp`)
+  shortcutsTitle: 'Keyboard shortcuts',
+  shortcutsButton: 'Keyboard shortcuts',
+  shortcutMove: 'Move between records',
+  shortcutOpen: 'Open the record',
+  shortcutEsc: 'Close, one layer at a time',
+  shortcutSelect: 'Select a row · a range · all',
+  shortcutMaximize: 'Maximize the panel',
+  shortcutPanel: 'Show or hide the panel',
+  shortcutDecide: 'Include · Exclude · Maybe',
+  shortcutReason: 'Exclude with a reason',
+  shortcutSearch: 'Search',
+  shortcutFilter: 'Filter',
+  shortcutHelp: 'Show this list',
+
   noAbstract: 'No abstract available',
   pmidLabel: 'PMID',
   doiLabel: 'DOI',
