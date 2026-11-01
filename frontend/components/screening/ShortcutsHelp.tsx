@@ -6,12 +6,14 @@
  *
  * `?` opens it through `useKeyboardShortcuts`, so it stays inert while typing
  * and under another overlay; Radix closes it on Escape (its `role="dialog"`
- * makes the shell's Escape chain yield).
+ * makes the shell's Escape chain yield). A maximized panel hides the toolbar,
+ * so with no trigger box to anchor to, `?` shows the list in a centered dialog.
  */
 import {HelpCircle} from 'lucide-react';
-import {useState} from 'react';
+import {useRef, useState} from 'react';
 
 import {IconButton} from '@/components/patterns/IconButton';
+import {Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle} from '@/components/ui/dialog';
 import {KbdBadge, type KbdKey} from '@/components/ui/kbd-badge';
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {useKeyboardShortcuts} from '@/hooks/useKeyboardShortcuts';
@@ -33,35 +35,66 @@ const SHORTCUT_ROWS: readonly {chips: readonly KbdKey[][]; copyKey: keyof typeof
   {chips: [['?']], copyKey: 'shortcutHelp'},
 ];
 
+function ShortcutList() {
+  return (
+    <ul className="flex flex-col gap-1.5 text-[13px]">
+      {SHORTCUT_ROWS.map(({chips, copyKey}) => (
+        <li key={copyKey} className="flex items-center justify-between gap-3">
+          <span className="min-w-0 text-muted-foreground">{t('screening', copyKey)}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            {chips.map((keys) => (
+              <KbdBadge key={keys.join('')} keys={keys} />
+            ))}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ShortcutsHelp() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<'popover' | 'dialog' | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useKeyboardShortcuts({
     enabled: true,
-    bindings: [{type: 'chord', key: '?', shift: true, handler: () => setOpen(true)}],
+    bindings: [
+      {
+        type: 'chord',
+        key: '?',
+        shift: true,
+        handler: () => setOpen((triggerRef.current?.getClientRects().length ?? 0) > 0 ? 'popover' : 'dialog'),
+      },
+    ],
   });
 
   const title = t('screening', 'shortcutsTitle');
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <IconButton label={t('screening', 'shortcutsButton')} icon={<HelpCircle className="h-4 w-4" />} shortcut={['?']} />
-      </PopoverTrigger>
-      <PopoverContent align="end" aria-label={title} className="w-72 text-[13px]">
-        <p className="mb-2 font-medium">{title}</p>
-        <ul className="flex flex-col gap-1.5">
-          {SHORTCUT_ROWS.map(({chips, copyKey}) => (
-            <li key={copyKey} className="flex items-center justify-between gap-3">
-              <span className="min-w-0 text-muted-foreground">{t('screening', copyKey)}</span>
-              <span className="flex shrink-0 items-center gap-1">
-                {chips.map((keys) => (
-                  <KbdBadge key={keys.join('')} keys={keys} />
-                ))}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </PopoverContent>
-    </Popover>
+    <>
+      <Popover open={open === 'popover'} onOpenChange={(next) => setOpen(next ? 'popover' : null)}>
+        <PopoverTrigger asChild>
+          <IconButton
+            ref={triggerRef}
+            label={t('screening', 'shortcutsButton')}
+            icon={<HelpCircle className="h-4 w-4" />}
+            shortcut={['?']}
+          />
+        </PopoverTrigger>
+        <PopoverContent align="end" aria-label={title} className="w-72 text-[13px]">
+          <p className="mb-2 font-medium">{title}</p>
+          <ShortcutList />
+        </PopoverContent>
+      </Popover>
+      <Dialog open={open === 'dialog'} onOpenChange={(next) => setOpen(next ? 'dialog' : null)}>
+        <DialogContent size="sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <ShortcutList />
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

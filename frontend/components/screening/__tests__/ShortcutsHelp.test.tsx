@@ -57,6 +57,22 @@ describe('ShortcutsHelp', () => {
     expect(await screen.findByRole('dialog', {name: 'Keyboard shortcuts'})).toBeInTheDocument();
   });
 
+  it('? anchors the popover to a visible trigger', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([new DOMRect(0, 0, 28, 28)] as unknown as DOMRectList);
+    render(<ShortcutsHelp />);
+    pressQuestionMark();
+    const dialog = await screen.findByRole('dialog', {name: 'Keyboard shortcuts'});
+    expect(dialog.closest('[data-radix-popper-content-wrapper]')).not.toBeNull();
+  });
+
+  it('? centers the list when the trigger has no box (maximized panel)', async () => {
+    render(<ShortcutsHelp />);
+    pressQuestionMark();
+    const dialog = await screen.findByRole('dialog', {name: 'Keyboard shortcuts'});
+    expect(dialog.closest('[data-radix-popper-content-wrapper]')).toBeNull();
+    expect(within(dialog).getAllByRole('listitem')).toHaveLength(ROWS.length);
+  });
+
   it('? is inert in a text field and under a dialog', () => {
     const {rerender} = render(
       <>
