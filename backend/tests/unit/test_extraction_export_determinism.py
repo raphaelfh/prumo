@@ -18,17 +18,14 @@ import io
 import zipfile
 from dataclasses import replace
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-import pytest
 from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.models.extraction_workflow import ExtractionProposalRecord
 from app.services.exports.codebook_model import VersionSections, build_codebook_entries
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
@@ -162,27 +159,27 @@ def test_build_workbook_consensus_is_deterministic_modulo_doc_properties():
         assert entries_a[name] == entries_b[name], f"divergent entry: {name}"
 
 
-def test_build_workbook_ai_metadata_path_is_deterministic():
-    """SC-007 budget aside, the AI metadata sheet itself is deterministic
+def test_build_workbook_ai_proposals_path_is_deterministic():
+    """SC-007 budget aside, the AI proposals sheet itself is deterministic
     when the layout is fixed."""
+    from app.services.exports.ai_proposal_projection import EngineFacts
+    from app.services.exports.values import ExportValue
     from app.services.extraction_export_service import AIProposalRow
 
     base = _fixed_layout()
     proposals = (
         AIProposalRow(
-            article_label="Gaca, 2011",
-            section_label="1. Source of data",
-            instance_index=1,
-            field_label="1.1 Source of data",
-            ai_proposed_value="Existing registry",
+            article_id=base.articles[0].article_id,
+            instance_id=uuid4(),
+            field_id=base.sections[0].fields[0].field_id,
+            ai_proposal_id=uuid4(),
+            created_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
+            engine=EngineFacts("openai", "gpt-4o-mini", "v1"),
+            value=ExportValue(raw=None, status="answered", value_text="Existing registry"),
             confidence=0.93,
             rationale="LLM reasoning",
-            evidence_text="excerpt",
-            evidence_pages="4",
-            proposed_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
-            model_used="gpt-4o-mini",
-            reviewer_outcome="accepted",
-            final_value_used="Existing registry",
+            evidence_quote="excerpt",
+            page="4",
         ),
     )
     layout = ExportLayout(
@@ -202,7 +199,7 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
     a = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
     b = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
-    # Open both and compare the AI metadata sheet cell-by-cell.
+    # Open both and compare the AI proposals sheet cell-by-cell.
     wb_a = load_workbook(io.BytesIO(a))
     wb_b = load_workbook(io.BytesIO(b))
     ws_a = wb_a["AI proposals"]
@@ -210,125 +207,6 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
     rows_a = [list(r) for r in ws_a.iter_rows(values_only=True)]
     rows_b = [list(r) for r in ws_b.iter_rows(values_only=True)]
     assert rows_a == rows_b
-
-
-# ----------------------------------------------------------------------
-# Regression: _load_ai_proposal_rows key-shape for ALL_USERS mode
-# ----------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("mode", "reviewer_slot"),
-    [(ExportMode.ALL_USERS, None), (ExportMode.SINGLE_USER, uuid4())],
-    ids=["all_users_reads_consensus_slot", "single_user_reads_reviewer_slot"],
-)
-async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode(
-    mode: ExportMode, reviewer_slot
-) -> None:
-    """Regression: "Final value used" reads the primary rater's slot of the
-    value_map: consensus (None) in ALL_USERS, the reviewer in SINGLE_USER. A
-    missed slot would silently produce final_value=None.
-    """
-    from app.services.extraction_export_service import ExtractionExportService
-
-    run_id = uuid4()
-    inst_id = uuid4()
-    field_id = uuid4()
-    entity_type_id = uuid4()
-    article_id = uuid4()
-    pid = uuid4()
-    ts = datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC)
-
-    field = FieldDescriptor(
-        field_id=field_id,
-        label="1.1 Source",
-        type=ExtractionFieldType.TEXT,
-        allowed_values=(),
-    )
-    section = SectionDescriptor(
-        entity_type_id=entity_type_id,
-        label="1. Source of data",
-        parent_entity_type_id=None,
-        fields=(field,),
-        cardinality=ExtractionCardinality.MANY,
-        name="source_of_data",
-    )
-    article = ArticleDescriptor(
-        article_id=article_id,
-        article_label="Gaca, 2011",
-        run_id=run_id,
-        version_id=None,
-        entries={(entity_type_id, None): (inst_id,)},
-    )
-
-    # The value sits ONLY under the primary rater's slot (None, or the reviewer).
-    value_map = {value_key(run_id, inst_id, field_id, reviewer_slot): _tv("Existing registry")}
-
-    # Mock the six DB execute calls in _load_ai_proposal_rows order (B-3a):
-    #   1. instance query, 2. proposal query, 3. evidence query,
-    #   4. decision query, 5. whole-ExtractionRun query (via .scalars()),
-    #   6. entity-type label fallback. The run-snapshot label tier between
-    #   5 and 6 starts with db.get (NOT db.execute); stubbing db.get -> None
-    #   keeps it a clean no-op so the live fallback queries still fire.
-    def _result(rows):
-        r = MagicMock()
-        r.all.return_value = rows
-        return r
-
-    def _scalars(items):
-        r = MagicMock()
-        r.scalars.return_value.all.return_value = items
-        return r
-
-    run = MagicMock()
-    run.id = run_id
-    run.parameters = {}
-    run.results = {}
-    run.version_id = uuid4()
-
-    mock_db = AsyncMock()
-    mock_db.get = AsyncMock(return_value=None)  # snapshot label tier no-op
-    mock_db.execute = AsyncMock(
-        side_effect=[
-            _result([(inst_id, entity_type_id, article_id)]),  # instances
-            _result(
-                [
-                    (
-                        pid,
-                        run_id,
-                        inst_id,
-                        field_id,
-                        {"value": "Existing registry"},
-                        0.9,
-                        "rationale",
-                        ts,
-                        ExtractionProposalRecord(run_id=run_id),
-                    )
-                ]
-            ),  # proposals
-            _result([]),  # evidence
-            _result(
-                [(run_id, inst_id, field_id, uuid4(), "accept_proposal", pid)]
-            ),  # decisions (reviewer-tagged)
-            _scalars([run]),  # the in-scope ExtractionRun rows
-            _result([(entity_type_id, "1. Source of data")]),  # entity labels
-        ]
-    )
-
-    service = ExtractionExportService(db=mock_db, user_id="user-1")
-    rows = await service._load_ai_proposal_rows(
-        articles=(article,),
-        sections=(section,),
-        value_map=value_map,
-        mode=mode,
-        target_reviewer_id=reviewer_slot,
-        labels={},
-    )
-
-    assert len(rows) == 1
-    # Before the fix this was None; after the fix it resolves via the 4-tuple key.
-    assert rows[0].final_value_used == "Existing registry"
 
 
 # ----------------------------------------------------------------------

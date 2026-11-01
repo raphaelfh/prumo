@@ -25,7 +25,8 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import func, select, union_all
+from sqlalchemy import case, func, or_, select, union_all
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -68,8 +69,9 @@ from app.services.derived_judgment_service import (
 )
 from app.services.entity_key import key_of
 from app.services.exports.ai_proposal_projection import (
+    EngineFacts,
     load_evidence_summaries,
-    proposal_model_used,
+    proposal_engine,
 )
 from app.services.exports.cell_record import (
     CellRecord,
@@ -97,7 +99,6 @@ from app.services.exports.extraction_scope_marking import (
 )
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
-    load_export_sections,
     section_from_view,
 )
 from app.services.exports.rater_labels import label_raters, letter_for, short_id
@@ -237,29 +238,22 @@ class OmittedArticle:
     reason: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AIProposalRow:
-    """One row on the optional ``AI metadata`` sheet (FR-037).
+    """One ``source=ai`` proposal on the AI proposals sheet (§7, D6), keyed like
+    Data. ``evidence_quote`` / ``page`` are ``""`` unless AI detail is requested."""
 
-    Field order matches the sheet's column order; the builder writes
-    ``tuple(row)`` directly via ``dataclasses.astuple`` so the two
-    contracts stay in lockstep. That is also why no field here is ever
-    read by name — reordering or dropping one silently shifts a column.
-    """
-
-    article_label: str
-    section_label: str
-    instance_index: int  # 1-based: 1 for cardinality=one; 1..N for model instances
-    field_label: str
-    ai_proposed_value: Any
+    article_id: UUID
+    instance_id: UUID
+    field_id: UUID
+    ai_proposal_id: UUID
+    created_at: datetime
+    engine: EngineFacts
+    value: ExportValue
     confidence: float | None
     rationale: str | None
-    evidence_text: str  # joined with ' | ' when multiple
-    evidence_pages: str  # joined with ', ' when multiple
-    proposed_at: datetime
-    model_used: str  # Immutable proposal engine, empty when unavailable
-    reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
-    final_value_used: Any  # None when not published
+    evidence_quote: str
+    page: str
 
 
 @dataclass(frozen=True)
@@ -316,7 +310,7 @@ class ExportLayout:
     generated_at: datetime
     # ``value_key`` slots: rater None is consensus; reviewers by reviewer_id (R1).
     value_map: dict[ValueKey, ExportValue]
-    # Populated only when ``include_ai_metadata`` is True (FR-036+).
+    # The in-scope source=ai proposals, evidence only with ``include_ai_metadata``.
     ai_proposal_rows: tuple[AIProposalRow, ...] = ()
     omitted: tuple[OmittedArticle, ...] = ()
     codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
@@ -568,18 +562,14 @@ class ExtractionExportService(LoggerMixin):
             article_ids=[a.article_id for a in articles],
         )
 
-        ai_rows: tuple[AIProposalRow, ...] = ()
-        if include_ai_metadata:
-            ai_rows = await self._load_ai_proposal_rows(
-                articles=tuple(articles),
-                sections=sections,
-                value_map=value_map,
-                mode=mode,
-                # A3: only single-user mode has one target reviewer; consensus and
-                # all-users keep every reviewer's decisions in scope.
-                target_reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
-                labels=labels,
-            )
+        ai_rows = await self._load_ai_proposal_rows(
+            template_id=template_id,
+            articles=tuple(articles),
+            cells=cells,
+            fields=fields,
+            labels=labels,
+            with_evidence=include_ai_metadata,
+        )
 
         # Appraisal roll-up (§7, rule 8): detected by vocabulary at the root,
         # whatever the template kind.
@@ -1504,243 +1494,90 @@ class ExtractionExportService(LoggerMixin):
         }
 
     # ------------------------------------------------------------------
-    # AI metadata sheet loader (FR-036 – FR-040)
+    # AI proposals sheet loader (§7, D6)
     # ------------------------------------------------------------------
 
     async def _load_ai_proposal_rows(
         self,
         *,
+        template_id: UUID,
         articles: tuple[ArticleDescriptor, ...],
-        sections: tuple[SectionDescriptor, ...],
-        value_map: dict[ValueKey, ExportValue],
-        mode: ExportMode,
-        target_reviewer_id: UUID | None,
+        cells: Mapping[ValueKey, CellRecord],
+        fields: Mapping[UUID, FieldDescriptor],
         labels: OptionLabels,
+        with_evidence: bool,
     ) -> tuple[AIProposalRow, ...]:
-        """Load every AI proposal for the in-scope runs into flat rows.
-
-        Three bulk queries, regardless of article count:
-          1. proposal_records (source='ai')
-          2. evidence linked by proposal_record_id
-          3. reviewer_states + decisions for the same (run, instance, field)
-             coordinates (to compute the ``Reviewer outcome`` column).
-        """
+        """The ``source=ai`` proposals of the current runs, plus any ``source=ai``
+        proposal a loaded cell links to (links may cross runs). The snapshot's
+        prompt payload is stripped in SQL, never loaded (Review Focus 5)."""
         run_ids = [a.run_id for a in articles if a.run_id is not None]
-        if not run_ids:
+        linked = {
+            c.linked_proposal.id
+            for c in cells.values()
+            if c.linked_proposal is not None and c.linked_proposal.source == "ai"
+        }
+        if not run_ids and not linked:
             return ()
-
-        # Article + section/field lookup maps for label substitution.
-        articles_by_run: dict[UUID, ArticleDescriptor] = {
-            a.run_id: a for a in articles if a.run_id is not None
-        }
-        section_by_entity: dict[UUID, SectionDescriptor] = {s.entity_type_id: s for s in sections}
-        field_label_by_id: dict[UUID, str] = {
-            f.field_id: f.label for s in sections for f in s.fields
-        }
-        # Descriptor lookup: the AI value columns type against the same fields.
-        field_desc_by_id: dict[UUID, FieldDescriptor] = {
-            f.field_id: f for s in sections for f in s.fields
-        }
-        # entity_type for each instance is needed to compute the section
-        # label and the cardinality-driven instance index. One bulk
-        # query over instances:
-        inst_rows = (
+        p = ExtractionProposalRecord
+        # An ORM ``None`` stores JSON ``null``, not SQL NULL: only an object is a snapshot.
+        had_snapshot = func.coalesce(func.jsonb_typeof(p.generation_snapshot) == "object", False)
+        strip = p.generation_snapshot.op("-", return_type=JSONB)("prompt_text")
+        snapshot = case((had_snapshot, strip.op("-", return_type=JSONB)("prompt_composition")))
+        rows = (
             await self.db.execute(
                 select(
-                    ExtractionInstance.id,
-                    ExtractionInstance.entity_type_id,
-                    ExtractionInstance.article_id,
-                ).where(ExtractionInstance.article_id.in_([a.article_id for a in articles]))
+                    ExtractionRun.article_id,
+                    p.id,
+                    p.run_id,
+                    p.instance_id,
+                    p.field_id,
+                    p.proposed_value,
+                    p.confidence_score,
+                    p.rationale,
+                    p.created_at,
+                    p.extraction_attempt_id,
+                    snapshot.label("snapshot"),
+                    had_snapshot.label("had_snapshot"),
+                    p.provenance,
+                )
+                .join(ExtractionRun, ExtractionRun.id == p.run_id)
+                .where(p.source == "ai", or_(p.run_id.in_(run_ids), p.id.in_(linked)))
+                .order_by(p.created_at, p.id)
             )
         ).all()
-        instance_meta: dict[UUID, tuple[UUID, UUID]] = {
-            iid: (etid, aid) for iid, etid, aid in inst_rows
-        }
-
-        # 1. AI proposals, newest first so the latest is encountered before
-        # any superseded ones for the same (run, instance, field). ``id`` is
-        # the deterministic tiebreaker on equal ``created_at`` (same-transaction
-        # inserts share the timestamp), matching the canonical
-        # ExtractionProposalRepository.latest_by_field ordering so the
-        # FR-037 "superseded" outcome is stable across export builds.
-        proposal_rows = (
-            await self.db.execute(
-                select(
-                    ExtractionProposalRecord.id,
-                    ExtractionProposalRecord.run_id,
-                    ExtractionProposalRecord.instance_id,
-                    ExtractionProposalRecord.field_id,
-                    ExtractionProposalRecord.proposed_value,
-                    ExtractionProposalRecord.confidence_score,
-                    ExtractionProposalRecord.rationale,
-                    ExtractionProposalRecord.created_at,
-                    ExtractionProposalRecord,
-                )
-                .where(
-                    ExtractionProposalRecord.run_id.in_(run_ids),
-                    ExtractionProposalRecord.source == "ai",
-                )
-                .order_by(
-                    ExtractionProposalRecord.created_at.desc(),
-                    ExtractionProposalRecord.id.desc(),
-                )
+        known = dict(fields)
+        known.update(
+            await self._load_orphan_fields(
+                template_id=template_id, field_ids={r.field_id for r in rows} - known.keys()
             )
-        ).all()
-        if not proposal_rows:
-            return ()
-
-        # Compute "latest per key" to flag superseded rows.
-        latest_id_per_key: dict[tuple[UUID, UUID, UUID], UUID] = {}
-        for pid, rid, iid, fid, *_rest in proposal_rows:
-            latest_id_per_key.setdefault((rid, iid, fid), pid)
-
-        # 2. Evidence — one bulk query, summarized per proposal.
-        evidence_by_pid = await load_evidence_summaries(self.db, [row[0] for row in proposal_rows])
-
-        # 3. Reviewer decisions for the same (run, instance, field) — the
-        # outcome inference is best-effort because the `edit` decision
-        # carries no FK back to the AI proposal (FR-040 caveat). In
-        # SINGLE_USER mode the query is scoped to the target reviewer so the
-        # "Reviewer outcome" column reflects the same reviewer whose values
-        # populate "Final value used" (A3); consensus/all-users keep all
-        # reviewers' decisions in scope.
-        decision_stmt = (
-            select(
-                ExtractionReviewerState.run_id,
-                ExtractionReviewerState.instance_id,
-                ExtractionReviewerState.field_id,
-                ExtractionReviewerState.reviewer_id,
-                ExtractionReviewerDecision.decision,
-                ExtractionReviewerDecision.proposal_record_id,
-            )
-            .join(
-                ExtractionReviewerDecision,
-                ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
-            )
-            .where(ExtractionReviewerState.run_id.in_(run_ids))
         )
-        if mode is ExportMode.SINGLE_USER and target_reviewer_id is not None:
-            decision_stmt = decision_stmt.where(
-                ExtractionReviewerState.reviewer_id == target_reviewer_id
-            )
-        decision_rows = (await self.db.execute(decision_stmt)).all()
-        # Index decisions by (run, instance, field) → list of (decision, prop_id).
-        # reviewer_id is selected for scoping/diagnostics but the per-key
-        # precedence in _infer_reviewer_outcome consumes the decision+prop_id pair.
-        decisions_by_key: dict[tuple[UUID, UUID, UUID], list[tuple[str, UUID | None]]] = {}
-        for rid, iid, fid, _reviewer_id, decision, prop_id in decision_rows:
-            decisions_by_key.setdefault((rid, iid, fid), []).append((decision, prop_id))
-
-        # Pre-compute the instance index map per article so we can label
-        # "Instance #" 1..N. The index is per SIBLING GROUP, which is what
-        # `section_instances` always gave a study section; children used to
-        # be numbered 1..N over the flat tuple instead — 1..12 for a CHARMS
-        # article with two models, which named nothing.
-        instance_index_by_id: dict[UUID, int] = {}
-        for article in articles:
-            for ids in article.entries.values():
-                for idx, iid in enumerate(ids, start=1):
-                    instance_index_by_id[iid] = idx
-
-        # 6. In-scope run versions feed the label-fallback chain below.
-        run_stmt = select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))
-        run_by_id = {r.id: r for r in (await self.db.execute(run_stmt)).scalars().all()}
-
-        # Label-fallback CHAIN (B-3a): anchor sections -> the RUN's pinned
-        # snapshot -> live tables -> "(unknown ...)". An instance belongs to
-        # its run's pinned version, not the anchor, so a section or field
-        # removed after the run finalized must resolve from that version
-        # before the live table (which may have lost the row entirely).
-        section_label_by_entity: dict[UUID, str] = {}
-        run_field_labels: dict[UUID, str] = {}
-        for vid in {r.version_id for r in run_by_id.values()}:
-            for section in await load_export_sections(self.db, version_id=vid):
-                section_label_by_entity.setdefault(section.entity_type_id, section.label)
-                for snap_field in section.fields:
-                    run_field_labels.setdefault(snap_field.field_id, snap_field.label)
-        for fid, label in run_field_labels.items():
-            field_label_by_id.setdefault(fid, label)
-
-        missing_entity_ids = {
-            etid for etid, _aid in instance_meta.values()
-        } - section_label_by_entity.keys()
-        if missing_entity_ids:
-            ent_label_rows = (
-                await self.db.execute(
-                    select(ExtractionEntityType.id, ExtractionEntityType.label).where(
-                        ExtractionEntityType.id.in_(missing_entity_ids)
-                    )
-                )
-            ).all()
-            for etid, label in ent_label_rows:
-                section_label_by_entity.setdefault(etid, label)
-
-        missing_field_ids = {
-            fid for _pid, _rid, _iid, fid, *_ in proposal_rows if fid not in field_label_by_id
-        }
-        if missing_field_ids:
-            fb_rows = (
-                await self.db.execute(
-                    select(ExtractionField.id, ExtractionField.label).where(
-                        ExtractionField.id.in_(missing_field_ids)
-                    )
-                )
-            ).all()
-            for fid, label in fb_rows:
-                field_label_by_id.setdefault(fid, label)
-
-        # Build the output rows.
-        out: list[AIProposalRow] = []
-        for (
-            pid,
-            rid,
-            iid,
-            fid,
-            proposed_value,
-            confidence,
-            rationale,
-            ts,
-            proposal,
-        ) in proposal_rows:
-            article = articles_by_run.get(rid)
-            run = run_by_id.get(rid)
-            if article is None or run is None:
-                continue  # defensive; the run is in scope by construction
-            instance_etid = instance_meta.get(iid, (None, None))[0]
-            section_label = (
-                section_by_entity[instance_etid].label
-                if instance_etid in section_by_entity
-                else section_label_by_entity.get(instance_etid, "(unknown section)")
-            )
-            outcome = _infer_reviewer_outcome(
-                proposal_id=pid,
-                key=(rid, iid, fid),
-                latest_id=latest_id_per_key[(rid, iid, fid)],
-                decisions=decisions_by_key.get((rid, iid, fid), []),
-            )
-            field = field_desc_by_id.get(fid) or _untyped_field(fid)
-            final = value_map.get(value_key(rid, iid, fid, primary_rater(mode, target_reviewer_id)))
-            evidence_text, evidence_pages = evidence_by_pid.get(pid, ("", ""))
-            row = AIProposalRow(
-                article_label=article.article_label,
-                section_label=section_label,
-                instance_index=instance_index_by_id.get(iid, 1),
-                field_label=field_label_by_id.get(fid, "(unknown field)"),
-                ai_proposed_value=display_value(
-                    to_export_value(proposed_value, field, labels), field
+        evidence = (
+            await load_evidence_summaries(self.db, [r.id for r in rows]) if with_evidence else {}
+        )
+        return tuple(
+            AIProposalRow(
+                article_id=r.article_id,
+                instance_id=r.instance_id,
+                field_id=r.field_id,
+                ai_proposal_id=r.id,
+                created_at=r.created_at,
+                engine=proposal_engine(
+                    ExtractionProposalRecord(
+                        run_id=r.run_id,
+                        extraction_attempt_id=r.extraction_attempt_id,
+                        generation_snapshot=r.snapshot,
+                        provenance=r.provenance,
+                    ),
+                    had_snapshot=r.had_snapshot,
                 ),
-                confidence=float(confidence) if confidence is not None else None,
-                rationale=rationale,
-                evidence_text=evidence_text,
-                evidence_pages=evidence_pages,
-                proposed_at=ts,
-                model_used=proposal_model_used(proposal),
-                reviewer_outcome=outcome,
-                final_value_used=None if final is None else display_value(final, field),
+                value=to_export_value(r.proposed_value, known[r.field_id], labels),
+                confidence=None if r.confidence_score is None else float(r.confidence_score),
+                rationale=r.rationale,
+                evidence_quote=evidence.get(r.id, ("", ""))[0],
+                page=evidence.get(r.id, ("", ""))[1],
             )
-            out.append(row)
-
-        return tuple(out)
+            for r in rows
+        )
 
 
 # ----------------------------------------------------------------------
@@ -1754,71 +1591,6 @@ def _linked(
     if proposal_id is None or run_id is None or source is None:
         return None
     return LinkedProposal(proposal_id, run_id, source, proposed)
-
-
-def _untyped_field(field_id: UUID) -> FieldDescriptor:
-    """A proposal's field outside the active sections; drops the envelope unit
-    until PR5 rewrites the AI sheet and deletes this (R15, R19)."""
-    return FieldDescriptor(
-        field_id=field_id, label="", type=ExtractionFieldType.TEXT, allowed_values=()
-    )
-
-
-def _infer_reviewer_outcome(
-    *,
-    proposal_id: UUID,
-    key: tuple[UUID, UUID, UUID],  # noqa: ARG001 — kept for symmetry/debugging
-    latest_id: UUID,
-    decisions: list[tuple[str, UUID | None]],
-) -> str:
-    """Compute the FR-037 ``Reviewer outcome`` value for a proposal.
-
-    Precedence (highest → lowest, A2/A4 corrected):
-        1. accepted     — an accept_proposal decision targets THIS proposal_id.
-        2. superseded   — a newer AI proposal exists for this key
-                          (proposal_id != latest_id), checked BEFORE any blanket
-                          reject so a superseded proposal is not mislabelled
-                          'rejected'.
-        3. not selected — this is the latest proposal but an accept_proposal on the
-                          key targets a DIFFERENT proposal (reviewed, not chosen).
-        4. rejected     — a reject decision exists AND no accept of a different
-                          proposal masks it.
-        5. edited       — an edit decision exists (best-effort; edit carries no FK
-                          back to the AI proposal).
-        6. not selected — a terminal decision exists on the key but none of the
-                          above applied (A4: never 'pending' once the key is
-                          touched).
-        7. pending      — no reviewer decision on this key at all.
-    """
-    accepts_other = any(
-        d == "accept_proposal" and pid is not None and pid != proposal_id for d, pid in decisions
-    )
-
-    # 1. accepted — exact match on this proposal.
-    for decision, pid in decisions:
-        if decision == "accept_proposal" and pid == proposal_id:
-            return "accepted"
-
-    # 2. superseded — a newer AI proposal exists for this key (before any reject).
-    if proposal_id != latest_id:
-        return "superseded"
-
-    # 3. not selected — latest, but a different proposal was accepted on the key.
-    if accepts_other:
-        return "not selected"
-
-    # 4. rejected — a reject exists and no accept-of-other masks it.
-    for decision, _ in decisions:
-        if decision == "reject":
-            return "rejected"
-
-    # 5. edited — best-effort.
-    for decision, _ in decisions:
-        if decision == "edit":
-            return "edited (best-effort)"
-
-    # 6/7. a terminal decision touched the key → 'not selected'; else 'pending'.
-    return "not selected" if decisions else "pending"
 
 
 #: Lowercase surname particles: a trailing "<particle...> <Name>" run is all

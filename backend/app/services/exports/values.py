@@ -242,6 +242,18 @@ def to_export_value(
     return _nonconforming(raw, payload)
 
 
+#: Statuses whose typed value a machine column carries.
+MACHINE_STATUSES: tuple[ExportStatus, ...] = ("answered", "nonconforming")
+
+
+def machine_value(v: ExportValue) -> CellValue:
+    """The machine scalar: the first of ``value_num``, ``value_bool``, ``value_text``
+    for an answered or nonconforming value in scope, else ``None``."""
+    if v.status not in MACHINE_STATUSES or v.out_of_scope:
+        return None
+    return next((x for x in (v.value_num, v.value_bool, v.value_text) if x is not None), None)
+
+
 def display_value(v: ExportValue, field: FieldDescriptor) -> CellValue:
     if v.out_of_scope:
         return ABSENT_REASON_LABELS["not_applicable"]

@@ -1,4 +1,4 @@
-"""Per-proposal facts projected onto one ``AI metadata`` export row."""
+"""Per-proposal facts projected onto one ``AI proposals`` export row."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ import pytest
 
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.services.exports.ai_proposal_projection import (
+    EngineFacts,
     load_evidence_summaries,
-    proposal_model_used,
+    proposal_engine,
 )
 
 
@@ -23,23 +24,31 @@ def _proposal(*, snapshot: object = None, provenance: object = None) -> Extracti
     )
 
 
-def test_model_comes_from_the_calls_own_snapshot_before_row_provenance() -> None:
-    proposal = _proposal(snapshot={"model": "call-model"}, provenance={"model": "row-model"})
-    assert proposal_model_used(proposal) == "call-model"
+def test_engine_comes_from_the_calls_own_snapshot_before_row_provenance() -> None:
+    proposal = _proposal(
+        snapshot={"provider": "openai", "model": "call-model", "prompt_version": "v3"},
+        provenance={"provider": "anthropic", "model": "row-model"},
+    )
+    assert proposal_engine(proposal, had_snapshot=True) == EngineFacts("openai", "call-model", "v3")
 
 
-def test_legacy_row_without_snapshot_uses_its_own_provenance() -> None:
-    assert proposal_model_used(_proposal(provenance={"model": "legacy-model"})) == "legacy-model"
+def test_pre_0075_proposal_names_its_model() -> None:
+    proposal = _proposal(provenance={"provider": "openai", "model": "gpt-4o"})
+    assert proposal_engine(proposal, had_snapshot=False) == EngineFacts("openai", "gpt-4o", "")
 
 
-def test_snapshot_without_a_model_never_borrows_provenance() -> None:
-    proposal = _proposal(snapshot={"prompt_version": "v2"}, provenance={"model": "row-model"})
-    assert proposal_model_used(proposal) == ""
+def test_engine_facts_ignore_prompt_payload_and_never_borrow_provenance() -> None:
+    """A snapshot the loader stripped to ``{}`` still had a snapshot: no borrowing."""
+    stripped = _proposal(snapshot={"strategy": "x"}, provenance={"model": "row"})
+    assert proposal_engine(stripped, had_snapshot=True).model == ""
+    emptied = _proposal(snapshot={}, provenance={"model": "row"})
+    assert proposal_engine(emptied, had_snapshot=True).model == ""
 
 
-def test_non_scalar_model_and_absent_facts_are_unavailable() -> None:
-    assert proposal_model_used(_proposal(snapshot={"model": {"forged": "x"}})) == ""
-    assert proposal_model_used(_proposal()) == ""
+def test_non_scalar_engine_facts_and_absent_facts_are_blank() -> None:
+    forged = _proposal(snapshot={"model": {"forged": "x"}, "prompt_version": 3})
+    assert proposal_engine(forged, had_snapshot=True) == EngineFacts("", "", "")
+    assert proposal_engine(_proposal(), had_snapshot=False) == EngineFacts("", "", "")
 
 
 @pytest.mark.asyncio

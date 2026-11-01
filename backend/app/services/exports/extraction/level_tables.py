@@ -26,7 +26,12 @@ from app.services.exports.descriptors import (
     walk_sections,
 )
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, CellValue, SheetSpec
-from app.services.exports.values import ExportValue, display_value
+from app.services.exports.values import (
+    MACHINE_STATUSES,
+    ExportValue,
+    display_value,
+    machine_value,
+)
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -40,7 +45,6 @@ if TYPE_CHECKING:
 
 _HEADER = CellStyle(bold=True, fill="EEEEEE")
 _CONSENSUS = "consensus"  # reserved rater literal on consensus rows
-_MACHINE_STATUSES = ("answered", "nonconforming")
 
 Column = tuple[SectionDescriptor, FieldDescriptor]
 
@@ -60,12 +64,8 @@ def _field_headers(f: FieldDescriptor, publication: bool) -> list[str]:
 def _field_cells(v: ExportValue | None, f: FieldDescriptor, publication: bool) -> list[CellValue]:
     if publication:
         return [None if v is None else display_value(v, f)]
-    keep = v is not None and v.status in _MACHINE_STATUSES and not v.out_of_scope
-    main: CellValue = None
-    if keep:
-        assert v is not None
-        main = next((x for x in (v.value_num, v.value_bool, v.value_text) if x is not None), None)
-    cells = [main]
+    keep = v is not None and v.status in MACHINE_STATUSES and not v.out_of_scope
+    cells: list[CellValue] = [None if v is None else machine_value(v)]
     if f.allowed_units:
         cells.append(v.unit if keep and v is not None else None)
     if f.allow_other:

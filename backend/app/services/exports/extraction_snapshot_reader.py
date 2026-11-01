@@ -22,16 +22,12 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.llm.claim_value import normalize_options
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
-from app.services.extraction_snapshot import entity_types_for_version
 from app.services.value_semantics import AbsentReason
 
 
@@ -74,27 +70,6 @@ class SnapshotSection:
     # legacy rows and pre-0051 snapshots (readers default, consumers fall
     # back to DEFAULT_ENTRY_LABEL).
     entry_label: str | None = None
-
-
-async def load_export_sections(
-    db: AsyncSession,
-    *,
-    version_id: UUID,
-) -> tuple[SnapshotSection, ...]:
-    """Read the frozen entity_types tree for a version snapshot, ordered by
-    ``sort_order``, via the shared provider (its per-field narrowness probe
-    replaced this module's stale first-element/role-only copy, which
-    accepted 0016->0026-era snapshots and silently defaulted
-    ``llm_description``/``allow_other`` in exports). Returns ``()`` only
-    when the version row itself is missing (unreachable for FK-sourced
-    ids — defensive)."""
-    version = await db.get(ExtractionTemplateVersion, version_id)
-    if version is None:
-        return ()
-    views = await entity_types_for_version(
-        db, version_id=version_id, template_id=version.project_template_id
-    )
-    return tuple(section_from_view(view) for view in views)
 
 
 def section_from_view(view: RunViewEntityType) -> SnapshotSection:

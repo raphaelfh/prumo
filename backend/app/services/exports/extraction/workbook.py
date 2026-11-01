@@ -23,7 +23,7 @@ from openpyxl import Workbook
 
 from app.models.extraction import ExtractionCardinality
 from app.services.exports.descriptors import level_of, walk_sections
-from app.services.exports.extraction.ai_metadata import build_ai_metadata
+from app.services.exports.extraction.ai_proposals import build_ai_proposals
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.exports.extraction.codebook import build_codebook, build_options
 from app.services.exports.extraction.data_sheet import build_data_sheet
@@ -269,7 +269,7 @@ def _ordered_specs(
     if "data" in keep:
         specs.append(build_data_sheet(layout, titles))
     if "ai_proposals" in keep:
-        specs.append(build_ai_metadata(layout, titles))
+        specs.append(build_ai_proposals(layout, titles))
     if "appraisal_summary" in keep:
         specs.append(build_appraisal_summary(layout, titles))
     if "codebook" in keep:

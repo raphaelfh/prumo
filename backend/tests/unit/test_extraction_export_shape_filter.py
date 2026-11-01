@@ -177,8 +177,7 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
         ("appraisal_summary", "build_appraisal_summary", one),
         ("codebook", "build_codebook", one),
         ("options", "build_options", one),
-        # The role id is ``ai_proposals``; the module keeps its name until PR5.
-        ("ai_proposals", "build_ai_metadata", one),
+        ("ai_proposals", "build_ai_proposals", one),
     ):
         monkeypatch.setattr(workbook_module, fn_name, _spy(role, result))
     monkeypatch.setattr(workbook_module, "build_level_tables", _spy("level_tables", []))
