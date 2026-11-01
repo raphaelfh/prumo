@@ -28,7 +28,7 @@ from app.core.deps import AsyncSessionLocal
 from app.core.error_handler import NotFoundError
 from app.models.article import Article
 from app.models.project import Project, ProjectMember
-from app.models.screening import ScreeningAssignment
+from app.models.screening import TITLE_ABSTRACT, ScreeningAssignment
 from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import ScreeningRepository
@@ -109,6 +109,7 @@ async def build(db: AsyncSession, *, manager_id: UUID, reviewer_ids: tuple[UUID,
         project_id=PROJECT_ID,
         enrolled_by=manager_id,
         article_ids=[a.id for a in articles[:_ENROLLED]],
+        phase=TITLE_ABSTRACT,
     )
     await ProjectRepository(db).update_settings_key(
         PROJECT_ID, "screening", lambda old: {**(old or {}), "reviewer_count": 2}

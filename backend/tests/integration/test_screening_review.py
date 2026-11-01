@@ -13,7 +13,9 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
-from app.models.screening import ScreeningDecision
+from app.models.screening import FULL_TEXT, ScreeningAssignment, ScreeningDecision
+from app.repositories.project_repository import ProjectRepository
+from app.repositories.screening_repository import ScreeningRepository
 from tests.integration.conftest import SEED
 from tests.integration.helpers.engine_setup import client_as
 from tests.integration.helpers.screening_fixtures import (
@@ -90,6 +92,35 @@ async def _project(
 
 def _error_code(response: Response) -> str:
     return response.json()["error"]["code"]
+
+
+async def test_full_text_assignment_reads_by_id(db_session: AsyncSession) -> None:
+    project_id = await make_project(db_session)
+    reviewer = await add_member(db_session, project_id, "reviewer")
+    article = await make_screening_article(db_session, project_id)
+    await ScreeningRepository(db_session).enroll(
+        project_id=project_id, enrolled_by=MANAGER, article_ids=[article], phase=FULL_TEXT
+    )
+    [assignment] = (
+        (
+            await db_session.execute(
+                select(ScreeningAssignment.id).where(ScreeningAssignment.project_id == project_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    unset = await _get(db_session, reviewer, _assignment_path(assignment))
+    assert unset.status_code == 200
+    assert unset.json()["data"]["outcome"] is None  # unconfigured reads as pending
+
+    await ProjectRepository(db_session).update_settings_key(
+        project_id, "screening", lambda old: {**(old or {}), "full_text_reviewer_count": 2}
+    )
+    configured = await _get(db_session, reviewer, _assignment_path(assignment))
+    assert configured.status_code == 200
+    assert configured.json()["data"]["status"] == "awaiting_me"
 
 
 async def test_solo_outcome(db_session: AsyncSession) -> None:

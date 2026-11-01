@@ -22,7 +22,8 @@ from app.schemas.screening import (
     ScreeningEnrollResult,
 )
 from app.services.article_read_service import ArticleNotFoundError
-from app.services.screening_config_service import ProjectNotFoundError, reviewer_count_of
+from app.services.screening_config_service import ProjectNotFoundError
+from app.services.screening_settings import reviewer_count_of
 
 PROJECT = uuid4()
 CALLER = uuid4()
@@ -74,7 +75,24 @@ def _request() -> SimpleNamespace:
     ids=["none", "empty", "no-count", "two", "out-of-range", "string", "sibling-key"],
 )
 def test_reviewer_count_of(settings: dict | None, expected: int | None) -> None:
-    assert reviewer_count_of(settings) == expected
+    assert reviewer_count_of(settings, "title_abstract") == expected
+
+
+@pytest.mark.parametrize(
+    ("settings", "phase", "expected"),
+    [
+        ({"screening": {"reviewer_count": 2, "full_text_reviewer_count": 1}}, "full_text", 1),
+        ({"screening": {"reviewer_count": 2, "full_text_reviewer_count": 1}}, "title_abstract", 2),
+        ({"screening": {"reviewer_count": 2}}, "full_text", None),
+        ({"screening": {"full_text_reviewer_count": 4}}, "full_text", None),
+        ({"screening": {"full_text_reviewer_count": True}}, "full_text", None),
+    ],
+    ids=["full-text-key", "title-abstract-key", "full-text-unset", "out-of-range", "bool"],
+)
+def test_reviewer_count_of_reads_the_phase_key(
+    settings: dict, phase: str, expected: int | None
+) -> None:
+    assert reviewer_count_of(settings, phase) == expected  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("value", [0, 4])

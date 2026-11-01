@@ -10,6 +10,7 @@ append-only; the current one is the latest row per coordinate, ordered by a
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Final
 from uuid import UUID
 
 from sqlalchemy import (
@@ -28,10 +29,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDMixin
 
-SCREENING_PHASE = "title_abstract"
+# ``Final`` keeps the literal type, so the constants satisfy ``AssignmentPhase``.
+TITLE_ABSTRACT: Final = "title_abstract"
+FULL_TEXT: Final = "full_text"
 
 # SHORT CHECK names: the "ck" convention expands them to ck_<table>_<name>.
-_DECISION_CHECK = "decision IN ('include', 'exclude', 'maybe')"
+_DECISION_CHECK = "decision IN ('include', 'exclude', 'maybe', 'not_retrieved')"
 _REASON_CHECK = "exclusion_reason IS NULL OR decision = 'exclude'"
 
 
@@ -47,7 +50,7 @@ class ScreeningAssignment(Base, UUIDMixin):
         PG_UUID(as_uuid=True), ForeignKey("public.articles.id", ondelete="CASCADE"), nullable=False
     )
     phase: Mapped[str] = mapped_column(
-        Text, nullable=False, default=SCREENING_PHASE, server_default=SCREENING_PHASE
+        Text, nullable=False, default=TITLE_ABSTRACT, server_default=TITLE_ABSTRACT
     )
     enrolled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -57,7 +60,7 @@ class ScreeningAssignment(Base, UUIDMixin):
     )
 
     __table_args__ = (
-        CheckConstraint("phase IN ('title_abstract')", name="phase"),
+        CheckConstraint("phase IN ('title_abstract', 'full_text')", name="phase"),
         UniqueConstraint(
             "project_id", "article_id", "phase", name="uq_screening_assignments_article_phase"
         ),

@@ -18,12 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
 from app.models.article_author import ArticleSyncEvent, ArticleSyncRun
+from app.models.screening import TITLE_ABSTRACT
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import ScreeningRepository, live_assignments
 from app.schemas.prisma import PrismaCountsRead, PrismaReasonCount, PrismaSourceCount
-from app.services.screening_config_service import reviewer_count_of
 from app.services.screening_outcome import AssignmentState
 from app.services.screening_review_service import assignment_states
+from app.services.screening_settings import reviewer_count_of
 
 PUBMED = "pubmed"
 _MANUAL = "manual"
@@ -77,7 +78,7 @@ def screening_box(states: Sequence[AssignmentState]) -> ScreeningBox:
 
 async def _pubmed_identified(db: AsyncSession, project_id: UUID) -> int:
     """Distinct PMIDs the project's PubMed imports found AND whose article is enrolled here."""
-    enrolled = live_assignments(project_id).subquery()
+    enrolled = live_assignments(project_id, TITLE_ABSTRACT).subquery()
     stmt = (
         select(func.count(func.distinct(ArticleSyncEvent.event_payload["pmid"].astext)))
         .select_from(ArticleSyncEvent)
@@ -95,7 +96,7 @@ async def _pubmed_identified(db: AsyncSession, project_id: UUID) -> int:
 async def _other_sources(db: AsyncSession, project_id: UUID) -> list[PrismaSourceCount]:
     """Enrolled articles not ingested from PubMed, by lower-cased ingestion source."""
     source = func.lower(func.coalesce(Article.ingestion_source, _MANUAL))
-    enrolled = live_assignments(project_id).subquery()
+    enrolled = live_assignments(project_id, TITLE_ABSTRACT).subquery()
     stmt = (
         select(source.label("source"), func.count().label("n"))
         .select_from(Article)
@@ -138,7 +139,7 @@ async def prisma_counts(db: AsyncSession, project_id: UUID) -> PrismaCountsRead:
     never negative; it is not clamped, so a break of the invariant shows.
     """
     screening = ScreeningRepository(db)
-    enrolled = await screening.count_enrolled(project_id=project_id)
+    enrolled = await screening.count_enrolled(project_id=project_id, phase=TITLE_ABSTRACT)
     total_articles = await screening.count_project_articles(project_id=project_id)
 
     identified = await _other_sources(db, project_id)
@@ -151,7 +152,8 @@ async def prisma_counts(db: AsyncSession, project_id: UUID) -> PrismaCountsRead:
     snapshots = await assignment_states(
         db,
         project_id=project_id,
-        reviewer_count=reviewer_count_of(project.settings if project else None),
+        phase=TITLE_ABSTRACT,
+        reviewer_count=reviewer_count_of(project.settings if project else None, TITLE_ABSTRACT),
     )
     box = screening_box([snapshot.state for snapshot in snapshots.values()])
 

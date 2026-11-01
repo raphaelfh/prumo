@@ -27,6 +27,7 @@ from app.repositories.project_repository import ProjectRepository
 from app.repositories.screening_repository import RecordSource, ScreeningRepository
 from app.schemas.common import ApiErrorCode
 from app.schemas.screening import (
+    AssignmentPhase,
     PeerDecisionRead,
     ScreeningArbitrationCreate,
     ScreeningArticle,
@@ -41,11 +42,6 @@ from app.schemas.screening import (
 )
 from app.services.profile_names import profile_names
 from app.services.project_ai_context import load_exclusion_reasons, load_inclusion_criteria
-from app.services.screening_config_service import (
-    ScreeningRoles,
-    reviewer_count_of,
-    screening_roles,
-)
 from app.services.screening_errors import ScreeningSelfArbitrationError, ScreeningStateError
 from app.services.screening_outcome import (
     AssignmentState,
@@ -56,6 +52,7 @@ from app.services.screening_outcome import (
     record_status,
     reveals_peers,
 )
+from app.services.screening_settings import ScreeningRoles, reviewer_count_of, screening_roles
 
 
 class AssignmentNotFoundError(Exception):
@@ -129,17 +126,20 @@ async def assignment_states(
     db: AsyncSession,
     *,
     project_id: UUID,
+    phase: AssignmentPhase,
     reviewer_count: int | None,
     assignment_ids: Sequence[UUID] | None = None,
 ) -> dict[UUID, AssignmentSnapshot]:
-    """The derived state of the project's live assignments (or the given subset).
+    """The derived state of the project's live ``phase`` assignments (or the given subset).
 
     Three queries for any scope. A moved or deleted article's assignment is
     absent; an unconfigured project (``reviewer_count is None``) reads as
     pending everywhere.
     """
     repo = ScreeningRepository(db)
-    live = await repo.live_assignment_ids(project_id=project_id, assignment_ids=assignment_ids)
+    live = await repo.live_assignment_ids(
+        project_id=project_id, phase=phase, assignment_ids=assignment_ids
+    )
     decisions = await repo.current_decisions(project_id=project_id, assignment_ids=assignment_ids)
     rulings = await repo.latest_rulings(project_id=project_id, assignment_ids=assignment_ids)
     grouped: dict[UUID, list[CurrentDecision]] = defaultdict(list)
@@ -233,22 +233,22 @@ class ScreeningReviewService:
         self.projects = ProjectRepository(db)
         self.screening = ScreeningRepository(db)
 
-    async def _reviewer_count(self, project_id: UUID) -> int | None:
+    async def _reviewer_count(self, project_id: UUID, phase: AssignmentPhase) -> int | None:
         project = await self.projects.get_by_id(project_id)
-        return reviewer_count_of(project.settings if project else None)
+        return reviewer_count_of(project.settings if project else None, phase)
 
     async def records(
         self, project_id: UUID, viewer_id: UUID, phase: ScreeningPhase
     ) -> ScreeningRecordsRead:
         """Every article of the project in ``phase``, in queue order, as ``viewer_id`` may see it."""
-        reviewer_count = await self._reviewer_count(project_id)
+        reviewer_count = await self._reviewer_count(project_id, phase)
         if reviewer_count is None:
             raise _not_configured()
         snapshots = await assignment_states(
-            self.db, project_id=project_id, reviewer_count=reviewer_count
+            self.db, project_id=project_id, phase=phase, reviewer_count=reviewer_count
         )
         roles = await screening_roles(self.db, project_id, viewer_id)
-        sources = await self.screening.record_rows(project_id=project_id)
+        sources = await self.screening.record_rows(project_id=project_id, phase=phase)
         return ScreeningRecordsRead(
             phase=phase,
             reviewer_count=reviewer_count,
@@ -268,14 +268,16 @@ class ScreeningReviewService:
 
     async def get_assignment(self, assignment_id: UUID, viewer_id: UUID) -> ScreeningAssignmentRead:
         ref = await get_assignment_ref(self.db, assignment_id)
-        reviewer_count = await self._reviewer_count(ref.project_id)
-        return await self._read(ref.project_id, assignment_id, viewer_id, reviewer_count)
+        reviewer_count = await self._reviewer_count(ref.project_id, ref.phase)
+        return await self._read(ref, viewer_id, reviewer_count)
 
     async def decide(
         self, assignment_id: UUID, reviewer_id: UUID, body: ScreeningDecisionCreate
     ) -> ScreeningAssignmentRead:
         ref = await get_assignment_ref(self.db, assignment_id)
-        reviewer_count = reviewer_count_of(await self.projects.settings_for_share(ref.project_id))
+        reviewer_count = reviewer_count_of(
+            await self.projects.settings_for_share(ref.project_id), ref.phase
+        )
         if reviewer_count is None:
             raise _not_configured()
         await self.screening.lock_assignment(assignment_id)
@@ -283,6 +285,7 @@ class ScreeningReviewService:
             await assignment_states(
                 self.db,
                 project_id=ref.project_id,
+                phase=ref.phase,
                 reviewer_count=reviewer_count,
                 assignment_ids=[assignment_id],
             )
@@ -309,7 +312,7 @@ class ScreeningReviewService:
         await self.screening.add_decision(
             assignment_id, reviewer_id, body.decision, body.exclusion_reason, body.rationale
         )
-        return await self._read(ref.project_id, assignment_id, reviewer_id, reviewer_count)
+        return await self._read(ref, reviewer_id, reviewer_count)
 
     async def arbitrate(
         self, assignment_id: UUID, arbitrator_id: UUID, body: ScreeningArbitrationCreate
@@ -319,7 +322,9 @@ class ScreeningReviewService:
         Never by a seated arbitrator: a reviewer does not resolve their own record.
         """
         ref = await get_assignment_ref(self.db, assignment_id)
-        reviewer_count = reviewer_count_of(await self.projects.settings_for_share(ref.project_id))
+        reviewer_count = reviewer_count_of(
+            await self.projects.settings_for_share(ref.project_id), ref.phase
+        )
         if reviewer_count is None:
             raise _not_configured()
         await self.screening.lock_assignment(assignment_id)
@@ -327,6 +332,7 @@ class ScreeningReviewService:
             await assignment_states(
                 self.db,
                 project_id=ref.project_id,
+                phase=ref.phase,
                 reviewer_count=reviewer_count,
                 assignment_ids=[assignment_id],
             )
@@ -372,19 +378,21 @@ class ScreeningReviewService:
         return await self.get_assignment(assignment_id, arbitrator_id)
 
     async def _read(
-        self, project_id: UUID, assignment_id: UUID, viewer_id: UUID, reviewer_count: int | None
+        self, ref: ScreeningAssignmentRef, viewer_id: UUID, reviewer_count: int | None
     ) -> ScreeningAssignmentRead:
         """One record as ``viewer_id`` may see it; peers only when ``reveals_peers``."""
+        project_id, assignment_id = ref.project_id, ref.id
         snapshot = (
             await assignment_states(
                 self.db,
                 project_id=project_id,
+                phase=ref.phase,
                 reviewer_count=reviewer_count,
                 assignment_ids=[assignment_id],
             )
         ).get(assignment_id)
         articles = await self.screening.assignments_with_articles(
-            project_id=project_id, assignment_ids=[assignment_id]
+            project_id=project_id, phase=ref.phase, assignment_ids=[assignment_id]
         )
         if snapshot is None or not articles:
             raise AssignmentNotFoundError

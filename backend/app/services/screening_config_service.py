@@ -8,14 +8,11 @@ serializes a change with any decision in flight.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any
 from uuid import UUID
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.screening import TITLE_ABSTRACT
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.repositories.screening_repository import ScreeningRepository
 from app.schemas.common import ApiErrorCode
@@ -23,44 +20,15 @@ from app.schemas.screening import ScreeningConfigRead, ScreeningEnrollResult
 from app.services.article_read_service import owned_articles
 from app.services.project_ai_context import load_exclusion_reasons
 from app.services.screening_errors import ScreeningStateError
-
-SCREENING_SETTINGS_KEY = "screening"
-_MIN_REVIEWERS, _MAX_REVIEWERS = 1, 3
+from app.services.screening_settings import (
+    SCREENING_SETTINGS_KEY,
+    reviewer_count_of,
+    screening_roles,
+)
 
 
 class ProjectNotFoundError(Exception):
     pass
-
-
-def reviewer_count_of(settings: Mapping[str, Any] | None) -> int | None:
-    """The configured reviewers per record when it is 1..3, else ``None``."""
-    value = ((settings or {}).get(SCREENING_SETTINGS_KEY) or {}).get("reviewer_count")
-    in_range = isinstance(value, int) and _MIN_REVIEWERS <= value <= _MAX_REVIEWERS
-    return value if in_range and not isinstance(value, bool) else None
-
-
-@dataclass(frozen=True)
-class ScreeningRoles:
-    can_manage: bool
-    can_review: bool
-    can_arbitrate: bool
-
-
-async def screening_roles(db: AsyncSession, project_id: UUID, user_id: UUID) -> ScreeningRoles:
-    """The caller's roles, from the same SQL functions the RLS policies call."""
-    row = (
-        await db.execute(
-            text(
-                "SELECT public.is_project_manager(:pid, :uid) AS manage, "
-                "public.is_project_reviewer(:pid, :uid) AS review, "
-                "public.is_project_arbitrator(:pid, :uid) AS arbitrate"
-            ),
-            {"pid": str(project_id), "uid": str(user_id)},
-        )
-    ).one()
-    return ScreeningRoles(
-        can_manage=bool(row.manage), can_review=bool(row.review), can_arbitrate=bool(row.arbitrate)
-    )
 
 
 class ScreeningConfigService:
@@ -72,11 +40,11 @@ class ScreeningConfigService:
 
     async def read(self, project_id: UUID, viewer_id: UUID) -> ScreeningConfigRead:
         project = await self.projects.get_by_id(project_id)
-        enrolled = await self.screening.count_enrolled(project_id=project_id)
+        enrolled = await self.screening.count_enrolled(project_id=project_id, phase=TITLE_ABSTRACT)
         total = await self.screening.count_project_articles(project_id=project_id)
         roles = await screening_roles(self.db, project_id, viewer_id)
         return ScreeningConfigRead(
-            reviewer_count=reviewer_count_of(project.settings if project else None),
+            reviewer_count=reviewer_count_of(project.settings if project else None, TITLE_ABSTRACT),
             reviewer_count_locked=await self.screening.project_has_decision(project_id=project_id),
             reviewer_capable=await self.members.count_reviewer_capable(project_id),
             enrolled=enrolled,
@@ -93,7 +61,7 @@ class ScreeningConfigService:
         project = await self.projects.lock_for_update(project_id)
         if project is None:
             raise ProjectNotFoundError
-        current = reviewer_count_of(project.settings)
+        current = reviewer_count_of(project.settings, TITLE_ABSTRACT)
         if (
             current is not None
             and current != reviewer_count
@@ -127,6 +95,9 @@ class ScreeningConfigService:
         else:
             candidates = await self.screening.count_project_articles(project_id=project_id)
         enrolled = await self.screening.enroll(
-            project_id=project_id, enrolled_by=enrolled_by, article_ids=article_ids
+            project_id=project_id,
+            enrolled_by=enrolled_by,
+            article_ids=article_ids,
+            phase=TITLE_ABSTRACT,
         )
         return ScreeningEnrollResult(enrolled=enrolled, already_enrolled=candidates - enrolled)

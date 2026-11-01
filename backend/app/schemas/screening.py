@@ -10,6 +10,8 @@ ScreeningDecisionValue = Literal["include", "exclude", "maybe"]
 ScreeningOutcomeKind = Literal["solo", "consensus", "arbitrated"]
 ScreeningCallerStatus = Literal["awaiting_me", "awaiting_others", "conflict", "decided"]
 ScreeningPhase = Literal["title_abstract"]
+# Task 5 folds this into ScreeningPhase.
+AssignmentPhase = Literal["title_abstract", "full_text"]
 ScreeningRecordStatus = Literal[
     "not_enrolled", "to_screen", "waiting", "in_review", "conflict", "included", "excluded", "maybe"
 ]
@@ -193,3 +195,4 @@ class ScreeningAssignmentRef(BaseModel):
     id: UUID
     project_id: UUID
     article_id: UUID
+    phase: AssignmentPhase

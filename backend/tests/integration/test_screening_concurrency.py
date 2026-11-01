@@ -18,10 +18,11 @@ from app.models.project import Project
 from app.models.screening import ScreeningDecision
 from app.repositories.screening_repository import ScreeningRepository
 from app.schemas.screening import ScreeningDecisionCreate
-from app.services.screening_config_service import ScreeningConfigService, reviewer_count_of
+from app.services.screening_config_service import ScreeningConfigService
 from app.services.screening_errors import ScreeningStateError
 from app.services.screening_outcome import Outcome
 from app.services.screening_review_service import ScreeningReviewService, assignment_states
+from app.services.screening_settings import reviewer_count_of
 from tests.integration.conftest import SEED
 from tests.integration.helpers.screening_fixtures import (
     add_member,
@@ -90,7 +91,11 @@ async def test_two_reviewers_deciding_at_once_reach_consensus(session_factory: F
 
         async with session_factory() as s:
             states = await assignment_states(
-                s, project_id=project_id, reviewer_count=2, assignment_ids=[assignment]
+                s,
+                project_id=project_id,
+                phase="title_abstract",
+                reviewer_count=2,
+                assignment_ids=[assignment],
             )
         assert states[assignment].state.outcome == Outcome("consensus", "include", None, False)
 
@@ -141,7 +146,7 @@ async def test_reviewer_count_change_racing_the_first_decision_is_frozen(
             settings = (
                 await s.execute(select(Project.settings).where(Project.id == project_id))
             ).scalar_one()
-        assert reviewer_count_of(settings) == 2
+        assert reviewer_count_of(settings, "title_abstract") == 2
         assert await _decision_rows(session_factory, assignment) == 1
 
 

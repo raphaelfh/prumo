@@ -168,6 +168,22 @@ async def test_reviewer_count_frozen_after_first_decision(db_session: AsyncSessi
     assert read.json()["data"]["reviewer_count_locked"] is True
 
 
+async def test_full_text_decisions_do_not_lock_the_title_abstract_count(
+    db_session: AsyncSession,
+) -> None:
+    project_id, articles = await _project_with_articles(db_session, 1)
+    reviewer = await add_member(db_session, project_id, "reviewer")
+    await set_reviewer_count(db_session, project_id, 2)
+    [assignment] = await enroll_articles(
+        db_session, project_id, articles, by=MANAGER, phase="full_text"
+    )
+    await add_decision(db_session, assignment, reviewer, "include")
+
+    read = await _get_as(db_session, MANAGER, _config_path(project_id))
+
+    assert read.json()["data"]["reviewer_count_locked"] is False
+
+
 async def test_enroll_all_is_idempotent(db_session: AsyncSession) -> None:
     project_id, _ = await _project_with_articles(db_session, 3)
 

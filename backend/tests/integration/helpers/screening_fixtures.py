@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
 from app.models.screening import (
-    SCREENING_PHASE,
+    TITLE_ABSTRACT,
     ScreeningArbitration,
     ScreeningAssignment,
     ScreeningDecision,
@@ -74,13 +74,14 @@ async def enroll_articles(
     *,
     by: UUID,
     enrolled_at: datetime | None = None,
+    phase: str = TITLE_ABSTRACT,
 ) -> list[UUID]:
     """ORM assignments in input order; ``None`` keeps the SQL default ``now()``."""
     assignments = [
         ScreeningAssignment(
             project_id=project_id,
             article_id=article_id,
-            phase=SCREENING_PHASE,
+            phase=phase,
             enrolled_by=by,
             **({} if enrolled_at is None else {"enrolled_at": enrolled_at}),
         )
