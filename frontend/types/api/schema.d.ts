@@ -5918,7 +5918,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -6278,18 +6278,32 @@ export interface components {
             excluded_reasons_differ: number;
             /** Excluded Without Reason */
             excluded_without_reason: number;
+            /** Full Text In Progress */
+            full_text_in_progress: boolean | null;
             /** Identified */
             identified: components["schemas"]["PrismaSourceCount"][];
             /** Identified Total */
             identified_total: number;
-            /** Not Retrieved */
-            not_retrieved: number;
             /** Other Removed */
             other_removed: number;
+            /** Records Not Found */
+            records_not_found: number;
+            /** Reports Assessed */
+            reports_assessed: number | null;
+            /** Reports Excluded By Reason */
+            reports_excluded_by_reason: components["schemas"]["PrismaReasonCount"][] | null;
+            /** Reports Included */
+            reports_included: number | null;
+            /** Reports Not Retrieved */
+            reports_not_retrieved: number | null;
             /** Screened */
             screened: number;
             /** Sought For Retrieval */
             sought_for_retrieval: number;
+            /** Ta Included */
+            ta_included: number;
+            /** Ta Maybe */
+            ta_maybe: number;
         };
         /** PrismaReasonCount */
         PrismaReasonCount: {
@@ -7338,7 +7352,7 @@ export interface components {
          */
         ScreeningArbitrationCreate: {
             /** Decision */
-            decision?: ("include" | "exclude" | "maybe") | null;
+            decision?: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** Exclusion Reason */
             exclusion_reason?: string | null;
             /** Rationale */
@@ -7424,6 +7438,14 @@ export interface components {
             enrolled: number;
             /** Exclusion Reasons */
             exclusion_reasons: string[];
+            /** Full Text Count Locked */
+            full_text_count_locked: boolean;
+            /** Full Text Enrolled */
+            full_text_enrolled: number;
+            /** Full Text Ready */
+            full_text_ready: number;
+            /** Full Text Reviewer Count */
+            full_text_reviewer_count: number | null;
             /** Not Enrolled */
             not_enrolled: number;
             /** Reviewer Capable */
@@ -7435,9 +7457,11 @@ export interface components {
         };
         /**
          * ScreeningConfigUpdate
-         * @description Reviewers per record (1 to 3).
+         * @description Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off.
          */
         ScreeningConfigUpdate: {
+            /** Full Text Reviewer Count */
+            full_text_reviewer_count?: number | null;
             /** Reviewer Count */
             reviewer_count: number;
         };
@@ -7450,7 +7474,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason?: string | null;
             /** Rationale */
@@ -7467,7 +7491,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7481,10 +7505,18 @@ export interface components {
         /**
          * ScreeningEnrollRequest
          * @description Articles to enroll; omit ``article_ids`` to enroll every article of the project.
+         *
+         *     ``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.
          */
         ScreeningEnrollRequest: {
             /** Article Ids */
             article_ids?: string[] | null;
+            /**
+             * Phase
+             * @default title_abstract
+             * @enum {string}
+             */
+            phase: "title_abstract" | "full_text";
         };
         /** ScreeningEnrollResult */
         ScreeningEnrollResult: {
@@ -7499,7 +7531,7 @@ export interface components {
              * Decision
              * @enum {string}
              */
-            decision: "include" | "exclude" | "maybe";
+            decision: "include" | "exclude" | "maybe" | "not_retrieved";
             /** Exclusion Reason */
             exclusion_reason: string | null;
             /**
@@ -7516,7 +7548,8 @@ export interface components {
          *
          *     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
          *     when the article is not enrolled; the ``outcome*`` fields are set only once
-         *     the record has an outcome.
+         *     the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
+         *     of a full-text row.
          */
         ScreeningRecordRow: {
             /**
@@ -7537,11 +7570,11 @@ export interface components {
             /** Journal Title */
             journal_title: string | null;
             /** My Decision */
-            my_decision: ("include" | "exclude" | "maybe") | null;
+            my_decision: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** My Exclusion Reason */
             my_exclusion_reason: string | null;
             /** Outcome */
-            outcome: ("include" | "exclude" | "maybe") | null;
+            outcome: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
             /** Outcome Exclusion Reason */
             outcome_exclusion_reason: string | null;
             /** Outcome Kind */
@@ -7556,7 +7589,13 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe";
+            status: "not_enrolled" | "to_screen" | "waiting" | "in_review" | "conflict" | "included" | "excluded" | "maybe" | "not_retrieved";
+            /** Ta Outcome */
+            ta_outcome: ("include" | "exclude" | "maybe" | "not_retrieved") | null;
+            /** Ta Outcome Kind */
+            ta_outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /** Ta Reviewer Count */
+            ta_reviewer_count: number | null;
             /** Title */
             title: string;
         };
@@ -7571,9 +7610,9 @@ export interface components {
             inclusion_criteria: string[];
             /**
              * Phase
-             * @constant
+             * @enum {string}
              */
-            phase: "title_abstract";
+            phase: "title_abstract" | "full_text";
             /** Reviewer Count */
             reviewer_count: number;
             /** Rows */
@@ -11385,7 +11424,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Config frozen by a decision, or fewer reviewers than requested */
+            /** @description Config frozen by a decision (or by a record sent to full text), or fewer reviewers than requested */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11434,21 +11473,26 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Full-text screening is not set up, or the protocol has no exclusion reasons */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Article ids given when sending records to full text */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };
     get_screening_records_api_v1_projects__project_id__screening_records_get: {
         parameters: {
             query: {
-                phase: "title_abstract";
+                phase: "title_abstract" | "full_text";
             };
             header?: never;
             path: {
@@ -12964,7 +13008,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the record is not in conflict, the decisions changed since it was opened, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13020,7 +13064,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, or the exclusion reason is not in the protocol */
+            /** @description Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED) */
             409: {
                 headers: {
                     [name: string]: unknown;

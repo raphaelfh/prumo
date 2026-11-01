@@ -112,6 +112,49 @@ def test_derive_state(
     assert state.outcome == (None if outcome is None else Outcome(*outcome))  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("decisions", "reasons_must_match", "phase", "outcome"),
+    [
+        (
+            [_d(A, "exclude", "A"), _d(B, "exclude", "B")],
+            True,
+            "conflict",
+            None,
+        ),
+        (
+            [_d(A, "exclude", "A"), _d(B, "exclude", "B")],
+            False,
+            "decided",
+            ("consensus", "exclude", None, True),
+        ),
+        (
+            [_d(A, "exclude", "A"), _d(B, "exclude", "A")],
+            True,
+            "decided",
+            ("consensus", "exclude", "A", False),
+        ),
+        ([_d(A, "not_retrieved"), _d(B, "include")], True, "conflict", None),
+        (
+            [_d(A, "not_retrieved"), _d(B, "not_retrieved")],
+            True,
+            "decided",
+            ("consensus", "not_retrieved", None, False),
+        ),
+    ],
+    ids=["differ-must-match", "differ-free", "same-reason", "not-retrieved-vs-include", "both-nr"],
+)
+def test_reasons_must_match(
+    decisions: list[CurrentDecision],
+    reasons_must_match: bool,
+    phase: str,
+    outcome: tuple[str, str, str | None, bool] | None,
+) -> None:
+    state = derive_state(2, decisions, None, reasons_must_match)
+
+    assert state.phase == phase
+    assert state.outcome == (None if outcome is None else Outcome(*outcome))  # type: ignore[arg-type]
+
+
 _PENDING = AssignmentState("pending", None)
 _CONFLICT = AssignmentState("conflict", None)
 _DECIDED = AssignmentState("decided", Outcome("consensus", "include", None, False))
@@ -186,6 +229,7 @@ def _decided(decision: str) -> AssignmentState:
         (_decided("include"), True, False, True, "included"),
         (_decided("exclude"), False, False, True, "excluded"),
         (_decided("maybe"), False, False, False, "maybe"),
+        (_decided("not_retrieved"), False, False, True, "not_retrieved"),
         (_PENDING, False, False, True, "to_screen"),
         (_PENDING, True, False, True, "waiting"),
         (_PENDING, False, False, False, "in_review"),
@@ -197,6 +241,7 @@ def _decided(decision: str) -> AssignmentState:
         "decided-include",
         "decided-exclude",
         "decided-maybe",
+        "decided-not-retrieved",
         "pending-unseated-reviewer",
         "pending-seated",
         "pending-viewer",

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
 from app.models.screening import (
-    SCREENING_PHASE,
+    TITLE_ABSTRACT,
     ScreeningArbitration,
     ScreeningAssignment,
     ScreeningDecision,
@@ -74,13 +74,14 @@ async def enroll_articles(
     *,
     by: UUID,
     enrolled_at: datetime | None = None,
+    phase: str = TITLE_ABSTRACT,
 ) -> list[UUID]:
     """ORM assignments in input order; ``None`` keeps the SQL default ``now()``."""
     assignments = [
         ScreeningAssignment(
             project_id=project_id,
             article_id=article_id,
-            phase=SCREENING_PHASE,
+            phase=phase,
             enrolled_by=by,
             **({} if enrolled_at is None else {"enrolled_at": enrolled_at}),
         )
@@ -145,8 +146,13 @@ async def move_article(db: AsyncSession, article_id: UUID, to_project: UUID) -> 
     )
 
 
-async def set_reviewer_count(db: AsyncSession, project_id: UUID, n: int) -> None:
-    """Write ``settings["screening"]`` through the one settings writer."""
+async def set_reviewer_count(
+    db: AsyncSession, project_id: UUID, n: int, *, key: str = "reviewer_count"
+) -> None:
+    """Write ``settings["screening"][key]`` through the one settings writer.
+
+    ``key="full_text_reviewer_count"`` sets the full-text phase's count.
+    """
     await ProjectRepository(db).update_settings_key(
-        project_id, "screening", lambda old: {**(old or {}), "reviewer_count": n}
+        project_id, "screening", lambda old: {**(old or {}), key: n}
     )

@@ -56,19 +56,13 @@ describe('SectionViewSwitcher', () => {
     // per container width (the hidden one is `display:none`).
     expect(screen.getByRole('button', { name: /assessment/i })).toBeInTheDocument();
   });
-  it('renders Title/abstract and Settings for a screening manager', () => {
-    roleMock.mockReturnValue({ isManager: true, role: 'manager', loading: false });
-    renderWith('screening');
-    expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'tabSettings' })).toBeInTheDocument();
-  });
-
-  it('highlights Title/abstract by default with Duplicates listed first', () => {
+  it('lists Duplicates, Title/abstract, Full text, Settings for a manager; Title/abstract is the default', () => {
     roleMock.mockReturnValue({ isManager: true, role: 'manager', loading: false });
     renderWith('screening');
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'tabDuplicates',
       'tabTitleAbstract',
+      'tabFullText',
       'tabSettings',
     ]);
     expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toHaveAttribute('aria-selected', 'true');
@@ -85,6 +79,7 @@ describe('SectionViewSwitcher', () => {
     roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
     renderWith('screening');
     expect(screen.getByRole('tab', { name: 'tabTitleAbstract' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'tabFullText' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'tabSettings' })).toBeNull();
   });
 

@@ -14,19 +14,26 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: {access_token: 'test-token'}}})}},
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
+vi.mock('@/components/runs/RunPdfContent', () => ({RunPdfContent: () => <div data-testid="pdf" />}));
 
 import {toast} from 'sonner';
 
 import type {ScreeningCriteria} from '@/components/screening/CriteriaPanel';
 import {ScreeningRecordPanel} from '@/components/screening/ScreeningRecordPanel';
 import {screeningKeys} from '@/lib/query-keys/screening';
-import type {ScreeningAssignmentRead, ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
+import type {
+  ScreeningAssignmentRead,
+  ScreeningConfigRead,
+  ScreeningPhase,
+  ScreeningRecordRow,
+} from '@/services/screeningService';
 import {server} from '@/test/mocks/server';
 
 const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
 const DECIDE_URL = '*/api/v1/screening/assignments/:assignmentId/decisions';
 const ARBITRATION_URL = '*/api/v1/screening/assignments/:assignmentId/arbitration';
 const ENROLL_URL = '*/api/v1/projects/:projectId/screening/enroll';
+const FILES_URL = '*/api/v1/articles/:articleId/files';
 
 const ok = (data: unknown) => HttpResponse.json({ok: true, data});
 const fail = (status: number, code: string) =>
@@ -46,6 +53,9 @@ function row(overrides: Partial<ScreeningRecordRow> = {}): ScreeningRecordRow {
     outcome: null,
     outcome_exclusion_reason: null,
     outcome_kind: null,
+    ta_outcome: null,
+    ta_outcome_kind: null,
+    ta_reviewer_count: null,
     pmid: null,
     publication_year: 2021,
     queue_rank: 1,
@@ -66,6 +76,10 @@ function config(overrides: Partial<ScreeningConfigRead> = {}): ScreeningConfigRe
     reviewer_capable: 2,
     reviewer_count: 2,
     reviewer_count_locked: true,
+    full_text_reviewer_count: null,
+    full_text_count_locked: false,
+    full_text_ready: 0,
+    full_text_enrolled: 0,
     ...overrides,
   };
 }
@@ -130,6 +144,7 @@ function serveAssignment(read: ScreeningAssignmentRead) {
 interface RenderOptions {
   row?: ScreeningRecordRow | null;
   config?: ScreeningConfigRead;
+  phase?: ScreeningPhase;
   criteria?: ScreeningCriteria;
   maximized?: boolean;
 }
@@ -140,6 +155,7 @@ const CRITERIA: ScreeningCriteria = {inclusion: ['Adults'], exclusion: ['Not ML'
 function renderPanel({
   row: r = row(),
   config: c = config(),
+  phase = 'title_abstract',
   criteria = NO_CRITERIA,
   maximized = false,
 }: RenderOptions = {}) {
@@ -150,6 +166,7 @@ function renderPanel({
     <QueryClientProvider client={client}>
       <ScreeningRecordPanel
         projectId="p1"
+        phase={phase}
         row={current}
         config={c}
         criteria={criteria}
@@ -542,5 +559,117 @@ describe('ScreeningRecordPanel', () => {
       expect(await screen.findByText('Ana Lima')).toBeInTheDocument();
       expect(screen.queryByText(/Adults only/)).toBeNull();
     });
+  });
+});
+
+describe('ScreeningRecordPanel at full text', () => {
+  const FT_ROW = {ta_outcome: 'include', ta_outcome_kind: 'consensus', ta_reviewer_count: 2} as const;
+  const NOT_RETRIEVED_DECIDED = {
+    status: 'decided',
+    outcome: {decision: 'not_retrieved', exclusion_reason: null, kind: 'consensus', reasons_differ: false},
+    peer_decisions: [
+      {...PEER_A, decision: 'not_retrieved'},
+      {...PEER_B, decision: 'not_retrieved', exclusion_reason: null},
+    ],
+  } as const satisfies Partial<ScreeningAssignmentRead>;
+
+  beforeEach(() => {
+    server.use(http.get(FILES_URL, () => ok([])));
+  });
+
+  it('not retrieved: an unseated arbitrator gets the ruling form', async () => {
+    serveAssignment(assignment(NOT_RETRIEVED_DECIDED));
+    let body: unknown = null;
+    server.use(
+      http.post(ARBITRATION_URL, async ({request}) => {
+        body = await request.json();
+        return ok(assignment({status: 'decided'}));
+      }),
+    );
+    const user = userEvent.setup();
+    renderPanel({
+      row: row({...FT_ROW, status: 'not_retrieved', outcome: 'not_retrieved', outcome_kind: 'consensus'}),
+      config: config({can_arbitrate: true, can_review: true, full_text_reviewer_count: 2}),
+      phase: 'full_text',
+    });
+
+    expect(await screen.findByText('PDF found later? Rule on this report.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Decide differently'}));
+    // At full text the override offers no Maybe and a single note field.
+    expect(screen.queryByRole('button', {name: /Maybe/})).toBeNull();
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    await user.click(screen.getByRole('button', {name: /Include/}));
+    await waitFor(() => expect(body).toEqual({ruled_on_decision_ids: ['dA', 'dB'], decision: 'include'}));
+  });
+
+  it('not retrieved: a reviewer sees it read-only', async () => {
+    serveAssignment(
+      assignment({
+        ...NOT_RETRIEVED_DECIDED,
+        my_decision: {id: 'dA', decision: 'not_retrieved', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+      }),
+    );
+    renderPanel({
+      row: row({...FT_ROW, status: 'not_retrieved', outcome: 'not_retrieved', my_decision: 'not_retrieved'}),
+      config: config({can_arbitrate: true, can_review: true, full_text_reviewer_count: 2}),
+      phase: 'full_text',
+    });
+
+    expect(await screen.findByText('Your decision')).toBeInTheDocument();
+    expect(screen.queryByText('PDF found later? Rule on this report.')).toBeNull();
+    expect(screen.queryByRole('button', {name: 'Decide differently'})).toBeNull();
+    expect(screen.queryByRole('button', {name: /Include/})).toBeNull();
+  });
+
+  it('full text solo re-decide uses the full-text count', async () => {
+    serveAssignment(
+      assignment({
+        status: 'decided',
+        my_decision: {id: 'd1', decision: 'include', exclusion_reason: null, rationale: null, created_at: '2026-10-23T00:00:00Z'},
+        outcome: {decision: 'include', exclusion_reason: null, kind: 'solo', reasons_differ: false},
+      }),
+    );
+    renderPanel({
+      row: row({...FT_ROW, status: 'included', my_decision: 'include'}),
+      config: config({reviewer_count: 2, full_text_reviewer_count: 1}),
+      phase: 'full_text',
+    });
+
+    expect(await screen.findByRole('button', {name: /Include/})).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('one note field: Add note, and the note rides with the decision', async () => {
+    serveAssignment(assignment());
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(DECIDE_URL, async ({request}) => {
+        bodies.push(await request.json());
+        return ok(assignment({status: 'awaiting_others'}));
+      }),
+    );
+    const user = userEvent.setup();
+    renderPanel({row: row(FT_ROW), config: config({full_text_reviewer_count: 2}), phase: 'full_text'});
+
+    await user.click(await screen.findByRole('button', {name: 'Add note'}));
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    await user.type(screen.getByLabelText('Note (optional)'), '  scanned copy only  ');
+    await user.click(screen.getByRole('button', {name: /Include/}));
+    await waitFor(() => expect(bodies).toEqual([{decision: 'include', rationale: 'scanned copy only'}]));
+  });
+
+  it('shows the criteria disclosure', async () => {
+    serveAssignment(assignment());
+    renderPanel({row: row(FT_ROW), config: config({full_text_reviewer_count: 2}), phase: 'full_text', criteria: CRITERIA});
+    expect(await screen.findByRole('button', {name: 'Criteria (2)'})).toBeInTheDocument();
+  });
+
+  it('maps SCREENING_REASON_REQUIRED to its toast', async () => {
+    serveAssignment(assignment());
+    server.use(http.post(DECIDE_URL, () => fail(409, 'SCREENING_REASON_REQUIRED')));
+    const user = userEvent.setup();
+    renderPanel({row: row(FT_ROW), config: config({full_text_reviewer_count: 2}), phase: 'full_text'});
+
+    await user.click(await screen.findByRole('button', {name: /Include/}));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Pick an exclusion reason.'));
   });
 });

@@ -5,6 +5,7 @@
  * and the CSV export. Labels are attached by the components.
  */
 import type {FilterValues} from '@/components/shared/list/filter-types';
+import type {ScreeningPhase} from '@/services/screeningService';
 import type {components} from '@/types/api/schema';
 
 type Row = components['schemas']['ScreeningRecordRow'];
@@ -12,23 +13,48 @@ type Row = components['schemas']['ScreeningRecordRow'];
 export type RecordStatus = Row['status'];
 export type StatusView = 'all' | RecordStatus;
 
-export const STATUS_VIEWS: readonly StatusView[] = [
+/** The values of the "my decision" filter, by phase; `none` is no decision yet. */
+export function myDecisionValuesFor(phase: ScreeningPhase): readonly string[] {
+  return phase === 'full_text'
+    ? ['include', 'exclude', 'not_retrieved', 'none']
+    : ['include', 'exclude', 'maybe', 'none'];
+}
+
+const TITLE_ABSTRACT_VIEWS: readonly StatusView[] = [
   'all', 'to_screen', 'waiting', 'in_review', 'conflict', 'included', 'excluded', 'maybe', 'not_enrolled',
 ];
+
+// Full text enrols from the title/abstract snapshot (no not_enrolled) and has no maybe.
+const FULL_TEXT_VIEWS: readonly StatusView[] = [
+  'all', 'to_screen', 'waiting', 'in_review', 'conflict', 'included', 'excluded', 'not_retrieved',
+];
+
+export function statusViewsFor(phase: ScreeningPhase): readonly StatusView[] {
+  return phase === 'full_text' ? FULL_TEXT_VIEWS : TITLE_ABSTRACT_VIEWS;
+}
 
 /** Views whose tab disappears when nothing is in them. */
 export const HIDDEN_AT_ZERO: ReadonlySet<StatusView> = new Set<StatusView>(['conflict', 'not_enrolled']);
 
+/** Every status keyed, so a count lookup never misses: a phase lists only its own views. */
 export function statusCounts(rows: Row[]): Record<StatusView, number> {
-  const counts = Object.fromEntries(STATUS_VIEWS.map((view) => [view, 0])) as Record<StatusView, number>;
+  const counts = Object.fromEntries(
+    [...TITLE_ABSTRACT_VIEWS, ...FULL_TEXT_VIEWS].map((view) => [view, 0]),
+  ) as Record<StatusView, number>;
   for (const row of rows) counts[row.status] += 1;
   counts.all = rows.length;
   return counts;
 }
 
 /** `active` stays listed at 0: the last conflict ruled must not hide the view the user is in. */
-export function visibleStatusViews(counts: Record<StatusView, number>, active?: StatusView): StatusView[] {
-  return STATUS_VIEWS.filter((view) => view === active || !(HIDDEN_AT_ZERO.has(view) && counts[view] === 0));
+export function visibleStatusViews(
+  phase: ScreeningPhase,
+  counts: Record<StatusView, number>,
+  active?: StatusView,
+): StatusView[] {
+  return statusViewsFor(phase).filter(
+    (view) => view === active || !(HIDDEN_AT_ZERO.has(view) && counts[view] === 0),
+  );
 }
 
 type Roles = {can_manage: boolean; can_review: boolean; can_arbitrate: boolean};
@@ -95,6 +121,8 @@ function matchesFilters(row: Row, filters: FilterValues): boolean {
   ) {
     return false;
   }
+  const pdf = listOf(filters.pdf);
+  if (pdf.length > 0 && !pdf.includes(row.has_pdf ? 'attached' : 'missing')) return false;
   const sources = listOf(filters.source);
   if (sources.length > 0 && !sources.includes(row.ingestion_source ?? 'unknown')) return false;
   return true;
@@ -134,7 +162,8 @@ const STATUS_ORDER: Record<RecordStatus, number> = {
   maybe: 4,
   included: 5,
   excluded: 6,
-  not_enrolled: 7,
+  not_retrieved: 7,
+  not_enrolled: 8,
 };
 
 function compareField(a: Row, b: Row, field: RecordSortField): number {
@@ -164,7 +193,7 @@ export function sortRecords(rows: Row[], field: RecordSortField, direction: 'asc
   );
 }
 
-const DECIDED: ReadonlySet<RecordStatus> = new Set<RecordStatus>(['included', 'excluded', 'maybe']);
+const DECIDED: ReadonlySet<RecordStatus> = new Set<RecordStatus>(['included', 'excluded', 'maybe', 'not_retrieved']);
 
 export function progress(rows: Row[]): {decided: number; enrolled: number; myLeft: number} {
   let decided = 0;
@@ -200,7 +229,12 @@ export function nextToScreen(rows: Row[], currentArticleId: string | null): Row 
 export const RECORD_CSV_COLUMNS: readonly (keyof Row)[] = [
   'article_id', 'assignment_id', 'queue_rank', 'title', 'first_author', 'publication_year', 'journal_title',
   'pmid', 'doi', 'ingestion_source', 'has_pdf', 'status', 'my_decision', 'my_exclusion_reason', 'outcome',
-  'outcome_exclusion_reason', 'outcome_kind',
+  'outcome_exclusion_reason', 'outcome_kind', 'ta_outcome', 'ta_outcome_kind', 'ta_reviewer_count',
+];
+
+/** A full-text excluded report with its reason: the PRISMA "reports excluded" list. */
+const EXCLUDED_REPORT_CSV_COLUMNS: readonly (keyof Row)[] = [
+  'title', 'first_author', 'publication_year', 'journal_title', 'pmid', 'doi', 'outcome_exclusion_reason',
 ];
 
 /** A spreadsheet reads a cell starting with one of these as a formula. */
@@ -216,8 +250,17 @@ function csvField(value: Row[keyof Row]): string {
  * RFC 4180: quoted when a field holds `,`, `"` or a newline; CRLF line breaks.
  * A string cell that would open as a formula gets a leading `'` first.
  */
-export function recordsToCsv(rows: Row[]): string {
-  const lines = [RECORD_CSV_COLUMNS.join(',')];
-  for (const row of rows) lines.push(RECORD_CSV_COLUMNS.map((column) => csvField(row[column])).join(','));
+function toCsv(columns: readonly (keyof Row)[], rows: Row[]): string {
+  const lines = [columns.join(',')];
+  for (const row of rows) lines.push(columns.map((column) => csvField(row[column])).join(','));
   return lines.join('\r\n');
+}
+
+export function recordsToCsv(rows: Row[]): string {
+  return toCsv(RECORD_CSV_COLUMNS, rows);
+}
+
+/** Every excluded report in `rows` (the full-text read), whatever the view or selection. */
+export function excludedReportsCsv(rows: Row[]): string {
+  return toCsv(EXCLUDED_REPORT_CSV_COLUMNS, rows.filter((row) => row.status === 'excluded'));
 }

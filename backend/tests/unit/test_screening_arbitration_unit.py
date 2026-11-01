@@ -73,7 +73,9 @@ def service(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 @pytest.fixture
 def guards(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    ref = ScreeningAssignmentRef(id=ASSIGNMENT, project_id=PROJECT, article_id=uuid4())
+    ref = ScreeningAssignmentRef(
+        id=ASSIGNMENT, project_id=PROJECT, article_id=uuid4(), phase="title_abstract"
+    )
     load = AsyncMock(return_value=ref)
     arbitrator = AsyncMock()
     monkeypatch.setattr(endpoint, "load_assignment_for_member", load)

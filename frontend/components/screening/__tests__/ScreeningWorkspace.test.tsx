@@ -1,5 +1,5 @@
 /**
- * TitleAbstractWorkspace — the title/abstract list + docked panel (spec §4,
+ * ScreeningWorkspace — the title/abstract list + docked panel (spec §4,
  * §4.1, §4.2, §4.4, §4.6): every list-level state with the toolbar, the
  * role-based default view, decided rows staying in the current view, the URL
  * selection (`?article=`, a legacy `?assignment=`, a miss), "Start screening"
@@ -46,7 +46,7 @@ import {
   serveRecords,
   titleButton,
   VIEWER,
-} from './titleAbstractWorkspace.fixtures';
+} from './screeningWorkspace.fixtures';
 
 beforeEach(() => {
   vi.mocked(toast).mockClear();
@@ -54,7 +54,7 @@ beforeEach(() => {
   vi.mocked(toast.error).mockClear();
 });
 
-describe('TitleAbstractWorkspace — list-level states', () => {
+describe('ScreeningWorkspace — list-level states', () => {
   it('shows skeleton rows while the records load', async () => {
     server.use(http.get(RECORDS_URL, () => new Promise(() => {})));
     renderWorkspace();
@@ -137,7 +137,7 @@ describe('TitleAbstractWorkspace — list-level states', () => {
   });
 });
 
-describe('TitleAbstractWorkspace — Enroll N new', () => {
+describe('ScreeningWorkspace — Enroll N new', () => {
   it('shows "Enroll N new" only to a manager with enrolled and new articles', async () => {
     serveRecords([ALPHA, notEnrolled(BETA)]);
     let body: unknown = 'unset';
@@ -169,7 +169,7 @@ describe('TitleAbstractWorkspace — Enroll N new', () => {
   });
 });
 
-describe('TitleAbstractWorkspace — status views', () => {
+describe('ScreeningWorkspace — status views', () => {
   const CONFLICT = row({article_id: 'art4', assignment_id: 'a4', queue_rank: 4, title: 'Delta', status: 'conflict'});
 
   it.each([
@@ -244,7 +244,7 @@ describe('TitleAbstractWorkspace — status views', () => {
   });
 });
 
-describe('TitleAbstractWorkspace — selection', () => {
+describe('ScreeningWorkspace — selection', () => {
   it('opens a row in the panel and writes ?article=', async () => {
     serveRecords([ALPHA, BETA]);
     serveAssignments([ALPHA, BETA]);
@@ -399,6 +399,14 @@ describe('TitleAbstractWorkspace — selection', () => {
   });
 });
 
+describe('ScreeningWorkspace — unknown ?status=', () => {
+  it('rewrites a status the title/abstract phase lacks to the role default', async () => {
+    serveRecords([ALPHA, BETA]);
+    renderWorkspace({path: '/projects/p1?tab=screening&status=not_retrieved'});
+    await waitFor(() => expect(search().get('status')).toBe('to_screen'));
+    expect(screen.getByRole('tab', {name: /^To screen/})).toHaveAttribute('aria-selected', 'true');
+  });
+});
 
 function pairs(n: number) {
   const side = (id: string) => ({
@@ -438,7 +446,7 @@ function serveEnroll() {
   return calls;
 }
 
-describe('TitleAbstractWorkspace — Enroll anyway?', () => {
+describe('ScreeningWorkspace — Enroll anyway?', () => {
   const buttons = [
     {name: 'Enroll all articles', cfg: () => config({...MANAGER, enrolled: 0, not_enrolled: 2})},
     {name: 'Enroll 2 new', cfg: () => config({...MANAGER, enrolled: 7, not_enrolled: 2})},

@@ -261,6 +261,29 @@ async def test_decision_value_is_checked(db_session: AsyncSession) -> None:
             await _decision(db_session, assignment.id, "skip")
 
 
+async def test_full_text_and_not_retrieved_are_accepted(db_session: AsyncSession) -> None:
+    ta = await _assignment(db_session)
+    full_text = ScreeningAssignment(
+        project_id=ta.project_id,
+        article_id=ta.article_id,
+        phase="full_text",
+        enrolled_by=SEED.primary_profile,
+    )
+    db_session.add(full_text)
+    await db_session.flush()
+    await _decision(db_session, full_text.id, "not_retrieved")
+    await _arbitration(db_session, ta.id, "not_retrieved")
+
+    with pytest.raises(IntegrityError, match="ck_screening_assignments_phase"):
+        async with db_session.begin_nested():
+            db_session.add(
+                ScreeningAssignment(
+                    project_id=ta.project_id, article_id=ta.article_id, phase="other"
+                )
+            )
+            await db_session.flush()
+
+
 async def test_one_assignment_per_article_and_phase(db_session: AsyncSession) -> None:
     first = await _assignment(db_session)
     assert first.phase == "title_abstract"

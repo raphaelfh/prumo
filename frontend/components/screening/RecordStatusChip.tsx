@@ -17,6 +17,7 @@ export const RECORD_STATUS_LABEL: Record<RecordStatus, ScreeningCopyKey> = {
   included: 'statusIncluded',
   excluded: 'statusExcluded',
   maybe: 'statusMaybe',
+  not_retrieved: 'statusNotRetrieved',
   not_enrolled: 'statusNotEnrolled',
 };
 
@@ -28,6 +29,7 @@ const TONE: Record<RecordStatus, string> = {
   included: 'bg-success/10 text-success',
   excluded: 'bg-destructive/10 text-destructive',
   maybe: 'bg-warning/10 text-warning',
+  not_retrieved: 'bg-muted text-muted-foreground',
   not_enrolled: 'border border-dashed border-border text-muted-foreground',
 };
 

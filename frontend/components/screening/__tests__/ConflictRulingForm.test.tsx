@@ -53,9 +53,9 @@ const READ: ScreeningAssignmentRead = {
   ],
 };
 
-function renderForm(busy = false) {
+function renderForm(busy = false, phase: 'title_abstract' | 'full_text' = 'title_abstract') {
   const onRule = vi.fn<(body: ScreeningArbitrationCreate) => void>();
-  render(<ConflictRulingForm read={READ} busy={busy} onRule={onRule} />);
+  render(<ConflictRulingForm read={READ} busy={busy} onRule={onRule} phase={phase} />);
   return onRule;
 }
 
@@ -74,7 +74,7 @@ describe('ConflictRulingForm', () => {
       ...READ,
       peer_decisions: [{...READ.peer_decisions[0], rationale: 'Adults only'}, READ.peer_decisions[1]],
     };
-    render(<ConflictRulingForm read={withNote} busy={false} onRule={vi.fn()} />);
+    render(<ConflictRulingForm read={withNote} busy={false} onRule={vi.fn()} phase="title_abstract" />);
     const rowA = screen.getByText('Reviewer A').closest('li');
     const rowB = screen.getByText('Reviewer B').closest('li');
     expect(rowA).toHaveTextContent('Note: Adults only');
@@ -116,5 +116,24 @@ describe('ConflictRulingForm', () => {
     expect(screen.getByRole('button', {name: "Use Reviewer A's decision"})).toBeDisabled();
     await user.click(screen.getByRole('button', {name: 'Decide differently'}));
     expect(screen.getByRole('button', {name: /Include/})).toBeDisabled();
+  });
+
+  it('full text: overrides without Maybe, with one note field', async () => {
+    const user = userEvent.setup();
+    const onRule = renderForm(false, 'full_text');
+    await user.type(screen.getByLabelText('Note for the record (optional)'), 'PDF found');
+    await user.click(screen.getByRole('button', {name: 'Decide differently'}));
+    expect(screen.queryByRole('button', {name: /Maybe/})).toBeNull();
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    await user.click(screen.getByRole('button', {name: /^Exclude/}));
+    await user.click(await screen.findByRole('button', {name: /Wrong population/}));
+    await vi.waitFor(() =>
+      expect(onRule).toHaveBeenCalledWith({
+        ruled_on_decision_ids: ['dA', 'dB'],
+        decision: 'exclude',
+        exclusion_reason: 'Wrong population',
+        rationale: 'PDF found',
+      }),
+    );
   });
 });

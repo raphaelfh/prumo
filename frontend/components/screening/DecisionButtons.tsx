@@ -1,7 +1,9 @@
 /**
  * Include / Exclude / Maybe, and "Exclude with reason" when the protocol
- * lists reasons. The keyboard goes through the pure `screeningKeyAction`; one
- * window listener applies it, unless another handler took the key or an
+ * lists reasons. At full text there is no Maybe: Exclude (and 2 / E) always
+ * opens the reasons, a reason being required; "Report not retrieved" is a
+ * ghost button with no key. The note is the caller's (`DecisionNote`).
+ * The keyboard goes through the pure `screeningKeyAction`; one window listener applies it, unless another handler took the key or an
  * overlay other than its own reasons dialog is open. The caller keys this
  * component by record, so a record change closes the reasons dialog.
  *
@@ -20,13 +22,13 @@ import {isDialogOpen} from '@/hooks/useKeyboardShortcuts';
 import {t} from '@/lib/copy';
 import {screeningKeyAction} from '@/lib/screening/keymap';
 import {cn} from '@/lib/utils';
-import type {ScreeningDecisionCreate} from '@/services/screeningService';
+import type {ScreeningDecisionCreate, ScreeningPhase} from '@/services/screeningService';
 
 interface DecisionButtonsProps {
   reasons: string[];
   disabled: boolean;
   onDecide: (body: ScreeningDecisionCreate) => void;
-  phase: 'title_abstract';
+  phase: ScreeningPhase;
   /** The caller's recorded decision on a solo record: drawn with the recorded-choice ring; pressing it again does nothing, another value re-decides. */
   recorded?: ScreeningDecisionCreate['decision'] | null;
   /** The recorded exclusion's reason: picking it again does nothing, another reason re-decides. */
@@ -41,11 +43,26 @@ const DECISIONS = [
   {decision: 'maybe', key: '3', label: 'decisionMaybe', variant: 'outline'},
 ] as const satisfies readonly {decision: Decision; key: string; label: string; variant: 'default' | 'outline'}[];
 
-export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, recordedReason}: DecisionButtonsProps) {
+export function DecisionButtons({
+  reasons,
+  disabled,
+  onDecide,
+  phase,
+  recorded,
+  recordedReason,
+}: DecisionButtonsProps) {
+  const fullText = phase === 'full_text';
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const reasonsList = useRef<HTMLOListElement>(null);
+  const decisions = DECISIONS.filter(({decision}) => !(fullText && decision === 'maybe'));
 
   const decide = (decision: Decision) => {
+    // A full-text exclusion needs a reason: the list opens first, even over a
+    // recorded exclusion (the same reason is a no-op in `pickReason`).
+    if (fullText && decision === 'exclude') {
+      if (reasons.length > 0) setReasonsOpen(true);
+      return;
+    }
     if (decision === recorded) return;
     onDecide({decision});
   };
@@ -82,7 +99,7 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        {DECISIONS.map(({decision, key, label, variant}) => {
+        {decisions.map(({decision, key, label, variant}) => {
           const isRecorded = recorded === decision;
           const filled = !isRecorded && variant === 'default';
           return (
@@ -106,7 +123,7 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
             </Button>
           );
         })}
-        {reasons.length > 0 && (
+        {!fullText && reasons.length > 0 && (
           <Button
             size="default"
             variant="ghost"
@@ -118,8 +135,20 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
             <KbdBadge keys={['E']} />
           </Button>
         )}
+        {fullText && (
+          <Button
+            size="default"
+            variant="ghost"
+            disabled={disabled || recorded === 'not_retrieved'}
+            onClick={() => decide('not_retrieved')}
+          >
+            {t('screening', 'reportNotRetrieved')}
+          </Button>
+        )}
       </div>
-      <p className="text-xs text-muted-foreground">{t('screening', 'keyboardHint')}</p>
+      <p className="text-xs text-muted-foreground">
+        {t('screening', fullText ? 'keyboardHintFullText' : 'keyboardHint')}
+      </p>
       <AppDialog
         open={reasonsOpen}
         onOpenChange={setReasonsOpen}

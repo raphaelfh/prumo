@@ -18,7 +18,7 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: {access_token: 'test-token'}}})}},
 }));
 
-import {TitleAbstractWorkspace} from '@/components/screening/TitleAbstractWorkspace';
+import {ScreeningWorkspace} from '@/components/screening/ScreeningWorkspace';
 import {HeaderActionsProvider} from '@/contexts/HeaderActionsContext';
 import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
 import {server} from '@/test/mocks/server';
@@ -38,6 +38,9 @@ const ROWS: ScreeningRecordRow[] = Array.from({length: COUNT}, (_, index) => ({
   outcome: null,
   outcome_exclusion_reason: null,
   outcome_kind: null,
+  ta_outcome: null,
+  ta_outcome_kind: null,
+  ta_reviewer_count: null,
   pmid: null,
   publication_year: 2021,
   queue_rank: index + 1,
@@ -55,6 +58,10 @@ const CONFIG: ScreeningConfigRead = {
   reviewer_capable: 2,
   reviewer_count: 2,
   reviewer_count_locked: true,
+  full_text_reviewer_count: null,
+  full_text_count_locked: false,
+  full_text_ready: 0,
+  full_text_enrolled: 0,
 };
 
 const originalScrollTo = HTMLElement.prototype.scrollTo;
@@ -108,7 +115,7 @@ function renderWorkspace() {
     <QueryClientProvider client={client}>
       <HeaderActionsProvider>
         <MemoryRouter initialEntries={['/projects/p1?tab=screening']}>
-          <TitleAbstractWorkspace projectId="p1" config={CONFIG} />
+          <ScreeningWorkspace projectId="p1" config={CONFIG} phase="title_abstract" />
         </MemoryRouter>
       </HeaderActionsProvider>
     </QueryClientProvider>,

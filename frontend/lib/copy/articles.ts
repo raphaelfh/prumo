@@ -325,6 +325,7 @@ export const articles = {
     panelNoDocumentTitle: 'No file attached',
     panelNoDocumentBody: 'Attach a PDF to read it beside the list.',
     panelDocumentLoading: 'Loading document…',
+    panelDocumentLoadError: 'The article files could not be loaded.',
     panelAddFile: 'Add file',
     panelPlaceholderTitle: 'No article selected',
     panelPlaceholderBody: 'Select an article to read its document or edit its details.',

@@ -1,7 +1,8 @@
 /**
- * The title/abstract toolbar's write actions: the PubMed import (every member
- * except a viewer), enrolment (manager) and "Start screening" (a reviewer
- * with records left). Which ones render is the workspace's call.
+ * The workspace toolbar's actions: the PubMed import (every member except a
+ * viewer), enrolment and "Send to full text" (manager), "Export excluded
+ * reports" (every member, full text) and "Start screening" (a reviewer with
+ * records left). Which ones render is the workspace's call.
  */
 import {useQueryClient} from '@tanstack/react-query';
 import {useState} from 'react';
@@ -19,12 +20,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {Button} from '@/components/ui/button';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {duplicatesQueryOptions} from '@/hooks/screening/useDuplicates';
 import {useEnrollArticles} from '@/hooks/screening/useScreeningConfig';
 import {t} from '@/lib/copy';
+import type {screening} from '@/lib/copy/screening';
 import {screeningErrorMessage} from '@/lib/screening/errors';
+import {excludedReportsCsv} from '@/lib/screening/records';
+import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
 
 import {PubMedImportDialog} from './PubMedImportDialog';
+import {downloadCsv} from './ScreeningRecordTable';
 
 interface EnrollAllButtonProps {
   projectId: string;
@@ -142,6 +148,69 @@ export function StartScreeningButton({disabled = false, onStart}: {disabled?: bo
   return (
     <Button size="sm" className="shrink-0" onClick={onStart} disabled={disabled}>
       {t('screening', 'startScreening')}
+    </Button>
+  );
+}
+
+/** Why "Send to full text" cannot run, or null when it can. */
+function sendBlocker(config: ScreeningConfigRead): keyof typeof screening | null {
+  if (config.full_text_reviewer_count === null) return 'sendDisabledOff';
+  if (config.exclusion_reasons.length === 0) return 'sendDisabledReasons';
+  if (config.full_text_ready === 0) return 'sendDisabledNone';
+  return null;
+}
+
+/**
+ * Enrolls every title/abstract include and maybe at full text (`{phase}`, no
+ * ids). The toast counts what this call enrolled: a concurrent send may have
+ * taken the rest. The hook refetches the config either way.
+ */
+export function SendToFullTextButton({projectId, config}: {projectId: string; config: ScreeningConfigRead}) {
+  const enroll = useEnrollArticles(projectId);
+  const blocker = sendBlocker(config);
+  const onClick = () =>
+    enroll.mutate(
+      {phase: 'full_text'},
+      {
+        onSuccess: (result) => toast(t('screening', 'sentToFullText').replace('{{n}}', String(result.enrolled))),
+        onError: (error) => toast.error(screeningErrorMessage(error)),
+      },
+    );
+  const button = (
+    <Button
+      size="sm"
+      className="shrink-0"
+      onClick={onClick}
+      disabled={blocker !== null || enroll.isPending}
+      aria-busy={enroll.isPending || undefined}
+    >
+      {t('screening', 'sendToFullText').replace('{{n}}', String(config.full_text_ready))}
+    </Button>
+  );
+  if (blocker === null) return button;
+  // A disabled button takes no pointer events: the tooltip hangs on a span.
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex shrink-0" tabIndex={0}>
+          {button}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{t('screening', blocker)}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Every excluded full-text report with its reason, whatever the view, search or selection. */
+export function ExportExcludedReportsButton({rows}: {rows: ScreeningRecordRow[]}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="shrink-0"
+      onClick={() => downloadCsv(excludedReportsCsv(rows), 'excluded-reports.csv')}
+    >
+      {t('screening', 'exportExcludedReports')}
     </Button>
   );
 }

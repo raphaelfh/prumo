@@ -1,15 +1,16 @@
-/** Shared fixtures for the TitleAbstractWorkspace suites (list + keyboard). */
+/** Shared fixtures for the ScreeningWorkspace suites (title/abstract list + keyboard, full text). */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen} from '@testing-library/react';
 import {http, HttpResponse} from 'msw';
 import {MemoryRouter, useLocation} from 'react-router';
 
-import {TitleAbstractWorkspace} from '@/components/screening/TitleAbstractWorkspace';
+import {ScreeningWorkspace} from '@/components/screening/ScreeningWorkspace';
 import {HeaderActionsProvider} from '@/contexts/HeaderActionsContext';
 import {screeningKeys} from '@/lib/query-keys/screening';
 import type {
   ScreeningAssignmentRead,
   ScreeningConfigRead,
+  ScreeningPhase,
   ScreeningRecordRow,
   ScreeningRecordsRead,
 } from '@/services/screeningService';
@@ -40,6 +41,9 @@ export function row(overrides: Partial<ScreeningRecordRow> = {}): ScreeningRecor
     outcome: null,
     outcome_exclusion_reason: null,
     outcome_kind: null,
+    ta_outcome: null,
+    ta_outcome_kind: null,
+    ta_reviewer_count: null,
     pmid: null,
     publication_year: 2021,
     queue_rank: 1,
@@ -82,18 +86,22 @@ export function config(overrides: Partial<ScreeningConfigRead> = {}): ScreeningC
     reviewer_capable: 2,
     reviewer_count: 2,
     reviewer_count_locked: true,
+    full_text_reviewer_count: null,
+    full_text_count_locked: false,
+    full_text_ready: 0,
+    full_text_enrolled: 0,
     ...overrides,
   };
 }
 
-export function records(rows: ScreeningRecordRow[]): ScreeningRecordsRead {
-  return {exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', reviewer_count: 2, rows};
+export function records(rows: ScreeningRecordRow[], phase: ScreeningPhase = 'title_abstract'): ScreeningRecordsRead {
+  return {exclusion_reasons: [], inclusion_criteria: [], phase, reviewer_count: 2, rows};
 }
 
 /** A mutable records read: assign `current.rows` before a refetch. */
-export function serveRecords(initial: ScreeningRecordRow[]) {
+export function serveRecords(initial: ScreeningRecordRow[], phase: ScreeningPhase = 'title_abstract') {
   const current = {rows: initial};
-  server.use(http.get(RECORDS_URL, () => ok(records(current.rows))));
+  server.use(http.get(RECORDS_URL, () => ok(records(current.rows, phase))));
   return current;
 }
 
@@ -147,14 +155,15 @@ export function renderWorkspace({
   cfg = config(),
   path = '/projects/p1?tab=screening',
   cached,
-}: {cfg?: ScreeningConfigRead; path?: string; cached?: ScreeningRecordRow[]} = {}) {
+  phase = 'title_abstract',
+}: {cfg?: ScreeningConfigRead; path?: string; cached?: ScreeningRecordRow[]; phase?: ScreeningPhase} = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
-  if (cached) client.setQueryData(screeningKeys.records('p1', 'title_abstract'), records(cached));
+  if (cached) client.setQueryData(screeningKeys.records('p1', phase), records(cached, phase));
   const view = render(
     <QueryClientProvider client={client}>
       <HeaderActionsProvider>
         <MemoryRouter initialEntries={[path]}>
-          <TitleAbstractWorkspace projectId="p1" config={cfg} />
+          <ScreeningWorkspace projectId="p1" config={cfg} phase={phase} />
           <LocationProbe />
         </MemoryRouter>
       </HeaderActionsProvider>

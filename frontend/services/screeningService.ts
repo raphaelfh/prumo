@@ -11,7 +11,8 @@ import type {components} from '@/types/api/schema';
 
 export type ScreeningConfigRead = components['schemas']['ScreeningConfigRead'];
 export type ScreeningConfigUpdate = components['schemas']['ScreeningConfigUpdate'];
-export type ScreeningEnrollRequest = components['schemas']['ScreeningEnrollRequest'];
+/** `phase` defaults to `title_abstract` on the server. */
+export type ScreeningEnrollRequest = Partial<components['schemas']['ScreeningEnrollRequest']>;
 export type ScreeningEnrollResult = components['schemas']['ScreeningEnrollResult'];
 export type PubmedDryRunRead = components['schemas']['PubmedDryRunRead'];
 export type PubmedImportStarted = components['schemas']['PubmedImportStarted'];

@@ -83,6 +83,9 @@ const ROW: ScreeningRecordRow = {
   outcome: null,
   outcome_exclusion_reason: null,
   outcome_kind: null,
+  ta_outcome: null,
+  ta_outcome_kind: null,
+  ta_reviewer_count: null,
   pmid: null,
   publication_year: 2021,
   queue_rank: 1,
@@ -101,6 +104,10 @@ function config(canReview: boolean): ScreeningConfigRead {
     reviewer_capable: 2,
     reviewer_count: 2,
     reviewer_count_locked: true,
+    full_text_reviewer_count: null,
+    full_text_count_locked: false,
+    full_text_ready: 0,
+    full_text_enrolled: 0,
   };
 }
 
@@ -113,6 +120,7 @@ function renderView({canReview = true, row = ROW}: {canReview?: boolean; row?: S
         assignmentId="a1"
         row={row}
         config={config(canReview)}
+        phase="title_abstract"
         criteria={{inclusion: [], exclusion: []}}
         maximized={false}
         onDecided={vi.fn()}

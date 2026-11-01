@@ -279,6 +279,29 @@ async def test_review_work_is_409_and_rolls_back(db_session: AsyncSession, work:
     assert await _rows(db, project_id) == []
 
 
+@pytest.mark.parametrize("ft_decision", [None, "include"], ids=["assignment", "decision"])
+async def test_duplicate_with_full_text_work_is_refused(
+    db_session: AsyncSession, ft_decision: str | None
+) -> None:
+    """A record sent to full text (a live FT assignment, decided or not) cannot be removed."""
+    db = db_session
+    project_id = await make_project(db)
+    a, b, _ = await _pmid_triple(db, project_id)
+    (ta,) = await enroll_articles(db, project_id, [b], by=MANAGER)
+    await add_decision(db, ta, MANAGER, "include")
+    (ft,) = await enroll_articles(db, project_id, [b], by=MANAGER, phase="full_text")
+    if ft_decision is not None:
+        await add_decision(db, ft, MANAGER, ft_decision)
+    await db.commit()
+
+    response = await _post(db, project_id, [_item(b, a, "duplicate")])
+    await db.rollback()
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "DUPLICATE_HAS_REVIEW_WORK"
+    assert await _rows(db, project_id) == []
+
+
 async def test_keep_the_other_enrolls_the_kept(db_session: AsyncSession) -> None:
     db = db_session
     project_id = await make_project(db)

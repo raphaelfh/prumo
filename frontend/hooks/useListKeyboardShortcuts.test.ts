@@ -44,3 +44,22 @@ describe('useListKeyboardShortcuts Escape', () => {
     expect(popover.setFilterPopoverOpen).toHaveBeenCalledWith(false);
   });
 });
+
+describe('useListKeyboardShortcuts enabled', () => {
+  it('registers nothing when disabled', () => {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    const popover = setup({searchInputRef: {current: input}, enabled: false});
+    fireEvent.keyDown(window, {key: 'f', metaKey: true});
+    fireEvent.keyDown(window, {key: 'f'});
+    expect(input).not.toHaveFocus();
+    expect(popover.setFilterPopoverOpen).not.toHaveBeenCalled();
+    input.remove();
+  });
+
+  it('still handles keys by default', () => {
+    const popover = setup();
+    fireEvent.keyDown(window, {key: 'f'});
+    expect(popover.setFilterPopoverOpen).toHaveBeenCalledTimes(1);
+  });
+});

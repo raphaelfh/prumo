@@ -6,6 +6,10 @@
  * read-only and renders `peer_decisions` and `outcome` exactly as the API
  * returns them (blindness is the server's). The status chip is the records
  * row's server-computed status, never re-derived here.
+ *
+ * At full text the same states render inside `FullTextRecordView` (the report
+ * beside the pane); the solo rule reads the full-text reviewer count; and an
+ * unseated arbitrator may rule on a `not_retrieved` outcome ("PDF found later").
  */
 import {useEffect, useRef, type ReactNode} from 'react';
 import {toast} from 'sonner';
@@ -16,12 +20,14 @@ import {useArbitrate, useDecide} from '@/hooks/screening/useScreeningMutations';
 import {ApiError} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
+import {isReadOnly} from '@/lib/screening/records';
 import {cn} from '@/lib/utils';
 import type {
   ScreeningArbitrationCreate,
   ScreeningAssignmentRead,
   ScreeningConfigRead,
   ScreeningDecisionCreate,
+  ScreeningPhase,
   ScreeningRecordRow,
 } from '@/services/screeningService';
 
@@ -29,6 +35,8 @@ import {ConflictRulingForm} from './ConflictRulingForm';
 import {CriteriaPanel, criteriaCount, type ScreeningCriteria} from './CriteriaPanel';
 import {DecisionButtons} from './DecisionButtons';
 import {DecisionNote, useDecisionNoteForm} from './DecisionNote';
+import {FullTextDecisionPane} from './FullTextDecisionPane';
+import {FullTextRecordView} from './FullTextRecordView';
 import {RecordStatusChip} from './RecordStatusChip';
 import {decisionLabel, LoadingState, RecordBody} from './ScreeningParts';
 
@@ -65,11 +73,11 @@ function DecisionLine({
   );
 }
 
-function AssignmentDetails({read}: {read: ScreeningAssignmentRead}) {
+/** The caller's decision, the outcome and the peers, as the API returns them. */
+function AssignmentDecisions({read}: {read: ScreeningAssignmentRead}) {
   const {outcome, my_decision, peer_decisions} = read;
   return (
-    <div className="flex flex-col gap-4">
-      <RecordBody article={read.article} />
+    <>
       {my_decision && (
         <Section title={t('screening', 'yourDecision')}>
           <DecisionLine decision={my_decision.decision} reason={my_decision.exclusion_reason} />
@@ -98,7 +106,7 @@ function AssignmentDetails({read}: {read: ScreeningAssignmentRead}) {
           </ul>
         </Section>
       )}
-    </div>
+    </>
   );
 }
 
@@ -111,8 +119,12 @@ interface AssignmentViewProps {
   assignmentId: string;
   row: ScreeningRecordRow;
   config: ScreeningConfigRead;
+  phase: ScreeningPhase;
   criteria: ScreeningCriteria;
-  /** Maximized → the criteria rail beside the record; docked → the disclosure above it. */
+  /**
+   * The workspace's controlled shell state. Title/abstract: the criteria rail beside the record
+   * (docked: the disclosure above it). Full text: the report splits beside the pane.
+   */
   maximized: boolean;
   onDecided: (row: ScreeningRecordRow) => void;
   onNotInPhase: () => void;
@@ -122,6 +134,7 @@ export function AssignmentView({
   assignmentId,
   row,
   config,
+  phase,
   criteria,
   maximized,
   onDecided,
@@ -163,10 +176,16 @@ export function AssignmentView({
     inFlight.current = false;
   };
 
-  const solo =
-    config.can_review && config.reviewer_count === 1 && read.my_decision !== null && read.outcome?.kind === 'solo';
+  const fullText = phase === 'full_text';
+  const phaseCount = fullText ? config.full_text_reviewer_count : config.reviewer_count;
+  const solo = config.can_review && phaseCount === 1 && read.my_decision !== null && read.outcome?.kind === 'solo';
   const canDecide = solo || (config.can_review && read.status === 'awaiting_me');
-  const canRule = config.can_arbitrate && read.status === 'conflict';
+  // "PDF found later": an arbitrator who did not screen it rules on a not-retrieved report.
+  const foundLater =
+    fullText && config.can_arbitrate && read.my_decision === null && read.outcome?.decision === 'not_retrieved';
+  const canRule = (config.can_arbitrate && read.status === 'conflict') || foundLater;
+  const recorded = solo ? read.my_decision?.decision : null;
+  const recordedReason = solo ? read.my_decision?.exclusion_reason : null;
 
   const onDecide = (body: ScreeningDecisionCreate) => {
     if (inFlight.current) return;
@@ -199,17 +218,53 @@ export function AssignmentView({
     );
   };
 
+  const ruling = (
+    <Section title={t('screening', foundLater ? 'pdfFoundLater' : 'peerDecisionsTitle')}>
+      <ConflictRulingForm read={read} busy={busy} onRule={onRule} phase={phase} />
+    </Section>
+  );
+
+  if (fullText) {
+    const pane = canDecide ? (
+      <FullTextDecisionPane
+        row={row}
+        reasons={read.exclusion_reasons}
+        busy={busy}
+        recorded={recorded}
+        recordedReason={recordedReason}
+        noteForm={noteForm}
+        onDecide={onDecide}
+      />
+    ) : canRule ? (
+      ruling
+    ) : read.my_decision || read.outcome || read.peer_decisions.length > 0 ? (
+      <AssignmentDecisions read={read} />
+    ) : null;
+    return (
+      <FullTextRecordView
+        projectId={read.project_id}
+        row={row}
+        read={read}
+        criteria={criteria}
+        maximized={maximized}
+        readOnly={isReadOnly(config)}
+        decisionPane={pane}
+      />
+    );
+  }
+
   const body = canDecide ? (
     <RecordBody article={read.article} />
   ) : canRule ? (
     <div className="flex flex-col gap-4">
       <RecordBody article={read.article} />
-      <Section title={t('screening', 'peerDecisionsTitle')}>
-        <ConflictRulingForm read={read} busy={busy} onRule={onRule} />
-      </Section>
+      {ruling}
     </div>
   ) : (
-    <AssignmentDetails read={read} />
+    <div className="flex flex-col gap-4">
+      <RecordBody article={read.article} />
+      <AssignmentDecisions read={read} />
+    </div>
   );
   // Maximized with a rail: wide enough for the 68ch reading column plus the 18rem rail.
   const withRail = maximized && criteriaCount(criteria) > 0;
@@ -244,8 +299,8 @@ export function AssignmentView({
               disabled={busy}
               onDecide={onDecide}
               phase="title_abstract"
-              recorded={solo ? read.my_decision?.decision : null}
-              recordedReason={solo ? read.my_decision?.exclusion_reason : null}
+              recorded={recorded}
+              recordedReason={recordedReason}
             />
           </div>
         </div>

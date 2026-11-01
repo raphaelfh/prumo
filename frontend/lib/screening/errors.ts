@@ -24,6 +24,9 @@ const CODE_TO_KEY: Record<string, ScreeningCopyKey> = {
   SCREENING_NOT_IN_CONFLICT: 'errNotInConflict',
   SCREENING_DECISION_FINAL: 'errDecisionFinal',
   SCREENING_SELF_ARBITRATION: 'errSelfArbitration',
+  SCREENING_PHASE_ADVANCED: 'errPhaseAdvanced',
+  SCREENING_DECISION_NOT_IN_PHASE: 'errDecisionNotInPhase',
+  SCREENING_REASON_REQUIRED: 'errReasonRequired',
 };
 
 export function screeningErrorMessage(error: unknown): string {

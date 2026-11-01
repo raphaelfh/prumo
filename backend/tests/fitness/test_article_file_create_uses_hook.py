@@ -18,6 +18,9 @@ _ALLOWED = {
     "services/zotero_import_service.py",
     "services/article_file_ingest_service.py",
     "services/article_file_service.py",
+    # Local-only dev seed: its placeholder PDF is a fixture with no parse
+    # pipeline behind it (no broker in the seed context), so enqueuing is wrong.
+    "seed_screening.py",
 }
 
 # Negative lookbehind excludes the class *definition* (`class ArticleFile(`)

@@ -75,7 +75,9 @@ def service(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 @pytest.fixture
 def guards(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    ref = ScreeningAssignmentRef(id=ASSIGNMENT, project_id=PROJECT, article_id=uuid4())
+    ref = ScreeningAssignmentRef(
+        id=ASSIGNMENT, project_id=PROJECT, article_id=uuid4(), phase="title_abstract"
+    )
     load = AsyncMock(return_value=ref)
     reviewer = AsyncMock()
     monkeypatch.setattr(endpoint, "load_assignment_for_member", load)
@@ -167,3 +169,19 @@ async def test_decision_handler_missing_article_is_404(service: MagicMock) -> No
 
     assert exc.value.status_code == 404
     db.commit.assert_not_awaited()
+
+
+async def test_title_abstract_outcomes_tolerate_an_assignment_gone_live_between_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A TA assignment that goes live after the snapshot read yields no outcome, not a KeyError."""
+    from app.services import screening_review_service as module
+
+    service = module.ScreeningReviewService(MagicMock())
+    monkeypatch.setattr(service, "_reviewer_count", AsyncMock(return_value=2))
+    monkeypatch.setattr(module, "assignment_states", AsyncMock(return_value={}))
+    service.screening = MagicMock(
+        live_assignment_ids_by_article=AsyncMock(return_value={ARTICLE: ASSIGNMENT})
+    )
+    count, outcomes = await service._title_abstract_outcomes(PROJECT)
+    assert (count, outcomes) == (2, {ARTICLE: None})

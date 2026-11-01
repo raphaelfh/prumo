@@ -20,7 +20,7 @@ from app.models.article import Article
 from app.models.article_duplicate import ArticleDuplicateVerdict
 from app.models.extraction import ExtractionRun
 from app.models.extraction_instance import ExtractionInstance
-from app.models.screening import SCREENING_PHASE, ScreeningAssignment, ScreeningDecision
+from app.models.screening import TITLE_ABSTRACT, ScreeningAssignment, ScreeningDecision
 from app.repositories.article_repository import doi_match_key
 from app.repositories.duplicate_predicates import removed_duplicate
 from app.repositories.screening_repository import (
@@ -39,7 +39,7 @@ def refusing_work(article: type[Article]) -> ColumnElement[bool]:
     """
     later_phase = (
         exists()
-        .where(ScreeningAssignment.phase != SCREENING_PHASE, ARTICLE_STILL_IN_PROJECT)
+        .where(ScreeningAssignment.phase != TITLE_ABSTRACT, ARTICLE_STILL_IN_PROJECT)
         .correlate(article)
     )
     run = exists().where(
@@ -58,7 +58,7 @@ def review_work(article: type[Article]) -> ColumnElement[bool]:
         exists()
         .where(
             ScreeningDecision.assignment_id == ScreeningAssignment.id,
-            ScreeningAssignment.phase == SCREENING_PHASE,
+            ScreeningAssignment.phase == TITLE_ABSTRACT,
             ARTICLE_STILL_IN_PROJECT,
         )
         .correlate(article)
@@ -196,7 +196,7 @@ class DuplicateRepository:
     async def enrolled_among(self, *, project_id: UUID, article_ids: Sequence[UUID]) -> set[UUID]:
         """The given articles with a live title/abstract assignment in the project."""
         stmt = (
-            live_assignments(project_id)
+            live_assignments(project_id, TITLE_ABSTRACT)
             .where(ScreeningAssignment.article_id.in_(article_ids))
             .with_only_columns(ScreeningAssignment.article_id)
         )
@@ -237,7 +237,7 @@ class DuplicateRepository:
         decisions = (
             select(func.count(func.distinct(ScreeningDecision.reviewer_id)))
             .join(ScreeningAssignment, ScreeningAssignment.id == ScreeningDecision.assignment_id)
-            .where(ScreeningAssignment.phase == SCREENING_PHASE, ARTICLE_STILL_IN_PROJECT)
+            .where(ScreeningAssignment.phase == TITLE_ABSTRACT, ARTICLE_STILL_IN_PROJECT)
             .correlate(Article)
             .scalar_subquery()
         )

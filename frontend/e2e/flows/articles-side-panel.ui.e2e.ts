@@ -21,7 +21,7 @@ test.describe("Articles side panel — dock and document view", () => {
     test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
 
     const env = loadE2EEnv();
-    await ensureArticlePdfBytes();
+    await ensureArticlePdfBytes(env.articleId!);
     await loginViaUi(page);
 
     const projectId = env.projectId!;
