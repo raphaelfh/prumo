@@ -3,7 +3,7 @@
 A section the article's own study-type classification takes out of play used
 to export as a BLANK cell while the run view showed a "Not applicable" badge.
 The marking happens once, on ``value_map``, after the map is built and before
-the tidy / matrix / appraisal builders read it — so no sub-builder receives
+the level / matrix / appraisal builders read it — so no sub-builder receives
 the schema and no builder signature changes.
 
 The cells that matter are the ones nobody ever answered: an excluded domain

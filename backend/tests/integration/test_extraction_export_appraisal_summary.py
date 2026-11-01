@@ -7,8 +7,8 @@ the real local Supabase Postgres (RLS, CHECK constraints, the real
 * **Emission gate** — a QA template with risk-label SELECT verdict fields
   yields ``layout.appraisal is not None``; the project's plain
   ``extraction`` template under the same fixture yields
-  ``layout.appraisal is None`` (the sections then ship as ordinary tidy
-  tables).
+  ``layout.appraisal is None`` (the sections then ship on their level
+  sheets only).
 * **Mode-aware Overall (§7)** —
     * consensus → one final-score ``Overall`` per record (worst-case
       rollup over the published domain verdicts);
@@ -454,7 +454,7 @@ async def test_qa_consensus_layout_emits_appraisal_and_extraction_does_not(
     The QA template's two domains roll up to a single worst-case
     ``Overall`` per record (``Low`` ∨ ``High`` → ``High``). The same
     project's plain ``extraction`` template yields ``appraisal is None``
-    (emission gate — the sections ship as ordinary tidy tables).
+    (emission gate — the sections ship on their level sheets only).
     """
     fx = await _seed_finalized_qa_run(db_session)
     if fx is None:
@@ -634,7 +634,7 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     A domain the article's own classification takes out of play used to export
     as a BLANK cell while the run view showed a "Not applicable" badge. The
     marking happens once on ``value_map``, so the appraisal sheet AND the
-    per-section tidy table inherit it without a builder signature change.
+    level sheet inherit it without a builder signature change.
 
     Domain 2 carries a POISON verdict ("High", the fixture default) that was
     recorded before the reclassification: a blank and "Not applicable" both
@@ -686,13 +686,20 @@ async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
     ]
     assert (kept.value_text, kept.out_of_scope) == ("High", True)
 
-    # 2. The same correction on the per-section tidy table, for free.
-    tidy = list(wb[fx.domain2_label].iter_rows(values_only=True))
-    assert tidy[0] == ("Record", "Signalling question", "Risk of bias")
-    assert tidy[1][2] == "Not applicable"
-
+    # 2. The same correction on the publication Articles sheet, for free: both
+    # root domains land there, their "Risk of bias" columns in walk order.
+    pub = load_workbook(
+        __import__("io").BytesIO(
+            build_workbook(layout, ExportShape.PUBLICATION, include_matrix=False)
+        )
+    )
+    header, row = list(pub["Articles"].iter_rows(values_only=True))[:2]
+    rob1, rob2 = [i for i, h in enumerate(header) if h == "Risk of bias"]
+    assert row[rob2] == "Not applicable"
     # 3. The in-scope section is not touched.
-    tidy1 = list(wb[fx.domain1_label].iter_rows(values_only=True))
-    assert tidy1[1][2] == "Low"
+    assert row[rob1] == "Low"
+    # 4. The review workbook blanks an out-of-scope recorded value.
+    review = list(wb["Articles"].iter_rows(values_only=True))
+    assert review[1][rob2 + 2] is None and review[1][rob1 + 2] == "Low"
 
     await db_session.rollback()

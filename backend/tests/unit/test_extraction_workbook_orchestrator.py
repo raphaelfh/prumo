@@ -26,8 +26,8 @@ from app.services.extraction_export_service import (
     ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
-    TidyTable,
 )
+from tests.unit.helpers.export_layouts import make_layout
 
 
 def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
@@ -69,14 +69,30 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
     )
 
 
-def _table(title: str) -> TidyTable:
-    return TidyTable(
-        section_id=uuid4(),
-        title=title,
-        cardinality=ExtractionCardinality.ONE,
-        column_field_ids=(),
-        column_labels=(),
-        rows=(),
+def _many(name: str, *, order: int) -> SectionDescriptor:
+    """A fielded repeating section: one level sheet of its own."""
+    return SectionDescriptor(
+        entity_type_id=uuid4(),
+        label=name,
+        parent_entity_type_id=None,
+        fields=(
+            FieldDescriptor(
+                field_id=uuid4(),
+                label="Text",
+                type=ExtractionFieldType.TEXT,
+                allowed_values=(),
+                name="text",
+            ),
+        ),
+        cardinality=ExtractionCardinality.MANY,
+        sort_order=order,
+        name=name,
+    )
+
+
+def _art() -> ArticleDescriptor:
+    return ArticleDescriptor(
+        article_id=uuid4(), article_label="Art 2020", run_id=uuid4(), version_id=None
     )
 
 
@@ -101,14 +117,14 @@ def _appraisal_model() -> AppraisalModel:
 
 
 def test_sheet_order_without_ai() -> None:
-    # §4 order: README (absorbs Notes) → Summary → matrix → Data dictionary.
-    # This layout populates neither tidy_tables nor a non-empty data
-    # dictionary, so no tidy / Dropdown lists sheets are emitted.
+    # §4 order: README (absorbs Notes) → Summary → matrix → Articles → Data
+    # dictionary. The fielded root ONE section lands on Articles; there is no
+    # repeating level and no non-empty data dictionary.
     data = build_workbook(
         _one_field_layout(include_ai=False), ExportShape.COMPLETE, include_matrix=True
     )
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Data dictionary"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data dictionary"]
 
 
 def test_sheet_order_with_ai() -> None:
@@ -121,14 +137,15 @@ def test_sheet_order_with_ai() -> None:
         "README",
         "Summary",
         "Matrix",
+        "Articles",
         "Data dictionary",
         "AI proposals",
     ]
 
 
 def test_sections_named_history_and_data_get_suffixed_titles() -> None:
-    layout = replace(
-        _one_field_layout(include_ai=False), tidy_tables=(_table("history"), _table("data"))
+    layout = make_layout(
+        sections=(_many("history", order=0), _many("data", order=1)), articles=(_art(),)
     )
     wb = load_workbook(
         io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
@@ -137,6 +154,7 @@ def test_sections_named_history_and_data_get_suffixed_titles() -> None:
         "README",
         "Summary",
         "Matrix",
+        "Articles",
         "history (2)",
         "data (2)",
         "Data dictionary",
@@ -148,7 +166,9 @@ def test_sections_named_history_and_data_get_suffixed_titles() -> None:
 def test_readme_contents_equal_sheetnames_for_every_shape(
     shape: ExportShape, include_ai: bool
 ) -> None:  # Review Focus 1
-    layout = replace(_one_field_layout(include_ai=include_ai), tidy_tables=(_table("Sec"),))
+    layout = make_layout(
+        sections=(_many("Sec", order=0),), articles=(_art(),), include_ai_metadata=include_ai
+    )
     assert layout.front_matter is None  # contents must not depend on front_matter
     titles = allocate_titles(layout, shape, include_matrix=True)
     wb = load_workbook(io.BytesIO(build_workbook(layout, shape, include_matrix=True)))

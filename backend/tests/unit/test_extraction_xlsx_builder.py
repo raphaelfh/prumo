@@ -135,9 +135,9 @@ def test_build_workbook_returns_valid_xlsx_bytes():
     assert data[:4] == b"PK\x03\x04"
     wb = _open(data)
     # §4 order: README (absorbs the old Notes sheet) → Summary → matrix →
-    # Data dictionary. The empty layout has no sections (no tidy tables) and
+    # Articles → Data dictionary. The empty layout has no repeating level and
     # an empty data dictionary (no Dropdown lists sheet).
-    assert wb.sheetnames == ["README", "Summary", "Matrix", "Data dictionary"]
+    assert wb.sheetnames == ["README", "Summary", "Matrix", "Articles", "Data dictionary"]
 
 
 def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
@@ -150,6 +150,7 @@ def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
         "README",
         "Summary",
         "Matrix",
+        "Articles",
         "Data dictionary",
         "AI proposals",
     ]
@@ -543,7 +544,7 @@ def test_ai_metadata_value_columns_pass_rendered_values_through():
 
 
 def test_workbook_emits_sheets_in_section4_order():
-    """README → Summary → matrix → tidy tables → Data dictionary → Dropdown lists."""
+    """README → Summary → matrix → Articles → levels → Data dictionary → Dropdown lists."""
     from app.models.extraction import (
         ExtractionCardinality,
         ExtractionFieldType,
@@ -559,8 +560,6 @@ def test_workbook_emits_sheets_in_section4_order():
         FieldDictEntry,
         FrontMatter,
         SectionDescriptor,
-        TidyRow,
-        TidyTable,
     )
 
     eid = uuid4()
@@ -612,21 +611,6 @@ def test_workbook_emits_sheets_in_section4_order():
         is_required=False,
         allow_other=False,
     )
-    tidy = TidyTable(
-        section_id=eid,
-        title="Study characteristics",
-        cardinality=ExtractionCardinality.ONE,
-        column_field_ids=(fid,),
-        column_labels=("Design",),
-        rows=(
-            TidyRow(
-                article_id=article.article_id,
-                instance_id=None,
-                record_label="Gaca, 2011",
-                values=("Cohort",),
-            ),
-        ),
-    )
     layout = ExportLayout(
         project_name="P",
         template_name="CHARMS",
@@ -641,7 +625,6 @@ def test_workbook_emits_sheets_in_section4_order():
         value_map={value_key(run, inst, fid): _ev(section.fields[0], "Cohort")},
         front_matter=fm,
         data_dictionary=(dict_entry,),
-        tidy_tables=(tidy,),
     )
     wb = load_workbook(
         io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
@@ -650,13 +633,13 @@ def test_workbook_emits_sheets_in_section4_order():
         "README",
         "Summary",
         "Matrix",
-        "Study characteristics",
+        "Articles",
         "Data dictionary",
         "Dropdown lists",
     ]
 
 
-def test_workbook_emits_appraisal_sheet_after_tidy_tables() -> None:
+def test_workbook_emits_appraisal_sheet_after_level_sheets() -> None:
     """Appraisal sheet appears (k+1) only when layout.appraisal is set."""
     from app.services.exports.extraction.workbook import build_workbook
     from app.services.extraction_export_service import AppraisalModel, AppraisalRow

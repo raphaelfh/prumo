@@ -5,65 +5,45 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from app.models.extraction import (
-    ExtractionCardinality,
-    ExtractionFieldType,
-)
-from app.services.exports.descriptors import value_key
-from app.services.exports.values import ExportValue, to_export_value
+from app.models.extraction import ExtractionCardinality, ExtractionFieldType
+from app.services.exports.descriptors import count_level_records
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportMode,
     FieldDescriptor,
     SectionDescriptor,
     _build_front_matter,
-    _build_tidy_tables,
 )
 
 
-def _tv(raw: object) -> ExportValue:
-    """``raw`` typed against a TEXT field, as a value-map entry."""
-    return to_export_value(
-        {"value": raw},
-        FieldDescriptor(
-            field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
-        ),
-        {},
-    )
-
-
-def _study() -> SectionDescriptor:
-    eid = uuid4()
+def _models() -> SectionDescriptor:
     return SectionDescriptor(
-        entity_type_id=eid,
-        label="Study characteristics",
+        entity_type_id=uuid4(),
+        label="Models",
         parent_entity_type_id=None,
         fields=(
             FieldDescriptor(
                 field_id=uuid4(),
-                label="Author",
+                label="Name",
                 type=ExtractionFieldType.TEXT,
                 allowed_values=(),
             ),
         ),
-        cardinality=ExtractionCardinality.ONE,
+        cardinality=ExtractionCardinality.MANY,
         sort_order=0,
     )
 
 
 def test_front_matter_assembles_counts_and_obsolete() -> None:
-    study = _study()
-    inst, run = uuid4(), uuid4()
+    models = _models()
     aid = uuid4()
     article = ArticleDescriptor(
         article_id=aid,
-        article_label="Gaca, 2011",
-        run_id=run,
+        article_label="Gaca 2011",
+        run_id=uuid4(),
         version_id=None,
-        entries={(study.entity_type_id, None): (inst,)},
+        entries={(models.entity_type_id, None): (uuid4(), uuid4())},
     )
-    value_map = {value_key(run, inst, study.fields[0].field_id): _tv("Gaca")}
-    tidy = _build_tidy_tables((study,), (article,), value_map, None)
     fm = _build_front_matter(
         project_name="My Project",
         template_name="CHARMS",
@@ -71,14 +51,14 @@ def test_front_matter_assembles_counts_and_obsolete() -> None:
         mode=ExportMode.CONSENSUS,
         generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         articles=(article,),
-        tidy_tables=tidy,
+        record_count=count_level_records((models,), (article,)),
         obsolete_fields_per_article={aid: ["Removed field"]},
     )
     assert fm.project_name == "My Project"
     assert fm.template_version == 2
     assert fm.export_mode_label  # non-empty human label
     assert fm.article_count == 1
-    assert fm.record_count == 1  # one tidy row
+    assert fm.record_count == 2  # two model records
     # legend + caveats are non-empty (generic glyph/sentinel legend)
     assert fm.legend
     assert fm.caveats

@@ -67,7 +67,7 @@ from app.services.exports.codebook_model import CodebookEntry
 from app.services.exports.descriptors import (
     ValueKey,
     build_entries,
-    iter_records,
+    count_level_records,
     primary_rater,
     root_instance,
     value_key,
@@ -286,39 +286,6 @@ class FieldDictEntry:
 
 
 @dataclass(frozen=True)
-class TidyRow:
-    """One record on a tidy table — one article, or one article × instance.
-
-    ``values`` are pre-resolved scalars aligned to the owning
-    ``TidyTable.column_field_ids``; ``instance_id`` is the fanned-out instance
-    for a ``MANY``-cardinality section, ``None`` for ``ONE``.
-    """
-
-    article_id: UUID
-    instance_id: UUID | None
-    record_label: str  # e.g. "Gaca, 2011" or "Gaca, 2011 — Model 2"
-    values: tuple[Any, ...]  # aligned to TidyTable.column_field_ids, resolved
-
-
-@dataclass(frozen=True)
-class TidyTable:
-    """One publication "Table 1" sheet at a section's cardinality grain (§5.3).
-
-    Built service-side in ``resolve_layout`` (slice task T52) and rendered by
-    the pure ``build_tidy_tables`` sub-builder: one records-as-rows sheet per
-    non-container section. ``cardinality`` sets the grain — ``ONE`` is one row
-    per article, ``MANY`` one row per (article × instance).
-    """
-
-    section_id: UUID
-    title: str  # section label; ``allocate_titles`` derives the sheet title
-    cardinality: ExtractionCardinality
-    column_field_ids: tuple[UUID, ...]  # ordered by sort_order
-    column_labels: tuple[str, ...]
-    rows: tuple[TidyRow, ...]
-
-
-@dataclass(frozen=True)
 class AppraisalRow:
     """One record's appraisal roll-up (§7). ``domain_verdicts`` aligns to
     ``AppraisalModel.domain_fields``; ``overall`` is the worst-case rollup of
@@ -379,8 +346,6 @@ class ExportLayout:
     front_matter: FrontMatter | None = None
     # Data-dictionary / dropdown catalogue (§4 #k+2), one entry per snapshot field.
     data_dictionary: tuple[FieldDictEntry, ...] = ()
-    # Per-section publication "Table 1" sheets (§5.3), one per non-container section.
-    tidy_tables: tuple[TidyTable, ...] = ()
     codebook: tuple[CodebookEntry, ...] = ()  # version-spanning, rule-3 coded
     # Per-domain risk-of-bias / appraisal roll-up with mode-aware ``Overall``
     # (§7). None unless the exported template carries an appraisal layer
@@ -388,6 +353,8 @@ class ExportLayout:
     # returns None and the sheet is omitted when this is None.
     appraisal: AppraisalModel | None = None
     reviewer_id: UUID | None = None  # single_user target; None in the other modes
+    # all_users: run -> reviewers with >=1 non-reject current decision (R16).
+    raters_by_run: Mapping[UUID, tuple[UUID, ...]] = field(default_factory=dict)
 
 
 # ----------------------------------------------------------------------
@@ -492,6 +459,7 @@ class ExtractionExportService(LoggerMixin):
         refs = await self._load_article_refs(project_id=project_id)
         version_numbers = {version.id: version.version}
         reviewers: tuple[ReviewerDescriptor, ...] = ()
+        raters_by_run: dict[UUID, tuple[UUID, ...]] = {}
 
         if mode is ExportMode.CONSENSUS:
             articles, omitted = await self._resolve_articles_for_consensus(
@@ -531,7 +499,7 @@ class ExtractionExportService(LoggerMixin):
                 refs=refs,
                 version_numbers=version_numbers,
             )
-            reviewers = await self._list_reviewers_for_runs(
+            reviewers, raters_by_run = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 anonymize=anonymize_reviewer_names,
             )
@@ -550,7 +518,7 @@ class ExtractionExportService(LoggerMixin):
         rules_by_version = await pinned_template_rules(self.db, version_ids) if version_ids else {}
         rules_by_article = {a.article_id: rules_by_version.get(a.version_id, {}) for a in articles}
 
-        # §5 scope fidelity, applied BEFORE the tidy tables, the AI rows and
+        # §5 scope fidelity, applied BEFORE the level sheets, the AI rows and
         # the appraisal read the map, so all three inherit it for free.
         mark_out_of_scope_values(
             rules_by_article=rules_by_article,
@@ -565,9 +533,6 @@ class ExtractionExportService(LoggerMixin):
             articles=tuple(articles),
             anchor_field_ids=anchor_field_ids,
         )
-
-        # Per-section publication "Table 1" sheets (§5.3), rendered from ``value_map``.
-        tidy_tables = _build_tidy_tables(sections, tuple(articles), value_map, primary)
 
         notes = ExportNotes(
             omitted_articles_by_stage=omitted,
@@ -585,7 +550,7 @@ class ExtractionExportService(LoggerMixin):
             mode=mode,
             generated_at=notes.generated_at or datetime.now(UTC),
             articles=tuple(articles),
-            tidy_tables=tidy_tables,
+            record_count=count_level_records(sections, articles),
             obsolete_fields_per_article=notes.obsolete_fields_per_article,
         )
 
@@ -630,10 +595,10 @@ class ExtractionExportService(LoggerMixin):
             value_map=value_map,
             ai_proposal_rows=ai_rows,
             data_dictionary=data_dictionary,
-            tidy_tables=tidy_tables,
             front_matter=front_matter,
             appraisal=appraisal,
             reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
+            raters_by_run=raters_by_run,
         )
 
     # ------------------------------------------------------------------
@@ -670,7 +635,7 @@ class ExtractionExportService(LoggerMixin):
         primary slot; all_users -> that plus one rollup per reviewer, in order.
 
         Returns None when no domain has a risk-label-set SELECT verdict field
-        (no roll-up sheet; the sections still ship as ordinary tidy tables).
+        (no roll-up sheet; the sections still ship on their level sheets).
         """
         # Function-local import breaks the module cycle: appraisal_summary
         # imports ExportLayout/ExportMode from this module at load time, so a
@@ -1426,8 +1391,9 @@ class ExtractionExportService(LoggerMixin):
         *,
         run_ids: list[UUID],
         anonymize: bool,
-    ) -> tuple[ReviewerDescriptor, ...]:
-        """Distinct reviewers with ≥ 1 non-reject decision on the run set.
+    ) -> tuple[tuple[ReviewerDescriptor, ...], dict[UUID, tuple[UUID, ...]]]:
+        """Distinct reviewers with ≥ 1 non-reject decision on the run set, and
+        per run the reviewers that qualify there, in the same order (R16).
 
         Stable ordering (FR-011):
           * anonymize=False → alphabetical by display name
@@ -1441,12 +1407,13 @@ class ExtractionExportService(LoggerMixin):
         from app.models.user import Profile
 
         if not run_ids:
-            return ()
+            return (), {}
 
         rows = (
             await self.db.execute(
                 select(
                     ExtractionReviewerState.reviewer_id,
+                    ExtractionReviewerState.run_id,
                     Profile.full_name,
                     Profile.email,
                 )
@@ -1464,22 +1431,30 @@ class ExtractionExportService(LoggerMixin):
         ).all()
 
         by_id: dict[UUID, str] = {}
-        for rid, name, email in rows:
+        runs_of: dict[UUID, set[UUID]] = {}
+        for rid, run_id, name, email in rows:
             by_id.setdefault(rid, name or email or _short_id(rid))
+            runs_of.setdefault(run_id, set()).add(rid)
 
         if anonymize:
             ordered_ids = sorted(by_id.keys(), key=lambda u: str(u))
-            return tuple(
+            reviewers = tuple(
                 ReviewerDescriptor(
                     reviewer_id=rid,
                     display_label=f"Reviewer {_letter_for(idx)}",
                 )
                 for idx, rid in enumerate(ordered_ids)
             )
-        ordered = sorted(by_id.items(), key=lambda kv: kv[1].lower())
-        return tuple(
-            ReviewerDescriptor(reviewer_id=rid, display_label=label) for rid, label in ordered
-        )
+        else:
+            ordered = sorted(by_id.items(), key=lambda kv: kv[1].lower())
+            reviewers = tuple(
+                ReviewerDescriptor(reviewer_id=rid, display_label=label) for rid, label in ordered
+            )
+        by_run = {
+            run_id: tuple(r.reviewer_id for r in reviewers if r.reviewer_id in rids)
+            for run_id, rids in runs_of.items()
+        }
+        return reviewers, by_run
 
     async def _build_all_users_value_map(
         self,
@@ -1858,7 +1833,7 @@ def _build_front_matter(
     mode: ExportMode,
     generated_at: datetime,
     articles: tuple[ArticleDescriptor, ...],
-    tidy_tables: tuple[TidyTable, ...],
+    record_count: int,
     obsolete_fields_per_article: dict[UUID, list[str]],
 ) -> FrontMatter:
     """Assemble the README/Methods front matter (§4 #1).
@@ -1866,9 +1841,8 @@ def _build_front_matter(
     Counts, the static ``legend``/``caveats``,
     and the per-Run ``obsolete_fields_per_article`` block (lifted from
     ``ExportNotes``) come from already-computed inputs. ``record_count`` is the
-    total number of tidy-table rows across every section.
+    number of rows on the repeating-level sheets.
     """
-    record_count = sum(len(t.rows) for t in tidy_tables)
     return FrontMatter(
         project_name=project_name,
         template_name=template_name,
@@ -1913,98 +1887,6 @@ def _build_data_dictionary(
                 )
             )
     return tuple(entries)
-
-
-def _tidy_value(
-    value_map: dict[ValueKey, ExportValue],
-    *,
-    run_id: UUID,
-    instance_id: UUID,
-    field: FieldDescriptor,
-    rater: UUID | None,
-) -> Any:
-    """The rendered value of one tidy-cell coordinate, read at ``rater``'s slot."""
-    v = value_map.get(value_key(run_id, instance_id, field.field_id, rater))
-    return None if v is None else display_value(v, field)
-
-
-def _tidy_row(
-    *,
-    section: SectionDescriptor,
-    article: ArticleDescriptor,
-    instance_id: UUID,
-    record_label: str,
-    value_map: dict[ValueKey, ExportValue],
-    rater: UUID | None,
-) -> TidyRow:
-    """One tidy-table record: pre-resolved values aligned to the section fields."""
-    values = tuple(
-        _tidy_value(
-            value_map,
-            run_id=article.run_id,  # type: ignore[arg-type]  # run_id checked non-None by caller
-            instance_id=instance_id,
-            field=f,
-            rater=rater,
-        )
-        for f in section.fields
-    )
-    return TidyRow(
-        article_id=article.article_id,
-        instance_id=instance_id,
-        record_label=record_label,
-        values=values,
-    )
-
-
-def _build_tidy_tables(
-    sections: tuple[SectionDescriptor, ...],
-    articles: tuple[ArticleDescriptor, ...],
-    value_map: dict[ValueKey, ExportValue],
-    rater: UUID | None,
-) -> tuple[TidyTable, ...]:
-    """One publication table per section carrying fields, at its record grain.
-
-    The record axis comes from the entry tree (``iter_records``): a row under
-    a nested group is labelled with every repeating level above it, so
-    ``{article} - {root entry} - {nested entry}`` (spec §10).
-
-    A field-less repeating group is skipped because it is the axis, not a
-    record; one WITH fields gets its own sheet.
-    """
-    tables: list[TidyTable] = []
-    for section in sections:
-        if not section.fields:
-            continue
-        column_field_ids = tuple(f.field_id for f in section.fields)
-        column_labels = tuple(f.label for f in section.fields)
-        rows: list[TidyRow] = []
-        for article in articles:
-            if article.run_id is None:
-                continue
-            for instance_id, chain in iter_records(section, article, sections):
-                rows.append(
-                    _tidy_row(
-                        section=section,
-                        article=article,
-                        instance_id=instance_id,
-                        record_label=" — ".join(
-                            (article.article_label, *(label for _, label in chain))
-                        ),
-                        value_map=value_map,
-                        rater=rater,
-                    )
-                )
-        tables.append(
-            TidyTable(
-                section_id=section.entity_type_id,
-                title=section.label,
-                cardinality=section.cardinality,
-                column_field_ids=column_field_ids,
-                column_labels=column_labels,
-                rows=tuple(rows),
-            )
-        )
-    return tuple(tables)
 
 
 def _infer_reviewer_outcome(

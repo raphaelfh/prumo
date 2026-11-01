@@ -50,12 +50,10 @@ from app.services.extraction_export_service import (
     FrontMatter,
     ReviewerDescriptor,
     SectionDescriptor,
-    TidyRow,
-    TidyTable,
 )
 
 # Hard-coded UUIDs for the fixed layout — module-level so the README/Methods
-# front-matter, the data dictionary, and the tidy table all reference the SAME
+# front-matter, the data dictionary, and the level sheet all reference the SAME
 # ids two builds over, keeping the new sheets byte-identical across builds.
 _SECTION_ID = uuid4()
 _FIELD_ID = uuid4()
@@ -81,7 +79,7 @@ def _fixed_layout() -> ExportLayout:
     same workbook bytes (mod doc-properties).
 
     Populates the §4 publication projections — ``front_matter`` (README /
-    Methods), ``data_dictionary``, ``tidy_tables``, and an explicit ``None``
+    Methods), ``data_dictionary``, a repeating section (its level sheet), and an explicit ``None``
     ``appraisal`` — so the new sub-builder sheets actually render and their
     XML parts are covered by the structural-determinism assertion below.
     """
@@ -96,6 +94,8 @@ def _fixed_layout() -> ExportLayout:
         label="1. Source of data",
         parent_entity_type_id=None,
         fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+        name="source_of_data",
     )
     article = ArticleDescriptor(
         article_id=_ARTICLE_ID,
@@ -138,24 +138,6 @@ def _fixed_layout() -> ExportLayout:
             allow_other=False,
         ),
     )
-    # Tidy table (§5.3): one records-as-rows sheet at the section grain.
-    tidy_tables = (
-        TidyTable(
-            section_id=_SECTION_ID,
-            title="1. Source of data",
-            cardinality=ExtractionCardinality.ONE,
-            column_field_ids=(_FIELD_ID,),
-            column_labels=("1.1 Source of data",),
-            rows=(
-                TidyRow(
-                    article_id=_ARTICLE_ID,
-                    instance_id=None,
-                    record_label="Gaca, 2011",
-                    values=("Existing registry",),
-                ),
-            ),
-        ),
-    )
     return ExportLayout(
         project_name="Test Project",
         template_name="CHARMS",
@@ -172,7 +154,6 @@ def _fixed_layout() -> ExportLayout:
         value_map={value_key(_RUN_ID, _INST_ID, _FIELD_ID): _tv("Existing registry")},
         front_matter=front_matter,
         data_dictionary=data_dictionary,
-        tidy_tables=tidy_tables,
         appraisal=None,
     )
 
@@ -288,6 +269,8 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode(
         label="1. Source of data",
         parent_entity_type_id=None,
         fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+        name="source_of_data",
     )
     article = ArticleDescriptor(
         article_id=article_id,
@@ -445,7 +428,7 @@ def test_column_guard_boundary() -> None:
 
 # ----------------------------------------------------------------------
 # S8 / Task 73: extend structural determinism to the new publication sheets
-# (README/Methods, Data dictionary, tidy tables, Dropdown lists) + a
+# (README/Methods, Data dictionary, level sheets, Dropdown lists) + a
 # 500×100 all-users case that blows past the 16,384-column guard.
 # ----------------------------------------------------------------------
 
@@ -482,10 +465,10 @@ def test_new_sheets_are_structurally_deterministic() -> None:
     names = _sheet_titles(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
     assert "Data dictionary" in names
     assert any(n.startswith("README") or "Methods" in n for n in names)
-    # The tidy table + co-located dropdown catalogue render too (the
+    # The level sheets + co-located dropdown catalogue render too (the
     # _fixed_layout dictionary entry carries select options).
     assert "Dropdown lists" in names
-    assert "1. Source of data" in names
+    assert {"Articles", "source_of_data"} <= set(names)
 
 
 def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayout:

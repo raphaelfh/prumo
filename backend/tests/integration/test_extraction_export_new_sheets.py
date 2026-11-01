@@ -4,9 +4,9 @@ Real local Supabase (autouse SEED). Scopes all queries by project_id.
 
 End-to-end coverage for Task 54: a Consensus layout resolved for a
 finalized run must populate the new service-side projections
-(``front_matter`` / ``data_dictionary`` / ``tidy_tables``) and the
+(``front_matter`` / ``data_dictionary``) and the
 orchestrator must render them as the README / Summary / Data dictionary /
-per-section tidy-table sheets, carrying baked data.
+Articles and repeating-level sheets, carrying baked data.
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
 
 
 async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> None:
-    """README, Summary, a tidy table, and Data dictionary render with data."""
+    """README, Summary, the level sheets, and Data dictionary render with data."""
     fx = await _seed_finalized_charms_run(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -149,7 +149,6 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
     # Projections are populated.
     assert layout.front_matter is not None
     assert layout.data_dictionary  # >=1 field
-    assert layout.tidy_tables  # >=1 section table
 
     wb = load_workbook(
         io.BytesIO(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
@@ -157,9 +156,10 @@ async def test_resolved_layout_renders_new_sheets(db_session: AsyncSession) -> N
     assert "README" in wb.sheetnames
     assert "Summary" in wb.sheetnames
     assert "Data dictionary" in wb.sheetnames
-    # At least one tidy-table sheet beyond the always-present ones.
-    base = {"README", "Summary", "Matrix", "Data dictionary"}
-    assert any(name not in base and name != "Dropdown lists" for name in wb.sheetnames)
+    # Articles carries one row per exported article.
+    articles = list(wb["Articles"].iter_rows(values_only=True))
+    assert articles[0][:2] == ("article_id", "article_label")
+    assert [r[0] for r in articles[1:]] == [str(a) for a in fx.article_ids]
 
     # Front matter carries the template identity + export mode.
     # ``values_only=True`` yields raw cell values (not ``Cell`` objects),

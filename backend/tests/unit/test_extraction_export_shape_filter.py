@@ -16,10 +16,7 @@ from uuid import UUID, uuid4
 
 from openpyxl import load_workbook
 
-from app.models.extraction import (
-    ExtractionCardinality,
-    ExtractionFieldType,
-)
+from app.models.extraction import ExtractionFieldType
 from app.services.exports.descriptors import value_key
 from app.services.exports.extraction import workbook as workbook_module
 from app.services.exports.extraction.sheet_spec import Cell, SheetSpec
@@ -40,8 +37,6 @@ from app.services.extraction_export_service import (
     FieldDescriptor,
     FieldDictEntry,
     SectionDescriptor,
-    TidyRow,
-    TidyTable,
 )
 
 _SECTION_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -118,23 +113,6 @@ def _every_sheet_layout() -> ExportLayout:
                 allow_other=False,
             ),
         ),
-        tidy_tables=(
-            TidyTable(
-                section_id=_SECTION_ID,
-                title="Participants",
-                cardinality=ExtractionCardinality.ONE,
-                column_field_ids=(_FIELD_ID,),
-                column_labels=("Risk of bias",),
-                rows=(
-                    TidyRow(
-                        article_id=_ARTICLE_ID,
-                        instance_id=instance_id,
-                        record_label="Gaca, 2011",
-                        values=("Low",),
-                    ),
-                ),
-            ),
-        ),
         appraisal=AppraisalModel(
             domain_section_ids=(_SECTION_ID,),
             domain_labels=("Participants",),
@@ -162,7 +140,7 @@ def test_complete_emits_every_sheet() -> None:
         "README",
         "Summary",
         "Matrix",
-        "Participants",
+        "Articles",
         "Appraisal",
         "Data dictionary",
         "Dropdown lists",
@@ -178,10 +156,10 @@ def test_dictionary_keeps_readme_and_the_catalogue_only() -> None:
     ]
 
 
-def test_publication_keeps_readme_the_tidy_tables_and_the_appraisal() -> None:
+def test_publication_keeps_readme_the_level_sheets_and_the_appraisal() -> None:
     assert _sheetnames(ExportShape.PUBLICATION) == [
         "README",
-        "Participants",
+        "Articles",
         "Appraisal",
     ]
 
@@ -197,7 +175,7 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
     called: set[str] = set()
 
     def _spy(name: str, result):
-        def _fn(_layout, _titles):
+        def _fn(_layout, _titles, *_shape):
             called.add(name)
             return result
 
@@ -215,7 +193,7 @@ def _spy_builders(monkeypatch, shape: ExportShape) -> set[str]:
         ("ai_proposals", "build_ai_metadata", one),
     ):
         monkeypatch.setattr(workbook_module, fn_name, _spy(role, result))
-    monkeypatch.setattr(workbook_module, "build_tidy_tables", _spy("tidy_tables", []))
+    monkeypatch.setattr(workbook_module, "build_level_tables", _spy("level_tables", []))
 
     layout = _every_sheet_layout()
     titles = workbook_module.allocate_titles(layout, shape, include_matrix=True)
@@ -230,7 +208,7 @@ def test_dictionary_shape_never_calls_the_filtered_out_builders(monkeypatch) -> 
 
 def test_publication_shape_never_calls_the_filtered_out_builders(monkeypatch) -> None:
     called = _spy_builders(monkeypatch, ExportShape.PUBLICATION)
-    assert called == {"front_matter", "tidy_tables", "appraisal_summary"}
+    assert called == {"front_matter", "level_tables", "appraisal_summary"}
 
 
 def test_complete_shape_calls_every_builder(monkeypatch) -> None:
@@ -239,7 +217,7 @@ def test_complete_shape_calls_every_builder(monkeypatch) -> None:
         "front_matter",
         "summary",
         "matrix",
-        "tidy_tables",
+        "level_tables",
         "appraisal_summary",
         "data_dictionary",
         "dropdown_lists",
@@ -257,7 +235,7 @@ def test_complete_shape_calls_every_builder(monkeypatch) -> None:
 def _no_article_layout() -> ExportLayout:
     """The template resolved for a project with zero eligible articles."""
     layout = _every_sheet_layout()
-    return replace(layout, articles=(), tidy_tables=(), appraisal=None, value_map={})
+    return replace(layout, articles=(), appraisal=None, value_map={})
 
 
 def test_dictionary_shape_builds_with_no_articles() -> None:

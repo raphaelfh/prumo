@@ -33,8 +33,8 @@ from tests.integration.conftest import SEED
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-#: Fixed sheets (every one but README); what is left is the per-section tidy
-#: tables.
+#: Fixed sheets (every one but README); what is left is Articles and the
+#: repeating-level sheets.
 _RESERVED = {
     "Summary",
     "Matrix",
@@ -177,7 +177,8 @@ async def test_workbook_has_the_expected_sheet_inventory(db_session: AsyncSessio
     # The AI toggle is on, so AI proposals is appended last (after every §4 sheet).
     assert titles[-1] == "AI proposals"
     assert "Matrix" in titles
-    # At least one tidy table beyond the fixed sheets and README.
+    # Articles (a level sheet) beyond the fixed sheets and README.
+    assert "Articles" in titles
     data_sheets = [t for t in titles if t not in _RESERVED and t != "README"]
     assert len(data_sheets) >= 1
 

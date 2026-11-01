@@ -3,8 +3,8 @@
 Owns the PUBLIC ``build_workbook(layout, shape, *, include_matrix) -> bytes`` signature
 consumed by the endpoint and the Celery worker. It assembles the workbook by calling
 each pure sub-builder in §4 spec order via ``_ordered_specs`` — README /
-Methods (#1), Summary (#2), the extraction matrix (#3), the per-section
-tidy tables (#4..k), the Data dictionary (#k+2) and its co-located
+Methods (#1), Summary (#2), the extraction matrix (#3), Articles and one
+sheet per repeating level (#4..k), the Data dictionary (#k+2) and its co-located
 Dropdown lists catalogue — rendering every non-``None`` ``SheetSpec``
 through the single ``_render_sheet_spec`` writer; the matrix is included
 or omitted by ``matrix_fits`` (§5.5). Every title is allocated first by ``allocate_titles``
@@ -19,17 +19,20 @@ from __future__ import annotations
 
 import io
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
 from openpyxl import Workbook
 
+from app.models.extraction import ExtractionCardinality
+from app.services.exports.descriptors import level_of, walk_sections
 from app.services.exports.extraction.ai_metadata import build_ai_metadata
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.exports.extraction.data_dictionary import build_data_dictionary
 from app.services.exports.extraction.dropdown_lists import build_dropdown_lists
 from app.services.exports.extraction.front_matter import build_front_matter
+from app.services.exports.extraction.level_tables import build_level_tables
 from app.services.exports.extraction.matrix import (
     _FIRST_DATA_COL,
     _article_fanout_count,
@@ -42,7 +45,6 @@ from app.services.exports.extraction.sheet_spec import (
     safe_sheet_title,
 )
 from app.services.exports.extraction.summary import build_summary
-from app.services.exports.extraction.tidy_tables import build_tidy_tables
 from app.services.extraction_export_service import ExportLayout, ExportMode
 
 
@@ -104,7 +106,7 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
             "front_matter",
             "summary",
             "matrix",
-            "tidy_tables",
+            "level_tables",
             "appraisal_summary",
             "data_dictionary",
             "dropdown_lists",
@@ -112,7 +114,7 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
         }
     ),
     ExportShape.DICTIONARY: frozenset({"front_matter", "data_dictionary", "dropdown_lists"}),
-    ExportShape.PUBLICATION: frozenset({"front_matter", "tidy_tables", "appraisal_summary"}),
+    ExportShape.PUBLICATION: frozenset({"front_matter", "level_tables", "appraisal_summary"}),
 }
 
 
@@ -121,7 +123,7 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
 #: a future shape's answer follows from the sheets it was given instead of
 #: needing a second list somebody can forget to update.
 _ARTICLE_BUILDERS: frozenset[str] = frozenset(
-    {"summary", "matrix", "tidy_tables", "appraisal_summary", "ai_proposals"}
+    {"summary", "matrix", "level_tables", "appraisal_summary", "ai_proposals"}
 )
 
 
@@ -152,12 +154,12 @@ _FIXED_TITLES: dict[str, str] = {
 #: never take, whether or not their sheet is emitted.
 _NON_RESERVED_FIXED: tuple[str, ...] = ("Data dictionary", "Dropdown lists")
 
-#: §4 sheet order; ``tidy_tables`` expands to one sheet per section.
+#: §4 sheet order; ``level_tables`` expands to Articles plus one sheet per level.
 _ROLE_ORDER: tuple[str, ...] = (
     "front_matter",
     "summary",
     "matrix",
-    "tidy_tables",
+    "level_tables",
     "appraisal_summary",
     "data_dictionary",
     "dropdown_lists",
@@ -171,14 +173,26 @@ class SheetTitles:
 
     ``fixed`` maps each PRESENT fixed role (builder id) to its title; a
     conditional builder whose role is absent returns ``None``. ``levels`` maps
-    ``TidyTable.section_id`` to its de-duplicated title. ``order`` is the
-    rendered sheet list, which the README Contents block prints verbatim.
+    each repeating section to its de-duplicated title, allocated in every
+    shape; ``level_by_section`` maps every walked section to its level
+    (``None`` = Articles). ``order`` is the rendered sheet list, which the
+    README Contents block prints verbatim.
     """
 
     fixed: Mapping[str, str]
     levels: Mapping[UUID, str]
     order: tuple[str, ...]
     matrix_omitted: bool
+    level_by_section: Mapping[UUID, UUID | None] = field(default_factory=dict)
+
+    def sheet_for(self, section_id: UUID | None) -> str | None:
+        """The level sheet a section's fields land on (R8); ``None`` = not walked."""
+        if section_id is None:
+            return "Articles"
+        if section_id not in self.level_by_section:
+            return None
+        level = self.level_by_section[section_id]
+        return "Articles" if level is None else self.levels[level]
 
 
 def _role_present(role: str, layout: ExportLayout, *, include_matrix: bool) -> bool:
@@ -204,20 +218,24 @@ def allocate_titles(
     """
     keep = _SHAPE_BUILDERS[shape]
     taken: list[str] = [*RESERVED_TITLES, *_NON_RESERVED_FIXED]
+    walked = walk_sections(layout.sections)
+    level_by_section = {s.entity_type_id: level_of(s, layout.sections) for s in walked}
     levels: dict[UUID, str] = {}
-    if "tidy_tables" in keep:
-        for i, table in enumerate(layout.tidy_tables):
-            title = safe_sheet_title(table.title, taken, fallback=f"Table {i + 1}")
-            taken.append(title)
-            levels[table.section_id] = title
+    repeating = [s for s in walked if s.cardinality is ExtractionCardinality.MANY]
+    for i, section in enumerate(repeating):
+        raw = section.label if shape is ExportShape.PUBLICATION else section.name
+        title = safe_sheet_title(raw, taken, fallback=f"Level {i + 1}")
+        taken.append(title)
+        levels[section.entity_type_id] = title
 
     fixed: dict[str, str] = {}
     order: list[str] = []
     for role in _ROLE_ORDER:
         if role not in keep:
             continue
-        if role == "tidy_tables":
-            order.extend(levels.values())
+        if role == "level_tables":
+            fixed["articles"] = "Articles"
+            order.extend((fixed["articles"], *levels.values()))
         elif _role_present(role, layout, include_matrix=include_matrix):
             fixed[role] = _FIXED_TITLES[role]
             order.append(fixed[role])
@@ -226,6 +244,7 @@ def allocate_titles(
         levels=levels,
         order=tuple(order),
         matrix_omitted="matrix" in keep and not include_matrix,
+        level_by_section=level_by_section,
     )
 
 
@@ -235,8 +254,8 @@ def _ordered_specs(
     """Sheets in §4 order; ``None``-returning conditional builders are skipped.
 
     README/Methods (#1) absorbs the old Notes sheet; the Summary (#2) carries
-    the omitted-by-stage tally. The matrix (#3) is followed by one tidy table
-    per section (#4..k), the conditional Appraisal sheet (#k+1, emitted only
+    the omitted-by-stage tally. The matrix (#3) is followed by Articles and
+    one sheet per repeating level (#4..k), the conditional Appraisal sheet (#k+1, emitted only
     for quality-assessment templates where ``layout.appraisal`` is set), then
     the Data dictionary (#k+2) and its co-located Dropdown lists catalogue
     (emitted only when some field carries allowed values), and finally the
@@ -254,8 +273,8 @@ def _ordered_specs(
         specs.append(build_summary(layout, titles))  # #2 Summary
     if "matrix" in keep:
         specs.append(build_matrix(layout, titles))  # #3 Extraction matrix
-    if "tidy_tables" in keep:
-        specs.extend(build_tidy_tables(layout, titles))  # #4..k tidy tables
+    if "level_tables" in keep:
+        specs.extend(build_level_tables(layout, titles, shape))  # #4..k level sheets
     if "appraisal_summary" in keep:
         specs.append(build_appraisal_summary(layout, titles))  # #k+1 Appraisal
     if "data_dictionary" in keep:

@@ -5,7 +5,7 @@ to export as a BLANK cell while the run view showed a "Not applicable" badge.
 This module marks that state on the typed ``value_map`` ONCE (empty cells are
 stamped, recorded answers are kept and flagged ``out_of_scope``), in
 ``resolve_layout``, before any sheet builder reads it — so the matrix, the
-per-section tidy tables and the appraisal summary all inherit the correction
+level sheets and the appraisal summary all inherit the correction
 without receiving the rules and without a signature change. The rules are
 each article's own: those frozen in its run's pinned template version.
 
@@ -81,7 +81,7 @@ def reader_instance_ids(
     article: ArticleDescriptor,
     sections: Sequence[SectionDescriptor],
 ) -> tuple[UUID, ...]:
-    """The instance ids the matrix and tidy builders read for this section.
+    """The instance ids the matrix and level builders read for this section.
 
     Every instance of the section across its parents, which is what a
     records-as-rows sheet wants, when the rule-2 walk keeps the section;

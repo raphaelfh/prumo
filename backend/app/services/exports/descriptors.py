@@ -237,7 +237,7 @@ def root_instance(article: ArticleDescriptor, entity_type_id: UUID) -> UUID | No
 def all_instances_of(article: ArticleDescriptor, entity_type_id: UUID) -> tuple[UUID, ...]:
     """Every instance of one section, across all of its parents.
 
-    The tidy sheets are records-as-rows, so they want the whole set rather
+    The scope pass marks every record, so it wants the whole set rather
     than one column's pick — ordered by parent, then within a parent by the
     order ``build_entries`` fixed.
     """
@@ -388,6 +388,48 @@ def iter_records(
                 grown.append((ids[0], chain))
         records = grown
     return tuple((iid, chain) for iid, chain in records if iid is not None)
+
+
+def record_keys(
+    article: ArticleDescriptor, instance_id: UUID, sections: Sequence[SectionDescriptor]
+) -> tuple[UUID, UUID | None, SectionDescriptor | None]:
+    """R18: ``(record_id, parent_record_id, level section)`` of one instance.
+
+    ``record_id`` is the nearest self-or-ancestor instance of a repeating
+    section, else the article; ``parent_record_id`` is the next one above it,
+    else the article, and ``None`` when the record is the article itself.
+    The section is ``None`` when the instance's section is not in ``sections``.
+    """
+    parent_of = {iid: (et, parent) for (et, parent), ids in article.entries.items() for iid in ids}
+    by_id = {s.entity_type_id: s for s in sections}
+    section = by_id.get(parent_of[instance_id][0]) if instance_id in parent_of else None
+    repeating: list[UUID] = []
+    current: UUID | None = instance_id
+    seen: set[UUID] = set()
+    while current is not None and current in parent_of and current not in seen:
+        seen.add(current)
+        et, parent = parent_of[current]
+        step = by_id.get(et)
+        if step is not None and _repeats(step):
+            repeating.append(current)
+        current = parent
+    if not repeating:
+        return article.article_id, None, section
+    parent_record = repeating[1] if len(repeating) > 1 else article.article_id
+    return repeating[0], parent_record, section
+
+
+def count_level_records(
+    sections: Sequence[SectionDescriptor], articles: Sequence[ArticleDescriptor]
+) -> int:
+    """Rows on the repeating-level sheets, over the articles that have a run."""
+    return sum(
+        len(iter_records(s, a, sections))
+        for s in walk_sections(sections)
+        if _repeats(s)
+        for a in articles
+        if a.run_id is not None
+    )
 
 
 def descendant_instances(article: ArticleDescriptor, instance_id: UUID) -> set[UUID]:

@@ -2310,23 +2310,39 @@ class TestListReviewersForRuns:
     async def test_empty_run_ids_returns_empty_tuple(self):
         svc = _make_service()
         result = await svc._list_reviewers_for_runs(run_ids=[], anonymize=False)
-        assert result == ()
+        assert result == ((), {})
+
+    @pytest.mark.asyncio
+    async def test_raters_by_run_groups_reviewers_per_run(self):
+        svc = _make_service()
+        r1, r2, run_a, run_b = uuid4(), uuid4(), uuid4(), uuid4()
+        svc.db.execute = AsyncMock(
+            return_value=_rows_result(
+                [(r1, run_a, "Bea", None), (r2, run_a, "Al", None), (r1, run_b, "Bea", None)]
+            )
+        )
+        reviewers, by_run = await svc._list_reviewers_for_runs(
+            run_ids=[run_a, run_b], anonymize=False
+        )
+        assert [r.display_label for r in reviewers] == ["Al", "Bea"]
+        assert by_run == {run_a: (r2, r1), run_b: (r1,)}
 
     @pytest.mark.asyncio
     async def test_anonymize_false_returns_named_reviewers(self):
         """anonymize=False → reviewers sorted by name."""
         svc = _make_service()
         rid1, rid2 = uuid4(), uuid4()
+        run = uuid4()
         svc.db.execute = AsyncMock(
             return_value=_rows_result(
                 [
-                    (rid1, "Charlie", None),
-                    (rid2, "Alice", None),
+                    (rid1, run, "Charlie", None),
+                    (rid2, run, "Alice", None),
                 ]
             )
         )
 
-        result = await svc._list_reviewers_for_runs(run_ids=[uuid4()], anonymize=False)
+        result, _ = await svc._list_reviewers_for_runs(run_ids=[run], anonymize=False)
 
         assert len(result) == 2
         assert result[0].display_label == "Alice"
@@ -2338,16 +2354,17 @@ class TestListReviewersForRuns:
         svc = _make_service()
         rid1 = uuid4()
         rid2 = uuid4()
+        run = uuid4()
         svc.db.execute = AsyncMock(
             return_value=_rows_result(
                 [
-                    (rid1, "Alice", None),
-                    (rid2, "Bob", None),
+                    (rid1, run, "Alice", None),
+                    (rid2, run, "Bob", None),
                 ]
             )
         )
 
-        result = await svc._list_reviewers_for_runs(run_ids=[uuid4()], anonymize=True)
+        result, _ = await svc._list_reviewers_for_runs(run_ids=[run], anonymize=True)
 
         assert len(result) == 2
         labels = {r.display_label for r in result}
@@ -2359,9 +2376,10 @@ class TestListReviewersForRuns:
         """No name → email used as display label."""
         svc = _make_service()
         rid = uuid4()
-        svc.db.execute = AsyncMock(return_value=_rows_result([(rid, None, "r@example.com")]))
+        run = uuid4()
+        svc.db.execute = AsyncMock(return_value=_rows_result([(rid, run, None, "r@example.com")]))
 
-        result = await svc._list_reviewers_for_runs(run_ids=[uuid4()], anonymize=False)
+        result, _ = await svc._list_reviewers_for_runs(run_ids=[run], anonymize=False)
         assert result[0].display_label == "r@example.com"
 
 
