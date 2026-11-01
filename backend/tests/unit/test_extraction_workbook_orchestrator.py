@@ -16,6 +16,7 @@ from app.services.exports.extraction.workbook import (
     allocate_titles,
     build_workbook,
 )
+from app.services.exports.values import to_export_value
 from app.services.extraction_export_service import (
     AppraisalModel,
     AppraisalRow,
@@ -80,14 +81,18 @@ def _table(title: str) -> TidyTable:
 
 
 def _appraisal_model() -> AppraisalModel:
+    risk = FieldDescriptor(
+        field_id=uuid4(), label="RoB", type=ExtractionFieldType.SELECT, allowed_values=()
+    )
     return AppraisalModel(
         domain_section_ids=(uuid4(),),
         domain_labels=("Participants",),
+        domain_fields=(risk,),
         rows=(
             AppraisalRow(
                 article_id=uuid4(),
                 record_label="Gaca, 2011",
-                domain_verdicts=("High",),
+                domain_verdicts=(to_export_value({"value": "High"}, risk, {}),),
                 overall="High",
                 per_reviewer_overall={},
             ),

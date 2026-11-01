@@ -22,15 +22,27 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
-    ExportMode,
     FieldDescriptor,
     SectionDescriptor,
     _build_tidy_tables,
 )
 
 _GROUP_ID = uuid4()
+
+
+def _tv(raw: object) -> ExportValue:
+    """``raw`` typed against a TEXT field, as a value-map entry."""
+    return to_export_value(
+        {"value": raw},
+        FieldDescriptor(
+            field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+        ),
+        {},
+    )
 
 
 def _field(field_id, label="Method"):
@@ -81,8 +93,8 @@ def test_a_singleton_child_emits_one_row_per_entry() -> None:
     tables = _build_tidy_tables(
         (group, child),
         (article,),
-        {(run_id, c1, field_id): "Logistic regression"},
-        ExportMode.CONSENSUS,
+        {value_key(run_id, c1, field_id): _tv("Logistic regression")},
+        None,
     )
 
     # The field-less group is the axis, not a record — one table, not two.
@@ -111,9 +123,12 @@ def test_each_entry_gets_its_own_row_with_its_own_value() -> None:
         },
         run_id,
     )
-    value_map = {(run_id, c1, field_id): "Logistic", (run_id, c2, field_id): "Cox"}
+    value_map = {
+        value_key(run_id, c1, field_id): _tv("Logistic"),
+        value_key(run_id, c2, field_id): _tv("Cox"),
+    }
 
-    rows = _build_tidy_tables((group, child), (article,), value_map, ExportMode.CONSENSUS)[0].rows
+    rows = _build_tidy_tables((group, child), (article,), value_map, None)[0].rows
 
     assert [r.values[0] for r in rows] == ["Logistic", "Cox"]
     assert [r.record_label for r in rows] == [
@@ -128,7 +143,7 @@ def test_the_row_label_uses_the_group_entry_noun() -> None:
     run_id, e1, c1 = uuid4(), uuid4(), uuid4()
     article = _article({(_GROUP_ID, None): (e1,), (child.entity_type_id, e1): (c1,)}, run_id)
 
-    rows = _build_tidy_tables((group, child), (article,), {}, ExportMode.CONSENSUS)[0].rows
+    rows = _build_tidy_tables((group, child), (article,), {}, None)[0].rows
 
     assert rows[0].record_label == "Gaca, 2011 — Arm 1"
 
@@ -139,7 +154,7 @@ def test_a_group_with_no_entry_noun_falls_back_to_its_label() -> None:
     run_id, e1, c1 = uuid4(), uuid4(), uuid4()
     article = _article({(_GROUP_ID, None): (e1,), (child.entity_type_id, e1): (c1,)}, run_id)
 
-    rows = _build_tidy_tables((group, child), (article,), {}, ExportMode.CONSENSUS)[0].rows
+    rows = _build_tidy_tables((group, child), (article,), {}, None)[0].rows
 
     assert rows[0].record_label == "Gaca, 2011 — Prediction Models 1"
 
@@ -156,8 +171,11 @@ def test_a_root_many_section_still_fans_out_per_instance() -> None:
     )
     run_id, i1, i2 = uuid4(), uuid4(), uuid4()
     article = _article({(section.entity_type_id, None): (i1, i2)}, run_id)
-    value_map = {(run_id, i1, field_id): "OS", (run_id, i2, field_id): "PFS"}
+    value_map = {
+        value_key(run_id, i1, field_id): _tv("OS"),
+        value_key(run_id, i2, field_id): _tv("PFS"),
+    }
 
-    rows = _build_tidy_tables((section,), (article,), value_map, ExportMode.CONSENSUS)[0].rows
+    rows = _build_tidy_tables((section,), (article,), value_map, None)[0].rows
 
     assert [r.values[0] for r in rows] == ["OS", "PFS"]

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.services.exports.extraction.summary import build_summary
+from app.services.exports.descriptors import value_key
+from app.services.exports.extraction.summary import _completeness, build_summary
 from app.services.exports.extraction.workbook import ExportShape, allocate_titles
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -76,7 +79,7 @@ def test_summary_one_row_per_article_with_completeness():
     )
     f0, f1 = section.fields
     # one of two fields filled → 50% completeness
-    value_map = {(run, inst, f0.field_id): "filled"}
+    value_map = {value_key(run, inst, f0.field_id): to_export_value({"value": "filled"}, f0, {})}
     layout = _layout((section,), (article,), value_map)
     spec = build_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
     flat = _flat(spec)
@@ -167,7 +170,15 @@ def test_an_entry_row_counts_only_its_own_subtree():
             (child_id, m_b): (c_b,),
         },
     )
-    layout = _layout((group, child), (article,), {(run, c_a, field_id): "Logistic"})
+    layout = _layout(
+        (group, child),
+        (article,),
+        {
+            value_key(run, c_a, field_id): to_export_value(
+                {"value": "Logistic"}, child.fields[0], {}
+            )
+        },
+    )
     spec = build_summary(layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True))
 
     body = list(spec.rows[1:])
@@ -186,3 +197,65 @@ def test_summary_includes_omitted_by_stage():
     flat = _flat(spec)
     assert "extract" in flat
     assert "3" in flat
+
+
+def test_completeness_counts_markers_and_stamps_not_cleared_values() -> None:
+    marker, stamp, cleared, empty = (_field() for _ in range(4))
+    section = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Study",
+        parent_entity_type_id=None,
+        fields=(marker, stamp, cleared, empty),
+        cardinality=ExtractionCardinality.ONE,
+        sort_order=0,
+    )
+    run, inst = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Gaca, 2011",
+        run_id=run,
+        version_id=None,
+        entries={(section.entity_type_id, None): (inst,)},
+    )
+    value_map = {
+        value_key(run, inst, marker.field_id): to_export_value(
+            {"value": None, "absent_reason": "no_information"}, marker, {}
+        ),
+        value_key(run, inst, stamp.field_id): ExportValue(
+            raw=None, status="absent", absent_code="not_applicable", out_of_scope=True
+        ),
+        value_key(run, inst, cleared.field_id): to_export_value({"value": None}, cleared, {}),
+        # An empty string counted as "filled" before PR3.
+        value_key(run, inst, empty.field_id): to_export_value({"value": ""}, empty, {}),
+    }
+    assert _completeness(_layout((section,), (article,), value_map), article, None) == (2, 4)
+
+
+def test_single_user_completeness_reads_the_reviewer_slot() -> None:
+    f, r = _field(), uuid4()
+    section = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Study",
+        parent_entity_type_id=None,
+        fields=(f,),
+        cardinality=ExtractionCardinality.ONE,
+        sort_order=0,
+    )
+    run, inst = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="A",
+        run_id=run,
+        version_id=None,
+        entries={(section.entity_type_id, None): (inst,)},
+    )
+    layout = replace(
+        _layout(
+            (section,),
+            (article,),
+            {value_key(run, inst, f.field_id, r): to_export_value({"value": "x"}, f, {})},
+        ),
+        mode=ExportMode.SINGLE_USER,
+        reviewer_id=r,
+    )
+    assert _completeness(layout, article, None) == (1, 1)

@@ -1,14 +1,8 @@
-"""Integration: number+unit and 'other' envelopes resolve to scalars.
+"""Integration: number+unit and 'other' envelopes reach the value_map typed.
 
-Regression for the §6 dict-leak: real persisted envelopes
-({value,unit}, double-wrapped, single 'other') must reach the
-ExportLayout.value_map as openpyxl-writable scalars, never dicts.
-
-The consensus value_map is keyed by ``(run_id, instance_id, field_id)``
-and feeds the matrix sheet directly. Before this fix the builders ran
-each published ``value`` through the too-narrow ``_unwrap_value`` (which
-only unwraps a single-key ``{"value": ...}``), so a number+unit envelope
-or a double-wrapped one leaked into the cell as a Python-repr ``dict``.
+Regression for the §6 dict-leak: real persisted envelopes ({value,unit},
+double-wrapped, single 'other') must reach ``ExportLayout.value_map`` as
+``ExportValue`` machine columns under the consensus ``value_key``.
 """
 
 from __future__ import annotations
@@ -23,6 +17,7 @@ from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKin
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
 )
+from app.services.exports.descriptors import value_key
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
 from app.services.hitl_session_service import HITLSessionService
@@ -60,11 +55,9 @@ async def _publish_field(
     assert published.value == value
 
 
-async def test_consensus_value_map_resolves_unit_and_other(
-    db_session: AsyncSession,
-) -> None:
-    """value_map carries '5 mg' (double-wrapped number+unit) and the free
-    text (single 'other'), never a dict."""
+async def test_consensus_value_map_carries_machine_values(db_session: AsyncSession) -> None:
+    """value_map carries 5 + 'mg' (double-wrapped number+unit) and the free
+    text (single 'other') as typed columns."""
     if (
         await db_session.execute(
             text("SELECT 1 FROM public.profiles WHERE id = :id"),
@@ -164,11 +157,16 @@ async def test_consensus_value_map_resolves_unit_and_other(
         anonymize_reviewer_names=False,
     )
 
-    key_unit = (run_id, instance_id, number_field_id)
-    key_other = (run_id, instance_id, select_field_id)
-    assert layout.value_map[key_unit] == "5 mg"
-    assert layout.value_map[key_other] == expected_other_text
-    for v in layout.value_map.values():
-        assert not isinstance(v, dict)
+    # Precondition: the primary version's snapshot is empty (conftest.py:410-417), so
+    # entity_types_for_version falls back to live rows and serves the inserted field.
+    assert select_field_id in {f.field_id for s in layout.sections for f in s.fields}
+    number = layout.value_map[value_key(run_id, instance_id, number_field_id)]
+    assert (number.status, number.value_num, number.unit) == ("answered", 5, "mg")
+    other = layout.value_map[value_key(run_id, instance_id, select_field_id)]
+    assert (other.status, other.value_text, other.other_text) == (
+        "answered",
+        None,
+        expected_other_text,
+    )  # D9
 
     await db_session.rollback()

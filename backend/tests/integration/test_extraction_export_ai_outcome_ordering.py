@@ -202,6 +202,7 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
             value_map={},
             mode=ExportMode.CONSENSUS,
             target_reviewer_id=None,
+            labels={},
         )
         return {r.ai_proposed_value: r.reviewer_outcome for r in rows}
 

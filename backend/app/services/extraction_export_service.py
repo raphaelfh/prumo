@@ -18,7 +18,7 @@ Architectural notes:
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -63,9 +63,12 @@ from app.services.exports.ai_proposal_projection import (
     proposal_model_used,
 )
 from app.services.exports.descriptors import (
+    ValueKey,
     build_entries,
     iter_records,
+    primary_rater,
     root_instance,
+    value_key,
 )
 from app.services.exports.extraction_scope_marking import (
     NOT_APPLICABLE,
@@ -76,7 +79,13 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
 )
-from app.services.exports.value_envelope import resolve_value
+from app.services.exports.values import (
+    ExportValue,
+    OptionLabels,
+    build_option_labels,
+    display_value,
+    to_export_value,
+)
 from app.services.extraction_snapshot import pinned_template_rules
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
@@ -293,17 +302,15 @@ class TidyTable:
 
 @dataclass(frozen=True)
 class AppraisalRow:
-    """One record's appraisal roll-up (§7). Values are already-resolved scalars.
-
-    ``domain_verdicts`` is aligned to ``AppraisalModel.domain_labels``;
-    ``overall`` is the worst-case rollup over those verdicts (consensus /
-    single-user). ``per_reviewer_overall`` is populated only in All-users mode
-    (``reviewer_id -> Overall``), mirroring the matrix reviewer-axis fan-out.
+    """One record's appraisal roll-up (§7). ``domain_verdicts`` aligns to
+    ``AppraisalModel.domain_fields``; ``overall`` is the worst-case rollup of
+    their rendered labels (consensus / single-user). ``per_reviewer_overall``
+    (``reviewer_id -> Overall``) is populated only in All-users mode.
     """
 
     article_id: UUID
     record_label: str
-    domain_verdicts: tuple[Any, ...]  # aligned to AppraisalModel.domain_labels
+    domain_verdicts: tuple[ExportValue | None, ...]
     overall: Any  # worst-case rollup (consensus / single-user)
     per_reviewer_overall: dict[UUID, Any]  # all-users only: reviewer_id -> Overall
     # Computed overalls, aligned to ``AppraisalModel.derived_labels``; empty for
@@ -323,6 +330,7 @@ class AppraisalModel:
 
     domain_section_ids: tuple[UUID, ...]
     domain_labels: tuple[str, ...]
+    domain_fields: tuple[FieldDescriptor, ...]  # the verdict field, aligned to domain_labels
     rows: tuple[AppraisalRow, ...]
     # Labels of the template's computed overalls (``derived_judgments`` on its
     # ``schema`` JSONB). When non-empty they REPLACE the legacy single
@@ -344,10 +352,8 @@ class ExportLayout:
     include_ai_metadata: bool
     anonymize_reviewer_names: bool
     notes: ExportNotes
-    # Value resolution: Consensus / Single-user key is
-    # ``(run_id, instance_id, field_id) -> Any``; All-users key adds
-    # ``reviewer_id`` (None for the consensus sub-column).
-    value_map: dict[tuple[Any, ...], Any]
+    # ``value_key`` slots: rater None is consensus; reviewers by reviewer_id (R1).
+    value_map: dict[ValueKey, ExportValue]
     # Populated only when ``include_ai_metadata`` is True (FR-036+).
     ai_proposal_rows: tuple[AIProposalRow, ...] = ()
     # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
@@ -364,6 +370,7 @@ class ExportLayout:
     # (``kind == TemplateKind.QUALITY_ASSESSMENT``); ``build_appraisal_summary``
     # returns None and the sheet is omitted when this is None.
     appraisal: AppraisalModel | None = None
+    reviewer_id: UUID | None = None  # single_user target; None in the other modes
 
 
 # ----------------------------------------------------------------------
@@ -463,7 +470,8 @@ class ExtractionExportService(LoggerMixin):
         fields_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
-
+        labels = build_option_labels(sections)
+        primary = primary_rater(mode, reviewer_id)
         reviewers: tuple[ReviewerDescriptor, ...] = ()
 
         if mode is ExportMode.CONSENSUS:
@@ -475,6 +483,7 @@ class ExtractionExportService(LoggerMixin):
             value_map = await self._build_consensus_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 fields_by_id=fields_by_id,
+                labels=labels,
             )
         elif mode is ExportMode.SINGLE_USER:
             if reviewer_id is None:
@@ -489,6 +498,7 @@ class ExtractionExportService(LoggerMixin):
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 reviewer_id=reviewer_id,
                 fields_by_id=fields_by_id,
+                labels=labels,
             )
         elif mode is ExportMode.ALL_USERS:
             articles, omitted = await self._resolve_articles_for_all_users(
@@ -504,6 +514,7 @@ class ExtractionExportService(LoggerMixin):
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 reviewer_ids=[r.reviewer_id for r in reviewers],
                 fields_by_id=fields_by_id,
+                labels=labels,
             )
         else:  # pragma: no cover — exhaustive over ExportMode
             raise AssertionError(f"unhandled export mode: {mode!r}")
@@ -520,9 +531,8 @@ class ExtractionExportService(LoggerMixin):
             rules_by_article=rules_by_article,
             sections=sections,
             articles=tuple(articles),
-            reviewers=reviewers,
+            raters=(primary, *(r.reviewer_id for r in reviewers)),
             value_map=value_map,
-            is_all_users=mode is ExportMode.ALL_USERS,
         )
 
         anchor_field_ids = {f.field_id for s in sections for f in s.fields}
@@ -531,9 +541,8 @@ class ExtractionExportService(LoggerMixin):
             anchor_field_ids=anchor_field_ids,
         )
 
-        # Per-section publication "Table 1" sheets (§5.3): values are baked
-        # from the already-resolved ``value_map`` — no envelope re-handling.
-        tidy_tables = _build_tidy_tables(sections, tuple(articles), value_map, mode)
+        # Per-section publication "Table 1" sheets (§5.3), rendered from ``value_map``.
+        tidy_tables = _build_tidy_tables(sections, tuple(articles), value_map, primary)
 
         notes = ExportNotes(
             omitted_articles_by_stage=omitted,
@@ -565,12 +574,11 @@ class ExtractionExportService(LoggerMixin):
                 # A3: only single-user mode has one target reviewer; consensus and
                 # all-users keep every reviewer's decisions in scope.
                 target_reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
+                labels=labels,
             )
 
-        # Per-domain risk-of-bias / appraisal roll-up (§7): only for
-        # quality-assessment templates. Pure rollup over the already-resolved
-        # ``value_map`` — returns None when no domain carries a risk-label
-        # SELECT verdict field (the sections then ship as ordinary tidy tables).
+        # Per-domain risk-of-bias / appraisal roll-up (§7): only for QA templates.
+        # None when no domain carries a risk-label SELECT verdict field.
         appraisal: AppraisalModel | None = None
         if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
             appraisal = self._build_appraisal_model(
@@ -580,6 +588,7 @@ class ExtractionExportService(LoggerMixin):
                 reviewers=reviewers,
                 value_map=value_map,
                 mode=mode,
+                reviewer_id=reviewer_id,
             )
 
         return ExportLayout(
@@ -599,6 +608,7 @@ class ExtractionExportService(LoggerMixin):
             tidy_tables=tidy_tables,
             front_matter=front_matter,
             appraisal=appraisal,
+            reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
         )
 
     # ------------------------------------------------------------------
@@ -611,8 +621,9 @@ class ExtractionExportService(LoggerMixin):
         sections: tuple[SectionDescriptor, ...],
         articles: tuple[ArticleDescriptor, ...],
         reviewers: tuple[ReviewerDescriptor, ...],
-        value_map: dict[tuple[Any, ...], Any],
+        value_map: dict[ValueKey, ExportValue],
         mode: ExportMode,
+        reviewer_id: UUID | None,
         rules_by_article: Mapping[UUID, Mapping[str, Any]] | None = None,
     ) -> AppraisalModel | None:
         """Compute the appraisal roll-up for a quality-assessment template (§7).
@@ -629,12 +640,9 @@ class ExtractionExportService(LoggerMixin):
         deterministically picks risk_of_bias. The descriptor carries no machine
         ``name``, so selection keys on ``allowed_values``, not the field name.
 
-        Overall = worst-case rollup over the record's domain verdicts.
-        Mode-aware:
-
-          * consensus / single_user -> AppraisalRow.overall only (3-tuple keys).
-          * all_users -> consensus overall (reviewer_id=None) + one rollup per
-            reviewer (4-tuple keys), in ``reviewers`` order.
+        Overall = worst-case rollup over the record's rendered domain verdicts.
+        Mode-aware: consensus / single_user -> AppraisalRow.overall from the
+        primary slot; all_users -> that plus one rollup per reviewer, in order.
 
         Returns None when no domain has a risk-label-set SELECT verdict field
         (no roll-up sheet; the sections still ship as ordinary tidy tables).
@@ -701,43 +709,31 @@ class ExtractionExportService(LoggerMixin):
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)
-        is_all_users = mode is ExportMode.ALL_USERS
+        domain_fields = tuple(vfield for _, vfield in domains)
+        primary = primary_rater(mode, reviewer_id)
+        raters = (primary, *(r.reviewer_id for r in reviewers))  # reviewers: all_users only
+
+        def _overall(verdicts: Sequence[ExportValue | None]) -> Any:
+            shown = (
+                None if v is None else display_value(v, f)
+                for v, f in zip(verdicts, domain_fields, strict=True)
+            )
+            return _appraisal_overall(tuple(shown))
 
         rows: list[AppraisalRow] = []
         for article in articles:
             run_id = article.run_id
             if run_id is None:
                 continue
-            consensus_verdicts: list[Any] = []
-            per_reviewer_verdicts: dict[UUID, list[Any]] = {r.reviewer_id: [] for r in reviewers}
+            verdicts: dict[UUID | None, list[ExportValue | None]] = {r: [] for r in raters}
             for section, vfield in domains:
-                instance_id = root_instance(article, section.entity_type_id)
-                if is_all_users:
-                    consensus_verdicts.append(
-                        value_map.get((run_id, instance_id, vfield.field_id, None))
-                    )
-                    for reviewer in reviewers:
-                        per_reviewer_verdicts[reviewer.reviewer_id].append(
-                            value_map.get(
-                                (
-                                    run_id,
-                                    instance_id,
-                                    vfield.field_id,
-                                    reviewer.reviewer_id,
-                                )
-                            )
-                        )
-                else:
-                    consensus_verdicts.append(value_map.get((run_id, instance_id, vfield.field_id)))
-
-            per_reviewer_overall = (
-                {
-                    rid: _appraisal_overall(tuple(verdicts))
-                    for rid, verdicts in per_reviewer_verdicts.items()
-                }
-                if is_all_users
-                else {}
-            )
+                iid = root_instance(article, section.entity_type_id)
+                for rater, column in verdicts.items():
+                    key = None if iid is None else value_key(run_id, iid, vfield.field_id, rater)
+                    column.append(None if key is None else value_map.get(key))
+            per_reviewer_overall = {
+                r.reviewer_id: _overall(verdicts[r.reviewer_id]) for r in reviewers
+            }
             # Blank under an overall this article's own version does not define.
             derived_values: tuple[str | None, ...] = tuple(None for _ in label_by_id)
             spec = spec_by_article[article.article_id]
@@ -749,7 +745,7 @@ class ExtractionExportService(LoggerMixin):
                     article=article,
                     sections=sections,
                     value_map=value_map,
-                    is_all_users=is_all_users,
+                    rater=primary,
                 )
                 # §2a parity: the same filter the run view applies, from the
                 # same helper, so the workbook cannot show a verdict the
@@ -771,8 +767,8 @@ class ExtractionExportService(LoggerMixin):
                 AppraisalRow(
                     article_id=article.article_id,
                     record_label=article.header_label,
-                    domain_verdicts=tuple(consensus_verdicts),
-                    overall=_appraisal_overall(tuple(consensus_verdicts)),
+                    domain_verdicts=tuple(verdicts[primary]),
+                    overall=_overall(verdicts[primary]),
                     per_reviewer_overall=per_reviewer_overall,
                     derived_values=derived_values,
                 )
@@ -781,6 +777,7 @@ class ExtractionExportService(LoggerMixin):
         return AppraisalModel(
             domain_section_ids=domain_section_ids,
             domain_labels=domain_labels,
+            domain_fields=domain_fields,
             rows=tuple(rows),
             derived_labels=derived_labels,
         )
@@ -1081,15 +1078,11 @@ class ExtractionExportService(LoggerMixin):
         *,
         run_ids: list[UUID],
         fields_by_id: dict[UUID, FieldDescriptor],
-    ) -> dict[tuple[Any, ...], Any]:
-        """Bulk-fetch all published values for the given runs (FR-013).
-
-        Single query: ``SELECT … FROM extraction_published_states WHERE
-        run_id IN :run_ids``. Result keyed by
-        ``(run_id, instance_id, field_id) -> resolved scalar``. The field
-        descriptor is threaded so ``resolve_value`` can surface units and
-        boolean labels.
-        """
+        labels: OptionLabels,
+    ) -> dict[ValueKey, ExportValue]:
+        """Bulk-fetch all published values for the given runs (FR-013), typed
+        against their active field under the consensus key (rater ``None``).
+        A field outside the active sections is skipped."""
         if not run_ids:
             return {}
         rows = (
@@ -1103,8 +1096,9 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
         return {
-            (run_id, instance_id, field_id): resolve_value(value, field=fields_by_id.get(field_id))
-            for run_id, instance_id, field_id, value in rows
+            value_key(rid, iid, fid): to_export_value(value, fields_by_id[fid], labels)
+            for rid, iid, fid, value in rows
+            if fid in fields_by_id
         }
 
     # ==================================================================
@@ -1193,14 +1187,10 @@ class ExtractionExportService(LoggerMixin):
         run_ids: list[UUID],
         reviewer_id: UUID,
         fields_by_id: dict[UUID, FieldDescriptor],
-    ) -> dict[tuple[Any, ...], Any]:
-        """Bulk-fetch one reviewer's latest decisions per (run, instance, field).
-
-        Decision resolution (FR-014):
-          * accept_proposal → underlying proposal.proposed_value
-          * edit            → decision.value
-          * reject          → None (cell blank)
-        """
+        labels: OptionLabels,
+    ) -> dict[ValueKey, ExportValue]:
+        """Bulk-fetch one reviewer's latest decisions, keyed by ``reviewer_id`` (R1):
+        accept_proposal → proposed_value; edit → decision.value; reject omitted."""
         from app.models.extraction_workflow import (
             ExtractionProposalRecord,
             ExtractionReviewerDecision,
@@ -1235,13 +1225,16 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
 
-        out: dict[tuple[Any, ...], Any] = {}
+        out: dict[ValueKey, ExportValue] = {}
         for rid, iid, fid, decision, value, proposed_value in rows:
             field = fields_by_id.get(fid)
+            if field is None:
+                continue
+            key = value_key(rid, iid, fid, reviewer_id)
             if decision == "accept_proposal":
-                out[(rid, iid, fid)] = resolve_value(proposed_value, field=field)
+                out[key] = to_export_value(proposed_value, field, labels)
             elif decision == "edit":
-                out[(rid, iid, fid)] = resolve_value(value, field=field)
+                out[key] = to_export_value(value, field, labels)
             # reject → key absent (renders blank)
         return out
 
@@ -1463,13 +1456,11 @@ class ExtractionExportService(LoggerMixin):
         run_ids: list[UUID],
         reviewer_ids: list[UUID],
         fields_by_id: dict[UUID, FieldDescriptor],
-    ) -> dict[tuple[Any, ...], Any]:
-        """Build the 4-tuple value map for All-users mode (FR-015).
-
-        Key shape: ``(run_id, instance_id, field_id, reviewer_id | None)``.
-        ``None`` is the consensus sub-column (mirrors the consensus
-        value_map). Reviewer keys carry per-user latest decision values
-        (accept_proposal → proposed_value; edit → decision.value;
+        labels: OptionLabels,
+    ) -> dict[ValueKey, ExportValue]:
+        """Build the All-users value map (FR-015): rater ``None`` is the
+        consensus sub-column; each reviewer's slot carries their latest
+        decision (accept_proposal → proposed_value; edit → decision.value;
         reject omitted).
         """
         from app.models.extraction_workflow import (
@@ -1478,7 +1469,7 @@ class ExtractionExportService(LoggerMixin):
             ExtractionReviewerState,
         )
 
-        out: dict[tuple[Any, ...], Any] = {}
+        out: dict[ValueKey, ExportValue] = {}
         if not run_ids:
             return out
 
@@ -1494,7 +1485,8 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
         for rid, iid, fid, value in consensus_rows:
-            out[(rid, iid, fid, None)] = resolve_value(value, field=fields_by_id.get(fid))
+            if fid in fields_by_id:
+                out[value_key(rid, iid, fid)] = to_export_value(value, fields_by_id[fid], labels)
 
         if not reviewer_ids:
             return out
@@ -1527,10 +1519,14 @@ class ExtractionExportService(LoggerMixin):
         ).all()
         for rid, iid, fid, reviewer_id, decision, value, proposed in rev_rows:
             field = fields_by_id.get(fid)
+            if field is None:
+                continue
             if decision == "accept_proposal":
-                out[(rid, iid, fid, reviewer_id)] = resolve_value(proposed, field=field)
+                out[value_key(rid, iid, fid, reviewer_id)] = to_export_value(
+                    proposed, field, labels
+                )
             elif decision == "edit":
-                out[(rid, iid, fid, reviewer_id)] = resolve_value(value, field=field)
+                out[value_key(rid, iid, fid, reviewer_id)] = to_export_value(value, field, labels)
         return out
 
     # ------------------------------------------------------------------
@@ -1542,9 +1538,10 @@ class ExtractionExportService(LoggerMixin):
         *,
         articles: tuple[ArticleDescriptor, ...],
         sections: tuple[SectionDescriptor, ...],
-        value_map: dict[tuple[Any, ...], Any],
+        value_map: dict[ValueKey, ExportValue],
         mode: ExportMode,
         target_reviewer_id: UUID | None,
+        labels: OptionLabels,
     ) -> tuple[AIProposalRow, ...]:
         """Load every AI proposal for the in-scope runs into flat rows.
 
@@ -1572,9 +1569,7 @@ class ExtractionExportService(LoggerMixin):
         field_label_by_id: dict[UUID, str] = {
             f.field_id: f.label for s in sections for f in s.fields
         }
-        # Descriptor lookup so the AI 'proposed value' column resolves the
-        # same envelope shapes the value maps do (number+unit fallback,
-        # boolean rendering) via ``resolve_value``.
+        # Descriptor lookup: the AI value columns type against the same fields.
         field_desc_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
@@ -1755,19 +1750,17 @@ class ExtractionExportService(LoggerMixin):
                 latest_id=latest_id_per_key[(rid, iid, fid)],
                 decisions=decisions_by_key.get((rid, iid, fid), []),
             )
-            # ALL_USERS value_map uses 4-tuple keys (run, instance, field, reviewer_id|None);
-            # None is the consensus sub-column. Other modes use 3-tuple keys.
-            if mode is ExportMode.ALL_USERS:
-                final_value = value_map.get((rid, iid, fid, None))
-            else:
-                final_value = value_map.get((rid, iid, fid))
+            field = field_desc_by_id.get(fid) or _untyped_field(fid)
+            final = value_map.get(value_key(rid, iid, fid, primary_rater(mode, target_reviewer_id)))
             evidence_text, evidence_pages = evidence_by_pid.get(pid, ("", ""))
             row = AIProposalRow(
                 article_label=article.header_label,
                 section_label=section_label,
                 instance_index=instance_index_by_id.get(iid, 1),
                 field_label=field_label_by_id.get(fid, "(unknown field)"),
-                ai_proposed_value=resolve_value(proposed_value, field=field_desc_by_id.get(fid)),
+                ai_proposed_value=display_value(
+                    to_export_value(proposed_value, field, labels), field
+                ),
                 confidence=float(confidence) if confidence is not None else None,
                 rationale=rationale,
                 evidence_text=evidence_text,
@@ -1775,7 +1768,7 @@ class ExtractionExportService(LoggerMixin):
                 proposed_at=ts,
                 model_used=proposal_model_used(proposal),
                 reviewer_outcome=outcome,
-                final_value_used=final_value,
+                final_value_used=None if final is None else display_value(final, field),
             )
             out.append(row)
 
@@ -1787,8 +1780,16 @@ class ExtractionExportService(LoggerMixin):
 # ----------------------------------------------------------------------
 
 
+def _untyped_field(field_id: UUID) -> FieldDescriptor:
+    """A proposal's field outside the active sections; drops the envelope unit
+    until PR5 rewrites the AI sheet and deletes this (R15, R19)."""
+    return FieldDescriptor(
+        field_id=field_id, label="", type=ExtractionFieldType.TEXT, allowed_values=()
+    )
+
+
 # ADR-0016 Phase 4: one legend row per coded disposition, its LABEL sourced from
-# ABSENT_REASON_LABELS (the same map resolve_value emits into a cell) so cell and
+# ABSENT_REASON_LABELS (the same map display_value emits into a cell) so cell and
 # legend can never drift; only the frozen descriptions live here.
 _ABSENT_REASON_DESCRIPTIONS: dict[str, str] = {
     AbsentReason.NO_INFORMATION.value: "The source does not state this item.",
@@ -1884,23 +1885,16 @@ def _build_data_dictionary(
 
 
 def _tidy_value(
-    value_map: dict[tuple[Any, ...], Any],
+    value_map: dict[ValueKey, ExportValue],
     *,
     run_id: UUID,
     instance_id: UUID,
-    field_id: UUID,
-    mode: ExportMode,
+    field: FieldDescriptor,
+    rater: UUID | None,
 ) -> Any:
-    """Baked consensus value for one tidy-cell coordinate.
-
-    All-users keys are 4-tuples ``(run, instance, field, reviewer|None)``; the
-    tidy table shows the consensus sub-column (``reviewer_id=None``). Other
-    modes use 3-tuple keys. Values are already resolved scalars (resolver
-    slice) — never re-handled here.
-    """
-    if mode is ExportMode.ALL_USERS:
-        return value_map.get((run_id, instance_id, field_id, None))
-    return value_map.get((run_id, instance_id, field_id))
+    """The rendered value of one tidy-cell coordinate, read at ``rater``'s slot."""
+    v = value_map.get(value_key(run_id, instance_id, field.field_id, rater))
+    return None if v is None else display_value(v, field)
 
 
 def _tidy_row(
@@ -1909,8 +1903,8 @@ def _tidy_row(
     article: ArticleDescriptor,
     instance_id: UUID,
     record_label: str,
-    value_map: dict[tuple[Any, ...], Any],
-    mode: ExportMode,
+    value_map: dict[ValueKey, ExportValue],
+    rater: UUID | None,
 ) -> TidyRow:
     """One tidy-table record: pre-resolved values aligned to the section fields."""
     values = tuple(
@@ -1918,8 +1912,8 @@ def _tidy_row(
             value_map,
             run_id=article.run_id,  # type: ignore[arg-type]  # run_id checked non-None by caller
             instance_id=instance_id,
-            field_id=f.field_id,
-            mode=mode,
+            field=f,
+            rater=rater,
         )
         for f in section.fields
     )
@@ -1934,8 +1928,8 @@ def _tidy_row(
 def _build_tidy_tables(
     sections: tuple[SectionDescriptor, ...],
     articles: tuple[ArticleDescriptor, ...],
-    value_map: dict[tuple[Any, ...], Any],
-    mode: ExportMode,
+    value_map: dict[ValueKey, ExportValue],
+    rater: UUID | None,
 ) -> tuple[TidyTable, ...]:
     """One publication table per section carrying fields, at its record grain.
 
@@ -1968,7 +1962,7 @@ def _build_tidy_tables(
                         instance_id=instance_id,
                         record_label=" — ".join((article.header_label, *label_parts)),
                         value_map=value_map,
-                        mode=mode,
+                        rater=rater,
                     )
                 )
         tables.append(

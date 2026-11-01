@@ -20,6 +20,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction import workbook as workbook_module
 from app.services.exports.extraction.sheet_spec import Cell, SheetSpec
 from app.services.exports.extraction.workbook import (
@@ -28,6 +29,7 @@ from app.services.exports.extraction.workbook import (
     shape_needs_articles,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     AppraisalModel,
     AppraisalRow,
@@ -44,7 +46,21 @@ from app.services.extraction_export_service import (
 
 _SECTION_ID = UUID("11111111-1111-1111-1111-111111111111")
 _FIELD_ID = UUID("22222222-2222-2222-2222-222222222222")
+_RISK = FieldDescriptor(
+    field_id=_FIELD_ID, label="Risk of bias", type=ExtractionFieldType.SELECT, allowed_values=()
+)
 _ARTICLE_ID = UUID("33333333-3333-3333-3333-333333333333")
+
+
+def _tv(raw: object) -> ExportValue:
+    """``raw`` typed against a TEXT field, as a value-map entry."""
+    return to_export_value(
+        {"value": raw},
+        FieldDescriptor(
+            field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+        ),
+        {},
+    )
 
 
 def _every_sheet_layout() -> ExportLayout:
@@ -85,7 +101,7 @@ def _every_sheet_layout() -> ExportLayout:
         include_ai_metadata=True,
         anonymize_reviewer_names=False,
         notes=ExportNotes(),
-        value_map={(article.run_id, instance_id, _FIELD_ID): "Low"},
+        value_map={value_key(article.run_id, instance_id, _FIELD_ID): _tv("Low")},
         data_dictionary=(
             FieldDictEntry(
                 field_id=_FIELD_ID,
@@ -122,11 +138,12 @@ def _every_sheet_layout() -> ExportLayout:
         appraisal=AppraisalModel(
             domain_section_ids=(_SECTION_ID,),
             domain_labels=("Participants",),
+            domain_fields=(_RISK,),
             rows=(
                 AppraisalRow(
                     article_id=_ARTICLE_ID,
                     record_label="Gaca, 2011",
-                    domain_verdicts=("Low",),
+                    domain_verdicts=(_tv("Low"),),
                     overall="Low",
                     per_reviewer_overall={},
                 ),
