@@ -158,6 +158,15 @@ class ScreeningRepository:
         )
         return set((await self.db.execute(stmt)).scalars().all())
 
+    async def removed_duplicate_ids(self, *, project_id: UUID) -> list[UUID]:
+        """The project's removed-duplicate article ids, by id."""
+        stmt = (
+            select(Article.id)
+            .where(Article.project_id == project_id, removed_duplicate(Article))
+            .order_by(Article.id)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def project_has_decision(self, *, project_id: UUID) -> bool:
         """Any title/abstract decision ever recorded in the project, moved articles included."""
         stmt = select(

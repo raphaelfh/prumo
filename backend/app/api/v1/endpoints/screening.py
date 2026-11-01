@@ -127,13 +127,15 @@ async def enroll_screening(
 async def get_screening_records(
     request: Request,
     project_id: UUID,
-    phase: Annotated[ScreeningPhase, Query()],
     db: DbSession,
     user_sub: UUID = Depends(require_project_scope),
+    phase: Annotated[ScreeningPhase | None, Query()] = None,
 ) -> ApiResponse[ScreeningRecordsRead]:
     """Every article of the project in one phase with the caller's blind-safe status.
 
-    One row per article, in queue order, never a peer's decision.
+    One row per article, in queue order, never a peer's decision. Without
+    ``phase``: one row per article across both phases (the full-text row wins)
+    plus the removed duplicates' ids.
     """
     records = await ScreeningReviewService(db).records(project_id, user_sub, phase)
     return ApiResponse.success(records, trace_id=getattr(request.state, "trace_id", None))

@@ -31,6 +31,7 @@ export function row(overrides: Partial<ScreeningRecordRow> = {}): ScreeningRecor
   return {
     article_id: 'art1',
     assignment_id: 'a1',
+    phase: 'title_abstract',
     doi: null,
     first_author: 'Smith J',
     has_pdf: false,
@@ -95,7 +96,7 @@ export function config(overrides: Partial<ScreeningConfigRead> = {}): ScreeningC
 }
 
 export function records(rows: ScreeningRecordRow[], phase: ScreeningPhase = 'title_abstract'): ScreeningRecordsRead {
-  return {exclusion_reasons: [], inclusion_criteria: [], phase, reviewer_count: 2, rows};
+  return {exclusion_reasons: [], inclusion_criteria: [], phase, removed_duplicate_ids: [], reviewer_count: 2, rows};
 }
 
 /** A mutable records read: assign `current.rows` before a refetch. */

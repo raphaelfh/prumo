@@ -102,11 +102,14 @@ class ScreeningRecordRow(BaseModel):
     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
     when the article is not enrolled; the ``outcome*`` fields are set only once
     the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
-    of a full-text row.
+    of a full-text row. ``phase`` is the phase the row's status and decisions
+    come from. ``queue_rank`` is the 0-based position in the returned list: the
+    phase's queue order, or the merged list's order on a read without ``phase``.
     """
 
     article_id: UUID
     assignment_id: UUID | None
+    phase: ScreeningPhase
     queue_rank: int
     title: str
     first_author: str | None
@@ -129,13 +132,21 @@ class ScreeningRecordRow(BaseModel):
 
 
 class ScreeningRecordsRead(BaseModel):
-    """Every article of the project in one phase, in queue order, with the protocol criteria."""
+    """Every article of the project in one phase, in queue order, with the protocol criteria.
 
-    phase: ScreeningPhase
+    Without ``phase`` (``phase is None``): one row per article in title/abstract
+    order, the full-text row replacing the title/abstract one once the article is
+    in full text; ``reviewer_count`` is the title/abstract count, and the removed
+    duplicates are listed by id only in ``removed_duplicate_ids`` (empty on a
+    phased read).
+    """
+
+    phase: ScreeningPhase | None
     reviewer_count: int
     inclusion_criteria: list[str]
     exclusion_reasons: list[str]
     rows: list[ScreeningRecordRow]
+    removed_duplicate_ids: list[UUID] = []
 
 
 class ScreeningDecisionCreate(BaseModel):

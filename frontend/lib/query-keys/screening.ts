@@ -9,7 +9,7 @@ import type {QueryClient} from '@tanstack/react-query';
 
 import type {components} from '@/types/api/schema';
 
-type ScreeningPhase = components['schemas']['ScreeningRecordsRead']['phase'];
+type ScreeningPhase = components['schemas']['ScreeningRecordRow']['phase'];
 
 export const screeningKeys = {
   all: ['screening'] as const,

@@ -32,6 +32,7 @@ function row(rank: number, overrides: Partial<Row>): Row {
   return {
     article_id: `a${rank}`,
     assignment_id: `as${rank}`,
+    phase: 'title_abstract',
     doi: null,
     first_author: null,
     has_pdf: false,
@@ -100,6 +101,7 @@ function records(rows: Row[] = ROWS): RecordsRead {
     exclusion_reasons: ['Wrong population', 'Wrong design', 'Wrong outcome'],
     inclusion_criteria: [],
     phase: 'title_abstract',
+    removed_duplicate_ids: [],
     reviewer_count: 2,
     rows,
   };

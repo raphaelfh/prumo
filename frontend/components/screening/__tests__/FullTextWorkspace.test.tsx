@@ -66,11 +66,11 @@ const MAIN_FILE = {
   originalFilename: 'main.pdf',
 };
 
-const TA = {ta_outcome: 'include', ta_outcome_kind: 'consensus', ta_reviewer_count: 2} as const;
-const WITH_PDF = row({...TA, title: 'Sepsis bundles', has_pdf: true});
-const NO_PDF = row({...TA, article_id: 'art2', assignment_id: 'a2', queue_rank: 2, title: 'Asthma cohort'});
+const FT = {phase: 'full_text', ta_outcome: 'include', ta_outcome_kind: 'consensus', ta_reviewer_count: 2} as const;
+const WITH_PDF = row({...FT, title: 'Sepsis bundles', has_pdf: true});
+const NO_PDF = row({...FT, article_id: 'art2', assignment_id: 'a2', queue_rank: 2, title: 'Asthma cohort'});
 const EXCLUDED = row({
-  ...TA,
+  ...FT,
   article_id: 'art3',
   assignment_id: 'a3',
   queue_rank: 3,
@@ -83,7 +83,7 @@ const EXCLUDED = row({
   has_pdf: true,
 });
 const GONE = row({
-  ...TA,
+  ...FT,
   article_id: 'art4',
   assignment_id: 'a4',
   queue_rank: 4,
@@ -172,7 +172,7 @@ describe('Full-text workspace — list-level states', () => {
     server.use(
       http.get(RECORDS_URL, ({request}) => {
         phase = new URL(request.url).searchParams.get('phase');
-        return ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'full_text', reviewer_count: 2, rows: FT_ROWS});
+        return ok({exclusion_reasons: [], inclusion_criteria: [], phase: 'full_text', removed_duplicate_ids: [], reviewer_count: 2, rows: FT_ROWS});
       }),
     );
     renderFullText();
@@ -365,7 +365,7 @@ describe('Export excluded reports', () => {
 
   it('Export excluded reports downloads one row per excluded report', async () => {
     const second = row({
-      ...TA,
+      ...FT,
       article_id: 'art5',
       assignment_id: 'a5',
       queue_rank: 5,

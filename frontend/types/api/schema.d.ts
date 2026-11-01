@@ -1222,7 +1222,9 @@ export interface paths {
          * Get Screening Records
          * @description Every article of the project in one phase with the caller's blind-safe status.
          *
-         *     One row per article, in queue order, never a peer's decision.
+         *     One row per article, in queue order, never a peer's decision. Without
+         *     ``phase``: one row per article across both phases (the full-text row wins)
+         *     plus the removed duplicates' ids.
          */
         get: operations["get_screening_records_api_v1_projects__project_id__screening_records_get"];
         put?: never;
@@ -7549,7 +7551,9 @@ export interface components {
          *     No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
          *     when the article is not enrolled; the ``outcome*`` fields are set only once
          *     the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
-         *     of a full-text row.
+         *     of a full-text row. ``phase`` is the phase the row's status and decisions
+         *     come from. ``queue_rank`` is the 0-based position in the returned list: the
+         *     phase's queue order, or the merged list's order on a read without ``phase``.
          */
         ScreeningRecordRow: {
             /**
@@ -7579,6 +7583,11 @@ export interface components {
             outcome_exclusion_reason: string | null;
             /** Outcome Kind */
             outcome_kind: ("solo" | "consensus" | "arbitrated") | null;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "title_abstract" | "full_text";
             /** Pmid */
             pmid: string | null;
             /** Publication Year */
@@ -7602,17 +7611,25 @@ export interface components {
         /**
          * ScreeningRecordsRead
          * @description Every article of the project in one phase, in queue order, with the protocol criteria.
+         *
+         *     Without ``phase`` (``phase is None``): one row per article in title/abstract
+         *     order, the full-text row replacing the title/abstract one once the article is
+         *     in full text; ``reviewer_count`` is the title/abstract count, and the removed
+         *     duplicates are listed by id only in ``removed_duplicate_ids`` (empty on a
+         *     phased read).
          */
         ScreeningRecordsRead: {
             /** Exclusion Reasons */
             exclusion_reasons: string[];
             /** Inclusion Criteria */
             inclusion_criteria: string[];
+            /** Phase */
+            phase: ("title_abstract" | "full_text") | null;
             /**
-             * Phase
-             * @enum {string}
+             * Removed Duplicate Ids
+             * @default []
              */
-            phase: "title_abstract" | "full_text";
+            removed_duplicate_ids: string[];
             /** Reviewer Count */
             reviewer_count: number;
             /** Rows */
@@ -11491,8 +11508,8 @@ export interface operations {
     };
     get_screening_records_api_v1_projects__project_id__screening_records_get: {
         parameters: {
-            query: {
-                phase: "title_abstract" | "full_text";
+            query?: {
+                phase?: ("title_abstract" | "full_text") | null;
             };
             header?: never;
             path: {

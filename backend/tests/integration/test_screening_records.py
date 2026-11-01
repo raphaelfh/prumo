@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import pytest
 from httpx import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,7 @@ from tests.integration.helpers.screening_fixtures import (
     enroll_articles,
     make_screening_article,
     move_article,
+    remove_duplicate,
     set_reviewer_count,
 )
 from tests.integration.helpers.shared_fixtures import make_project
@@ -36,6 +38,7 @@ _ELIGIBILITY = '{"inclusion": ["Adults"], "exclusion": ["Wrong population", "Not
 _WIRE_FIELDS = {
     "article_id",
     "assignment_id",
+    "phase",
     "queue_rank",
     "title",
     "first_author",
@@ -69,8 +72,10 @@ async def _get(db: AsyncSession, user: UUID, path: str) -> Response:
         app.dependency_overrides.clear()
 
 
-async def _records(db: AsyncSession, user: UUID, project_id: UUID) -> dict[str, Any]:
-    response = await _get(db, user, _path(project_id))
+async def _records(
+    db: AsyncSession, user: UUID, project_id: UUID, query: str = "?phase=title_abstract"
+) -> dict[str, Any]:
+    response = await _get(db, user, _path(project_id, query))
     assert response.status_code == 200, response.text
     return response.json()["data"]
 
@@ -90,7 +95,8 @@ def _md5_order(ids: list[UUID]) -> list[str]:
     return [str(i) for i in sorted(ids, key=lambda i: hashlib.md5(str(i).encode()).hexdigest())]
 
 
-async def test_records_role_matrix(db_session: AsyncSession) -> None:
+@pytest.mark.parametrize("query", ["?phase=title_abstract", ""], ids=["ta", "no_phase"])
+async def test_records_role_matrix(db_session: AsyncSession, query: str) -> None:
     db = db_session
     project_id = await make_project(db)
     await _set_eligibility(db, project_id, _ELIGIBILITY)
@@ -118,11 +124,14 @@ async def test_records_role_matrix(db_session: AsyncSession) -> None:
     }
     member_ids = {str(m) for m in (a, b, c, k, k2, v)}
     for caller, (sx, sx2, sy) in expected.items():
-        response = await _get(db, caller, _path(project_id))
+        response = await _get(db, caller, _path(project_id, query))
         assert response.status_code == 200, response.text
         assert not any(m in response.text for m in member_ids - {str(caller)})
         assert "Screening Test User" not in response.text
-        rows = _by_article(response.json()["data"])
+        data = response.json()["data"]
+        assert data["removed_duplicate_ids"] == []
+        assert all(row["phase"] == "title_abstract" for row in data["rows"])
+        rows = _by_article(data)
         assert [rows[str(i)]["status"] for i in (x, x2, y, w, z)] == [
             sx,
             sx2,
@@ -135,10 +144,10 @@ async def test_records_role_matrix(db_session: AsyncSession) -> None:
         assert rows[str(x)]["outcome"] is None
         assert rows[str(x)]["outcome_kind"] is None
 
-    mine = _by_article(await _records(db, a, project_id))[str(x)]
+    mine = _by_article(await _records(db, a, project_id, query))[str(x)]
     assert mine["my_decision"] == "include"
     assert mine["my_exclusion_reason"] is None
-    assert _by_article(await _records(db, c, project_id))[str(x)]["my_decision"] is None
+    assert _by_article(await _records(db, c, project_id, query))[str(x)]["my_decision"] is None
 
 
 async def test_records_counts_and_anti_join(db_session: AsyncSession) -> None:
@@ -227,17 +236,21 @@ async def test_records_carry_the_bibliographic_fields(db_session: AsyncSession) 
 async def test_records_unconfigured_is_409(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
 
-    response = await _get(db_session, MANAGER, _path(project_id))
+    for query in ("?phase=title_abstract", ""):
+        response = await _get(db_session, MANAGER, _path(project_id, query))
 
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "SCREENING_NOT_CONFIGURED"
+        assert response.status_code == 409, query
+        assert response.json()["error"]["code"] == "SCREENING_NOT_CONFIGURED"
 
 
-async def test_records_phase_is_required_and_closed(db_session: AsyncSession) -> None:
+async def test_records_phase_is_optional_and_closed(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     await set_reviewer_count(db_session, project_id, 1)
 
-    assert (await _get(db_session, MANAGER, _path(project_id, ""))).status_code == 422
+    no_phase = await _get(db_session, MANAGER, _path(project_id, ""))
+    assert no_phase.status_code == 200, no_phase.text
+    assert no_phase.json()["data"]["phase"] is None
+    assert no_phase.json()["data"]["reviewer_count"] == 1
     assert (await _get(db_session, MANAGER, _path(project_id, "?phase=other"))).status_code == 422
     off = await _get(db_session, MANAGER, _path(project_id, "?phase=full_text"))
     assert off.status_code == 409
@@ -346,8 +359,17 @@ async def _ft_enroll(db: AsyncSession, project_id: UUID, articles: list[UUID]) -
     ]
 
 
-async def test_full_text_records_role_matrix(db_session: AsyncSession) -> None:
-    db = db_session
+_FT_MATRIX = {
+    "a": ["waiting", "waiting", "not_retrieved", "to_screen"],
+    "c": ["in_review", "to_screen", "not_retrieved", "to_screen"],
+    "k": ["conflict", "to_screen", "not_retrieved", "to_screen"],
+    "manager": ["conflict", "to_screen", "not_retrieved", "to_screen"],
+    "v": ["in_review", "in_review", "not_retrieved", "in_review"],
+}
+
+
+async def _full_text_matrix_fixture(db: AsyncSession) -> dict[str, Any]:
+    """S3's full-text role matrix: members a/b/c/k/v, four FT-only articles, five decisions."""
     project_id = await _ft_project(db)
     a, b, c = [await add_member(db, project_id, "reviewer") for _ in range(3)]
     k = await add_member(db, project_id, "consensus")
@@ -359,14 +381,16 @@ async def test_full_text_records_role_matrix(db_session: AsyncSession) -> None:
     await add_decision(db, f2, a, "include")
     await add_decision(db, f3, a, "not_retrieved")
     await add_decision(db, f3, b, "not_retrieved")
+    members = {"a": a, "b": b, "c": c, "k": k, "v": v, "manager": MANAGER}
+    return {"project_id": project_id, "articles": articles, **members}
 
-    expected = {
-        a: ["waiting", "waiting", "not_retrieved", "to_screen"],
-        c: ["in_review", "to_screen", "not_retrieved", "to_screen"],
-        k: ["conflict", "to_screen", "not_retrieved", "to_screen"],
-        MANAGER: ["conflict", "to_screen", "not_retrieved", "to_screen"],
-        v: ["in_review", "in_review", "not_retrieved", "in_review"],
-    }
+
+async def test_full_text_records_role_matrix(db_session: AsyncSession) -> None:
+    db = db_session
+    fx = await _full_text_matrix_fixture(db)
+    project_id, articles, a, c = fx["project_id"], fx["articles"], fx["a"], fx["c"]
+
+    expected = {fx[role]: statuses for role, statuses in _FT_MATRIX.items()}
     for caller, statuses in expected.items():
         response = await _get(db, caller, _path(project_id, _FT))
         assert response.status_code == 200, response.text
@@ -457,3 +481,103 @@ async def test_full_text_has_pdf(db_session: AsyncSession) -> None:
     rows = _by_article(await _ft_records(db, MANAGER, project_id))
 
     assert [rows[str(i)]["has_pdf"] for i in (bare, main)] == [False, True]
+
+
+async def test_no_phase_role_matrix_full_text(db_session: AsyncSession) -> None:
+    db = db_session
+    fx = await _full_text_matrix_fixture(db)
+    project_id, articles, a, c = fx["project_id"], fx["articles"], fx["a"], fx["c"]
+    t, n = [await make_screening_article(db, project_id) for _ in range(2)]
+    (at,) = await enroll_articles(db, project_id, [t], by=MANAGER)
+    await add_decision(db, at, a, "include")
+    ta_status = {
+        "a": "waiting",
+        "c": "to_screen",
+        "k": "to_screen",
+        "manager": "to_screen",
+        "v": "in_review",
+    }
+    member_ids = {str(fx[role]) for role in ("a", "b", "c", "k", "v")}
+
+    for role, statuses in _FT_MATRIX.items():
+        caller = fx[role]
+        response = await _get(db, caller, _path(project_id, ""))
+        assert response.status_code == 200, response.text
+        assert not any(m in response.text for m in member_ids - {str(caller)}), role
+        assert "Screening Test User" not in response.text
+        if caller in (a, c):
+            assert "Wrong outcome" not in response.text, role
+        data_rows = response.json()["data"]["rows"]
+        assert len(data_rows) == len({r["article_id"] for r in data_rows})
+        rows = _by_article(response.json()["data"])
+        assert [rows[str(i)]["phase"] for i in articles] == ["full_text"] * 4, role
+        assert [rows[str(i)]["status"] for i in articles] == statuses, role
+        assert (rows[str(t)]["phase"], rows[str(t)]["status"]) == (
+            "title_abstract",
+            ta_status[role],
+        ), role
+        assert (rows[str(n)]["phase"], rows[str(n)]["status"]) == (
+            "title_abstract",
+            "not_enrolled",
+        ), role
+        assert all(set(row) == _WIRE_FIELDS for row in rows.values())
+
+
+async def test_no_phase_rows_use_each_phase_snapshot(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    a, b = [await add_member(db, project_id, "reviewer") for _ in range(2)]
+    x = await make_screening_article(db, project_id)
+    (ta_x,) = await enroll_articles(db, project_id, [x], by=MANAGER)
+    await add_decision(db, ta_x, a, "include")
+    await add_decision(db, ta_x, b, "include")
+    await _ft_enroll(db, project_id, [x])
+
+    row = _by_article(await _records(db, a, project_id, ""))[str(x)]
+
+    assert (row["phase"], row["status"], row["my_decision"], row["ta_outcome"]) == (
+        "full_text",
+        "to_screen",
+        None,
+        "include",
+    )
+
+
+async def test_no_phase_lists_removed_duplicates(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await _ft_project(db)
+    a = await add_member(db, project_id, "reviewer")
+    v = await add_member(db, project_id, "viewer")
+    enrolled = [await make_screening_article(db, project_id) for _ in range(3)]
+    await enroll_articles(db, project_id, enrolled, by=MANAGER)
+    kept, dup, ft_only = [await make_screening_article(db, project_id) for _ in range(3)]
+    await remove_duplicate(db, project_id, dup, kept)
+    await _ft_enroll(db, project_id, [ft_only])
+    other = await _ft_project(db)
+    other_kept, other_dup = [await make_screening_article(db, other) for _ in range(2)]
+    await remove_duplicate(db, other, other_dup, other_kept)
+
+    for caller in (a, v):
+        data = await _records(db, caller, project_id, "")
+        assert data["removed_duplicate_ids"] == [str(dup)]
+        assert str(other_dup) not in data["removed_duplicate_ids"]
+        assert str(dup) not in {r["article_id"] for r in data["rows"]}
+        assert [r["queue_rank"] for r in data["rows"]] == list(range(len(data["rows"])))
+        assert _by_article(data)[str(ft_only)]["phase"] == "full_text"
+    assert (await _records(db, a, project_id))["removed_duplicate_ids"] == []
+
+
+async def test_no_phase_full_text_off_has_no_full_text_rows(db_session: AsyncSession) -> None:
+    db = db_session
+    project_id = await make_project(db)
+    await set_reviewer_count(db, project_id, 1)
+    ta, ft = [await make_screening_article(db, project_id) for _ in range(2)]
+    await enroll_articles(db, project_id, [ta], by=MANAGER)
+    await _ft_enroll(db, project_id, [ft])
+
+    response = await _get(db, MANAGER, _path(project_id, ""))
+
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]["rows"]
+    assert {r["article_id"] for r in rows} == {str(ta), str(ft)}
+    assert all(r["phase"] == "title_abstract" for r in rows)

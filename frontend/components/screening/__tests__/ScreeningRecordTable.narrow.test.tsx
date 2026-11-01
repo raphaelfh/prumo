@@ -12,6 +12,7 @@ import type {ScreeningRecordRow} from '@/services/screeningService';
 const row = (id: string, title: string): ScreeningRecordRow => ({
   article_id: id,
   assignment_id: `as-${id}`,
+  phase: 'title_abstract',
   doi: null,
   first_author: 'Smith J',
   has_pdf: false,

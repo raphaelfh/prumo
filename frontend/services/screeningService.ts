@@ -23,7 +23,7 @@ export type ScreeningArbitrationCreate = components['schemas']['ScreeningArbitra
 export type PrismaCountsRead = components['schemas']['PrismaCountsRead'];
 export type ScreeningRecordsRead = components['schemas']['ScreeningRecordsRead'];
 export type ScreeningRecordRow = components['schemas']['ScreeningRecordRow'];
-export type ScreeningPhase = ScreeningRecordsRead['phase'];
+export type ScreeningPhase = ScreeningRecordRow['phase'];
 
 export function fetchScreeningConfig(projectId: string): Promise<ErrorResult<ScreeningConfigRead>> {
   return toResult(

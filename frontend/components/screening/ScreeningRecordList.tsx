@@ -92,7 +92,8 @@ function filterFields(read: ScreeningRecordsRead, canReview: boolean): FilterFie
   const myDecision = categorical(
     'my_decision',
     'filterMyDecision',
-    myDecisionValuesFor(read.phase).map((value) => ({value, label: t('screening', DECISION_VALUE_LABEL[value])})),
+    // A phased read (the list never gets the no-phase read): `phase` is set.
+    myDecisionValuesFor(read.phase ?? 'title_abstract').map((value) => ({value, label: t('screening', DECISION_VALUE_LABEL[value])})),
   );
   return [
     {id: 'title', label: t('screening', 'filterTitle'), type: 'text'},
@@ -229,7 +230,7 @@ export function ScreeningRecordList({
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex shrink-0 flex-col gap-2">
-        <ScreeningStatusViews phase={read.phase} counts={counts} status={status} onStatusChange={onStatusChange} />
+        <ScreeningStatusViews phase={read.phase ?? 'title_abstract'} counts={counts} status={status} onStatusChange={onStatusChange} />
         <div className="flex w-full flex-wrap items-center gap-2">
           <ListToolbarSearch
             ref={searchInputRef}

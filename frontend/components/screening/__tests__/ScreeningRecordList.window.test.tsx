@@ -28,6 +28,7 @@ const COUNT = 300;
 const ROWS: ScreeningRecordRow[] = Array.from({length: COUNT}, (_, index) => ({
   article_id: `art${index}`,
   assignment_id: `as${index}`,
+  phase: 'title_abstract',
   doi: null,
   first_author: 'Smith J',
   has_pdf: false,
@@ -74,7 +75,7 @@ beforeEach(() => {
     http.get('*/api/v1/projects/:projectId/screening/records', () =>
       HttpResponse.json({
         ok: true,
-        data: {exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', reviewer_count: 2, rows: served},
+        data: {exclusion_reasons: [], inclusion_criteria: [], phase: 'title_abstract', removed_duplicate_ids: [], reviewer_count: 2, rows: served},
       }),
     ),
     http.get('*/api/v1/screening/assignments/:assignmentId', ({params}) => {
