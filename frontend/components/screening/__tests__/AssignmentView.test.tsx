@@ -116,6 +116,8 @@ function renderView({canReview = true, row = ROW}: {canReview?: boolean; row?: S
         assignmentId="a1"
         row={row}
         config={config(canReview)}
+        phase="title_abstract"
+        maximized={false}
         onDecided={vi.fn()}
         onNotInPhase={onNotInPhase}
       />

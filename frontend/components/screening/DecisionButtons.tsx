@@ -34,6 +34,8 @@ interface DecisionButtonsProps {
   recorded?: ScreeningDecisionCreate['decision'] | null;
   /** The recorded exclusion's reason: picking it again does nothing, another reason re-decides. */
   recordedReason?: string | null;
+  /** False: no note field (a ruling carries its own note). Full text only. */
+  withNote?: boolean;
 }
 
 type Decision = ScreeningDecisionCreate['decision'];
@@ -44,7 +46,15 @@ const DECISIONS = [
   {decision: 'maybe', key: '3', label: 'decisionMaybe', variant: 'outline'},
 ] as const satisfies readonly {decision: Decision; key: string; label: string; variant: 'default' | 'outline'}[];
 
-export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, recordedReason}: DecisionButtonsProps) {
+export function DecisionButtons({
+  reasons,
+  disabled,
+  onDecide,
+  phase,
+  recorded,
+  recordedReason,
+  withNote = true,
+}: DecisionButtonsProps) {
   const fullText = phase === 'full_text';
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const [note, setNote] = useState('');
@@ -147,7 +157,7 @@ export function DecisionButtons({reasons, disabled, onDecide, phase, recorded, r
           </Button>
         )}
       </div>
-      {fullText && (
+      {fullText && withNote && (
         <div className="flex flex-col gap-1">
           <label htmlFor={noteId} className="text-xs text-muted-foreground">
             {t('screening', 'decisionNoteLabel')}

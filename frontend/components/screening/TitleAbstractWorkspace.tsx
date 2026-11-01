@@ -353,6 +353,8 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
             projectId={projectId}
             row={selectedRow}
             config={config}
+            phase="title_abstract"
+            maximized={maximized}
             onDecided={onDecided}
             onNotInPhase={onNotInPhase}
           />

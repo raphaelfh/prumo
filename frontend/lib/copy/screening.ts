@@ -111,6 +111,16 @@ export const screening = {
   peerDecisionsTitle: 'Other reviewers',
   peerUnnamed: 'Another reviewer',
 
+  // Full-text record panel
+  viewAbstract: 'Abstract',
+  viewPdf: 'PDF',
+  noPdfAttached: 'No PDF attached',
+  taProvenance: 'Included at title/abstract · {{n}} reviewers, {{kind}}',
+  taProvenanceSolo: 'Included at title/abstract · 1 reviewer',
+  taProvenanceMaybe: 'Maybe at title/abstract · {{n}} reviewers, {{kind}}',
+  taProvenanceMaybeSolo: 'Maybe at title/abstract · 1 reviewer',
+  pdfFoundLater: 'PDF found later? Rule on this report.',
+
   // Conflicts and arbitration
   useDecisionOf: "Use {{name}}'s decision",
   decideDifferently: 'Decide differently',

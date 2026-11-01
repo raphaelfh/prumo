@@ -15,7 +15,11 @@ import {Button} from '@/components/ui/button';
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from '@/components/ui/form';
 import {Textarea} from '@/components/ui/textarea';
 import {t} from '@/lib/copy';
-import type {ScreeningArbitrationCreate, ScreeningAssignmentRead} from '@/services/screeningService';
+import type {
+  ScreeningArbitrationCreate,
+  ScreeningAssignmentRead,
+  ScreeningPhase,
+} from '@/services/screeningService';
 
 import {DecisionButtons} from './DecisionButtons';
 import {decisionLabel} from './ScreeningParts';
@@ -34,9 +38,11 @@ export interface ConflictRulingFormProps {
   read: ScreeningAssignmentRead;
   busy: boolean;
   onRule: (body: ScreeningArbitrationCreate) => void;
+  /** The record's phase: at full text the override has no Maybe and an exclusion needs a reason. */
+  phase: ScreeningPhase;
 }
 
-export function ConflictRulingForm({read, busy, onRule}: ConflictRulingFormProps) {
+export function ConflictRulingForm({read, busy, onRule, phase}: ConflictRulingFormProps) {
   const form = useForm<NoteValues>({resolver: zodResolver(noteSchema), defaultValues: {rationale: ''}});
   const [deciding, setDeciding] = useState(false);
   const ruledOn = read.peer_decisions.map((d) => d.id);
@@ -103,7 +109,8 @@ export function ConflictRulingForm({read, busy, onRule}: ConflictRulingFormProps
             reasons={read.exclusion_reasons}
             disabled={busy}
             onDecide={({decision, exclusion_reason}) => rule({decision, exclusion_reason})}
-            phase="title_abstract"
+            phase={phase}
+            withNote={false}
           />
         )}
       </div>

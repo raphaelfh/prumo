@@ -1,5 +1,5 @@
 /**
- * The title/abstract workspace's side panel: the selected record. No row →
+ * A screening workspace's side panel: the selected record. No row →
  * the placeholder; a not-enrolled article → its metadata (and "Enroll" for a
  * manager); otherwise the assignment-backed body (`AssignmentView`), keyed by
  * assignment so a record change resets its in-flight and ruling state.
@@ -10,7 +10,7 @@ import {Button} from '@/components/ui/button';
 import {useEnrollArticles} from '@/hooks/screening/useScreeningConfig';
 import {t} from '@/lib/copy';
 import {screeningErrorMessage} from '@/lib/screening/errors';
-import type {ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
+import type {ScreeningConfigRead, ScreeningPhase, ScreeningRecordRow} from '@/services/screeningService';
 
 import {AssignmentView} from './AssignmentView';
 import {RecordStatusChip} from './RecordStatusChip';
@@ -21,6 +21,9 @@ export interface ScreeningRecordPanelProps {
   /** `null` → the placeholder. */
   row: ScreeningRecordRow | null;
   config: ScreeningConfigRead;
+  phase: ScreeningPhase;
+  /** The workspace's controlled shell state: at full text the maximized panel splits the PDF beside the pane. */
+  maximized: boolean;
   /** After a successful decision (auto-advance and the announcement are the caller's). */
   onDecided: (row: ScreeningRecordRow) => void;
   /** 403/404 on the assignment read, or 404 from decide/arbitrate: the caller clears the selection and toasts. */
@@ -67,7 +70,15 @@ function NotEnrolledBody({projectId, row, canManage}: {projectId: string; row: S
   );
 }
 
-export function ScreeningRecordPanel({projectId, row, config, onDecided, onNotInPhase}: ScreeningRecordPanelProps) {
+export function ScreeningRecordPanel({
+  projectId,
+  row,
+  config,
+  phase,
+  maximized,
+  onDecided,
+  onNotInPhase,
+}: ScreeningRecordPanelProps) {
   if (row === null) {
     return <Notice title={t('screening', 'panelPlaceholderTitle')} body={t('screening', 'panelPlaceholderBody')} />;
   }
@@ -80,6 +91,8 @@ export function ScreeningRecordPanel({projectId, row, config, onDecided, onNotIn
       assignmentId={row.assignment_id}
       row={row}
       config={config}
+      phase={phase}
+      maximized={maximized}
       onDecided={onDecided}
       onNotInPhase={onNotInPhase}
     />
