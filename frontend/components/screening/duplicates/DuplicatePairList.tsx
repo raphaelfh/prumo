@@ -3,7 +3,7 @@
  * caller's toolbar actions, and one row per pair (removed title, the kept title
  * as a muted second line, the match chip, both sources, the year). A dense
  * table from `sm` up, a `ListRowCard` per pair below it. Selection (the open
- * pair) tints the row; the keyboard cursor draws a ring only.
+ * pair) tints the row or card; the keyboard cursor draws a ring only, on both.
  */
 import type {ReactNode} from 'react';
 
@@ -142,23 +142,31 @@ export function DuplicatePairList({
     </Table>
   );
 
-  const cardContent = pairs.map((pair) => (
-    <ListRowCard
-      key={pairKey(pair)}
-      className={cn(pairKey(pair) === activeKey && 'bg-muted/60')}
-      title={pair.removed.title}
-      subtitle={pair.kept.title}
-      meta={
-        <>
-          <MatchChip pair={pair} />
-          <span>{sources(pair)}</span>
-          {year(pair) != null && <span className="tabular-nums">{year(pair)}</span>}
-        </>
-      }
-      primaryAction={null}
-      onClick={() => onOpenPair(pair)}
-    />
-  ));
+  const cardContent = pairs.map((pair) => {
+    const k = pairKey(pair);
+    return (
+      <div
+        key={k}
+        data-pair-row={k}
+        data-cursor={k === cursorKey || undefined}
+      >
+        <ListRowCard
+          className={cn(k === activeKey && 'bg-muted/60', k === cursorKey && 'ring-1 ring-inset ring-ring/60')}
+          title={pair.removed.title}
+          subtitle={pair.kept.title}
+          meta={
+            <>
+              <MatchChip pair={pair} />
+              <span>{sources(pair)}</span>
+              {year(pair) != null && <span className="tabular-nums">{year(pair)}</span>}
+            </>
+          }
+          primaryAction={null}
+          onClick={() => onOpenPair(pair)}
+        />
+      </div>
+    );
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
