@@ -231,7 +231,7 @@ git -C "$WT" commit -m "feat(screening): structured abstract, identifiers, chips
 
 **Files:**
 - Create: `frontend/components/screening/CriteriaPanel.tsx`, `frontend/components/screening/__tests__/CriteriaPanel.test.tsx`
-- Modify: `frontend/components/screening/ScreeningRecordPanel.tsx` (props + layout wiring), `frontend/components/screening/TitleAbstractWorkspace.tsx` (pass the props)
+- Modify: `frontend/components/screening/ScreeningRecordPanel.tsx` (props; forwards `criteria`/`maximized` to `AssignmentView`), `frontend/components/screening/AssignmentView.tsx` (layout: its scroll body's `max-w-3xl` column is where the record renders, so the disclosure/rail grid goes there), `frontend/components/screening/TitleAbstractWorkspace.tsx` (pass the props)
 - Modify: `frontend/lib/copy/screening.ts`
 - Modify: `frontend/components/screening/__tests__/ScreeningRecordPanel.test.tsx`, `TitleAbstractWorkspace.test.tsx` (S1)
 
@@ -247,7 +247,7 @@ criteria: ScreeningCriteria;
 maximized: boolean;
 ```
 
-Layout rules (Rulings 8): panel body with a record → when `maximized`: `CriteriaPanel variant="rail"` beside the reading column in a grid (`grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]`; rail right at `lg+`, stacked under the record below `lg`); when docked: `variant="disclosure"` above the reading column. Exactly one variant is mounted. Disclosure: `Collapsible`, closed by default, trigger "Criteria ({{n}})" (`n` = total), content two headed lists. Rail: `aside` with the same two headed lists, always open, sticky top. An empty list's heading is omitted. The placeholder (no row) shows no criteria.
+Layout rules (Rulings 8): panel body with a record → when `maximized`: `CriteriaPanel variant="rail"` beside the reading column in a grid (`grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]`; rail right at `lg+`, stacked under the record below `lg`); when docked: `variant="disclosure"` above the reading column. Exactly one variant is mounted. Disclosure: `Collapsible`, closed by default, trigger "Criteria ({{n}})" (`n` = total), content two headed lists. Rail: `aside` with the same two headed lists, always open, sticky top. An empty list's heading is omitted. The placeholder (no row) and a not-enrolled record (`NotEnrolledBody`, nothing to screen) show no criteria; every `AssignmentView` branch (decide, rule, read-only) does. Maximized widens `AssignmentView`'s `max-w-3xl` container so the 68ch column plus the 18rem rail fit (post-merge re-check 2026-11-01: S1 put the scroll body in `AssignmentView`, not the panel).
 
 Copy keys: `criteriaToggle` "Criteria ({{n}})", `criteriaInclusion` "Include if", `criteriaExclusion` "Exclude if", `criteriaRailLabel` "Screening criteria".
 
@@ -295,7 +295,7 @@ export function useDecisionNoteForm(): DecisionNoteForm;
 export function DecisionNote({form, disabled}: {form: DecisionNoteForm; disabled?: boolean}): JSX.Element;
 ```
 
-Rules (Rulings 1): `DecisionNote` is a ghost "Add note" button that reveals a `Textarea` (`maxLength={2000}`, `rows={2}`, label "Note (optional)"; open by default when the form already has text). It renders above `DecisionButtons` in the To screen and solo re-decide branches only (never for viewers, never in the conflict branch — the arbitrator keeps the ruling form's own note). The decide handler (an event handler, never render) reads `form.getValues('note').trim()` and sends `{...body, rationale}` only when it is non-empty; on success `form.reset()`. The form instance lives in the branch component keyed by assignment id (S1 already keys `DecisionButtons` by it), so another record starts blank. Peer notes: in `ConflictRulingForm` under each reviewer's decision line, `text-[13px] text-muted-foreground`, prefixed "Note:" (`peerNote`), hidden when `rationale` is null. The read-only peer list shows no notes (spec §9 scope). The ruling form still hides names only.
+Rules (Rulings 1): `DecisionNote` is a ghost "Add note" button that reveals a `Textarea` (`maxLength={2000}`, `rows={2}`, label "Note (optional)"; open by default when the form already has text). It renders above `DecisionButtons` in the To screen and solo re-decide branches only (never for viewers, never in the conflict branch — the arbitrator keeps the ruling form's own note). The decide handler (an event handler, never render) reads `form.getValues('note').trim()` and sends `{...body, rationale}` only when it is non-empty; on success `form.reset()`. The form instance is created in `AssignmentView` before its early returns (S1's `ScreeningRecordPanel` keys `AssignmentView` by `row.assignment_id`), so another record starts blank. Peer notes: in `ConflictRulingForm` under each reviewer's decision line, `text-[13px] text-muted-foreground`, prefixed "Note:" (`peerNote`), hidden when `rationale` is null. The read-only peer list shows no notes (spec §9 scope). The ruling form still hides names only.
 
 Copy keys: `noteAdd` "Add note", `noteLabel` "Note (optional)", `peerNote` "Note: {{note}}".
 
