@@ -3,6 +3,7 @@
  * pair a URL selects, which exact pairs a bulk accept may take, and which
  * fields differ between the two sides.
  */
+import {t} from '@/lib/copy';
 import type {DuplicatePair, DuplicatesRead} from '@/services/duplicatesService';
 
 export type DuplicateStatusView = 'open' | 'exact' | 'likely' | 'possible' | 'resolved';
@@ -92,4 +93,17 @@ export function differingFields(pair: DuplicatePair): Set<CompareField> {
     if (differs) out.add(f);
   }
   return out;
+}
+
+const SOURCE_LABEL = {
+  pubmed: 'prismaSourcePubmed',
+  zotero: 'prismaSourceZotero',
+  ris: 'prismaSourceRis',
+  manual: 'prismaSourceManual',
+} as const;
+
+/** A side's ingestion source as the PRISMA panel words it; unknown → Manual. */
+export function sourceLabel(source: string | null): string {
+  const key = (source ?? 'manual').toLowerCase();
+  return t('screening', key in SOURCE_LABEL ? SOURCE_LABEL[key as keyof typeof SOURCE_LABEL] : 'prismaSourceManual');
 }

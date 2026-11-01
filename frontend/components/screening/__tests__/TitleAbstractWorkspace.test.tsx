@@ -28,6 +28,7 @@ import {
   config,
   CONSENSUS,
   DECIDE_URL,
+  DUPLICATES_URL,
   ENROLL_URL,
   fail,
   GAMMA,
@@ -141,6 +142,7 @@ describe('TitleAbstractWorkspace — Enroll N new', () => {
     serveRecords([ALPHA, notEnrolled(BETA)]);
     let body: unknown = 'unset';
     server.use(
+      http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})),
       http.post(ENROLL_URL, async ({request}) => {
         body = await request.json();
         return ok({enrolled: 2, already_enrolled: 0});
@@ -369,7 +371,6 @@ describe('TitleAbstractWorkspace — selection', () => {
   });
 });
 
-const DUPLICATES_URL = '*/api/v1/projects/:projectId/duplicates';
 
 function pairs(n: number) {
   const side = (id: string) => ({

@@ -32,6 +32,7 @@ type Row = components['schemas']['ScreeningRecordRow'];
 const CONFIG_URL = '*/api/v1/projects/:projectId/screening/config';
 const RECORDS_URL = '*/api/v1/projects/:projectId/screening/records';
 const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
+const DUPLICATES_URL = '*/api/v1/projects/:projectId/duplicates';
 
 function config(overrides: Partial<ConfigRead> = {}): ConfigRead {
   return {
@@ -183,15 +184,26 @@ describe('ScreeningTab', () => {
 
   it("never bounces a manager's duplicates deep link", async () => {
     serveConfig(config({...MANAGER, reviewer_count: null}));
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})));
     renderTab('/projects/p1?tab=screening&screeningTab=duplicates');
     await waitFor(() => expect(screen.queryByRole('region', {name: 'Loading screening…'})).toBeNull());
     expect(screen.queryByText('Screening is not set up')).toBeNull();
     expect(params().get('screeningTab')).toBe('duplicates');
   });
 
+  it('renders the Duplicates sub-view for a manager', async () => {
+    serveConfig(config({...MANAGER, reviewer_count: null}));
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})));
+    renderTab('/projects/p1?tab=screening&screeningTab=duplicates');
+    expect(await screen.findByText('No open pairs')).toBeInTheDocument();
+    expect(screen.getByRole('tab', {name: 'Open 0'})).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('Screening is not set up')).toBeNull();
+  });
+
   it('drops article, kept and status when the sub-view changes', async () => {
     serveConfig(config({...MANAGER, reviewer_count: 2, enrolled: 1}));
     serveRecords();
+    server.use(http.get(DUPLICATES_URL, () => ok({open: [], resolved: []})));
     renderTab('/projects/p1?tab=screening&screeningTab=title_abstract&article=art1&kept=art2&status=all');
     await screen.findByText('Deep learning for sepsis');
     expect(params().get('article')).toBe('art1');

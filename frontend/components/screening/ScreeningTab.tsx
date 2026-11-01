@@ -23,6 +23,7 @@ import {isReadOnly} from '@/lib/screening/records';
 import {screeningErrorMessage} from '@/lib/screening/errors';
 import type {ScreeningConfigRead} from '@/services/screeningService';
 
+import {DuplicatesWorkspace} from './duplicates/DuplicatesWorkspace';
 import {LoadingState, Notice} from './ScreeningParts';
 import {ScreeningSettings} from './ScreeningSettings';
 import {PubMedImportButton} from './ScreeningToolbarActions';
@@ -133,8 +134,7 @@ export function ScreeningTab({projectId}: {projectId: string}) {
   if (tab === 'settings' && config.can_manage) {
     return <ScreeningSettings projectId={projectId} config={config} />;
   }
-  // Placeholder until the Duplicates workspace is wired in.
-  if (tab === 'duplicates') return null;
+  if (tab === 'duplicates') return <DuplicatesWorkspace projectId={projectId} />;
   if (config.reviewer_count === null) {
     return <NotSetUp projectId={projectId} config={config} onOpenSettings={() => setTab('settings')} />;
   }

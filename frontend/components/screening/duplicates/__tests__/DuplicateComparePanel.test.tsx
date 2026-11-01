@@ -52,8 +52,14 @@ function setup(p: DuplicatePair, busy = false) {
 describe('DuplicateComparePanel', () => {
   it("defaults Keep to the server's suggestion", () => {
     setup(pair());
-    expect(screen.getByRole('radio', {name: 'Keep "Title kept"'})).toBeChecked();
-    expect(screen.getByRole('radio', {name: 'Keep "Title rem"'})).not.toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep record 1: "Title kept"'})).toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep record 2: "Title rem"'})).not.toBeChecked();
+  });
+
+  it('gives the two Keep radios distinct names when the titles are identical', () => {
+    setup(pair({title: 'Same title'}, {title: 'Same title'}));
+    expect(screen.getByRole('radio', {name: 'Keep record 1: "Same title"'})).toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep record 2: "Same title"'})).not.toBeChecked();
   });
 
   it('marks differing fields with a dot', () => {
@@ -71,7 +77,7 @@ describe('DuplicateComparePanel', () => {
 
   it('merge posts the selected keeper', async () => {
     const h = setup(pair());
-    await userEvent.click(screen.getByRole('radio', {name: 'Keep "Title rem"'}));
+    await userEvent.click(screen.getByRole('radio', {name: 'Keep record 2: "Title rem"'}));
     await userEvent.click(screen.getByRole('button', {name: 'Merge, keep selected'}));
     expect(h.onMerge).toHaveBeenCalledWith('kept', 'rem');
   });

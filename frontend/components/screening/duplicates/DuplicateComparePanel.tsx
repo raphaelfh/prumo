@@ -8,7 +8,7 @@ import {useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {RadioGroup, RadioGroupItem} from '@/components/ui/radio-group';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {COMPARE_FIELDS, differingFields, type CompareField} from '@/lib/duplicates/pairs';
+import {COMPARE_FIELDS, differingFields, sourceLabel, type CompareField} from '@/lib/duplicates/pairs';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import type {DuplicatePair} from '@/services/duplicatesService';
@@ -26,18 +26,6 @@ const FIELD_LABEL: Record<CompareField, Parameters<typeof t<'duplicates'>>[1]> =
   has_pdf: 'fieldPdf',
   screening_decisions: 'fieldScreening',
 };
-
-const SOURCE_LABEL = {
-  pubmed: 'prismaSourcePubmed',
-  zotero: 'prismaSourceZotero',
-  ris: 'prismaSourceRis',
-  manual: 'prismaSourceManual',
-} as const;
-
-function sourceLabel(source: string | null): string {
-  const key = (source ?? 'manual').toLowerCase();
-  return t('screening', key in SOURCE_LABEL ? SOURCE_LABEL[key as keyof typeof SOURCE_LABEL] : 'prismaSourceManual');
-}
 
 function fieldValue(side: Side, field: CompareField): string {
   switch (field) {
@@ -89,7 +77,7 @@ export function DuplicateComparePanel({pair, busy, onMerge, onDistinct, onSkip, 
         disabled={resolved}
         className="grid grid-cols-1 gap-px bg-border lg:grid-cols-2"
       >
-        {[pair.kept, pair.removed].map((side) => {
+        {[pair.kept, pair.removed].map((side, index) => {
           const isKeeper = side.article_id === keeperId;
           return (
             <div key={side.article_id} className="min-w-0 bg-card p-3">
@@ -102,7 +90,9 @@ export function DuplicateComparePanel({pair, busy, onMerge, onDistinct, onSkip, 
                 >
                   <RadioGroupItem
                     value={side.article_id}
-                    aria-label={t('duplicates', 'keepSide').replace('{{title}}', side.title)}
+                    aria-label={t('duplicates', 'keepSide')
+                      .replace('{{n}}', String(index + 1))
+                      .replace('{{title}}', side.title)}
                   />
                   {t('duplicates', 'keep')}
                 </label>
