@@ -602,29 +602,27 @@ export function HITLExportDialog({
                                 </p>
                             </div>
                         </div>
-                        {mode === "all_users" && isManager && (
-                            <div className="flex items-start space-x-2">
-                                <Checkbox
-                                    id="anonymize-reviewers"
-                                    checked={anonymizeReviewerNames}
-                                    onCheckedChange={(c) =>
-                                        setAnonymizeReviewerNames(c === true)
-                                    }
-                                    className="mt-0.5"
-                                />
-                                <div className="space-y-0.5">
-                                    <Label
-                                        htmlFor="anonymize-reviewers"
-                                        className="text-sm font-normal"
-                                    >
-                                        {t("extraction", "exportAnonymizeReviewers")}
-                                    </Label>
-                                    <p className="text-xs text-muted-foreground">
-                                        {t("extraction", "exportAnonymizeReviewersDesc")}
-                                    </p>
-                                </div>
+                        <div className="flex items-start space-x-2">
+                            <Checkbox
+                                id="anonymize-reviewers"
+                                checked={anonymizeReviewerNames}
+                                onCheckedChange={(c) =>
+                                    setAnonymizeReviewerNames(c === true)
+                                }
+                                className="mt-0.5"
+                            />
+                            <div className="space-y-0.5">
+                                <Label
+                                    htmlFor="anonymize-reviewers"
+                                    className="text-sm font-normal"
+                                >
+                                    {t("extraction", "exportAnonymizeReviewers")}
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    {t("extraction", "exportAnonymizeReviewersDesc")}
+                                </p>
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     {/* Live preview line (FR-027) */}

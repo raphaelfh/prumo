@@ -4790,7 +4790,7 @@ export interface components {
         ExtractionExportRequest: {
             /**
              * Anonymize Reviewer Names
-             * @description Only meaningful when mode=all_users; replaces names with Reviewer A/B/…
+             * @description Replaces names with Member A/B/… in every mode, adjudicators included.
              * @default false
              */
             anonymize_reviewer_names: boolean;
@@ -4806,7 +4806,7 @@ export interface components {
             article_scope: components["schemas"]["ExtractionArticleScope"];
             /**
              * Include Ai Metadata
-             * @description Adds the optional AI metadata sheet to the workbook.
+             * @description Adds the AI proposals sheet and, in All users mode, an AI column in Verification.
              * @default false
              */
             include_ai_metadata: boolean;
