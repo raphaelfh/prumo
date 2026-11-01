@@ -148,10 +148,10 @@ def _latest_ai(layout: ExportLayout) -> dict[tuple[UUID, UUID, UUID], AIProposal
 def _shown(
     layout: ExportLayout, c: _Coordinate, rater: UUID | None, field: FieldDescriptor
 ) -> CellValue:
-    """``display_value`` of one slot of the coordinate (R2, no ``target``)."""
+    """``display_value`` of one slot of the coordinate (R2, ``target="matrix"``)."""
     assert c.article.run_id is not None
     v = layout.value_map.get(value_key(c.article.run_id, c.instance_id, c.field_id, rater))
-    return None if v is None else display_value(v, field)
+    return None if v is None else display_value(v, field, target="matrix")
 
 
 def build_verification(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
@@ -197,7 +197,11 @@ def build_verification(layout: ExportLayout, titles: SheetTitles) -> SheetSpec |
                 codes.get(c.field_id),
                 field.label,
                 *reviewer_values,
-                *((None if ai is None else display_value(ai.value, field),) if with_ai else ()),
+                *(
+                    (None if ai is None else display_value(ai.value, field, target="matrix"),)
+                    if with_ai
+                    else ()
+                ),
                 _shown(layout, c, None, field),
                 c.match,
                 len(c.raters),

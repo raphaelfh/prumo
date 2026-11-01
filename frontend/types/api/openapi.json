@@ -6374,7 +6374,7 @@
         "properties": {
           "anonymize_reviewer_names": {
             "default": false,
-            "description": "Only meaningful when mode=all_users; replaces names with Reviewer A/B/\u2026",
+            "description": "Replaces names with Member A/B/\u2026 in every mode, adjudicators included.",
             "title": "Anonymize Reviewer Names",
             "type": "boolean"
           },
@@ -6394,7 +6394,7 @@
           },
           "include_ai_metadata": {
             "default": false,
-            "description": "Adds the optional AI metadata sheet to the workbook.",
+            "description": "Adds the AI proposals sheet and, in All users mode, an AI column in Verification.",
             "title": "Include Ai Metadata",
             "type": "boolean"
           },

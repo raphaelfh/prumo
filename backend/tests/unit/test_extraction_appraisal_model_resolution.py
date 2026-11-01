@@ -61,7 +61,7 @@ _MARKER = {
 
 def _shown(model, row) -> tuple:
     return tuple(
-        None if v is None else display_value(v, f)
+        None if v is None else display_value(v, f, target="matrix")
         for v, f in zip(row.domain_verdicts, model.domain_fields, strict=True)
     )
 

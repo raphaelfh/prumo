@@ -289,7 +289,7 @@ def _ordered_specs(
     if "ai_proposals" in keep:
         specs.append(build_ai_proposals(layout, titles))
     if "appraisal_summary" in keep:
-        specs.append(build_appraisal_summary(layout, titles))
+        specs.append(build_appraisal_summary(layout, titles, shape))
     if "codebook" in keep:
         specs.append(build_codebook(layout, titles))
     if "options" in keep:
@@ -354,7 +354,7 @@ def estimate_sheet_cells(layout: ExportLayout, shape: ExportShape) -> dict[str |
         if a is None:
             return 0
         width = 1 + len(a.domain_labels) + max(1, len(a.derived_labels)) + n_reviewers
-        return (len(a.rows) + 1) * width
+        return (len(a.rows) + 1 + footnotes) * width
 
     walked = walk_sections(layout.sections)
     bounds: dict[str, int] = {

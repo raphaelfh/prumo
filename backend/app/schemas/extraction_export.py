@@ -74,11 +74,13 @@ class ExtractionExportRequest(BaseModel):
     )
     include_ai_metadata: bool = Field(
         default=False,
-        description="Adds the optional AI metadata sheet to the workbook.",
+        description=(
+            "Adds the AI proposals sheet and, in All users mode, an AI column in Verification."
+        ),
     )
     anonymize_reviewer_names: bool = Field(
         default=False,
-        description="Only meaningful when mode=all_users; replaces names with Reviewer A/B/…",
+        description="Replaces names with Member A/B/… in every mode, adjudicators included.",
     )
     shape: ExtractionExportShape = Field(
         default=ExtractionExportShape.COMPLETE,

@@ -260,7 +260,7 @@ def test_legend_carries_three_disposition_rows_matching_display_value():
     field = _field()
     for code in AbsentReason:
         marker = {"value": None, "absent_reason": code.value}
-        label = display_value(to_export_value(marker, field, {}), field)
+        label = display_value(to_export_value(marker, field, {}), field, target="matrix")
         assert label in legend, f"{code.value} label {label!r} missing from legend"
 
 

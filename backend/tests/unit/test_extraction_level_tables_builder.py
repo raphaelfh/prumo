@@ -7,9 +7,11 @@ from uuid import UUID, uuid4
 
 from app.models.extraction import ExtractionCardinality, ExtractionFieldType
 from app.services.exports.descriptors import count_level_records, record_keys, value_key
-from app.services.exports.extraction.level_tables import build_level_tables
+from app.services.exports.extraction.level_tables import build_level_tables, publication_header
 from app.services.exports.extraction.sheet_spec import SheetSpec
 from app.services.exports.extraction.workbook import ExportShape, allocate_titles
+from app.services.exports.extraction_snapshot_reader import AllowedValue
+from app.services.exports.values import SCOPE_MARKER, publication_footnotes
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
@@ -18,7 +20,7 @@ from app.services.extraction_export_service import (
     ReviewerDescriptor,
     SectionDescriptor,
 )
-from tests.unit.helpers.export_layouts import export_value, make_layout
+from tests.unit.helpers.export_layouts import export_value, make_article, make_layout
 
 _UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 MANY = ExtractionCardinality.MANY
@@ -324,7 +326,7 @@ def test_publication_has_label_headers_and_no_uuid() -> None:  # Review Focus 4
     assert _values(pub[0], 0) == ["Article", "DOI", "PMID", "Design"]
     assert pub[1].title == "Models"
     assert _values(pub[1], 0) == ["Article", "Models", "AUC (%)"]
-    assert _values(pub[1], 1) == ["Chen 2020", "Models 1", "81 %"]
+    assert _values(pub[1], 1) == ["Chen 2020", "Models 1", 81]
 
 
 def test_single_user_rows_read_the_reviewer_slot() -> None:  # Review Focus 6, R1
@@ -408,3 +410,116 @@ def test_sheet_for_maps_sections_to_their_level_title() -> None:  # R8
         t.sheet_for(gone_id),
     ) == ("Articles", "Articles", "models", None)
     assert "articles" not in t.fixed and "Articles" not in t.order
+
+
+# --- Publication display cells, label headers and footnotes (PR6 Task 2) ---
+
+N = _f("n", label="Sample size", type=ExtractionFieldType.NUMBER, unit="participants")
+DOSE = _f("dose", label="Dose", type=ExtractionFieldType.NUMBER, allowed_units=("mg", "g"))
+RISK = FieldDescriptor(
+    field_id=uuid4(),
+    label="Risk",
+    type=ExtractionFieldType.SELECT,
+    allowed_values=(AllowedValue("L", "Low"),),
+    name="risk",
+)
+AGE, SEX, SITE = _f("age"), _f("sex"), _f("site")
+PARTICIPANTS = _s("participants", N, DOSE, RISK, AGE, SEX, SITE)
+SMITH, SMITH_RUN, SMITH_I = make_article(section_id=PARTICIPANTS.entity_type_id, label="Smith 2020")
+JONES, JONES_RUN, JONES_I = make_article(section_id=PARTICIPANTS.entity_type_id, label="Jones 2021")
+ARTICLES = (SMITH, JONES)
+
+
+def _smith(f: FieldDescriptor):
+    return value_key(SMITH_RUN, SMITH_I, f.field_id)
+
+
+ANSWERED_VALUES = {
+    _smith(N): export_value(value_num=7394),
+    _smith(DOSE): export_value(value_num=5, unit="mg"),
+    _smith(RISK): export_value(value_text="L", value_label="Low"),
+    value_key(JONES_RUN, JONES_I, N.field_id): export_value(value_num=12),
+}
+MARKED_VALUES = {
+    **ANSWERED_VALUES,
+    _smith(AGE): export_value("absent", absent_code="no_information"),
+    _smith(SEX): export_value("absent", absent_code="not_applicable"),
+    _smith(SITE): export_value("absent", absent_code="not_evaluated"),
+    value_key(JONES_RUN, JONES_I, N.field_id): export_value(value_num=12, out_of_scope=True),
+}
+TWO_VALUE_FIELDS = _s(
+    "pair", _f("a", label="Value"), _f("b", label="Value"), _f("c", label="Value")
+)
+ONE_ARTICLE = (make_article(section_id=TWO_VALUE_FIELDS.entity_type_id, label="Lee 2022")[0],)
+
+
+def _publication_articles(layout: ExportLayout) -> SheetSpec:
+    return next(s for s in _sheets(layout, ExportShape.PUBLICATION) if s.title == "Articles")
+
+
+def test_publication_header_puts_a_fixed_unit_in_the_label() -> None:
+    assert publication_header(N) == "Sample size (participants)"
+    assert publication_header(DOSE) == "Dose"
+    assert publication_header(_f("x", label="X", unit="")) == "X"
+
+
+def test_publication_articles_sheet_shows_display_cells_and_footnotes() -> None:
+    spec = _publication_articles(
+        make_layout(sections=(PARTICIPANTS,), articles=ARTICLES, value_map=MARKED_VALUES)
+    )
+    header = _values(spec, 0)
+    assert header[0] == "Article"
+    assert "Sample size (participants)" in header
+    assert "Dose" in header and "Dose (mg)" not in header
+    assert not any(isinstance(h, str) and h.endswith((".unit", ".other")) for h in header)
+    row1 = dict(zip(header, _values(spec, 1), strict=True))
+    assert (row1["Sample size (participants)"], row1["Dose"], row1["Risk"]) == (7394, "5 mg", "Low")
+    assert (row1["Age"], row1["Sex"], row1["Site"]) == ("NI", "NA", "NE")
+    row2 = dict(zip(header, _values(spec, 2), strict=True))
+    assert row2["Sample size (participants)"] == SCOPE_MARKER
+    assert all(c.value is None for c in spec.rows[3])
+    assert [r[0].value for r in spec.rows[4:]] == list(
+        publication_footnotes({"NI", "NA", "NE", SCOPE_MARKER})
+    )
+    assert all(len(r) == 1 for r in spec.rows[4:])
+
+
+def test_publication_sheet_without_markers_has_no_footnote_rows() -> None:
+    spec = _publication_articles(
+        make_layout(sections=(PARTICIPANTS,), articles=ARTICLES, value_map=ANSWERED_VALUES)
+    )
+    assert len(spec.rows) == 3  # header + 2 articles
+
+
+def test_publication_level_sheet_gets_its_own_footnotes() -> None:
+    m = _s("arms", AGE, many=True, label="Arms")
+    e1 = uuid4()
+    art = _art({(m.entity_type_id, None): (e1,)})
+    value_map = {
+        value_key(art.run_id, e1, AGE.field_id): export_value("absent", absent_code="not_evaluated")
+    }
+    layout = make_layout(sections=(m,), articles=(art,), value_map=value_map)
+    sheets = _sheets(layout, ExportShape.PUBLICATION)
+    assert len(sheets[0].rows) == 2  # Articles: no marker, no footnote
+    arms = sheets[1]
+    assert _values(arms, 1)[-1] == "NE"
+    assert [r[0].value for r in arms.rows[2:]] == [None, "NE = Not evaluated"]
+
+
+def test_publication_duplicate_labels_get_distinct_headers() -> None:  # Review Focus 4
+    spec = _publication_articles(
+        make_layout(sections=(TWO_VALUE_FIELDS,), articles=ONE_ARTICLE, value_map={})
+    )
+    assert _values(spec, 0)[3:] == ["Value", "Value (2)", "Value (3)"]
+
+
+def test_review_workbook_level_sheet_never_abbreviates() -> None:
+    layout = make_layout(sections=(PARTICIPANTS,), articles=ARTICLES, value_map=MARKED_VALUES)
+    titles = allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+    cells = {
+        c.value
+        for s in build_level_tables(layout, titles, ExportShape.COMPLETE)
+        for r in s.rows
+        for c in r
+    }
+    assert cells & {"NI", "NA", "NE", SCOPE_MARKER} == set()

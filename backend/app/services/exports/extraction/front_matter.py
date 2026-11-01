@@ -16,8 +16,10 @@ from app.services.exports.codebook_model import field_code_clashes
 from app.services.exports.descriptors import count_level_records, primary_rater
 from app.services.exports.extraction.data_sheet import (
     LINEAGE_EXACT_SINCE,
+    R_READ_SNIPPET,
     Origin,
     origin_counts,
+    pandas_read_snippet,
 )
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, CellValue, SheetSpec
 from app.services.exports.extraction.verification import agreement
@@ -145,6 +147,11 @@ def _codebook_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
     return rows
 
 
+def _reading_lines() -> tuple[str, ...]:
+    """Read the Data sheet so the codes "None" / "N/A" are not turned into missing."""
+    return (R_READ_SNIPPET, pandas_read_snippet(), "Blank is the only missing marker.")
+
+
 def build_front_matter(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     rows: list[tuple[Cell, ...]] = [(Cell("README", _TITLE),), ()]
     rows.append(_kv("Project", layout.project_name))
@@ -172,6 +179,9 @@ def build_front_matter(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
         rows.append(())
         rows.append(_agreement_row(layout))
         rows.append((Cell(""), Cell("all_equal rows divided by rows with n_raters ≥ 2.", _WRAP)))
+
+    rows.extend(_block("Reading this file"))
+    rows.extend((Cell(""), Cell(line, _WRAP)) for line in _reading_lines())
 
     rows.extend(_block("Lineage"))
     rows.extend((Cell(""), Cell(line, _WRAP)) for line in _LINEAGE)
