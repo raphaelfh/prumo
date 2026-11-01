@@ -23,7 +23,7 @@ class PrismaCountsRead(BaseModel):
     identified: list[PrismaSourceCount]
     identified_total: int
     duplicates_removed: int
-    not_retrieved: int
+    records_not_found: int
     imported_not_enrolled: int
     screened: int
     excluded: int

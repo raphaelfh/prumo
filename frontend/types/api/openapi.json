@@ -9125,8 +9125,8 @@
             "title": "Imported Not Enrolled",
             "type": "integer"
           },
-          "not_retrieved": {
-            "title": "Not Retrieved",
+          "records_not_found": {
+            "title": "Records Not Found",
             "type": "integer"
           },
           "screened": {
@@ -9142,7 +9142,7 @@
           "identified",
           "identified_total",
           "duplicates_removed",
-          "not_retrieved",
+          "records_not_found",
           "imported_not_enrolled",
           "screened",
           "excluded",

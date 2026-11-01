@@ -75,7 +75,7 @@ async def test_pubmed_only_import_identified_equals_screened(db_session: AsyncSe
     assert counts.identified_total == 3
     assert counts.duplicates_removed == 0
     assert counts.screened == 3
-    assert counts.not_retrieved == 0
+    assert counts.records_not_found == 0
     assert counts.imported_not_enrolled == 0
 
 
@@ -132,7 +132,7 @@ async def test_unchanged_pubmed_record_counts_like_a_resolved_one(
         {"source": "ris", "count": 1},
     ]
     assert counts.duplicates_removed == 1
-    assert counts.not_retrieved == 0
+    assert counts.records_not_found == 0
 
 
 async def test_reimporting_the_same_file_changes_nothing(db_session: AsyncSession) -> None:
@@ -154,7 +154,7 @@ async def test_not_found_pmids_are_not_duplicates(db_session: AsyncSession) -> N
 
     counts = await prisma_counts(db_session, project_id)
 
-    assert counts.not_retrieved == 1
+    assert counts.records_not_found == 1
     assert counts.duplicates_removed == 0
     assert counts.identified_total == 1
 
@@ -176,7 +176,7 @@ async def test_imported_but_not_enrolled_is_not_identified(db_session: AsyncSess
     assert counts.imported_not_enrolled == 2
 
 
-async def test_deleted_article_is_not_counted_as_not_retrieved(db_session: AsyncSession) -> None:
+async def test_deleted_article_is_not_counted_as_not_found(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     await _import(db_session, project_id, FOUND)
     await db_session.execute(
@@ -189,7 +189,7 @@ async def test_deleted_article_is_not_counted_as_not_retrieved(db_session: Async
 
     counts = await prisma_counts(db_session, project_id)
 
-    assert counts.not_retrieved == 0
+    assert counts.records_not_found == 0
 
 
 async def test_moved_article_is_not_counted(db_session: AsyncSession) -> None:

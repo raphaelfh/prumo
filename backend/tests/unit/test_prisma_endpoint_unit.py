@@ -24,7 +24,7 @@ async def test_prisma_handler_returns_counts(monkeypatch: pytest.MonkeyPatch) ->
         identified=[PrismaSourceCount(source="pubmed", count=3)],
         identified_total=3,
         duplicates_removed=0,
-        not_retrieved=1,
+        records_not_found=1,
         imported_not_enrolled=0,
         screened=3,
         excluded=1,

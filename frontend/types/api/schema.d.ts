@@ -6083,8 +6083,8 @@ export interface components {
             identified_total: number;
             /** Imported Not Enrolled */
             imported_not_enrolled: number;
-            /** Not Retrieved */
-            not_retrieved: number;
+            /** Records Not Found */
+            records_not_found: number;
             /** Screened */
             screened: number;
             /** Sought For Retrieval */

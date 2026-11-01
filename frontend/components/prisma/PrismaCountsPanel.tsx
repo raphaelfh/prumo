@@ -72,7 +72,7 @@ function identificationLines(counts: PrismaCountsRead): Line[] {
     ...counts.identified.map(({source, count}) => ({id: `source:${source}`, label: sourceLabel(source), count, nested: true})),
     {id: 'total', label: t('screening', 'prismaIdentifiedTotal'), count: counts.identified_total},
     {id: 'duplicates', label: t('screening', 'prismaDuplicates'), count: counts.duplicates_removed},
-    {id: 'not-retrieved', label: t('screening', 'prismaNotRetrieved'), count: counts.not_retrieved},
+    {id: 'not-retrieved', label: t('screening', 'prismaRecordsNotFound'), count: counts.records_not_found},
     {id: 'not-enrolled', label: t('screening', 'prismaNotEnrolled'), count: counts.imported_not_enrolled},
   ];
 }

@@ -125,7 +125,7 @@ export const screening = {
   prismaSourceManual: 'Manual',
   prismaIdentifiedTotal: 'Records identified',
   prismaDuplicates: 'Duplicates removed',
-  prismaNotRetrieved: 'Records not retrieved from the source',
+  prismaRecordsNotFound: 'Records not retrieved from the source',
   prismaNotEnrolled: 'Imported but not enrolled',
   prismaScreening: 'Title and abstract screening',
   prismaScreened: 'Records screened',

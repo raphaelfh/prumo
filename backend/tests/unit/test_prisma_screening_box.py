@@ -56,7 +56,7 @@ def test_prisma_payload_has_no_pending_or_conflict_field() -> None:
         "identified",
         "identified_total",
         "duplicates_removed",
-        "not_retrieved",
+        "records_not_found",
         "imported_not_enrolled",
         "screened",
         "excluded",

@@ -109,7 +109,7 @@ async def _other_sources(db: AsyncSession, project_id: UUID) -> list[PrismaSourc
     return [PrismaSourceCount(source=row.source, count=row.n) for row in rows]
 
 
-async def _not_retrieved(db: AsyncSession, project_id: UUID) -> int:
+async def _records_not_found(db: AsyncSession, project_id: UUID) -> int:
     """Distinct PMIDs of the project's PubMed imports that never found an article.
 
     Status-based: deleting an article later does not turn its PMID into one.
@@ -161,7 +161,7 @@ async def prisma_counts(db: AsyncSession, project_id: UUID) -> PrismaCountsRead:
         identified=identified,
         identified_total=identified_total,
         duplicates_removed=identified_total - enrolled,
-        not_retrieved=await _not_retrieved(db, project_id),
+        records_not_found=await _records_not_found(db, project_id),
         imported_not_enrolled=total_articles - enrolled,
         screened=box.screened,
         excluded=box.excluded,
