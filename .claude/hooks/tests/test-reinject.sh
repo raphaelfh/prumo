@@ -85,15 +85,20 @@ for ph in halted done; do
   expect_lacks "phase=$ph → silent" "ACTIVE"
 done
 
-echo "# a multi-slice spec's wave manifest comes back with the runs"
+echo "# a multi-slice spec's wave manifest comes back while a slice is live"
+rm -f "$STATE"
 MAN="$MAIN/.superpowers/ship-spec/wspec/manifest"
-mkdir -p "$(dirname "$MAN")"
+SLICE="$MAIN/.superpowers/ship-spec/wspec-S2/state"
+mkdir -p "$(dirname "$MAN")" "$(dirname "$SLICE")"
 printf 'ceiling=prod\nwave1=S1\nwave2=S2,S3\n' >"$MAN"
+touch -t 202001010000 "$MAN"   # an old manifest: a wave can wait days on the train
+expect_lacks "no live slice → silent" "MULTI-SLICE"
+printf 'ceiling=prod\nphase=ship\nspec=wspec\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$SLICE"
 expect_contains "manifest is re-injected" "wave2=S2,S3"
 expect_contains "with the status verb to read the queue" "ship.sh status wspec"
-touch -d '3 days ago' "$MAN" 2>/dev/null || touch -t 202001010000 "$MAN"
-expect_lacks "a stale manifest is silent" "MULTI-SLICE"
-rm -f "$MAN"
+printf 'ceiling=prod\nphase=done\nspec=wspec\n' >"$SLICE"
+expect_lacks "every slice ended → silent" "MULTI-SLICE"
+rm -rf "$(dirname "$MAN")" "$(dirname "$SLICE")"
 
 echo ""
 echo "passed=$pass failed=$fail"

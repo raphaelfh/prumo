@@ -265,9 +265,9 @@ hardcoded. A PR that goes `BEHIND` is unstuck with
 `gh api -X PUT .../update-branch`, not a rebase.
 
 **One owner per change.** Only the orchestrator ships: no seat pushes, opens a
-PR, or fixes a red `dev`. `ship.sh dev` refuses when an open dev PR has the same
-title or touches a file this branch touches — fold the work into it or wait for
-it to land (2026-11-01: #1081 and #1082 fixed the same red dev).
+PR, or fixes a red `dev`. `ship.sh dev` refuses when an open dev PR touches a
+file this branch touches — fold the work into it or wait for it to land
+(2026-11-01: #1081 and #1082 fixed the same red dev).
 `--allow-overlap <pr#>` only with a ledger `Ruling:`.
 
 Then `bash scripts/ship.sh ci`. **`PENDING` is a legitimate place to end a
@@ -327,12 +327,14 @@ relayed approvals are refused (2026-11-01).
 `S1 | S2,S3 | S4`. Put a wave boundary only where a slice needs another
 slice's code **on dev** — a migration, a generated API type, an endpoint it
 calls. Everything else joins the earliest wave it can. Slices in one wave touch
-disjoint files: `ship.sh dev` refuses sibling PRs that share a file, and that
-refusal means the cut was wrong.
+disjoint files; `ship.sh dev` refuses a sibling PR that shares a file with an
+open one, which means the cut was wrong. Slice names: letters, digits, `.`,
+`_`.
 
 1. **Frame once** for the whole spec — claim, brainstorm, spec gate — then,
    from the main checkout, `bash scripts/ship.sh init <spec> --to <ceiling>
-   --slices "S1 | S2,S3"`. The ceiling binds every slice.
+   --slices "S1 | S2,S3"`. The manifest, waves and ceiling, is fixed for
+   the spec's life; `init` refuses to rewrite it.
 2. **Start a slice** with its own worktree branched from fresh `origin/dev`,
    then `ship.sh slice <spec> <S> --worktree <path>`. It starts at `plan` and
    refuses until every earlier wave has landed. `<spec>-<S>` is its basename.
@@ -347,12 +349,14 @@ refusal means the cut was wrong.
    `ship.sh --run <spec>-<S> dev "<title>"` for the next queued slice, in
    manifest order; it arms the existing PR.
 5. **A slice is done when it lands.** `ship.sh --run <spec>-<S> done` refuses
-   until its PR is `MERGED`. A halted slice blocks later waves, not its
-   siblings.
-6. **One promote** (ceiling `prod`): the last slice to land does not call
-   `done`. It goes on to `promote` and `verify`. `phase promote` refuses while
-   any other slice of the manifest is not done. Ceiling `dev`: every slice ends
-   `done`, and the verdict follows the last one.
+   until its PR is `MERGED`, then records `landed`. To abandon a slice,
+   `halt` then `done`: it ends without `landed`, so later waves and the
+   promote stay blocked.
+6. **One promote** (ceiling `prod`): the last slice does not call `done`; once
+   its own PR has merged it goes on to `promote` and `verify`. `phase promote`
+   refuses until every slice, itself included, has landed, and bash-guard
+   denies a promotion from any run not in `promote`. Ceiling `dev`: every slice
+   ends `done`, and the verdict follows the last one.
 
 Verdict for a multi-slice run: paste `ship.sh status <spec>` and the last
 slice's `facts`.

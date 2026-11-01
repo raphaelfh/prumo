@@ -180,7 +180,7 @@ if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
     ask "No active /ship-spec run declares a ceiling (no .superpowers/ship-spec/*/state with a live phase). Promoting or deploying to prod by hand — confirm; the deploy-release skill is the runbook."
   fi
   if [ "$ACTIVE_COUNT" -gt 1 ]; then
-    deny "More than one active /ship-spec run state names this checkout as orchestrator. Mark finished runs phase=done (or halted) before promoting."
+    deny "More than one active /ship-spec run state names this checkout as orchestrator. A spec promotes once, from its last slice: end the others with 'ship.sh --run <name> done' (or halt) first."
   fi
 
   ceiling=$(trimmed ceiling "$ACTIVE")
@@ -190,6 +190,14 @@ if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
   esac
 
   if [ "$is_promotion" = 1 ]; then
+    # Promotion happens IN the promote phase. `ship.sh phase promote` is where
+    # the evidence (preflight on origin/dev; for a multi-slice spec, every
+    # slice landed) is checked, so a run that never entered it cannot promote.
+    ph=$(trimmed phase "$ACTIVE")
+    if [ "$ph" != promote ]; then
+      deny "ship-spec run $ACTIVE is in phase '${ph:-unset}', not promote. Enter it with 'bash scripts/ship.sh phase promote', which checks the evidence."
+    fi
+
     # Fresh GREEN preflight on the exact commit being promoted (origin/dev).
     pf=$(trimmed preflight "$ACTIVE")
     head_dev=$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null || echo "")

@@ -84,12 +84,13 @@ _next_of() {
 cmd_init() {
   local name=${1:-}; shift 2>/dev/null || true
   [ -n "$name" ] || { echo "usage: ship.sh init <basename> --to <dev|prod> [--worktree <path> | --slices 'S1 | S2,S3']" >&2; return 2; }
-  local ceiling=dev worktree=$PWD slices=""
+  local ceiling=dev worktree=$PWD slices="" multi=""
   while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || { echo "ship init: $1 needs a value" >&2; return 2; }
     case $1 in
-      --to) ceiling=${2:-}; shift 2 ;;
-      --worktree) worktree=${2:-}; shift 2 ;;
-      --slices) slices=${2:-}; shift 2 ;;
+      --to) ceiling=$2; shift 2 ;;
+      --worktree) worktree=$2; shift 2 ;;
+      --slices) slices=$2; multi=1; shift 2 ;;
       *) echo "ship init: unknown argument '$1'" >&2; return 2 ;;
     esac
   done
@@ -107,7 +108,7 @@ cmd_init() {
     echo "ship init: a live run already names $PWD as orchestrator ($other). End it with 'ship done' or 'ship halt <reason>'." >&2
     return 1
   fi
-  if [ -n "$slices" ]; then _init_manifest "$name" "$ceiling" "$slices"; return; fi
+  if [ -n "$multi" ]; then _init_manifest "$name" "$ceiling" "$slices"; return; fi
   live=$(_owned | grep -xF "$BASE/$name/state")
   local f="$BASE/$name/state"
   mkdir -p "$BASE/$name"
@@ -130,24 +131,23 @@ cmd_init() {
 # --- multi-slice specs -------------------------------------------------------
 # The manifest is the dependency order, as WAVES: `S1 | S2,S3 | S4`. Slices in
 # one wave are independent and build concurrently, each in its own worktree
-# and run; a wave starts only when every slice before it has LANDED on dev. A
-# slice run is an ordinary run named <spec>-<slice>, so the hooks gate each one
-# as they gate any run. `manifest` is not a `state`: no hook reads it as a run.
+# and run; a wave starts only when every slice before it has LANDED on dev
+# (`landed=` in its state, written by `done` on a MERGED PR). A slice run is an
+# ordinary run named <spec>-<slice>, so the hooks gate each one as they gate
+# any run. `manifest` is not a `state`: no hook reads it as a run. Slice names
+# carry no `-`, so <spec>-<slice> cannot name two different slices.
 _init_manifest() {
-  local name=$1 ceiling=$2 spec=$3 m="$BASE/$1/manifest" wave s n=0 seen=" " lines=""
-  local -a waves
-  if [ -e "$BASE/$name/state" ]; then
-    echo "ship init: $name is already a single-slice run." >&2; return 1
+  local name=$1 ceiling=$2 spec m="$BASE/$1/manifest" wave s n=0 seen=" " lines=""
+  spec=$(printf '%s' "$3" | tr -d '[:space:]')
+  # One whole-spec check: no empty wave or slice, and no glob character
+  # reaches the unquoted split below.
+  printf '%s' "$spec" | grep -Eqx '[A-Za-z0-9._]+(,[A-Za-z0-9._]+)*([|][A-Za-z0-9._]+(,[A-Za-z0-9._]+)*)*' \
+    || { echo "ship init: bad --slices '$3' (want 'S1 | S2,S3'; names: letters, digits, . _)." >&2; return 2; }
+  if [ -e "$m" ] || [ -e "$BASE/$name/state" ]; then
+    echo "ship init: $name already exists; a manifest is fixed for its spec's life (waves and ceiling)." >&2; return 1
   fi
-  IFS='|' read -ra waves <<<"$spec"
-  for wave in "${waves[@]}"; do
-    wave=$(printf '%s' "$wave" | tr -d '[:space:]')
+  for wave in ${spec//|/ }; do
     n=$((n + 1))
-    [ -n "$wave" ] || { echo "ship init: wave $n is empty in '$spec'." >&2; return 2; }
-    # Whole-wave check BEFORE the split: no glob character survives into the
-    # unquoted loop, and `S2,` (an empty slice) is refused.
-    printf '%s' "$wave" | grep -Eqx '[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*' \
-      || { echo "ship init: bad wave '$wave' (slice names: letters, digits, . _ -; comma-separated)." >&2; return 2; }
     for s in ${wave//,/ }; do
       case "$seen" in *" $s "*) echo "ship init: slice '$s' is named twice." >&2; return 2 ;; esac
       seen="$seen$s "
@@ -156,7 +156,7 @@ _init_manifest() {
 "
   done
   mkdir -p "$BASE/$name"
-  printf 'ceiling=%s\norchestrator=%s\nstarted=%s\n%s' "$ceiling" "$PWD" "$(_clock)" "$lines" >"$m"
+  printf 'ceiling=%s\norchestrator=%s\n%s' "$ceiling" "$PWD" "$lines" >"$m"
   cat "$m"
 }
 
@@ -181,7 +181,7 @@ cmd_slice() {
   shift 2
   while [ $# -gt 0 ]; do
     case $1 in
-      --worktree) worktree=${2:-}; shift 2 ;;
+      --worktree) [ $# -ge 2 ] || { echo "ship slice: --worktree needs a value" >&2; return 2; }; worktree=$2; shift 2 ;;
       *) echo "ship slice: unknown argument '$1'" >&2; return 2 ;;
     esac
   done
@@ -191,7 +191,7 @@ cmd_slice() {
   w=$(_wave_of "$m" "$sl")
   [ -n "$w" ] || { echo "ship slice: '$sl' is not in the $spec manifest ($(_manifest_slices "$m" | paste -sd' ' -))." >&2; return 1; }
   for x in $(_manifest_slices "$m" "$w"); do
-    if [ "$(_get "$BASE/$spec-$x/state" phase)" != done ]; then
+    if [ -z "$(_get "$BASE/$spec-$x/state" landed)" ]; then
       echo "ship slice: $sl is in wave $w; $x (an earlier wave) has not landed on dev." >&2
       return 1
     fi
@@ -201,8 +201,12 @@ cmd_slice() {
     echo "ship slice: $PWD already orchestrates a run outside $spec ($other)." >&2; return 1
   fi
   f="$BASE/$spec-$sl/state"
-  touch "$m"   # keeps the manifest inside the hooks' 24h freshness window
-  if [ -f "$f" ] && [ "$(_get "$f" phase)" != done ]; then
+  if [ -f "$f" ]; then
+    # Re-running `slice` re-attaches a worktree to ITS OWN live slice; it never
+    # restarts an ended one or adopts another checkout's or spec's run.
+    if [ "$(_get "$f" spec)" != "$spec" ] || [ "$(_get "$f" orchestrator)" != "$PWD" ] || [ "$(_get "$f" phase)" = done ]; then
+      echo "ship slice: $f exists and is not a live $spec slice owned by $PWD." >&2; return 1
+    fi
     _set "$f" worktree "$worktree"; cat "$f"; return 0
   fi
   mkdir -p "$(dirname "$f")"
@@ -242,28 +246,30 @@ cmd_phase() {
   cur=$(_get "$f" phase)
   [ "$cur" = "$to" ] && { cat "$f"; return 0; }
   case "$to" in
-    halted|done) ;;
-    *)
-      if [ "$cur" != halted ] && [ "$to" != "$(_next_of "$cur")" ]; then
-        echo "ship phase: '$cur' -> '$to' is not legal (next is '$(_next_of "$cur")'). Resume a halted run instead of skipping." >&2
-        return 1
-      fi ;;
+    halted|done) echo "ship phase: end a run with 'ship.sh halt <reason>' or 'ship.sh done', which check their evidence." >&2; return 1 ;;
   esac
+  if [ "$cur" != halted ] && [ "$to" != "$(_next_of "$cur")" ]; then
+    echo "ship phase: '$cur' -> '$to' is not legal (next is '$(_next_of "$cur")'). Resume a halted run instead of skipping." >&2
+    return 1
+  fi
   # Entering `promote` needs the evidence that promotion itself requires, so
   # the error lands at the phase boundary rather than at the gh command.
   # bash-guard.sh enforces the same rule on `gh pr create --base main`; this is
   # the earlier, cheaper copy of it, not a replacement.
-  # A multi-slice spec promotes ONCE, from the last slice to land: every other
-  # slice of its manifest must be done (merged into dev) first.
+  # A multi-slice spec promotes ONCE, from the last slice, after every slice
+  # (itself included) has landed on dev.
   if [ "$to" = promote ]; then
     local pf want x spec; spec=$(_get "$f" spec)
-    [ -n "$spec" ] && for x in $(_manifest_slices "$BASE/$spec/manifest"); do
-      [ "$BASE/$spec-$x/state" = "$f" ] && continue
-      if [ "$(_get "$BASE/$spec-$x/state" phase)" != done ]; then
-        echo "ship phase: $spec promotes once, after every slice lands; $x is not done." >&2
-        return 1
-      fi
-    done
+    if [ -n "$spec" ]; then
+      for x in $(_manifest_slices "$BASE/$spec/manifest"); do
+        [ "$BASE/$spec-$x/state" = "$f" ] && continue
+        if [ -z "$(_get "$BASE/$spec-$x/state" landed)" ]; then
+          echo "ship phase: $spec promotes once, after every slice lands; $x has not." >&2
+          return 1
+        fi
+      done
+      _merged "$f" || return 1
+    fi
     pf=$(_get "$f" preflight)
     want="GREEN@$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null)"
     if [ "$pf" != "$want" ]; then
@@ -284,24 +290,29 @@ cmd_halt() {
   cat "$f"
 }
 
+# 0 iff the run's recorded PR is MERGED. Unknown is not merged.
+_merged() {
+  local pr st; pr=$(_get "$1" pr)
+  [ -n "$pr" ] || { echo "ship: no PR recorded for $1. Ship it with 'ship.sh dev'." >&2; return 1; }
+  st=$(gh pr view "$pr" --json state -q .state 2>/dev/null)
+  [ "$st" = MERGED ] && return 0
+  echo "ship: $pr is '${st:-unknown}', not MERGED." >&2
+  return 1
+}
+
+# A slice is done when its PR has LANDED (`landed=` gates the next wave and the
+# single promote). A HALTED slice may also be ended: abandoned, never landed,
+# so everything after it stays blocked, which is the truth.
 cmd_done() {
-  local f pr st; f=$(_active) || return 1
-  # A slice is done when its PR has LANDED: the next wave branches from dev
-  # and the single promote assumes it. Unknown is not merged.
-  if [ -n "$(_get "$f" spec)" ]; then
-    pr=$(_get "$f" pr)
-    [ -n "$pr" ] || { echo "ship done: this slice has no PR. Ship it with 'ship.sh dev', or 'ship.sh halt <reason>'." >&2; return 1; }
-    st=$(gh pr view "$pr" --json state -q .state 2>/dev/null)
-    if [ "$st" != MERGED ]; then
-      echo "ship done: $pr is '${st:-unknown}', not MERGED. A slice is done when it lands on dev." >&2
-      return 1
-    fi
+  local f; f=$(_active) || return 1
+  if [ -n "$(_get "$f" spec)" ] && [ "$(_get "$f" phase)" != halted ]; then
+    _merged "$f" || { echo "ship done: a slice is done when it lands on dev; to abandon it, 'ship.sh halt <reason>' first." >&2; return 1; }
+    _set "$f" landed "$(_get "$f" pr)"
   fi
   _set "$f" ended "$(_clock)"
   _set "$f" phase done
   cat "$f"
 }
-
 
 # Pure verdict function: $1 = required contexts (newline separated),
 # $2 = check-runs as name<TAB>status<TAB>conclusion lines.
@@ -411,18 +422,18 @@ cmd_gate() {
 # Merge-train rule (AGENTS.md): only ONE armed auto-merge into dev at a time.
 # `dev` is strict/up-to-date, so N armed PRs just go BEHIND and invalidate each
 # other. Precheck the train; queue rather than arm when it is occupied.
-# One owner per change. Pure: $1 = our branch, $2 = our title, $3 = our changed
-# files (newline separated), $4 = open dev PRs as number<TAB>head<TAB>title<TAB>
-# comma-joined files. Prints one line per PR that already owns this change:
-# the same title, or a shared file. On 2026-11-01 two sessions each fixed the
-# same red dev and opened #1081 and #1082. Within a wave the check doubles as
-# the independence proof: sibling slices that share a file were cut wrong.
+# One owner per change. Pure: $1 = our branch, $2 = our changed files (newline
+# separated), $3 = open dev PRs as number<TAB>head<TAB>file-count<TAB>files
+# joined by \037. Prints one line per PR that already owns a file we touch.
+# On 2026-11-01 two sessions each fixed the same red dev and opened #1081 and
+# #1082. gh returns at most 100 files per PR, so a PR at the cap cannot be
+# proven disjoint and is reported too.
 _dev_conflicts() {
-  local branch=$1 title=$2 mine=$3 prs=$4 num head t files shared
-  while IFS=$'\t' read -r num head t files; do
+  local branch=$1 mine=$2 prs=$3 num head count files shared
+  while IFS=$'\t' read -r num head count files; do
     [ -n "$num" ] && [ "$head" != "$branch" ] || continue
-    if [ "$t" = "$title" ]; then echo "#$num same title"; continue; fi
-    shared=$(printf '%s\n' "$files" | tr ',' '\n' | grep -xF -f <(printf '%s\n' "$mine" | grep -vx '') | paste -sd' ' -)
+    if [ "${count:-0}" -ge 100 ]; then echo "#$num has 100+ files, overlap unprovable"; continue; fi
+    shared=$(printf '%s\n' "$files" | tr '\037' '\n' | grep -xF -f <(printf '%s\n' "$mine" | grep -vx '') | paste -sd' ' -)
     [ -n "$shared" ] && echo "#$num shares $shared"
   done <<EOF
 $prs
@@ -433,7 +444,7 @@ cmd_dev() {
   local f wt branch title="" body="" pr n mine prs conflicts ack=" "
   while [ $# -gt 0 ]; do
     case $1 in
-      --allow-overlap) ack="$ack#${2#\#} "; shift 2 ;;
+      --allow-overlap) [ $# -ge 2 ] || { echo "ship dev: --allow-overlap needs a PR number" >&2; return 2; }; ack="$ack#${2#\#} "; shift 2 ;;
       *) if [ -z "$title" ]; then title=$1; else body=$1; fi; shift ;;
     esac
   done
@@ -449,18 +460,21 @@ cmd_dev() {
     git -C "$wt" status --short >&2
     return 1
   fi
-  mine=$(git -C "$wt" diff --name-only origin/dev...HEAD 2>/dev/null)
-  if ! prs=$(gh pr list --base dev --state open --limit 200 --json number,headRefName,title,files \
-               --jq '.[] | [(.number|tostring), .headRefName, .title, ([.files[].path] | join(","))] | @tsv' 2>/dev/null); then
+  if ! mine=$(git -C "$wt" diff --name-only origin/dev...HEAD 2>/dev/null); then
+    echo "ship dev: no origin/dev to diff against, so cannot prove nobody owns this change. git fetch origin dev." >&2
+    return 1
+  fi
+  if ! prs=$(gh pr list --base dev --state open --limit 200 --json number,headRefName,files \
+               --jq '.[] | [(.number|tostring), .headRefName, (.files|length|tostring), ([.files[].path] | join("\u001f"))] | @tsv' 2>/dev/null); then
     echo "ship dev: cannot list open PRs to dev, so cannot prove nobody owns this change. Retry." >&2
     return 1
   fi
-  conflicts=$(_dev_conflicts "$branch" "$title" "$mine" "$prs" | while read -r c; do
+  conflicts=$(_dev_conflicts "$branch" "$mine" "$prs" | while read -r c; do
     case "$ack" in *" ${c%% *} "*) ;; *) echo "$c" ;; esac
   done)
   if [ -n "$conflicts" ]; then
     echo "ship dev: an open PR already owns this change:" >&2
-    printf '  %s\n' "$conflicts" >&2
+    printf '%s\n' "$conflicts" | sed 's/^/  /' >&2
     echo "Fold the work into that PR, or wait for it to land. If both are truly needed, ledger why and pass --allow-overlap <pr#>." >&2
     return 1
   fi
@@ -533,7 +547,11 @@ cmd_facts() {
 # Let the test source this file for its pure functions without running a verb.
 if [ "${1:-}" = "--source-only" ]; then return 0 2>/dev/null || exit 0; fi
 
-if [ "${1:-}" = "--run" ]; then SHIP_RUN=${2:-}; shift 2 2>/dev/null || shift; fi
+SHIP_RUN=""
+if [ "${1:-}" = "--run" ]; then
+  [ $# -ge 2 ] || { echo "ship: --run needs a run basename" >&2; exit 2; }
+  SHIP_RUN=$2; shift 2
+fi
 
 case ${1:-} in
   init)  shift; cmd_init "$@" ;;

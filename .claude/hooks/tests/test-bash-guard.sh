@@ -131,10 +131,10 @@ expect "dev, someone else's run: deploy asks" ask 'railway up'
 # The prod path must survive the scoping untouched: promotion is the
 # orchestrator's own Phase 6 and no seat promotes, so a --to prod run keeps its
 # whole autonomous cycle. Evidence, not ownership, is what gates it.
-set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA" "orchestrator=$ROOT"
+set_state ceiling=prod phase=promote "preflight=GREEN@$DEV_SHA" "orchestrator=$ROOT"
 expect "prod, owned by me, GREEN: allowed" allow "$PROMOTE"
 
-set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA" "orchestrator=/somewhere/else"
+set_state ceiling=prod phase=promote "preflight=GREEN@$DEV_SHA" "orchestrator=/somewhere/else"
 expect "prod, someone else's run: asks"    ask   "$PROMOTE"
 
 # A run with no orchestrator= (written before the field existed) still binds
@@ -143,13 +143,13 @@ set_state ceiling=dev phase=5
 expect "legacy state still binds root"     deny  "$PROMOTE"
 
 echo "# ceiling: prod — evidence-gated"
-set_state ceiling=prod phase=6
+set_state ceiling=prod phase=promote
 expect "prod, no preflight: denied"        deny  "$PROMOTE"
-set_state ceiling=prod phase=6 "preflight=RED@$DEV_SHA"
+set_state ceiling=prod phase=promote "preflight=RED@$DEV_SHA"
 expect "prod, RED preflight: denied"       deny  "$PROMOTE"
-set_state ceiling=prod phase=6 preflight=GREEN@0000000000000000000000000000000000000000
+set_state ceiling=prod phase=promote preflight=GREEN@0000000000000000000000000000000000000000
 expect "prod, stale preflight: denied"     deny  "$PROMOTE"
-set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA"
+set_state ceiling=prod phase=promote "preflight=GREEN@$DEV_SHA"
 got=$(decision "$PROMOTE")
 if [ "$got" = allow ] || [ "$got" = ask ]; then
   pass=$((pass + 1)); echo "ok   prod, fresh GREEN → $got (ask only when an upgrade() in the promoted range is destructive)"
@@ -157,6 +157,11 @@ else
   fail=$((fail + 1)); echo "FAIL prod, fresh GREEN → got '$got'"
 fi
 expect "prod: railway redeploy allowed (rollback path)" allow 'railway redeploy'
+# `ship.sh phase promote` holds the evidence checks (a multi-slice spec's
+# every-slice-landed rule lives only there), so promotion outside it is denied.
+set_state ceiling=prod phase=ship "preflight=GREEN@$DEV_SHA"
+expect "prod, GREEN but not in promote: denied" deny "$PROMOTE"
+expect "prod, not in promote: merge --merge denied" deny 'gh pr merge 9 --merge'
 
 echo "# terminal and malformed states do not count"
 set_state ceiling=prod phase=done "preflight=GREEN@$DEV_SHA"
