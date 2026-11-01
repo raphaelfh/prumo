@@ -530,7 +530,7 @@ async def test_resolve_layout_marks_the_primary_rater_slot(monkeypatch, mode, ex
     monkeypatch.setattr(
         service,
         "_load_pinned_versions",
-        AsyncMock(return_value=(VersionSections(uuid4(), 1, (), {}),)),
+        AsyncMock(return_value=(VersionSections(uuid4(), 1, ()),)),
     )
     monkeypatch.setattr(service, "_load_article_refs", AsyncMock(return_value={}))
     monkeypatch.setattr(

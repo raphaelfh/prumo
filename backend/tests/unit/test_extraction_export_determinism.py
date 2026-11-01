@@ -121,7 +121,7 @@ def _fixed_layout() -> ExportLayout:
         ),
     )
     codebook = build_codebook_entries(
-        VersionSections(_SECTION_ID, 1, (coded,), {}), (), build_option_labels((coded,))
+        VersionSections(_SECTION_ID, 1, (coded,)), (), build_option_labels((coded,))
     )
     return ExportLayout(
         project_name="Test Project",

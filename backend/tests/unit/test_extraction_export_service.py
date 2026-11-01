@@ -1878,7 +1878,7 @@ class TestResolveLayoutAiTarget:
         svc._load_active_template_version = AsyncMock(return_value=(template, version))
         svc._resolve_project_name = AsyncMock(return_value="Project")
         svc._pinned_version_rows = AsyncMock(return_value=())
-        svc._load_pinned_versions = AsyncMock(return_value=(VersionSections(uuid4(), 1, (), {}),))
+        svc._load_pinned_versions = AsyncMock(return_value=(VersionSections(uuid4(), 1, ()),))
         svc._load_article_refs = AsyncMock(return_value={})
         svc._resolve_articles_for_consensus = AsyncMock(return_value=([], {}))
         svc._build_consensus_value_map = AsyncMock(return_value={})

@@ -841,7 +841,6 @@ class ExtractionExportService(LoggerMixin):
                     version_id=v.id,
                     version_label=v.version,
                     sections=self._sections_from_views(views),
-                    run_view_fields={f.id: f for et in views for f in et.fields},
                 )
             )
         return tuple(loaded)
