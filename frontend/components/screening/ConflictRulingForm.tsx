@@ -56,7 +56,9 @@ export function ConflictRulingForm({read, busy, onRule}: ConflictRulingFormProps
         {read.peer_decisions.map((d, index) => {
           const label = reviewerLabel(index);
           return (
-            <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+            // A grid, not a wrapping flex row: a long reason wraps inside its
+            // column instead of pushing this reviewer's button onto a line of its own.
+            <li key={d.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
               <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[13px] text-foreground">
                 <span className="text-muted-foreground">{label}</span>
                 <span className="font-medium">{decisionLabel(d.decision)}</span>
