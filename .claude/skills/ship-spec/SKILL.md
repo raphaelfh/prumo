@@ -59,19 +59,16 @@ context lean. Design and rationale:
 |------|-------------|
 | `ship.sh init <basename> --to <dev\|prod>` | first act of the run |
 | `ship.sh init <spec> --to <c> --slices "S1 \| S2,S3"` | first act of a [multi-slice](#multi-slice-specs) run |
-| `ship.sh slice <spec> <S> --worktree <path>` | a slice's work starts (refused until earlier waves landed) |
-| `ship.sh status <spec>` | every slice's phase, PR, CI and train on one line each |
+| `ship.sh slice <spec> <S> --worktree <path>` | a slice's work starts |
+| `ship.sh status <spec>` | the slice queue, one line per slice |
+| `ship.sh --run <spec>-<S> <verb>` | any other verb, while several slice runs are live |
 | `ship.sh phase <name>` | a phase's work actually **starts** |
 | `ship.sh gate` | the fast local gate, in `harden` |
 | `ship.sh ci [sha]` | you need CI's verdict for a commit |
-| `ship.sh dev "<title>" [body-file]` | push, PR to dev, arm or queue; refused when an open PR owns the change |
+| `ship.sh dev "<title>" [body-file]` | push, PR to dev, arm or queue |
 | `ship.sh preflight-record <GREEN\|RED> [sha]` | after `/preflight` |
 | `ship.sh facts` | the run-facts block for your verdict — run it before `done`, paste it |
 | `ship.sh halt <reason>` / `ship.sh done` | terminal |
-
-With several live slice runs, every verb but `init`/`slice`/`status` takes
-`--run <spec>-<S>` first (`bash scripts/ship.sh --run <spec>-S2 gate`); a verb
-never guesses between slices.
 
 `phase` refuses an illegal transition. `preflight-record GREEN` refuses over a
 CI verdict that is not green on the same commit. `facts` derives every line
@@ -268,11 +265,10 @@ hardcoded. A PR that goes `BEHIND` is unstuck with
 `gh api -X PUT .../update-branch`, not a rebase.
 
 **One owner per change.** Only the orchestrator ships: no seat pushes, opens a
-PR, or fixes a red `dev` on its own. `ship.sh dev` refuses when an open PR to
-dev already has the same title or touches a file this branch touches, and names
-it — fold the work into that PR or wait for it to land (2026-11-01: two
-sessions fixed the same red dev as #1081 and #1082). `--allow-overlap <pr#>` is
-for a real need, recorded in the ledger as a `Ruling:`.
+PR, or fixes a red `dev`. `ship.sh dev` refuses when an open dev PR has the same
+title or touches a file this branch touches — fold the work into it or wait for
+it to land (2026-11-01: #1081 and #1082 fixed the same red dev).
+`--allow-overlap <pr#>` only with a ledger `Ruling:`.
 
 Then `bash scripts/ship.sh ci`. **`PENDING` is a legitimate place to end a
 turn** — wait with a Monitor or a scheduled wakeup, not a busy loop. A `RED`
@@ -323,26 +319,23 @@ rollback is a roll-forward or a hand-run `alembic downgrade`.
 
 ## Multi-slice specs
 
-One session ships every slice, through subagents. **Never** one Claude session
-per slice relayed through an orchestrator session: relayed approvals are
-refused, so on 2026-11-01 the human approved inside every child session.
-Subagents cannot spawn subagents, so you dispatch every slice's seats yourself.
+One session ships every slice; you dispatch every slice's seats yourself
+(subagents cannot spawn subagents). **Never** one Claude session per slice:
+relayed approvals are refused (2026-11-01).
 
 **Cut waves, not a line.** The manifest is the dependency order, as waves:
 `S1 | S2,S3 | S4`. Put a wave boundary only where a slice needs another
 slice's code **on dev** — a migration, a generated API type, an endpoint it
 calls. Everything else joins the earliest wave it can. Slices in one wave touch
 disjoint files: `ship.sh dev` refuses sibling PRs that share a file, and that
-refusal means the cut was wrong, not that the guard is in the way. Each slice is
-still one reviewable PR with briefs under ~300 lines.
+refusal means the cut was wrong.
 
 1. **Frame once** for the whole spec — claim, brainstorm, spec gate — then,
    from the main checkout, `bash scripts/ship.sh init <spec> --to <ceiling>
    --slices "S1 | S2,S3"`. The ceiling binds every slice.
 2. **Start a slice** with its own worktree branched from fresh `origin/dev`,
-   then `ship.sh slice <spec> <S> --worktree <path>`. It starts at `plan`, and
-   it refuses while any slice of an earlier wave has not landed. The basename
-   `<spec>-<S>` names its plan, its ledger and its state.
+   then `ship.sh slice <spec> <S> --worktree <path>`. It starts at `plan` and
+   refuses until every earlier wave has landed. `<spec>-<S>` is its basename.
 3. **Run each slice through `plan` → `ship`** exactly as above, every verb with
    `--run <spec>-<S>`. Within a wave, dispatch seats of different slices in the
    same message (parallel `Agent` calls); within one slice SDD stays
@@ -352,11 +345,10 @@ still one reviewable PR with briefs under ~300 lines.
 4. **One merge queue.** The first slice to reach `ship.sh dev` arms; the rest
    report `queued behind #n`. When the armed PR lands, re-run
    `ship.sh --run <spec>-<S> dev "<title>"` for the next queued slice, in
-   manifest order. It finds the existing PR and arms it.
-5. **A slice is done when it lands.** `ship.sh --run <spec>-<S> done` checks the
-   PR is `MERGED` and refuses otherwise. That is what lets the next wave's
-   `slice` start. A halted slice blocks later waves; its siblings in the same
-   wave may still ship.
+   manifest order; it arms the existing PR.
+5. **A slice is done when it lands.** `ship.sh --run <spec>-<S> done` refuses
+   until its PR is `MERGED`. A halted slice blocks later waves, not its
+   siblings.
 6. **One promote** (ceiling `prod`): the last slice to land does not call
    `done`. It goes on to `promote` and `verify`. `phase promote` refuses while
    any other slice of the manifest is not done. Ceiling `dev`: every slice ends

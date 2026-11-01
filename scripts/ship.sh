@@ -128,39 +128,35 @@ cmd_init() {
 }
 
 # --- multi-slice specs -------------------------------------------------------
-# One session ships every slice of a spec; the orchestrator dispatches each
-# slice's seats as subagents. One nested Claude session per slice, relayed
-# through an orchestrator session, failed on 2026-11-01: relayed approvals were
-# refused, so the human approved inside every child session.
-#
 # The manifest is the dependency order, as WAVES: `S1 | S2,S3 | S4`. Slices in
 # one wave are independent and build concurrently, each in its own worktree
 # and run; a wave starts only when every slice before it has LANDED on dev. A
 # slice run is an ordinary run named <spec>-<slice>, so the hooks gate each one
 # as they gate any run. `manifest` is not a `state`: no hook reads it as a run.
 _init_manifest() {
-  local name=$1 ceiling=$2 spec=$3 m t wave s n=0 seen=" "
+  local name=$1 ceiling=$2 spec=$3 m="$BASE/$1/manifest" wave s n=0 seen=" " lines=""
   local -a waves
-  m="$BASE/$name/manifest"
   if [ -e "$BASE/$name/state" ]; then
     echo "ship init: $name is already a single-slice run." >&2; return 1
   fi
   IFS='|' read -ra waves <<<"$spec"
-  mkdir -p "$BASE/$name"
-  t=$(mktemp "$m.XXXXXX") || { echo "ship: cannot write $m" >&2; return 1; }
-  printf 'ceiling=%s\norchestrator=%s\nstarted=%s\n' "$ceiling" "$PWD" "$(_clock)" >"$t"
   for wave in "${waves[@]}"; do
     wave=$(printf '%s' "$wave" | tr -d '[:space:]')
     n=$((n + 1))
-    if [ -z "$wave" ]; then echo "ship init: wave $n is empty in '$spec'." >&2; rm -f "$t"; return 2; fi
+    [ -n "$wave" ] || { echo "ship init: wave $n is empty in '$spec'." >&2; return 2; }
+    # Whole-wave check BEFORE the split: no glob character survives into the
+    # unquoted loop, and `S2,` (an empty slice) is refused.
+    printf '%s' "$wave" | grep -Eqx '[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*' \
+      || { echo "ship init: bad wave '$wave' (slice names: letters, digits, . _ -; comma-separated)." >&2; return 2; }
     for s in ${wave//,/ }; do
-      case "$s" in *[!A-Za-z0-9._-]*) echo "ship init: bad slice name '$s'." >&2; rm -f "$t"; return 2 ;; esac
-      case "$seen" in *" $s "*) echo "ship init: slice '$s' is named twice." >&2; rm -f "$t"; return 2 ;; esac
+      case "$seen" in *" $s "*) echo "ship init: slice '$s' is named twice." >&2; return 2 ;; esac
       seen="$seen$s "
     done
-    printf 'wave%s=%s\n' "$n" "$wave" >>"$t"
+    lines="${lines}wave$n=$wave
+"
   done
-  mv "$t" "$m"
+  mkdir -p "$BASE/$name"
+  printf 'ceiling=%s\norchestrator=%s\nstarted=%s\n%s' "$ceiling" "$PWD" "$(_clock)" "$lines" >"$m"
   cat "$m"
 }
 
@@ -216,7 +212,6 @@ cmd_slice() {
   _set "$f" worktree "$worktree"
   _set "$f" orchestrator "$PWD"
   _set "$f" spec "$spec"
-  _set "$f" wave "$w"
   _set "$f" started "$(_clock)"
   _set "$f" plan_at "$(_clock)"
   cat "$f"
@@ -260,19 +255,15 @@ cmd_phase() {
   # the earlier, cheaper copy of it, not a replacement.
   # A multi-slice spec promotes ONCE, from the last slice to land: every other
   # slice of its manifest must be done (merged into dev) first.
-  local spec x me; spec=$(_get "$f" spec)
-  if [ "$to" = promote ] && [ -n "$spec" ]; then
-    me=$(basename "$(dirname "$f")")
-    for x in $(_manifest_slices "$BASE/$spec/manifest"); do
-      [ "$spec-$x" = "$me" ] && continue
+  if [ "$to" = promote ]; then
+    local pf want x spec; spec=$(_get "$f" spec)
+    [ -n "$spec" ] && for x in $(_manifest_slices "$BASE/$spec/manifest"); do
+      [ "$BASE/$spec-$x/state" = "$f" ] && continue
       if [ "$(_get "$BASE/$spec-$x/state" phase)" != done ]; then
         echo "ship phase: $spec promotes once, after every slice lands; $x is not done." >&2
         return 1
       fi
     done
-  fi
-  if [ "$to" = promote ]; then
-    local pf want
     pf=$(_get "$f" preflight)
     want="GREEN@$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null)"
     if [ "$pf" != "$want" ]; then
@@ -431,7 +422,7 @@ _dev_conflicts() {
   while IFS=$'\t' read -r num head t files; do
     [ -n "$num" ] && [ "$head" != "$branch" ] || continue
     if [ "$t" = "$title" ]; then echo "#$num same title"; continue; fi
-    shared=$(printf '%s\n' "$files" | tr ',' '\n' | grep -vx '' | grep -xF -f <(printf '%s\n' "$mine" | grep -vx '') | paste -sd' ' -)
+    shared=$(printf '%s\n' "$files" | tr ',' '\n' | grep -xF -f <(printf '%s\n' "$mine" | grep -vx '') | paste -sd' ' -)
     [ -n "$shared" ] && echo "#$num shares $shared"
   done <<EOF
 $prs

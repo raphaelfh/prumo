@@ -213,6 +213,12 @@ bash "$SHIP" init wspec --to prod --slices "S1 | S2, S1" >/dev/null 2>&1
 ok "a slice named twice is refused" "$?" "2"
 bash "$SHIP" init wspec --to prod --slices "S1 || S2" >/dev/null 2>&1
 ok "an empty wave is refused" "$?" "2"
+bash "$SHIP" init wspec --to prod --slices "S1 | S2," >/dev/null 2>&1
+ok "an empty slice (trailing comma) is refused" "$?" "2"
+touch "$ORCH/Sx"
+bash "$SHIP" init wspec --to prod --slices "S*" >/dev/null 2>&1
+ok "a glob is refused, not expanded to a file name" "$?" "2"
+rm -f "$ORCH/Sx"
 bash "$SHIP" init wspec --to prod --slices "S1 | S2,S3" >/dev/null
 ok "init --slices writes a manifest"   "$(sed -n 's/^wave2=//p' "$SB/wspec/manifest")" "S2,S3"
 ok "init --slices starts no run"       "$([ -e "$SB/wspec/state" ] && echo yes || echo no)" "no"
