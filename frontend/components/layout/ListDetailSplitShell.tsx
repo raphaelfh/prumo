@@ -3,16 +3,17 @@
  * on the right (underneath below lg). Articles and Screening sit on it.
  *
  * The shell owns the layout, the Topbar panel toggle, the shortcuts (⌘⇧B,
- * opt-in ⇧⌘\ maximize, opt-in Escape chain) and the maximized flag. The
- * caller owns whether the panel is open, the selection, the panel content and
- * any guard on closing (Articles asks before discarding edits).
+ * opt-in ⇧⌘\ maximize, opt-in Escape chain) and, unless the caller passes
+ * `maximized`, the maximized flag. The caller owns whether the panel is open,
+ * the selection, the panel content and any guard on closing (Articles asks
+ * before discarding edits).
  *
  * Deliberately NOT RunSplitShell: its `assessment-shell*` panel ids are the
  * DOM test contract for the run screens' specs, and it carries an in-shell
  * PDF toggle that is wrong for a list + detail screen. Both are built on the
  * same ResizablePanelGroup primitives.
  */
-import {type ReactNode, useEffect, useState} from 'react';
+import {type ReactNode, useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
 import {ResizableHandle, ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
@@ -33,6 +34,9 @@ export interface ListDetailSplitShellProps {
   toggleLabel: string;
   /** ⇧⌘\ maximizes the panel (list stays mounted, hidden). Default false. */
   maximizable?: boolean;
+  /** Controlled maximize. When `maximized` is passed the shell keeps no maximize state of its own and never resets it during render: the caller clears it (e.g. when it closes the panel). */
+  maximized?: boolean;
+  onMaximizedChange?: (maximized: boolean) => void;
   /** Escape undoes one step per press: maximize → panel → URL selection → checked rows. Default false. */
   escapeCloses?: boolean;
   /** Esc's selection step (the URL param); read only when escapeCloses. */
@@ -51,6 +55,8 @@ export function ListDetailSplitShell({
   idPrefix,
   toggleLabel,
   maximizable = false,
+  maximized: controlledMaximized,
+  onMaximizedChange,
   escapeCloses = false,
   hasSelection = false,
   onClearSelection,
@@ -58,11 +64,18 @@ export function ListDetailSplitShell({
   onClearChecked,
 }: ListDetailSplitShellProps) {
   const belowDesktop = useIsBelowDesktop();
-  const [maximized, setMaximized] = useState(false);
-  // A closed panel is never maximized, whichever path closed it (including
-  // the caller's own discard confirm): reopening docks it again.
-  if (!panelOpen && maximized) setMaximized(false);
-  const isMaximized = maximizable && panelOpen && maximized;
+  const controlled = controlledMaximized !== undefined;
+  const [localMaximized, setLocalMaximized] = useState(false);
+  // Uncontrolled: a closed panel is never maximized, whichever path closed it
+  // (including the caller's own discard confirm), so reopening docks it
+  // again. Controlled: no reset here — a caller opening the panel maximized
+  // sets both flags in one update, and it clears `maximized` itself.
+  if (!controlled && !panelOpen && localMaximized) setLocalMaximized(false);
+  const isMaximized = maximizable && panelOpen && (controlled ? controlledMaximized : localMaximized);
+  const setMaximized = (next: boolean) => {
+    if (controlled) onMaximizedChange?.(next);
+    else setLocalMaximized(next);
+  };
 
   const toggle = () => onPanelOpenChange(!panelOpen);
 
@@ -81,7 +94,7 @@ export function ListDetailSplitShell({
           setMaximized(true);
           onPanelOpenChange(true);
         } else {
-          setMaximized((m) => !m);
+          setMaximized(!isMaximized);
         }
       },
     });
@@ -94,11 +107,14 @@ export function ListDetailSplitShell({
   // handler (useListKeyboardShortcuts included) and stopPropagation keeps a
   // second handler from undoing another step on the same press. It yields to
   // an open overlay and to a text field, where Escape belongs to the control.
+  // It also yields to an open tooltip, which Radix dismisses on this press;
+  // the tooltip is deliberately not an overlay for every other shortcut.
   useEffect(() => {
     if (!escapeCloses) return;
     const onKeyDownCapture = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (event.defaultPrevented || isDialogOpen() || isTypingTarget(event)) return;
+      if (document.querySelector('[role="tooltip"]')) return;
       if (isMaximized) setMaximized(false);
       else if (panelOpen) onPanelOpenChange(false);
       else if (hasSelection && onClearSelection) onClearSelection();
@@ -109,7 +125,17 @@ export function ListDetailSplitShell({
     };
     window.addEventListener('keydown', onKeyDownCapture, {capture: true});
     return () => window.removeEventListener('keydown', onKeyDownCapture, {capture: true});
-  }, [escapeCloses, isMaximized, panelOpen, onPanelOpenChange, hasSelection, onClearSelection, checkedCount, onClearChecked]);
+  });
+
+  // Maximizing hides the list: focus inside it would drop to <body>, so it
+  // moves to the panel. A layout effect runs before the browser's focus
+  // fixup. Focus elsewhere stays put; restoring moves nothing.
+  const listEl = useRef<HTMLDivElement>(null);
+  const panelElRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!isMaximized) return;
+    if (listEl.current?.contains(document.activeElement)) panelElRef.current?.focus();
+  }, [isMaximized]);
 
   useSetHeaderActions(
     <PanelToggleButton
@@ -130,6 +156,7 @@ export function ListDetailSplitShell({
       <ResizablePanel
         key="list"
         id={`${idPrefix}-list`}
+        elementRef={listEl}
         defaultSize={panelOpen ? '55%' : '100%'}
         minSize={isMaximized ? '0%' : '35%'}
         hidden={isMaximized || undefined}
@@ -144,6 +171,8 @@ export function ListDetailSplitShell({
         <ResizablePanel
           key="panel"
           id={`${idPrefix}-panel`}
+          elementRef={panelElRef}
+          tabIndex={-1}
           defaultSize="45%"
           minSize={isMaximized ? '100%' : '30%'}
           maxSize={isMaximized ? '100%' : '65%'}

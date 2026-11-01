@@ -1,9 +1,12 @@
 /**
- * Title/abstract screening end to end, on its own project
- * (SCREENING_PROJECT_ID): the owner sets two reviewers per record and
- * enrolls; reviewer B screens both records by keyboard; reviewer C decides by
- * API (agreeing on Alpha, disagreeing on Beta); the owner arbitrates the
- * conflict with C's decision; the PRISMA tab counts the outcomes.
+ * Title/abstract screening end to end on the list-first workspace, on its own
+ * project (SCREENING_PROJECT_ID): the owner lands on Settings (first run),
+ * sets two reviewers per record and enrolls from the Title/abstract list;
+ * reviewer B starts screening and includes both records by keyboard (the
+ * panel auto-advances); reviewer C decides by API (agreeing on Alpha,
+ * disagreeing on Beta); the owner opens the conflict view, rules Beta with
+ * reviewer C's decision ("Reviewer B", the second decision in server order);
+ * the PRISMA tab counts the outcomes.
  *
  * Runs in `local-ui` (CI's "Frontend E2E (ephemeral stack)"). Serial: the
  * second test proves `resetScreeningProject` returns the project to a clean
@@ -20,7 +23,6 @@ import {
   OWNER_EMAIL,
   REVIEWER_B_EMAIL,
   REVIEWER_C_EMAIL,
-  REVIEWER_C_NAME,
   SCREENING_ARTICLES,
   SCREENING_PROJECT_ID,
 } from "../_fixtures/fixture-ids";
@@ -29,9 +31,10 @@ import { resetScreeningProject } from "../_fixtures/screening";
 const [ALPHA, BETA] = SCREENING_ARTICLES;
 const SCREENING_URL = `/projects/${SCREENING_PROJECT_ID}?tab=screening`;
 const PRISMA_URL = `/projects/${SCREENING_PROJECT_ID}?tab=prisma`;
+const RECORD_TITLE = /^E2E Screening (Alpha|Beta)$/;
 
-interface QueueResponse {
-  items: Array<{ assignment_id: string; article: { id: string; title: string } }>;
+interface RecordsResponse {
+  rows: Array<{ article_id: string; assignment_id: string | null }>;
 }
 
 interface ConfigResponse {
@@ -63,13 +66,19 @@ async function decideByApi(token: string, assignmentId: string, decision: "inclu
   expect(res.status, await res.clone().text()).toBe(200);
 }
 
+/** The title of the record open in the panel (its `h2`). */
+async function openRecordTitle(page: Page): Promise<string> {
+  const heading = page.getByRole("heading", { name: RECORD_TITLE });
+  await expect(heading).toBeVisible();
+  return (await heading.textContent()) ?? "";
+}
+
 /**
- * Press "1" (include) on the record on screen and wait for the decision's
- * response. Decisions are final: there is no change step afterwards. The
- * buttons are enabled only once the previous decision settled, which also
- * releases the queue's one-decision-at-a-time guard.
+ * Press "1" (include) on the record in the panel and wait for the decision's
+ * response. The buttons are enabled only once the assignment read settled,
+ * which is also when the panel's decision-key listener is armed.
  */
-async function includeCurrentRecord(page: Page) {
+async function includeOpenRecord(page: Page) {
   await expect(page.getByRole("button", { name: "Include", exact: true })).toBeEnabled();
   const saved = page.waitForResponse(
     (r) => r.request().method() === "POST" && /\/screening\/assignments\/[^/]+\/decisions$/.test(r.url()),
@@ -87,46 +96,64 @@ test.beforeAll(async () => {
 test("screens, resolves a conflict and reads PRISMA", async ({ browser }) => {
   test.setTimeout(120_000);
 
-  // 1. Owner: two reviewers per record, then enroll both articles.
+  // 1. Owner: the first run lands on Settings; two reviewers per record, then
+  //    enroll both articles from the Title/abstract list.
   const ownerContext = await browser.newContext();
   const owner = await ownerContext.newPage();
   await loginViaUiAs(owner, OWNER_EMAIL, FIXTURE_PASSWORD);
   await owner.goto(SCREENING_URL);
+  await expect(owner).toHaveURL(/[?&]screeningTab=settings\b/);
   await owner.getByRole("radio", { name: "2 reviewers" }).check();
-  await owner.getByRole("button", { name: "Save" }).click();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Screening is set up")).toBeVisible();
+  await owner.getByRole("tab", { name: "Title/abstract" }).click();
   await owner.getByRole("button", { name: "Enroll all articles" }).click();
-  await expect(owner.getByText("2 enrolled", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("tab", { name: "To screen 2", exact: true })).toBeVisible();
+  await expect(owner.getByRole("tab", { name: "All 2", exact: true })).toBeVisible();
 
-  // 2. Reviewer B: include both records from the keyboard.
+  // 2. Reviewer B: "Start screening" opens the first record; "1" includes it
+  //    and the panel advances to the other one; "1" again, nothing left.
   const reviewerContext = await browser.newContext();
   const reviewer = await reviewerContext.newPage();
   await loginViaUiAs(reviewer, REVIEWER_B_EMAIL, FIXTURE_PASSWORD);
   await reviewer.goto(SCREENING_URL);
-  await expect(reviewer.getByRole("heading", { name: /^E2E Screening (Alpha|Beta)$/ })).toBeVisible();
-  await includeCurrentRecord(reviewer);
-  await expect(reviewer.getByRole("heading", { name: /^E2E Screening (Alpha|Beta)$/ })).toBeVisible();
-  await includeCurrentRecord(reviewer);
-  await expect(reviewer.getByRole("heading", { name: "Waiting on other reviewers" })).toBeVisible();
+  await reviewer.getByRole("button", { name: "Start screening" }).click();
+  const first = await openRecordTitle(reviewer);
+  await includeOpenRecord(reviewer);
+  const second = first === ALPHA.title ? BETA.title : ALPHA.title;
+  await expect(reviewer.getByRole("heading", { name: second, exact: true })).toBeVisible();
+  await expect(reviewer.getByTestId("next-record-announcement")).toHaveText(`Next record: ${second}`);
+  await includeOpenRecord(reviewer);
+  // The panel opened maximized over the list; closing it shows the progress strip.
+  await reviewer.getByRole("button", { name: "Toggle the record panel" }).click();
+  await expect(reviewer.getByText(/you: 0 left/)).toBeVisible();
   await reviewerContext.close();
 
   // 3. Reviewer C by API: agrees on Alpha, disagrees on Beta.
   const reviewerCToken = await login(REVIEWER_C_EMAIL, FIXTURE_PASSWORD);
-  const queue = await apiGet<QueueResponse>(`/projects/${SCREENING_PROJECT_ID}/screening/queue`, reviewerCToken);
-  expect(queue.items).toHaveLength(2);
+  const records = await apiGet<RecordsResponse>(
+    `/projects/${SCREENING_PROJECT_ID}/screening/records?phase=title_abstract`,
+    reviewerCToken,
+  );
   const assignmentOf = (articleId: string) => {
-    const item = queue.items.find((i) => i.article.id === articleId);
-    expect(item, `no queue item for ${articleId}`).toBeDefined();
-    return item!.assignment_id;
+    const row = records.rows.find((r) => r.article_id === articleId);
+    expect(row?.assignment_id, `no assignment for ${articleId}`).toBeTruthy();
+    return row!.assignment_id!;
   };
   await decideByApi(reviewerCToken, assignmentOf(ALPHA.id), "include");
   await decideByApi(reviewerCToken, assignmentOf(BETA.id), "exclude");
 
-  // 4. Owner: rule on the conflict with reviewer C's decision.
+  // 4. Owner: open the conflict view and Beta, rule with reviewer C's
+  //    decision. Reviewers are lettered in server order: B decided first
+  //    ("Reviewer A"), C second ("Reviewer B").
   await owner.reload();
-  await owner.getByRole("tab", { name: "Conflicts (1)" }).click();
-  const card = owner.getByRole("listitem").filter({ has: owner.getByRole("button", { name: BETA.title }) });
-  await card.getByRole("button", { name: `Use ${REVIEWER_C_NAME}'s decision` }).click();
-  await expect(owner.getByRole("heading", { name: "No conflicts to resolve" })).toBeVisible();
+  await owner.getByRole("tab", { name: "Reviewers disagree 1", exact: true }).click();
+  await owner.getByRole("button", { name: BETA.title, exact: true }).click();
+  const panel = owner.getByTestId("screening-shell-panel");
+  await expect(panel.getByRole("heading", { name: BETA.title, exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Use Reviewer B's decision" }).click();
+  await expect(owner.getByText("Conflict resolved")).toBeVisible();
+  await expect(panel.getByText("Excluded", { exact: true })).toBeVisible();
 
   // 5. Owner: PRISMA counts the outcomes.
   await owner.goto(PRISMA_URL);

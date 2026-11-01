@@ -72,6 +72,7 @@ async def test_config_read_unconfigured(db_session: AsyncSession) -> None:
         "can_manage": True,
         "can_review": True,
         "can_arbitrate": True,
+        "exclusion_reasons": [],
     }
 
     roles = ("can_manage", "can_review", "can_arbitrate")
@@ -255,3 +256,20 @@ async def test_moved_article_reads_as_not_enrolled(db_session: AsyncSession) -> 
 
     data = read.json()["data"]
     assert (data["enrolled"], data["not_enrolled"]) == (1, 0)
+
+
+async def test_config_carries_the_protocol_exclusion_reasons(db_session: AsyncSession) -> None:
+    with_reasons, without = await make_project(db_session), await make_project(db_session)
+    await db_session.execute(
+        text("UPDATE public.projects SET eligibility_criteria = CAST(:e AS jsonb) WHERE id = :p"),
+        {
+            "e": '{"inclusion": ["Adults"], "exclusion": ["Wrong population", "Not ML"]}',
+            "p": str(with_reasons),
+        },
+    )
+
+    config = (await _get_as(db_session, MANAGER, _config_path(with_reasons))).json()["data"]
+    empty = (await _get_as(db_session, MANAGER, _config_path(without))).json()["data"]
+
+    assert config["exclusion_reasons"] == ["Wrong population", "Not ML"]
+    assert empty["exclusion_reasons"] == []

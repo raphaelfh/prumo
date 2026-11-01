@@ -16,12 +16,13 @@ export type ScreeningEnrollResult = components['schemas']['ScreeningEnrollResult
 export type PubmedDryRunRead = components['schemas']['PubmedDryRunRead'];
 export type PubmedImportStarted = components['schemas']['PubmedImportStarted'];
 export type ImportRunRead = components['schemas']['ImportRunRead'];
-export type ScreeningQueueRead = components['schemas']['ScreeningQueueRead'];
 export type ScreeningAssignmentRead = components['schemas']['ScreeningAssignmentRead'];
 export type ScreeningDecisionCreate = components['schemas']['ScreeningDecisionCreate'];
-export type ScreeningConflictsRead = components['schemas']['ScreeningConflictsRead'];
 export type ScreeningArbitrationCreate = components['schemas']['ScreeningArbitrationCreate'];
 export type PrismaCountsRead = components['schemas']['PrismaCountsRead'];
+export type ScreeningRecordsRead = components['schemas']['ScreeningRecordsRead'];
+export type ScreeningRecordRow = components['schemas']['ScreeningRecordRow'];
+export type ScreeningPhase = ScreeningRecordsRead['phase'];
 
 export function fetchScreeningConfig(projectId: string): Promise<ErrorResult<ScreeningConfigRead>> {
   return toResult(
@@ -98,11 +99,20 @@ export function fetchImportRun(projectId: string, syncRunId: string): Promise<Er
   );
 }
 
-/** Up to 20 records awaiting the caller, in queue order. 409 SCREENING_NOT_CONFIGURED on an unconfigured project. */
-export function fetchScreeningQueue(projectId: string): Promise<ErrorResult<ScreeningQueueRead>> {
+/**
+ * Every project article in the phase, in queue order, as the caller may see it.
+ * 409 SCREENING_NOT_CONFIGURED (the UI gates on the config read and never sends it then); 403 non-member.
+ */
+export function fetchScreeningRecords(
+  projectId: string,
+  phase: ScreeningPhase,
+): Promise<ErrorResult<ScreeningRecordsRead>> {
   return toResult(
-    () => apiClient<ScreeningQueueRead>(`/api/v1/projects/${projectId}/screening/queue`),
-    'screeningService.fetchScreeningQueue',
+    () =>
+      apiClient<ScreeningRecordsRead>(
+        `/api/v1/projects/${projectId}/screening/records?phase=${encodeURIComponent(phase)}`,
+      ),
+    'screeningService.fetchScreeningRecords',
   );
 }
 
@@ -126,14 +136,6 @@ export function submitDecision(
         body,
       }),
     'screeningService.submitDecision',
-  );
-}
-
-/** Records whose reviewers disagree, with every current decision. 403 unless the caller arbitrates. */
-export function fetchConflicts(projectId: string): Promise<ErrorResult<ScreeningConflictsRead>> {
-  return toResult(
-    () => apiClient<ScreeningConflictsRead>(`/api/v1/projects/${projectId}/screening/conflicts`),
-    'screeningService.fetchConflicts',
   );
 }
 
