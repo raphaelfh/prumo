@@ -61,6 +61,7 @@ def test_main_guards_before_opening_a_session(monkeypatch: pytest.MonkeyPatch) -
 
 def test_main_needs_three_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@localhost:54322/postgres")
+    monkeypatch.setattr(settings, "SUPABASE_URL", "http://localhost:54321")
     session = MagicMock()
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=session)
@@ -98,6 +99,7 @@ def _run_collaborators(monkeypatch: pytest.MonkeyPatch, build: AsyncMock) -> Mag
 
 def test_main_uploads_the_seed_pdf_after_commit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@localhost:54322/postgres")
+    monkeypatch.setattr(settings, "SUPABASE_URL", "http://localhost:54321")
     storage = _run_collaborators(monkeypatch, AsyncMock(return_value=seed_screening.PROJECT_ID))
 
     seed_screening.main([])
@@ -111,6 +113,7 @@ def test_main_uploads_the_seed_pdf_after_commit(monkeypatch: pytest.MonkeyPatch)
 
 def test_main_does_not_upload_when_build_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@localhost:54322/postgres")
+    monkeypatch.setattr(settings, "SUPABASE_URL", "http://localhost:54321")
     storage = _run_collaborators(monkeypatch, AsyncMock(side_effect=SystemExit("no")))
 
     with pytest.raises(SystemExit):
