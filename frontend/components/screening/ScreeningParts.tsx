@@ -58,7 +58,7 @@ export function RecordBody({article}: {article: ScreeningArticle}) {
     .filter((part) => part !== null && part !== undefined && part !== '')
     .join(' · ');
   return (
-    <article className="mx-auto flex w-full min-w-0 max-w-[68ch] flex-col gap-2 text-[15px]">
+    <article className="flex w-full min-w-0 max-w-[68ch] flex-col gap-2 text-[15px]">
       <RecordChips article={article} />
       <h2 className="text-base font-semibold leading-snug text-foreground">{article.title}</h2>
       {byline && <p className="text-[13px] text-muted-foreground">{byline}</p>}
