@@ -101,18 +101,17 @@ export function fetchImportRun(projectId: string, syncRunId: string): Promise<Er
 }
 
 /**
- * Every project article in the phase, in queue order, as the caller may see it.
+ * Every project article in the phase, in queue order, as the caller may see it; without `phase`,
+ * one row per article (its current phase) plus the removed-duplicate ids.
  * 409 SCREENING_NOT_CONFIGURED (the UI gates on the config read and never sends it then); 403 non-member.
  */
 export function fetchScreeningRecords(
   projectId: string,
-  phase: ScreeningPhase,
+  phase?: ScreeningPhase,
 ): Promise<ErrorResult<ScreeningRecordsRead>> {
+  const query = phase ? `?phase=${encodeURIComponent(phase)}` : '';
   return toResult(
-    () =>
-      apiClient<ScreeningRecordsRead>(
-        `/api/v1/projects/${projectId}/screening/records?phase=${encodeURIComponent(phase)}`,
-      ),
+    () => apiClient<ScreeningRecordsRead>(`/api/v1/projects/${projectId}/screening/records${query}`),
     'screeningService.fetchScreeningRecords',
   );
 }

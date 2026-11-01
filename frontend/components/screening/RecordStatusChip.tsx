@@ -21,7 +21,7 @@ export const RECORD_STATUS_LABEL: Record<RecordStatus, ScreeningCopyKey> = {
   not_enrolled: 'statusNotEnrolled',
 };
 
-const TONE: Record<RecordStatus, string> = {
+export const RECORD_STATUS_TONE: Record<RecordStatus, string> = {
   to_screen: 'bg-primary/10 text-primary',
   waiting: 'bg-muted text-foreground',
   in_review: 'bg-info/10 text-info',
@@ -38,7 +38,7 @@ export function RecordStatusChip({status, arbitrated = false}: {status: RecordSt
     <span
       className={cn(
         'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium leading-none',
-        TONE[status],
+        RECORD_STATUS_TONE[status],
       )}
     >
       <span className="truncate">{t('screening', RECORD_STATUS_LABEL[status])}</span>
