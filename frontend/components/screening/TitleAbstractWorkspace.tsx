@@ -179,10 +179,7 @@ export function TitleAbstractWorkspace({projectId, config}: {projectId: string; 
     const target = index === -1 ? visible[0] : visible[Math.min(Math.max(index + step, 0), visible.length - 1)];
     if (panelOpen) selectRow(target);
     else setListCursor(target.article_id);
-    // Focus on a row stays on the cursor row, so a native Enter opens that one.
-    if (document.activeElement?.closest('[data-record-row]')) {
-      document.querySelector<HTMLElement>(`[data-record-row="${target.article_id}"] button:not([role="checkbox"])`)?.focus();
-    }
+    // Focus follows to the cursor row once it mounts (useRecordWindow).
   };
   const changePanelOpen = (open: boolean) => {
     setPanelOpen(open);

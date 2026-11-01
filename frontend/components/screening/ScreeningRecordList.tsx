@@ -134,6 +134,8 @@ export function ScreeningRecordList({
   const [showReason, setShowReason] = useState(false);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // State, not a ref: the row window reads the scroller during render.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const isNarrow = useIsNarrow();
 
   const canReview = config.can_review;
@@ -255,10 +257,11 @@ export function ScreeningRecordList({
         <p className="flex h-7 items-center truncate text-[11px] tabular-nums text-muted-foreground">{progressText}</p>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
+      <div ref={setScroller} className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
         {visible.length > 0 ? (
           <ScreeningRecordTable
             rows={visible}
+            scroller={scroller}
             isNarrow={isNarrow}
             showMine={canReview}
             showReason={showReason}
