@@ -1,0 +1,328 @@
+"""Typed export values: one projection of a stored envelope for every export surface.
+
+``to_export_value`` classifies a stored value envelope against its field into an
+``ExportValue`` (status plus typed columns); ``display_value`` renders it as a
+matrix cell or a Publication cell (``target``). PURE: no DB, no storage, no openpyxl. Lives directly under
+``exports/`` (not ``exports/extraction/``): that package's ``__init__`` imports
+the workbook, which imports the export service, so a runtime import from it
+closes a cycle. The descriptors are therefore TYPE_CHECKING-only.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Final, Literal
+from uuid import UUID
+
+from app.models.extraction import ExtractionFieldType
+from app.services.value_contract import ValueContractError, canonicalize_value, is_envelope
+from app.services.value_semantics import (
+    ABSENT_REASON_LABELS,
+    strip_verification,
+    value_absent_reason,
+)
+
+if TYPE_CHECKING:
+    from app.schemas.extraction_run import RunViewField
+    from app.services.exports.extraction.sheet_spec import CellValue
+    from app.services.extraction_export_service import FieldDescriptor, SectionDescriptor
+
+ExportStatus = Literal["answered", "absent", "rejected", "cleared", "nonconforming"]
+OptionLabels = Mapping[tuple[UUID, str], str]  # (field_id, code) -> label
+
+
+@dataclass(frozen=True, slots=True)
+class PeeledValue:
+    """A stored value envelope with every wrap removed: the inner payload,
+    the envelope's unit (if any) and its coded absent reason (if a marker)."""
+
+    value: Any
+    unit: str | None
+    absent_reason: str | None
+
+
+def peel_envelope(raw: Any) -> PeeledValue:
+    """The one envelope peel shared by the export resolver and the MCP renderer.
+
+    Strips the ``verification`` annotation, then unwraps ``{"value": ...}``
+    envelopes (legacy rows may be double-wrapped) while each level's keys stay
+    within ``ENVELOPE_KEYS``. The outermost non-empty ``unit`` wins, as the
+    write-time contract merges a double wrap. A closed-vocabulary marker at any
+    level ends the peel with ``value=None``; an out-of-vocabulary reason is not
+    a marker and peels like any other sibling.
+    """
+    unit: str | None = None
+    while True:
+        raw = strip_verification(raw)
+        reason = value_absent_reason(raw)
+        if reason is not None:
+            return PeeledValue(value=None, unit=None, absent_reason=reason)
+        if not is_envelope(raw):
+            return PeeledValue(value=raw, unit=unit, absent_reason=None)
+        if unit is None and isinstance(raw.get("unit"), str) and raw["unit"]:
+            unit = raw["unit"]
+        raw = raw["value"]
+
+
+def _peeled_form(raw: Any) -> dict[str, Any]:
+    p = peel_envelope(raw)
+    form = {"value": p.value, "unit": p.unit, "absent_reason": p.absent_reason}
+    return {k: v for k, v in form.items() if v is not None}
+
+
+def _canonical_form(raw: Any, field: RunViewField) -> dict[str, Any]:
+    """``canonicalize_value`` with a multiselect's codes sorted (set semantics)."""
+    canonical = canonicalize_value(raw, field)
+    value = canonical.get("value")
+    if isinstance(value, list):
+        canonical["value"] = sorted(value)
+    elif isinstance(value, dict) and isinstance(value.get("selected"), list):
+        canonical["value"] = {**value, "selected": sorted(value["selected"])}
+    return canonical
+
+
+def canonical_keys(raws: Sequence[Any], pinned_field: RunViewField | None) -> tuple[str, ...]:
+    """One comparison key per raw value, canonicalized against the run's pinned field.
+
+    N-ary on purpose: if ANY value breaks the pinned contract, or the pinned
+    field is unknown (a narrow legacy version), EVERY value falls back to its
+    peeled raw form, so the two sides of a comparison are always encoded alike.
+    ``verification`` is ignored; an absent marker compares by its code.
+    """
+    clean = [strip_verification(raw) for raw in raws]
+    forms: list[dict[str, Any]] | None = None
+    if pinned_field is not None:
+        try:
+            forms = [_canonical_form(raw, pinned_field) for raw in clean]
+        except ValueContractError:
+            forms = None
+    if forms is None:
+        forms = [_peeled_form(raw) for raw in clean]
+    return tuple(json.dumps(f, sort_keys=True, default=str) for f in forms)
+
+
+def canonical_equal(a: Any, b: Any, pinned_field: RunViewField | None) -> bool:
+    return len(set(canonical_keys((a, b), pinned_field))) == 1
+
+
+@dataclass(frozen=True, slots=True)
+class ExportValue:
+    raw: Any  # the stored envelope, untouched
+    status: ExportStatus
+    value_num: int | float | None = None
+    value_text: str | None = None
+    value_bool: bool | None = None
+    value_label: str | None = None
+    unit: str | None = None  # the ENVELOPE's unit only (D9)
+    other_text: str | None = None
+    absent_code: str | None = None
+    out_of_scope: bool = False
+
+
+def build_option_labels(
+    active: Sequence[SectionDescriptor],
+    pinned_latest_first: Sequence[Sequence[SectionDescriptor]] = (),
+) -> OptionLabels:
+    """``(field_id, code) -> label``: the active label, else the latest pinned one."""
+    labels: dict[tuple[UUID, str], str] = {}
+    for version in (active, *pinned_latest_first):
+        for s in version:
+            for f in s.fields:
+                for av in f.allowed_values:
+                    labels.setdefault((f.field_id, av.value), av.label)
+    return labels
+
+
+def _is_finite(num: int | float) -> bool:
+    try:
+        return math.isfinite(num)
+    except OverflowError:  # an int too large for a float
+        return False
+
+
+def _parse_finite_number(payload: Any) -> int | float | None:
+    if isinstance(payload, bool):
+        return None
+    if isinstance(payload, (int, float)):
+        return payload if _is_finite(payload) else None
+    if isinstance(payload, str):
+        for parse in (int, float):
+            try:
+                num = parse(payload)
+            except ValueError:
+                continue
+            return num if _is_finite(num) else None
+    return None
+
+
+def _nonconforming(raw: Any, payload: Any) -> ExportValue:
+    if isinstance(payload, (dict, list)):
+        text = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    else:
+        text = str(payload)
+    return ExportValue(raw=raw, status="nonconforming", value_text=text)
+
+
+def _select_value(
+    raw: Any, payload: Any, field: FieldDescriptor, labels: OptionLabels
+) -> ExportValue | None:
+    fid = field.field_id
+    if field.type is ExtractionFieldType.SELECT:
+        if isinstance(payload, str):
+            return ExportValue(
+                raw=raw,
+                status="answered",
+                value_text=payload,
+                value_label=labels.get((fid, payload), payload),
+            )
+        if (
+            isinstance(payload, dict)
+            and payload.get("selected") == "other"
+            and isinstance(payload.get("other_text"), str)
+        ):
+            if not payload["other_text"]:
+                return ExportValue(raw=raw, status="cleared")
+            return ExportValue(raw=raw, status="answered", other_text=payload["other_text"])
+        return None
+    codes: list[Any]
+    others: list[Any] = []
+    if isinstance(payload, list):
+        codes = payload
+    elif (
+        isinstance(payload, dict)
+        and isinstance(payload.get("selected"), list)
+        and isinstance(payload.get("other_texts"), list)
+    ):
+        codes, others = payload["selected"], payload["other_texts"]
+    else:
+        return None
+    if not all(isinstance(c, str) for c in [*codes, *others]):
+        return None
+    if not codes and not others:
+        return ExportValue(raw=raw, status="cleared")
+    return ExportValue(
+        raw=raw,
+        status="answered",
+        value_text="; ".join(codes) or None,
+        value_label="; ".join(labels.get((fid, c), c) for c in codes) or None,
+        other_text="; ".join(others) or None,
+    )
+
+
+def to_export_value(
+    raw: Any, field: FieldDescriptor, labels: OptionLabels, *, rejected: bool = False
+) -> ExportValue:
+    if rejected:
+        return ExportValue(raw=raw, status="rejected")
+    peeled = peel_envelope(raw)
+    if peeled.absent_reason is not None:
+        return ExportValue(raw=raw, status="absent", absent_code=peeled.absent_reason)
+    payload = peeled.value
+    if payload is None or payload == "" or payload == []:
+        return ExportValue(raw=raw, status="cleared")
+    ftype = field.type
+    if ftype is ExtractionFieldType.NUMBER:
+        num = _parse_finite_number(payload)
+        if num is None:
+            return _nonconforming(raw, payload)
+        return ExportValue(raw=raw, status="answered", value_num=num, unit=peeled.unit)
+    if ftype in (ExtractionFieldType.TEXT, ExtractionFieldType.DATE):
+        if isinstance(payload, (str, int, float)) and not isinstance(payload, bool):
+            return ExportValue(raw=raw, status="answered", value_text=str(payload))
+    elif ftype is ExtractionFieldType.BOOLEAN:
+        if isinstance(payload, bool):
+            return ExportValue(raw=raw, status="answered", value_bool=payload)
+    else:
+        selected = _select_value(raw, payload, field, labels)
+        if selected is not None:
+            return selected
+    return _nonconforming(raw, payload)
+
+
+#: Statuses whose typed value a machine column carries.
+MACHINE_STATUSES: tuple[ExportStatus, ...] = ("answered", "nonconforming")
+
+
+def machine_value(v: ExportValue) -> CellValue:
+    """The machine scalar: the first of ``value_num``, ``value_bool``, ``value_text``
+    for an answered or nonconforming value in scope, else ``None``."""
+    if v.status not in MACHINE_STATUSES or v.out_of_scope:
+        return None
+    return next((x for x in (v.value_num, v.value_bool, v.value_text) if x is not None), None)
+
+
+#: Publication abbreviation of each absent code (spec §4.6).
+PUBLICATION_ABSENT_CODES: Final[Mapping[str, str]] = {
+    "no_information": "NI",
+    "not_applicable": "NA",
+    "not_evaluated": "NE",
+}
+#: A recorded value outside the template's scope rule, in a Publication cell (D7).
+SCOPE_MARKER: Final[str] = "NA*"
+_SCOPE_FOOTNOTE: Final[str] = (
+    f"{SCOPE_MARKER} = Not applicable under the template's scope rule; "
+    "the recorded value is kept in the Review workbook (Data sheet)."
+)
+
+DisplayTarget = Literal["matrix", "publication"]
+
+
+def footnote_key(v: ExportValue) -> str | None:
+    """The Publication marker a cell carries, if any: an absent code's
+    abbreviation (a scope stamp included), else ``SCOPE_MARKER`` for a recorded
+    out-of-scope value; rejected and cleared values carry none."""
+    if v.status in ("rejected", "cleared"):
+        return None
+    if v.status == "absent":
+        assert v.absent_code is not None
+        return PUBLICATION_ABSENT_CODES[v.absent_code]
+    return SCOPE_MARKER if v.out_of_scope else None
+
+
+def publication_footnotes(used: Collection[str]) -> tuple[str, ...]:
+    """One footnote line per used marker, in the fixed order NI, NA, NE, NA*."""
+    lines = [
+        f"{abbr} = {ABSENT_REASON_LABELS[code]}"
+        for code, abbr in PUBLICATION_ABSENT_CODES.items()
+        if abbr in used
+    ]
+    if SCOPE_MARKER in used:
+        lines.append(_SCOPE_FOOTNOTE)
+    return tuple(lines)
+
+
+def display_value(v: ExportValue, field: FieldDescriptor, *, target: DisplayTarget) -> CellValue:
+    if target == "publication":
+        if v.status in ("rejected", "cleared"):
+            return None
+        marker = footnote_key(v)
+        if marker is not None:
+            return marker
+        if v.status == "answered" and v.value_num is not None and not field.allowed_units:
+            return v.value_num
+    return _matrix_display(v, field)
+
+
+def _matrix_display(v: ExportValue, field: FieldDescriptor) -> CellValue:
+    if v.out_of_scope:
+        return ABSENT_REASON_LABELS["not_applicable"]
+    if v.status == "absent":
+        assert v.absent_code is not None
+        return ABSENT_REASON_LABELS[v.absent_code]
+    if v.status in ("rejected", "cleared"):
+        return None
+    if v.status == "nonconforming":
+        return v.value_text
+    if v.value_num is not None:
+        unit = v.unit or field.unit
+        return f"{v.value_num} {unit}" if unit else v.value_num
+    if v.value_bool is not None:
+        return "Yes" if v.value_bool else "No"
+    if v.value_label is not None or v.other_text is not None:
+        parts = [v.value_label] if v.value_label else []
+        parts += [f"Other: {t}" for t in (v.other_text or "").split("; ") if t]
+        return "; ".join(parts)
+    return v.value_text

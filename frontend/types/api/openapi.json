@@ -956,6 +956,102 @@
         "title": "ApiResponse[DiscardDraftResponse]",
         "type": "object"
       },
+      "ApiResponse_DuplicateVerdictsResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DuplicateVerdictsResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DuplicateVerdictsResult]",
+        "type": "object"
+      },
+      "ApiResponse_DuplicatesRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DuplicatesRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DuplicatesRead]",
+        "type": "object"
+      },
       "ApiResponse_EntryBulkDeleteResponse_": {
         "properties": {
           "data": {
@@ -2870,54 +2966,6 @@
         "title": "ApiResponse[ScreeningConfigRead]",
         "type": "object"
       },
-      "ApiResponse_ScreeningConflictsRead_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScreeningConflictsRead"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ScreeningConflictsRead]",
-        "type": "object"
-      },
       "ApiResponse_ScreeningEnrollResult_": {
         "properties": {
           "data": {
@@ -2966,12 +3014,12 @@
         "title": "ApiResponse[ScreeningEnrollResult]",
         "type": "object"
       },
-      "ApiResponse_ScreeningQueueRead_": {
+      "ApiResponse_ScreeningRecordsRead_": {
         "properties": {
           "data": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ScreeningQueueRead"
+                "$ref": "#/components/schemas/ScreeningRecordsRead"
               },
               {
                 "type": "null"
@@ -3011,7 +3059,7 @@
         "required": [
           "ok"
         ],
-        "title": "ApiResponse[ScreeningQueueRead]",
+        "title": "ApiResponse[ScreeningRecordsRead]",
         "type": "object"
       },
       "ApiResponse_SectionDeleteResponse_": {
@@ -5544,6 +5592,329 @@
         "title": "DownloadAttachmentResponse",
         "type": "object"
       },
+      "DuplicatePair": {
+        "description": "A candidate pair (open) or a ruled one (resolved).\n\n``kept_article_id`` is the keep order's suggestion for an open pair and the\nrecorded keeper for a resolved one. ``tier`` and ``match_label`` are\nrecomputed from today's metadata; a resolved pair that no longer matches\ncarries ``None``.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "basis": {
+            "enum": [
+              "pmid",
+              "doi",
+              "title",
+              "manual"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "decided_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Name"
+          },
+          "kept": {
+            "$ref": "#/components/schemas/DuplicateSide"
+          },
+          "kept_article_id": {
+            "format": "uuid",
+            "title": "Kept Article Id",
+            "type": "string"
+          },
+          "match_label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pmid",
+                  "doi_title",
+                  "title",
+                  "doi_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Label"
+          },
+          "removed": {
+            "$ref": "#/components/schemas/DuplicateSide"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "exact",
+                  "likely",
+                  "possible"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "duplicate",
+                  "distinct"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "article_id",
+          "kept_article_id",
+          "tier",
+          "basis",
+          "match_label",
+          "removed",
+          "kept"
+        ],
+        "title": "DuplicatePair",
+        "type": "object"
+      },
+      "DuplicateSide": {
+        "description": "One side of a pair: the fields the compare panel shows.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "has_abstract": {
+            "title": "Has Abstract",
+            "type": "boolean"
+          },
+          "has_pdf": {
+            "title": "Has Pdf",
+            "type": "boolean"
+          },
+          "has_refusing_work": {
+            "description": "Full-text or extraction work: the server refuses removing this side.",
+            "title": "Has Refusing Work",
+            "type": "boolean"
+          },
+          "has_review_work": {
+            "title": "Has Review Work",
+            "type": "boolean"
+          },
+          "ingestion_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Source"
+          },
+          "journal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Title"
+          },
+          "pmid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pmid"
+          },
+          "publication_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Year"
+          },
+          "screening_decisions": {
+            "title": "Screening Decisions",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "title",
+          "authors",
+          "publication_year",
+          "journal_title",
+          "doi",
+          "pmid",
+          "ingestion_source",
+          "has_pdf",
+          "has_abstract",
+          "screening_decisions",
+          "has_review_work",
+          "has_refusing_work"
+        ],
+        "title": "DuplicateSide",
+        "type": "object"
+      },
+      "DuplicateVerdictCreate": {
+        "additionalProperties": false,
+        "description": "One ruling: ``article_id`` is removed (or judged distinct), ``kept_article_id`` stays.\n\nThe basis is derived by the server from today's metadata, never sent.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "kept_article_id": {
+            "format": "uuid",
+            "title": "Kept Article Id",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "duplicate",
+              "distinct",
+              "cleared"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "kept_article_id",
+          "verdict"
+        ],
+        "title": "DuplicateVerdictCreate",
+        "type": "object"
+      },
+      "DuplicateVerdictsCreate": {
+        "additionalProperties": false,
+        "description": "A batch of rulings, applied in order in one transaction.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateVerdictCreate"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DuplicateVerdictsCreate",
+        "type": "object"
+      },
+      "DuplicateVerdictsResult": {
+        "description": "Rows written (skips excluded) and kept records enrolled at title/abstract.",
+        "properties": {
+          "enrolled_kept": {
+            "title": "Enrolled Kept",
+            "type": "integer"
+          },
+          "written": {
+            "title": "Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "written",
+          "enrolled_kept"
+        ],
+        "title": "DuplicateVerdictsResult",
+        "type": "object"
+      },
+      "DuplicatesRead": {
+        "description": "Open pairs (tier, then kept title) and resolved pairs (newest first).",
+        "properties": {
+          "open": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicatePair"
+            },
+            "title": "Open",
+            "type": "array"
+          },
+          "resolved": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicatePair"
+            },
+            "title": "Resolved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "open",
+          "resolved"
+        ],
+        "title": "DuplicatesRead",
+        "type": "object"
+      },
       "EligibilityCriteria": {
         "additionalProperties": false,
         "properties": {
@@ -6422,7 +6793,7 @@
         "properties": {
           "anonymize_reviewer_names": {
             "default": false,
-            "description": "Only meaningful when mode=all_users; replaces names with Reviewer A/B/\u2026",
+            "description": "Replaces names with Member A/B/\u2026 in every mode, adjudicators included.",
             "title": "Anonymize Reviewer Names",
             "type": "boolean"
           },
@@ -6442,7 +6813,7 @@
           },
           "include_ai_metadata": {
             "default": false,
-            "description": "Adds the optional AI metadata sheet to the workbook.",
+            "description": "Adds the AI proposals sheet and, in All users mode, an AI column in Verification.",
             "title": "Include Ai Metadata",
             "type": "boolean"
           },
@@ -8388,7 +8759,8 @@
             "enum": [
               "include",
               "exclude",
-              "maybe"
+              "maybe",
+              "not_retrieved"
             ],
             "title": "Decision",
             "type": "string"
@@ -9157,6 +9529,17 @@
             "title": "Excluded Without Reason",
             "type": "integer"
           },
+          "full_text_in_progress": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Text In Progress"
+          },
           "identified": {
             "items": {
               "$ref": "#/components/schemas/PrismaSourceCount"
@@ -9168,13 +9551,60 @@
             "title": "Identified Total",
             "type": "integer"
           },
-          "imported_not_enrolled": {
-            "title": "Imported Not Enrolled",
+          "other_removed": {
+            "title": "Other Removed",
             "type": "integer"
           },
-          "not_retrieved": {
-            "title": "Not Retrieved",
+          "records_not_found": {
+            "title": "Records Not Found",
             "type": "integer"
+          },
+          "reports_assessed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Assessed"
+          },
+          "reports_excluded_by_reason": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PrismaReasonCount"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Excluded By Reason"
+          },
+          "reports_included": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Included"
+          },
+          "reports_not_retrieved": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports Not Retrieved"
           },
           "screened": {
             "title": "Screened",
@@ -9183,20 +9613,35 @@
           "sought_for_retrieval": {
             "title": "Sought For Retrieval",
             "type": "integer"
+          },
+          "ta_included": {
+            "title": "Ta Included",
+            "type": "integer"
+          },
+          "ta_maybe": {
+            "title": "Ta Maybe",
+            "type": "integer"
           }
         },
         "required": [
           "identified",
           "identified_total",
           "duplicates_removed",
-          "not_retrieved",
-          "imported_not_enrolled",
+          "records_not_found",
+          "other_removed",
           "screened",
           "excluded",
           "excluded_by_reason",
           "excluded_reasons_differ",
           "excluded_without_reason",
-          "sought_for_retrieval"
+          "sought_for_retrieval",
+          "ta_included",
+          "ta_maybe",
+          "reports_not_retrieved",
+          "reports_assessed",
+          "reports_excluded_by_reason",
+          "reports_included",
+          "full_text_in_progress"
         ],
         "title": "PrismaCountsRead",
         "type": "object"
@@ -11502,7 +11947,8 @@
                 "enum": [
                   "include",
                   "exclude",
-                  "maybe"
+                  "maybe",
+                  "not_retrieved"
                 ],
                 "type": "string"
               },
@@ -11579,6 +12025,17 @@
             ],
             "title": "Abstract"
           },
+          "article_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Type"
+          },
           "authors": {
             "anyOf": [
               {
@@ -11620,6 +12077,45 @@
             ],
             "title": "Journal Title"
           },
+          "keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keywords"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "mesh_terms": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mesh Terms"
+          },
           "pmid": {
             "anyOf": [
               {
@@ -11655,7 +12151,11 @@
           "journal_title",
           "publication_year",
           "pmid",
-          "doi"
+          "doi",
+          "mesh_terms",
+          "keywords",
+          "article_type",
+          "language"
         ],
         "title": "ScreeningArticle",
         "type": "object"
@@ -11753,6 +12253,36 @@
             "title": "Enrolled",
             "type": "integer"
           },
+          "exclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion Reasons",
+            "type": "array"
+          },
+          "full_text_count_locked": {
+            "title": "Full Text Count Locked",
+            "type": "boolean"
+          },
+          "full_text_enrolled": {
+            "title": "Full Text Enrolled",
+            "type": "integer"
+          },
+          "full_text_ready": {
+            "title": "Full Text Ready",
+            "type": "integer"
+          },
+          "full_text_reviewer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Text Reviewer Count"
+          },
           "not_enrolled": {
             "title": "Not Enrolled",
             "type": "integer"
@@ -11780,20 +12310,38 @@
         "required": [
           "reviewer_count",
           "reviewer_count_locked",
+          "full_text_reviewer_count",
+          "full_text_count_locked",
+          "full_text_ready",
+          "full_text_enrolled",
           "reviewer_capable",
           "enrolled",
           "not_enrolled",
           "can_manage",
           "can_review",
-          "can_arbitrate"
+          "can_arbitrate",
+          "exclusion_reasons"
         ],
         "title": "ScreeningConfigRead",
         "type": "object"
       },
       "ScreeningConfigUpdate": {
         "additionalProperties": false,
-        "description": "Reviewers per record (1 to 3).",
+        "description": "Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off.",
         "properties": {
+          "full_text_reviewer_count": {
+            "anyOf": [
+              {
+                "maximum": 3.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Text Reviewer Count"
+          },
           "reviewer_count": {
             "maximum": 3.0,
             "minimum": 1.0,
@@ -11807,58 +12355,6 @@
         "title": "ScreeningConfigUpdate",
         "type": "object"
       },
-      "ScreeningConflictItem": {
-        "description": "One unruled conflict with every reviewer's current decision.",
-        "properties": {
-          "article": {
-            "$ref": "#/components/schemas/ScreeningArticle"
-          },
-          "assignment_id": {
-            "format": "uuid",
-            "title": "Assignment Id",
-            "type": "string"
-          },
-          "decisions": {
-            "items": {
-              "$ref": "#/components/schemas/PeerDecisionRead"
-            },
-            "title": "Decisions",
-            "type": "array"
-          }
-        },
-        "required": [
-          "assignment_id",
-          "article",
-          "decisions"
-        ],
-        "title": "ScreeningConflictItem",
-        "type": "object"
-      },
-      "ScreeningConflictsRead": {
-        "description": "The project's unruled conflicts, and the protocol reasons an override may cite.",
-        "properties": {
-          "exclusion_reasons": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Exclusion Reasons",
-            "type": "array"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ScreeningConflictItem"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items",
-          "exclusion_reasons"
-        ],
-        "title": "ScreeningConflictsRead",
-        "type": "object"
-      },
       "ScreeningDecisionCreate": {
         "additionalProperties": false,
         "description": "One reviewer decision; an exclusion reason only on ``exclude``.",
@@ -11867,7 +12363,8 @@
             "enum": [
               "include",
               "exclude",
-              "maybe"
+              "maybe",
+              "not_retrieved"
             ],
             "title": "Decision",
             "type": "string"
@@ -11914,7 +12411,8 @@
             "enum": [
               "include",
               "exclude",
-              "maybe"
+              "maybe",
+              "not_retrieved"
             ],
             "title": "Decision",
             "type": "string"
@@ -11959,7 +12457,7 @@
       },
       "ScreeningEnrollRequest": {
         "additionalProperties": false,
-        "description": "Articles to enroll; omit ``article_ids`` to enroll every article of the project.",
+        "description": "Articles to enroll; omit ``article_ids`` to enroll every article of the project.\n\n``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.",
         "properties": {
           "article_ids": {
             "anyOf": [
@@ -11977,6 +12475,15 @@
               }
             ],
             "title": "Article Ids"
+          },
+          "phase": {
+            "default": "title_abstract",
+            "enum": [
+              "title_abstract",
+              "full_text"
+            ],
+            "title": "Phase",
+            "type": "string"
           }
         },
         "title": "ScreeningEnrollRequest",
@@ -12006,7 +12513,8 @@
             "enum": [
               "include",
               "exclude",
-              "maybe"
+              "maybe",
+              "not_retrieved"
             ],
             "title": "Decision",
             "type": "string"
@@ -12045,35 +12553,264 @@
         "title": "ScreeningOutcomeRead",
         "type": "object"
       },
-      "ScreeningQueueItem": {
+      "ScreeningRecordRow": {
+        "description": "One project article in a screening phase as the caller may see it.\n\nNo abstract: the panel reads the assignment. ``assignment_id`` is ``None``\nwhen the article is not enrolled; the ``outcome*`` fields are set only once\nthe record has an outcome; the ``ta_*`` fields are the title/abstract outcome\nof a full-text row.",
         "properties": {
-          "article": {
-            "$ref": "#/components/schemas/ScreeningArticle"
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
           },
           "assignment_id": {
-            "format": "uuid",
-            "title": "Assignment Id",
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Id"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "first_author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Author"
+          },
+          "has_pdf": {
+            "title": "Has Pdf",
+            "type": "boolean"
+          },
+          "ingestion_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Source"
+          },
+          "journal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Title"
+          },
+          "my_decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe",
+                  "not_retrieved"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Decision"
+          },
+          "my_exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Exclusion Reason"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe",
+                  "not_retrieved"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "outcome_exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Exclusion Reason"
+          },
+          "outcome_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "solo",
+                  "consensus",
+                  "arbitrated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Kind"
+          },
+          "pmid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pmid"
+          },
+          "publication_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Year"
+          },
+          "queue_rank": {
+            "title": "Queue Rank",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "not_enrolled",
+              "to_screen",
+              "waiting",
+              "in_review",
+              "conflict",
+              "included",
+              "excluded",
+              "maybe",
+              "not_retrieved"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "ta_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "include",
+                  "exclude",
+                  "maybe",
+                  "not_retrieved"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ta Outcome"
+          },
+          "ta_outcome_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "solo",
+                  "consensus",
+                  "arbitrated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ta Outcome Kind"
+          },
+          "ta_reviewer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ta Reviewer Count"
+          },
+          "title": {
+            "title": "Title",
             "type": "string"
           }
         },
         "required": [
+          "article_id",
           "assignment_id",
-          "article"
+          "queue_rank",
+          "title",
+          "first_author",
+          "publication_year",
+          "journal_title",
+          "pmid",
+          "doi",
+          "ingestion_source",
+          "has_pdf",
+          "status",
+          "my_decision",
+          "my_exclusion_reason",
+          "outcome",
+          "outcome_exclusion_reason",
+          "outcome_kind",
+          "ta_outcome",
+          "ta_outcome_kind",
+          "ta_reviewer_count"
         ],
-        "title": "ScreeningQueueItem",
+        "title": "ScreeningRecordRow",
         "type": "object"
       },
-      "ScreeningQueueRead": {
-        "description": "The caller's next records to screen, with the counts around them.",
+      "ScreeningRecordsRead": {
+        "description": "Every article of the project in one phase, in queue order, with the protocol criteria.",
         "properties": {
-          "awaiting_me": {
-            "title": "Awaiting Me",
-            "type": "integer"
-          },
-          "awaiting_others": {
-            "title": "Awaiting Others",
-            "type": "integer"
-          },
           "exclusion_reasons": {
             "items": {
               "type": "string"
@@ -12081,21 +12818,41 @@
             "title": "Exclusion Reasons",
             "type": "array"
           },
-          "items": {
+          "inclusion_criteria": {
             "items": {
-              "$ref": "#/components/schemas/ScreeningQueueItem"
+              "type": "string"
             },
-            "title": "Items",
+            "title": "Inclusion Criteria",
+            "type": "array"
+          },
+          "phase": {
+            "enum": [
+              "title_abstract",
+              "full_text"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "reviewer_count": {
+            "title": "Reviewer Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ScreeningRecordRow"
+            },
+            "title": "Rows",
             "type": "array"
           }
         },
         "required": [
-          "items",
-          "awaiting_me",
-          "awaiting_others",
-          "exclusion_reasons"
+          "phase",
+          "reviewer_count",
+          "inclusion_criteria",
+          "exclusion_reasons",
+          "rows"
         ],
-        "title": "ScreeningQueueRead",
+        "title": "ScreeningRecordsRead",
         "type": "object"
       },
       "SectionCreateRequest": {
@@ -17534,6 +18291,123 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/duplicates": {
+      "get": {
+        "description": "Open candidate pairs and resolved pairs, each side with its compare fields.",
+        "operationId": "get_duplicates_api_v1_projects__project_id__duplicates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DuplicatesRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Only project managers review duplicates"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Duplicates",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/duplicates/verdicts": {
+      "post": {
+        "description": "Record a batch of rulings in order, in one transaction; a refusal writes nothing.",
+        "operationId": "post_duplicate_verdicts_api_v1_projects__project_id__duplicates_verdicts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateVerdictsCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DuplicateVerdictsResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "An article is not in this project"
+          },
+          "409": {
+            "description": "The record to remove has full-text or extraction work, or the record to keep was already removed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Post Duplicate Verdicts",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/extraction-export": {
       "post": {
         "description": "Validate, authorise, then dispatch via sync or async path.\n\nSync path returns a raw binary ``Response`` (``.xlsx`` blob); async\npath returns an ``ApiResponse[ExtractionExportStartedResponse]``\nenvelope; validation/auth failures are envelope-wrapped via\n``_envelope_failure``. The PEP 604 union covers both shapes and\nsatisfies the fitness check at ``scripts/fitness/check_api_response_envelope.py``.",
@@ -18560,7 +19434,7 @@
             "description": "Project not found"
           },
           "409": {
-            "description": "Config frozen by a decision, or fewer reviewers than requested"
+            "description": "Config frozen by a decision (or by a record sent to full text), or fewer reviewers than requested"
           },
           "422": {
             "content": {
@@ -18579,57 +19453,6 @@
           }
         ],
         "summary": "Put Screening Config",
-        "tags": [
-          "screening"
-        ]
-      }
-    },
-    "/api/v1/projects/{project_id}/screening/conflicts": {
-      "get": {
-        "operationId": "get_screening_conflicts_api_v1_projects__project_id__screening_conflicts_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ScreeningConflictsRead_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "403": {
-            "description": "Manager or consensus role required"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Get Screening Conflicts",
         "tags": [
           "screening"
         ]
@@ -18681,15 +19504,11 @@
           "404": {
             "description": "An article is not in this project"
           },
+          "409": {
+            "description": "Full-text screening is not set up, or the protocol has no exclusion reasons"
+          },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "Article ids given when sending records to full text"
           }
         },
         "security": [
@@ -18703,9 +19522,10 @@
         ]
       }
     },
-    "/api/v1/projects/{project_id}/screening/queue": {
+    "/api/v1/projects/{project_id}/screening/records": {
       "get": {
-        "operationId": "get_screening_queue_api_v1_projects__project_id__screening_queue_get",
+        "description": "Every article of the project in one phase with the caller's blind-safe status.\n\nOne row per article, in queue order, never a peer's decision.",
+        "operationId": "get_screening_records_api_v1_projects__project_id__screening_records_get",
         "parameters": [
           {
             "in": "path",
@@ -18716,6 +19536,19 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "phase",
+            "required": true,
+            "schema": {
+              "enum": [
+                "title_abstract",
+                "full_text"
+              ],
+              "title": "Phase",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -18723,14 +19556,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ScreeningQueueRead_"
+                  "$ref": "#/components/schemas/ApiResponse_ScreeningRecordsRead_"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "403": {
-            "description": "Reviewer role required"
           },
           "409": {
             "description": "Screening is not set up for this project"
@@ -18751,7 +19581,7 @@
             "Supabase JWT": []
           }
         ],
-        "summary": "Get Screening Queue",
+        "summary": "Get Screening Records",
         "tags": [
           "screening"
         ]
@@ -21358,7 +22188,7 @@
             "description": "Assignment not found, its article left the project, or a decision is not in this assignment"
           },
           "409": {
-            "description": "Screening not set up, the record is not in conflict, the decisions changed since it was opened, or the exclusion reason is not in the protocol"
+            "description": "Screening not set up, the record is not in conflict, the decisions changed since it was opened, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED)"
           },
           "422": {
             "content": {
@@ -21425,7 +22255,7 @@
             "description": "Assignment not found, or its article left the project"
           },
           "409": {
-            "description": "Screening not set up, the caller already decided (a decision is final), the record has all its reviewers, or the exclusion reason is not in the protocol"
+            "description": "Screening not set up, the caller already decided (final in dual review; a solo reviewer may decide again until the record is arbitrated), the record has all its reviewers, the exclusion reason is not in the protocol, the decision is not available in this phase (SCREENING_DECISION_NOT_IN_PHASE), a full-text exclusion has no reason (SCREENING_REASON_REQUIRED), or the article is already in full text (SCREENING_PHASE_ADVANCED)"
           },
           "422": {
             "content": {

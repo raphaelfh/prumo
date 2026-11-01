@@ -1,10 +1,11 @@
 """Summary sub-builder.
 
 One row per record (article, or article × model when a ``MODEL_CONTAINER``
-exists), with identity columns + per-record completeness + an omitted-by-stage
-tally (§4 #2). Completeness is computed from the already-resolved ``value_map``:
-a coordinate counts as "filled" when its resolved value is not ``None``. Pure —
-no DB, no openpyxl.
+exists), with identity columns + per-record completeness, then each omitted article with
+its reason (§4.5). Completeness reads the primary slot of the typed ``value_map``:
+a coordinate counts as "filled" when it renders (``display_value``) to a value,
+so markers and out-of-scope stamps count and cleared values do not. Pure — no
+DB, no openpyxl.
 """
 
 from __future__ import annotations
@@ -15,13 +16,15 @@ from uuid import UUID
 from app.services.exports.descriptors import (
     descendant_instances,
     iter_records,
+    primary_rater,
     root_groups,
+    value_key,
 )
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
+from app.services.exports.values import display_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
-    ExportMode,
 )
 
 if TYPE_CHECKING:
@@ -30,15 +33,6 @@ if TYPE_CHECKING:
 _HEADER = CellStyle(bold=True, fill="EEEEEE")
 
 _HEADERS = ("Record", "Entry", "Fields filled", "Fields total", "Completeness")
-
-
-def _consensus_value(layout: ExportLayout, run_id: UUID, instance_id: UUID, field_id: UUID):
-    # All-users keys are 4-tuple ``(run, instance, field, reviewer_id|None)``;
-    # consensus / single-user stay 3-tuple. Completeness reads the consensus
-    # (reviewer-agnostic) slot in either mode.
-    if layout.mode is ExportMode.ALL_USERS:
-        return layout.value_map.get((run_id, instance_id, field_id, None))
-    return layout.value_map.get((run_id, instance_id, field_id))
 
 
 def _completeness(
@@ -57,23 +51,24 @@ def _completeness(
     total = 0
     if article.run_id is None:
         return 0, 0
+    rater = primary_rater(layout.mode, layout.reviewer_id)
     for section in layout.sections:
-        for instance_id, _parts in iter_records(section, article, layout.sections):
+        for instance_id, _chain in iter_records(section, article, layout.sections):
             if scope is not None and instance_id not in scope:
                 continue
             for field in section.fields:
                 total += 1
-                if (
-                    _consensus_value(layout, article.run_id, instance_id, field.field_id)
-                    is not None
-                ):
+                v = layout.value_map.get(
+                    value_key(article.run_id, instance_id, field.field_id, rater)
+                )
+                if v is not None and display_value(v, field, target="matrix") is not None:
                     filled += 1
     return filled, total
 
 
 def _row(article: ArticleDescriptor, label: str, filled: int, total: int) -> tuple[Cell, ...]:
     pct = f"{(filled / total * 100):.0f}%" if total else ""
-    return (Cell(article.header_label), Cell(label), Cell(filled), Cell(total), Cell(pct))
+    return (Cell(article.article_label), Cell(label), Cell(filled), Cell(total), Cell(pct))
 
 
 def _record_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
@@ -83,10 +78,14 @@ def _record_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
     for article in layout.articles:
         rows.append(_row(article, "", *_completeness(layout, article, None)))
         for group in groups:
-            for instance_id, parts in iter_records(group, article, layout.sections):
+            for instance_id, chain in iter_records(group, article, layout.sections):
                 scope = descendant_instances(article, instance_id)
                 rows.append(
-                    _row(article, " · ".join(parts), *_completeness(layout, article, scope))
+                    _row(
+                        article,
+                        " · ".join(label for _, label in chain),
+                        *_completeness(layout, article, scope),
+                    )
                 )
     return rows
 
@@ -95,11 +94,10 @@ def build_summary(layout: ExportLayout, titles: SheetTitles) -> SheetSpec:
     rows: list[tuple[Cell, ...]] = [tuple(Cell(h, _HEADER) for h in _HEADERS)]
     rows.extend(_record_rows(layout))
 
-    if layout.notes.omitted_articles_by_stage:
+    if layout.omitted:
         rows.append(())
         rows.append((Cell("Articles omitted", _HEADER),))
-        for stage, count in sorted(layout.notes.omitted_articles_by_stage.items()):
-            rows.append((Cell(f"stage={stage}"), Cell(count)))
+        rows.extend((Cell(o.article_label), Cell(o.reason)) for o in layout.omitted)
 
     return SheetSpec(
         title=titles.fixed["summary"],

@@ -34,11 +34,28 @@ if TYPE_CHECKING:  # descriptors live in the service; importing them at
     # runtime would close an import cycle.
     from app.services.extraction_export_service import (
         ArticleDescriptor,
+        ExportMode,
         SectionDescriptor,
     )
 
 # (entity_type_id, parent_instance_id) — ``None`` parent for a root section.
 EntryKey = tuple[UUID, UUID | None]
+
+# (run_id, instance_id, field_id, rater): rater ``None`` is the consensus slot
+# only; every reviewer slot, single_user included, is keyed by reviewer_id (R1).
+ValueKey = tuple[UUID, UUID, UUID, UUID | None]
+
+
+def value_key(
+    run_id: UUID, instance_id: UUID, field_id: UUID, rater: UUID | None = None
+) -> ValueKey:
+    return (run_id, instance_id, field_id, rater)
+
+
+def primary_rater(mode: ExportMode, reviewer_id: UUID | None) -> UUID | None:
+    """The slot a single-slot reader reads: the reviewer in single_user, else
+    consensus (``None``). Compared by value: ``ExportMode`` is TYPE_CHECKING-only."""
+    return reviewer_id if mode == "single_user" else None
 
 
 def build_entries(
@@ -220,7 +237,7 @@ def root_instance(article: ArticleDescriptor, entity_type_id: UUID) -> UUID | No
 def all_instances_of(article: ArticleDescriptor, entity_type_id: UUID) -> tuple[UUID, ...]:
     """Every instance of one section, across all of its parents.
 
-    The tidy sheets are records-as-rows, so they want the whole set rather
+    The scope pass marks every record, so it wants the whole set rather
     than one column's pick — ordered by parent, then within a parent by the
     order ``build_entries`` fixed.
     """
@@ -242,7 +259,7 @@ def _stem(section: SectionDescriptor) -> str:
     return section.entry_label.title() if section.entry_label else section.label
 
 
-def _ancestry(
+def ancestry(
     section: SectionDescriptor, sections: Sequence[SectionDescriptor]
 ) -> list[SectionDescriptor]:
     """``section`` and its ancestors, root first."""
@@ -262,16 +279,90 @@ def _ancestry(
     return chain
 
 
+def walk_sections(sections: Sequence[SectionDescriptor]) -> tuple[SectionDescriptor, ...]:
+    """Rule 2: the sections in depth-first preorder from the roots.
+
+    Siblings follow ``_children_of``. A section is dropped only when neither
+    it nor any descendant has fields, so a fieldless group that owns fielded
+    children stays. ``seen`` is the cycle guard (see ``_expand``): a section
+    on a parent cycle is never reached from a root, so it is never walked.
+    """
+    seen: set[UUID] = set()
+
+    def visit(section: SectionDescriptor) -> list[SectionDescriptor]:
+        if section.entity_type_id in seen:
+            return []
+        seen.add(section.entity_type_id)
+        below = [
+            s for child in _children_of(sections, section.entity_type_id) for s in visit(child)
+        ]
+        if not section.fields and not below:
+            return []
+        return [section, *below]
+
+    return tuple(s for root in _children_of(sections, None) for s in visit(root))
+
+
+def level_of(section: SectionDescriptor, sections: Sequence[SectionDescriptor]) -> UUID | None:
+    """Rule 1: the nearest repeating section at or above ``section``.
+
+    ``None`` is the root level, Articles: a ``one`` section with no repeating
+    ancestor joins it.
+    """
+    return next(
+        (s.entity_type_id for s in reversed(ancestry(section, sections)) if _repeats(s)),
+        None,
+    )
+
+
+def instance_in_record(
+    section: SectionDescriptor,
+    article: ArticleDescriptor,
+    record_id: UUID | None,
+    sections: Sequence[SectionDescriptor],
+) -> UUID | None:
+    """The instance of ``section`` inside one record of its level.
+
+    ``record_id`` is the level instance (``None`` at the root level). Every
+    step below the level is a ``one`` section by rule 1, so each step takes
+    the first instance under the previous one.
+    """
+    chain = ancestry(section, sections)
+    level = level_of(section, sections)
+    start = 0
+    instance_id = record_id
+    if level is not None:
+        if record_id is None:
+            return None
+        start = next(i for i, s in enumerate(chain) if s.entity_type_id == level) + 1
+    for step in chain[start:]:
+        ids = article.entries.get((step.entity_type_id, instance_id), ())
+        if not ids:
+            return None
+        instance_id = ids[0]
+    return instance_id
+
+
+def record_label(
+    section: SectionDescriptor,
+    article: ArticleDescriptor,
+    instance_id: UUID,
+    position: int,
+) -> str:
+    """Rule 6: a keyed instance is called by its trimmed label; any other,
+    or a keyed one whose label is blank, by "{stem} {position}"."""
+    return article.keyed_labels.get(instance_id) or f"{_stem(section)} {position}"
+
+
 def iter_records(
     section: SectionDescriptor,
     article: ArticleDescriptor,
     sections: Sequence[SectionDescriptor],
-) -> tuple[tuple[UUID, tuple[str, ...]], ...]:
-    """``(instance_id, label parts)`` for every record of one section.
+) -> tuple[tuple[UUID, tuple[tuple[UUID, str], ...]], ...]:
+    """``(instance_id, chain)`` for every record of one section.
 
-    The records-as-rows grain of the tidy sheets (spec §10): a row under a
-    nested group reads ``{article} · {root entry} · {nested entry}``, so the
-    parts name every repeating level above the row, in order.
+    ``chain`` holds one ``(instance_id, record_label)`` per repeating level
+    above (and including) the row, root first (spec §10, rule 6).
 
     Each level of the chain multiplies the records below it, which is what
     the flat ``model_instances`` tuple could not express: every child row was
@@ -279,21 +370,66 @@ def iter_records(
     so an article with two models produced twelve "Model 1..12" rows on each
     child sheet, six of them empty.
     """
-    records: list[tuple[UUID | None, tuple[str, ...]]] = [(None, ())]
-    for level in _ancestry(section, sections):
-        grown: list[tuple[UUID | None, tuple[str, ...]]] = []
-        for parent_instance_id, parts in records:
+    Chain = tuple[tuple[UUID, str], ...]
+    records: list[tuple[UUID | None, Chain]] = [(None, ())]
+    for level in ancestry(section, sections):
+        grown: list[tuple[UUID | None, Chain]] = []
+        for parent_instance_id, chain in records:
             ids = article.entries.get((level.entity_type_id, parent_instance_id), ())
             if _repeats(level):
-                stem = _stem(level)
                 grown.extend(
-                    (instance_id, (*parts, f"{stem} {i}"))
+                    (
+                        instance_id,
+                        (*chain, (instance_id, record_label(level, article, instance_id, i))),
+                    )
                     for i, instance_id in enumerate(ids, start=1)
                 )
             elif ids:
-                grown.append((ids[0], parts))
+                grown.append((ids[0], chain))
         records = grown
-    return tuple((iid, parts) for iid, parts in records if iid is not None)
+    return tuple((iid, chain) for iid, chain in records if iid is not None)
+
+
+def record_keys(
+    article: ArticleDescriptor, instance_id: UUID, sections: Sequence[SectionDescriptor]
+) -> tuple[UUID, UUID | None, SectionDescriptor | None]:
+    """R18: ``(record_id, parent_record_id, level section)`` of one instance.
+
+    ``record_id`` is the nearest self-or-ancestor instance of a repeating
+    section, else the article; ``parent_record_id`` is the next one above it,
+    else the article, and ``None`` when the record is the article itself.
+    The section is ``None`` when the instance's section is not in ``sections``.
+    """
+    parent_of = {iid: (et, parent) for (et, parent), ids in article.entries.items() for iid in ids}
+    by_id = {s.entity_type_id: s for s in sections}
+    section = by_id.get(parent_of[instance_id][0]) if instance_id in parent_of else None
+    repeating: list[UUID] = []
+    current: UUID | None = instance_id
+    seen: set[UUID] = set()
+    while current is not None and current in parent_of and current not in seen:
+        seen.add(current)
+        et, parent = parent_of[current]
+        step = by_id.get(et)
+        if step is not None and _repeats(step):
+            repeating.append(current)
+        current = parent
+    if not repeating:
+        return article.article_id, None, section
+    parent_record = repeating[1] if len(repeating) > 1 else article.article_id
+    return repeating[0], parent_record, section
+
+
+def count_level_records(
+    sections: Sequence[SectionDescriptor], articles: Sequence[ArticleDescriptor]
+) -> int:
+    """Rows on the repeating-level sheets, over the articles that have a run."""
+    return sum(
+        len(iter_records(s, a, sections))
+        for s in walk_sections(sections)
+        if _repeats(s)
+        for a in articles
+        if a.run_id is not None
+    )
 
 
 def descendant_instances(article: ArticleDescriptor, instance_id: UUID) -> set[UUID]:

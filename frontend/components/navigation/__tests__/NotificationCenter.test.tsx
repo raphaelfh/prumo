@@ -292,6 +292,38 @@ describe("NotificationCenter", () => {
     });
 });
 
+describe("NotificationCenter — extraction export failure", () => {
+    it("names a too-large export in words, not a code, in the toast and the job line", async () => {
+        const user = userEvent.setup();
+        const tooLarge: ExtractionExportStatus = {
+            job_id: "x",
+            status: "failed",
+            error: "EXPORT_TOO_LARGE: this export would write 9,000,000 cells; the limit is 5,000,000",
+        };
+        vi.mocked(getExtractionExportStatus).mockResolvedValue(tooLarge);
+        act(() => {
+            useBackgroundJobs.setState({
+                jobs: [runningExportJobWithoutTemplateName("job-1")],
+                lastReadAt: Date.now(),
+            });
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+
+        await waitFor(() => expect(toast.error).toHaveBeenCalled());
+        const toastText = String(vi.mocked(toast.error).mock.calls[0][0]);
+        expect(toastText).toMatch(/too large for one file/i);
+        expect(toastText).not.toContain("EXPORT_TOO_LARGE");
+
+        await user.click(screen.getByRole("button", {name: /notifications/i}));
+        expect(await screen.findByText(/too large for one file/i)).toBeInTheDocument();
+        expect(screen.queryByText(/EXPORT_TOO_LARGE/)).not.toBeInTheDocument();
+    });
+});
+
 describe("NotificationCenter — AI batch origin and stop reason", () => {
     it("labels an agent-started batch with its token name", async () => {
         await openBellWith(aiBatchJob({startedByAgent: true, agentTokenName: "CLI token"}));

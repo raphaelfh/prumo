@@ -306,9 +306,10 @@ async def resolve_caller_current_values(
     blind predicate and MUST stay identical to migration 0025 + the service
     filter in get_run_with_workflow_history.
 
-    NOTE: ``ExtractionExportService._build_single_user_value_map`` looks similar
-    but encodes a DIFFERENT contract (it sources ``accept_proposal`` from the
-    accepted proposal and drops ``reject``, with no human-proposal base layer).
+    NOTE: ``ExtractionExportService._load_reviewer_cells`` looks similar but
+    encodes a DIFFERENT contract (it sources ``accept_proposal`` from the
+    accepted proposal and keeps ``reject`` as a rejected cell, with no
+    human-proposal base layer).
     This resolver mirrors the FRONTEND ``loadValuesForUser`` it replaces, not the
     export contract — do NOT DRY them together, or run-open values diverge from
     the form's current behavior (Invariant 6). The two reads below are

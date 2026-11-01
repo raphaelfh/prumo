@@ -11,9 +11,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from app.models.extraction import ExtractionFieldType
+from app.services.exports.descriptors import ValueKey, value_key
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
-from app.services.exports.extraction.workbook import SheetTitles
+from app.services.exports.extraction.workbook import ExportShape, SheetTitles
 from app.services.exports.extraction_snapshot_reader import AllowedValue
+from app.services.exports.values import ExportValue, to_export_value
 from app.services.extraction_export_service import (
     AppraisalModel,
     AppraisalRow,
@@ -33,6 +35,21 @@ _TITLES = SheetTitles(
 )
 
 
+_RISK = FieldDescriptor(
+    field_id=uuid4(),
+    label="Risk of bias",
+    type=ExtractionFieldType.SELECT,
+    allowed_values=tuple(AllowedValue(x, x) for x in ("Low", "High", "Unclear")),
+)
+
+
+def _ev(field: FieldDescriptor, raw: Any) -> ExportValue:
+    return to_export_value(raw if isinstance(raw, dict) else {"value": raw}, field, {})
+
+
+_NI = {"value": None, "absent_reason": "no_information"}
+
+
 class _Layout:
     def __init__(self, appraisal: Any, mode: ExportMode = ExportMode.CONSENSUS) -> None:
         self.appraisal = appraisal
@@ -44,18 +61,19 @@ def test_legacy_template_keeps_single_overall_column() -> None:
     model = AppraisalModel(
         domain_section_ids=(),
         domain_labels=("D1", "D2"),
+        domain_fields=(_RISK, _RISK),
         rows=(
             AppraisalRow(
                 article_id=None,
                 record_label="Art 1",
-                domain_verdicts=("Low", "High"),
+                domain_verdicts=(_ev(_RISK, "Low"), _ev(_RISK, "High")),
                 overall="High",
                 per_reviewer_overall={},
             ),
         ),
     )
     layout = _Layout(model)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     assert tuple(c.value for c in sheet.rows[0]) == ("Record", "D1", "D2", "Overall")
     assert tuple(c.value for c in sheet.rows[1]) == ("Art 1", "Low", "High", "High")
@@ -65,11 +83,12 @@ def test_spec_template_emits_named_overall_columns() -> None:
     model = AppraisalModel(
         domain_section_ids=(),
         domain_labels=("Dev D1",),
+        domain_fields=(_RISK,),
         rows=(
             AppraisalRow(
                 article_id=None,
                 record_label="Art 1",
-                domain_verdicts=("Low",),
+                domain_verdicts=(_ev(_RISK, "Low"),),
                 overall=None,
                 per_reviewer_overall={},
                 derived_values=("Low", None),
@@ -78,7 +97,7 @@ def test_spec_template_emits_named_overall_columns() -> None:
         derived_labels=("Overall quality (development)", "Overall RoB (evaluation)"),
     )
     layout = _Layout(model)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     header = tuple(c.value for c in sheet.rows[0])
     assert header == (
@@ -102,11 +121,12 @@ def test_all_users_keeps_per_reviewer_overall_for_a_legacy_template() -> None:
     model = AppraisalModel(
         domain_section_ids=(),
         domain_labels=("D1",),
+        domain_fields=(_RISK,),
         rows=(
             AppraisalRow(
                 article_id=None,
                 record_label="Art 1",
-                domain_verdicts=("Low",),
+                domain_verdicts=(_ev(_RISK, "Low"),),
                 overall="Low",
                 per_reviewer_overall={reviewer.reviewer_id: "High"},
             ),
@@ -114,7 +134,7 @@ def test_all_users_keeps_per_reviewer_overall_for_a_legacy_template() -> None:
     )
     layout = _Layout(model, mode=ExportMode.ALL_USERS)
     layout.reviewers = (reviewer,)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     assert tuple(c.value for c in sheet.rows[0]) == ("Record", "D1", "Overall", "Overall — Ana")
 
@@ -129,11 +149,12 @@ def test_all_users_spec_template_does_not_emit_the_legacy_per_reviewer_overall()
     model = AppraisalModel(
         domain_section_ids=(),
         domain_labels=("Dev D1",),
+        domain_fields=(_RISK,),
         rows=(
             AppraisalRow(
                 article_id=None,
                 record_label="Art 1",
-                domain_verdicts=("No information",),
+                domain_verdicts=(_ev(_RISK, _NI),),
                 overall=None,
                 # What the lenient legacy rule would have printed here.
                 per_reviewer_overall={reviewer.reviewer_id: "Low"},
@@ -144,7 +165,7 @@ def test_all_users_spec_template_does_not_emit_the_legacy_per_reviewer_overall()
     )
     layout = _Layout(model, mode=ExportMode.ALL_USERS)
     layout.reviewers = (reviewer,)
-    sheet = build_appraisal_summary(layout, _TITLES)
+    sheet = build_appraisal_summary(layout, _TITLES, ExportShape.COMPLETE)
     assert sheet is not None
     header = tuple(c.value for c in sheet.rows[0])
     assert header == ("Record", "Dev D1", "Overall quality (development)")
@@ -182,7 +203,7 @@ def _section(name: str, label: str, field_name: str) -> tuple[SectionDescriptor,
 def _article(run_id: Any, section_instances: dict[Any, tuple[Any, ...]]) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Art 1",
+        article_label="Art 1",
         run_id=run_id,
         version_id=None,
         entries={(sid, None): ids for sid, ids in section_instances.items()},
@@ -194,9 +215,9 @@ def test_build_appraisal_model_computes_derived_values_from_the_spec() -> None:
     s2, f2 = _section("d2", "D2", "risk_of_bias")
     run_id, i1, i2 = uuid4(), uuid4(), uuid4()
     article = _article(run_id, {s1.entity_type_id: (i1,), s2.entity_type_id: (i2,)})
-    value_map: dict[tuple[Any, ...], Any] = {
-        (run_id, i1, f1.field_id): "Low",
-        (run_id, i2, f2.field_id): "High",
+    value_map: dict[ValueKey, ExportValue] = {
+        value_key(run_id, i1, f1.field_id): _ev(f1, "Low"),
+        value_key(run_id, i2, f2.field_id): _ev(f2, "High"),
     }
     spec = {
         "derived_judgments": [
@@ -218,6 +239,7 @@ def test_build_appraisal_model_computes_derived_values_from_the_spec() -> None:
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
         rules_by_article={article.article_id: spec},
     )
     assert model is not None
@@ -233,8 +255,9 @@ def test_build_appraisal_model_without_a_spec_has_no_derived_columns() -> None:
         sections=(s1,),
         articles=(article,),
         reviewers=(),
-        value_map={(run_id, i1, f1.field_id): "Low"},
+        value_map={value_key(run_id, i1, f1.field_id): _ev(f1, "Low")},
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
     )
     assert model is not None
     assert model.derived_labels == ()
@@ -272,8 +295,9 @@ def test_recommendation_entries_contribute_no_derived_column() -> None:
         sections=(s1,),
         articles=(article,),
         reviewers=(),
-        value_map={(run_id, i1, f1.field_id): "High"},
+        value_map={value_key(run_id, i1, f1.field_id): _ev(f1, "High")},
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
         rules_by_article={article.article_id: spec},
     )
     assert model is not None
@@ -304,8 +328,9 @@ def test_export_warns_on_a_dangling_spec_coordinate() -> None:
             sections=(s1,),
             articles=(article,),
             reviewers=(),
-            value_map={(run_id, i1, f1.field_id): "High"},
+            value_map={value_key(run_id, i1, f1.field_id): _ev(f1, "High")},
             mode=ExportMode.CONSENSUS,
+            reviewer_id=None,
             rules_by_article={article.article_id: spec},
         )
     assert model is not None
@@ -335,8 +360,9 @@ def test_export_stays_silent_when_the_spec_resolves() -> None:
             sections=(s1,),
             articles=(article,),
             reviewers=(),
-            value_map={(run_id, i1, f1.field_id): "High"},
+            value_map={value_key(run_id, i1, f1.field_id): _ev(f1, "High")},
             mode=ExportMode.CONSENSUS,
+            reviewer_id=None,
             rules_by_article={article.article_id: spec},
         )
     assert mock_logger.warning.call_args is None
@@ -352,10 +378,10 @@ def test_articles_on_different_versions_each_compute_their_own_overalls() -> Non
     entries = {s1.entity_type_id: (i1,), s2.entity_type_id: (i2,)}
     article_a, article_b = _article(run_a, entries), _article(run_b, entries)
     article_c = _article(run_c, entries)
-    value_map: dict[tuple[Any, ...], Any] = {
-        (run, iid, fid): verdict
+    value_map: dict[ValueKey, ExportValue] = {
+        value_key(run, iid, f.field_id): _ev(f, verdict)
         for run in (run_a, run_b, run_c)
-        for iid, fid, verdict in ((i1, f1.field_id, "Low"), (i2, f2.field_id, "High"))
+        for iid, f, verdict in ((i1, f1, "Low"), (i2, f2, "High"))
     }
 
     def _overall(entry_id: str, label: str, section: str) -> dict[str, Any]:
@@ -372,6 +398,7 @@ def test_articles_on_different_versions_each_compute_their_own_overalls() -> Non
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
+        reviewer_id=None,
         rules_by_article={
             article_a.article_id: {"derived_judgments": [_overall("o1", "Overall D1", "d1")]},
             article_b.article_id: {"derived_judgments": [_overall("o2", "Overall D2", "d2")]},

@@ -30,18 +30,22 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction.workbook import ExportShape, build_workbook
+from app.services.exports.values import to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
 
 # Seeded CHARMS carries six sections under ``prediction_models``; the count
 # is what turns the flat tuple into a six-step staircase, so keep it real.
+_TEXT = FieldDescriptor(
+    field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+)
 _CHILD_LABELS = (
     "Model Development",
     "Model Performance",
@@ -109,7 +113,7 @@ class _Charms:
                 entries[(child, entry)] = (self.child_instances[(entry, child)],)
         return ArticleDescriptor(
             article_id=uuid4(),
-            header_label="Gaca, 2011",
+            article_label="Gaca, 2011",
             run_id=self.run_id,
             version_id=None,
             entries=entries,
@@ -120,11 +124,11 @@ class _Charms:
 
     def layout(self) -> ExportLayout:
         value_map = {
-            (
+            value_key(
                 self.run_id,
                 self.child_instances[(entry, self.child_ids[c])],
                 self.field_ids[c],
-            ): self.value(e, c)
+            ): to_export_value({"value": self.value(e, c)}, _TEXT, {})
             for e, entry in enumerate(self.entry_ids)
             for c in range(len(self.child_ids))
         }
@@ -138,7 +142,7 @@ class _Charms:
             mode=ExportMode.CONSENSUS,
             include_ai_metadata=False,
             anonymize_reviewer_names=False,
-            notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+            generated_at=datetime(2026, 6, 14, tzinfo=UTC),
             value_map=value_map,
         )
 

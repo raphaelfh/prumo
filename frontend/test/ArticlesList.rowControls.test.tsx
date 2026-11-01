@@ -13,6 +13,7 @@ import {render, screen} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import {ArticlesList} from "@/components/articles/ArticlesList";
+import {createQueryWrapper} from "@/test/helpers/queryClientWrapper";
 import type {Article} from "@/types/article";
 
 vi.mock("@/integrations/supabase/client", () => ({supabase: {}}));
@@ -49,6 +50,7 @@ function renderList(articles: Article[], onArticleClick = vi.fn()) {
                 onArticlesChange={vi.fn()}
             />
         </MemoryRouter>,
+        {wrapper: createQueryWrapper().wrapper},
     );
     return {onArticleClick};
 }

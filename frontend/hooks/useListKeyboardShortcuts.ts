@@ -9,6 +9,8 @@ export interface UseListKeyboardShortcutsOptions {
     hasActiveFilters?: boolean;
     selectAll?: () => void;
     selectFiltered?: () => void;
+    /** False registers no listener (a host shell owns the keys). Default true. */
+    enabled?: boolean;
 }
 
 /**
@@ -25,8 +27,10 @@ export function useListKeyboardShortcuts({
                                              hasActiveFilters = false,
                                              selectAll,
                                              selectFiltered,
+                                             enabled = true,
                                          }: UseListKeyboardShortcutsOptions) {
     useEffect(() => {
+        if (!enabled) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement;
             const inInput =
@@ -51,6 +55,9 @@ export function useListKeyboardShortcuts({
                 return;
             }
             if (e.key === 'Escape') {
+                // ListDetailSplitShell's capture-phase Escape chain already
+                // undid one step on this press (and marked it handled).
+                if (e.defaultPrevented) return;
                 if (filterPopoverOpen) {
                     e.preventDefault();
                     setFilterPopoverOpen(false);
@@ -82,6 +89,7 @@ export function useListKeyboardShortcuts({
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [
+        enabled,
         searchInputRef,
         setFilterPopoverOpen,
         filterPopoverOpen,

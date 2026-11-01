@@ -44,6 +44,7 @@ import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {triggerDownload} from "@/lib/download";
 import {ApiError} from "@/integrations/api/client";
+import {extractionExportErrorText} from "@/lib/extraction-export-errors";
 import {useEligibleReviewers} from "@/hooks/exports/useEligibleReviewers";
 import {useAuth} from "@/contexts/AuthContext";
 import {startExport} from "@/services/extractionExportService";
@@ -117,7 +118,10 @@ function failureMessage(error: Error): string {
     if (error instanceof ApiError && error.status === 429) {
         return t("extraction", "exportRateLimited");
     }
-    return error.message || t("extraction", "exportFailedToast");
+    return extractionExportErrorText(
+        error instanceof ApiError ? error.code : undefined,
+        error.message,
+    );
 }
 
 export function HITLExportDialog({
@@ -229,8 +233,10 @@ export function HITLExportDialog({
     const modeReady =
         mode !== "single_user" ||
         (reviewerId !== null && reviewers.some((r) => r.id === reviewerId));
+    // A Codebook carries no article data, so it needs no articles in scope (§3).
     const canSubmit =
-        articleCount > 0 && modeReady && selectedTemplateIds.length > 0 && !submitting;
+        (articleCount > 0 || shape === "dictionary") &&
+        modeReady && selectedTemplateIds.length > 0 && !submitting;
 
     const expectedSync =
         mode !== "all_users" && !includeAiMetadata && articleCount <= SYNC_EXPORT_MAX_ARTICLES;
@@ -602,29 +608,27 @@ export function HITLExportDialog({
                                 </p>
                             </div>
                         </div>
-                        {mode === "all_users" && isManager && (
-                            <div className="flex items-start space-x-2">
-                                <Checkbox
-                                    id="anonymize-reviewers"
-                                    checked={anonymizeReviewerNames}
-                                    onCheckedChange={(c) =>
-                                        setAnonymizeReviewerNames(c === true)
-                                    }
-                                    className="mt-0.5"
-                                />
-                                <div className="space-y-0.5">
-                                    <Label
-                                        htmlFor="anonymize-reviewers"
-                                        className="text-sm font-normal"
-                                    >
-                                        {t("extraction", "exportAnonymizeReviewers")}
-                                    </Label>
-                                    <p className="text-xs text-muted-foreground">
-                                        {t("extraction", "exportAnonymizeReviewersDesc")}
-                                    </p>
-                                </div>
+                        <div className="flex items-start space-x-2">
+                            <Checkbox
+                                id="anonymize-reviewers"
+                                checked={anonymizeReviewerNames}
+                                onCheckedChange={(c) =>
+                                    setAnonymizeReviewerNames(c === true)
+                                }
+                                className="mt-0.5"
+                            />
+                            <div className="space-y-0.5">
+                                <Label
+                                    htmlFor="anonymize-reviewers"
+                                    className="text-sm font-normal"
+                                >
+                                    {t("extraction", "exportAnonymizeReviewers")}
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    {t("extraction", "exportAnonymizeReviewersDesc")}
+                                </p>
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     {/* Live preview line (FR-027) */}
@@ -637,7 +641,7 @@ export function HITLExportDialog({
                             {previewLine}
                         </p>
                     )}
-                    {articleCount === 0 && (
+                    {articleCount === 0 && shape !== "dictionary" && (
                         <p className="text-sm text-muted-foreground">
                             {t("extraction", "exportEmptyNoArticlesReason")}
                         </p>

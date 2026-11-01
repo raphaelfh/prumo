@@ -2,7 +2,7 @@ import { useSearchParams } from 'react-router';
 import { Check, ChevronDown } from 'lucide-react';
 import { useShellLocation } from '@/hooks/useShellLocation';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
-import { getSectionViews } from '@/components/layout/sectionViews';
+import { defaultSectionView, getSectionViews } from '@/components/layout/sectionViews';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,7 +17,7 @@ export function SectionViewSwitcher() {
   const [searchParams, setSearchParams] = useSearchParams();
   const {projectId, activeSection} = useShellLocation();
   const section = activeSection ?? '';
-  const hasViews = section === 'extraction' || section === 'quality';
+  const hasViews = getSectionViews(section).length > 0;
   const { isManager } = useProjectMemberRole(hasViews ? (projectId ?? '') : '');
 
   const views = getSectionViews(section).filter((v) => !v.managerOnly || isManager);
@@ -25,8 +25,8 @@ export function SectionViewSwitcher() {
 
   const urlParam = views[0].urlParam;
   const fromUrl = searchParams.get(urlParam);
-  const active = views.some((v) => v.value === fromUrl) ? (fromUrl as string) : views[0].value;
-  const activeLabel = views.find((v) => v.value === active)?.label ?? views[0].label;
+  const active = views.some((v) => v.value === fromUrl) ? (fromUrl as string) : defaultSectionView(views).value;
+  const activeLabel = views.find((v) => v.value === active)?.label ?? defaultSectionView(views).label;
 
   const select = (value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -37,7 +37,9 @@ export function SectionViewSwitcher() {
   const ariaLabel =
     section === 'quality'
       ? t('navigation', 'viewsQualityAria')
-      : t('navigation', 'viewsExtractionAria');
+      : section === 'screening'
+        ? t('navigation', 'viewsScreeningAria')
+        : t('navigation', 'viewsExtractionAria');
 
   return (
     <>

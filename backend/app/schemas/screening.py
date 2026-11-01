@@ -1,4 +1,4 @@
-"""Title/abstract screening: config, enrollment, queue, decisions and arbitration. snake_case on the wire."""
+"""Title/abstract and full-text screening: config, enrollment, records, decisions and arbitration. snake_case on the wire."""
 
 from datetime import datetime
 from typing import Literal, Self
@@ -6,9 +6,21 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ScreeningDecisionValue = Literal["include", "exclude", "maybe"]
+ScreeningDecisionValue = Literal["include", "exclude", "maybe", "not_retrieved"]
 ScreeningOutcomeKind = Literal["solo", "consensus", "arbitrated"]
 ScreeningCallerStatus = Literal["awaiting_me", "awaiting_others", "conflict", "decided"]
+ScreeningPhase = Literal["title_abstract", "full_text"]
+ScreeningRecordStatus = Literal[
+    "not_enrolled",
+    "to_screen",
+    "waiting",
+    "in_review",
+    "conflict",
+    "included",
+    "excluded",
+    "maybe",
+    "not_retrieved",
+]
 
 MAX_ENROLL_ARTICLES = 10_000
 
@@ -18,30 +30,46 @@ class ScreeningConfigRead(BaseModel):
 
     reviewer_count: int | None
     reviewer_count_locked: bool
+    full_text_reviewer_count: int | None  # None = title/abstract only
+    full_text_count_locked: bool  # a full-text assignment exists
+    full_text_ready: int  # include/maybe outcomes not yet sent to full text
+    full_text_enrolled: int
     reviewer_capable: int
     enrolled: int
     not_enrolled: int
     can_manage: bool
     can_review: bool
     can_arbitrate: bool
+    exclusion_reasons: list[str]
 
 
 class ScreeningConfigUpdate(BaseModel):
-    """Reviewers per record (1 to 3)."""
+    """Reviewers per record (1 to 3) per phase; ``full_text_reviewer_count`` absent = unchanged, null = off."""
 
     model_config = ConfigDict(extra="forbid")
 
     reviewer_count: int = Field(ge=1, le=3)
+    full_text_reviewer_count: int | None = Field(default=None, ge=1, le=3)
 
 
 class ScreeningEnrollRequest(BaseModel):
-    """Articles to enroll; omit ``article_ids`` to enroll every article of the project."""
+    """Articles to enroll; omit ``article_ids`` to enroll every article of the project.
+
+    ``full_text`` sends the include/maybe outcomes of title/abstract and takes no ids.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
+    phase: ScreeningPhase = "title_abstract"
     article_ids: list[UUID] | None = Field(
         default=None, min_length=1, max_length=MAX_ENROLL_ARTICLES
     )
+
+    @model_validator(mode="after")
+    def _full_text_derives_its_ids(self) -> Self:
+        if self.phase == "full_text" and self.article_ids is not None:
+            raise ValueError("article_ids is not accepted when sending records to full text")
+        return self
 
 
 class ScreeningEnrollResult(BaseModel):
@@ -62,20 +90,52 @@ class ScreeningArticle(BaseModel):
     publication_year: int | None
     pmid: str | None
     doi: str | None
+    mesh_terms: list[str] | None
+    keywords: list[str] | None
+    article_type: str | None
+    language: str | None
 
 
-class ScreeningQueueItem(BaseModel):
-    assignment_id: UUID
-    article: ScreeningArticle
+class ScreeningRecordRow(BaseModel):
+    """One project article in a screening phase as the caller may see it.
+
+    No abstract: the panel reads the assignment. ``assignment_id`` is ``None``
+    when the article is not enrolled; the ``outcome*`` fields are set only once
+    the record has an outcome; the ``ta_*`` fields are the title/abstract outcome
+    of a full-text row.
+    """
+
+    article_id: UUID
+    assignment_id: UUID | None
+    queue_rank: int
+    title: str
+    first_author: str | None
+    publication_year: int | None
+    journal_title: str | None
+    pmid: str | None
+    doi: str | None
+    ingestion_source: str | None
+    has_pdf: bool
+    status: ScreeningRecordStatus
+    my_decision: ScreeningDecisionValue | None
+    my_exclusion_reason: str | None
+    outcome: ScreeningDecisionValue | None
+    outcome_exclusion_reason: str | None
+    outcome_kind: ScreeningOutcomeKind | None
+    # The title/abstract outcome; full-text rows only (null at title/abstract).
+    ta_outcome: ScreeningDecisionValue | None
+    ta_outcome_kind: ScreeningOutcomeKind | None
+    ta_reviewer_count: int | None
 
 
-class ScreeningQueueRead(BaseModel):
-    """The caller's next records to screen, with the counts around them."""
+class ScreeningRecordsRead(BaseModel):
+    """Every article of the project in one phase, in queue order, with the protocol criteria."""
 
-    items: list[ScreeningQueueItem]
-    awaiting_me: int
-    awaiting_others: int
+    phase: ScreeningPhase
+    reviewer_count: int
+    inclusion_criteria: list[str]
     exclusion_reasons: list[str]
+    rows: list[ScreeningRecordRow]
 
 
 class ScreeningDecisionCreate(BaseModel):
@@ -129,21 +189,6 @@ class ScreeningAssignmentRead(BaseModel):
     exclusion_reasons: list[str]
 
 
-class ScreeningConflictItem(BaseModel):
-    """One unruled conflict with every reviewer's current decision."""
-
-    assignment_id: UUID
-    article: ScreeningArticle
-    decisions: list[PeerDecisionRead]
-
-
-class ScreeningConflictsRead(BaseModel):
-    """The project's unruled conflicts, and the protocol reasons an override may cite."""
-
-    items: list[ScreeningConflictItem]
-    exclusion_reasons: list[str]
-
-
 class ScreeningArbitrationCreate(BaseModel):
     """A ruling on the decisions the arbitrator saw: select one of them, or override.
 
@@ -180,3 +225,4 @@ class ScreeningAssignmentRef(BaseModel):
     id: UUID
     project_id: UUID
     article_id: UUID
+    phase: ScreeningPhase

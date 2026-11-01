@@ -39,15 +39,8 @@ app/repositories/user_api_key_repository.py:no-any-return
 app/schemas/feedback.py:type-arg
 app/services/evidence_anchor_service.py:assignment
 app/services/evidence_anchor_service.py:call-arg
-app/services/exports/extraction/ai_metadata.py:arg-type
-app/services/exports/extraction/ai_metadata.py:attr-defined
-app/services/exports/extraction/ai_metadata.py:no-any-return
-app/services/exports/extraction/ai_metadata.py:unused-ignore
 app/services/exports/extraction/matrix.py:arg-type
-app/services/exports/extraction/summary.py:no-untyped-def
-app/services/exports/value_envelope.py:no-any-return
 app/services/extraction_export_service.py:arg-type
-app/services/extraction_export_service.py:assignment
 app/services/hitl_session_service.py:attr-defined
 app/services/linear/feedback_mapping.py:no-any-return
 app/services/linear/linear_client.py:no-any-return

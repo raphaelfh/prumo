@@ -1,8 +1,8 @@
 """Appraisal-summary sub-builder (§7).
 
 Pure, no-IO. Computes a per-domain-verdict + worst-case Overall sheet for
-quality-assessment templates. Consumes already-resolved scalars from the
-layout's value_map (resolve_value ran upstream); never re-handles envelopes.
+quality-assessment templates. Verdicts arrive as ``ExportValue`` and render
+through ``display_value``; ``_appraisal_overall`` ranks the rendered labels.
 """
 
 from __future__ import annotations
@@ -10,11 +10,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
+from app.services.exports.values import (
+    DisplayTarget,
+    display_value,
+    footnote_key,
+    publication_footnotes,
+)
 from app.services.extraction_export_service import ExportLayout, ExportMode
 from app.services.value_semantics import ABSENT_REASON_LABELS
 
 if TYPE_CHECKING:
-    from app.services.exports.extraction.workbook import SheetTitles
+    from app.services.exports.extraction.workbook import ExportShape, SheetTitles
 
 _HEADER_STYLE = CellStyle(bold=True, fill="EEEEEE")
 _RECORD_COL = "Record"
@@ -41,10 +47,10 @@ _SEVERITY_RANK: tuple[str, ...] = (
 # extraction_export_service._build_appraisal_model (§7 verdict selection).
 _RISK_LABELS: frozenset[str] = frozenset(_SEVERITY_RANK)
 
-# ADR-0016 Phase 4: the resolved labels of a coded-disposition verdict, casefolded.
+# ADR-0016 Phase 4: the rendered labels of a coded-disposition verdict, casefolded.
 # `no_information` is now available on EVERY field (incl. a risk-verdict field), and
-# a marker reaches this layer already resolved by `resolve_value` to its stable
-# label. Such a verdict is EXCLUDED from the worst-case rank — a "the source is
+# a marker verdict arrives as an ExportValue that `display_value` renders to its
+# stable label. Such a verdict is EXCLUDED from the worst-case rank — a "the source is
 # silent" answer must never silently force a Critical Overall. Derived from the
 # single ABSENT_REASON_LABELS source so the exclusion can't drift from the cell.
 _DISPOSITION_LABELS_CF: frozenset[str] = frozenset(
@@ -95,13 +101,15 @@ def _appraisal_overall(verdicts: tuple[Any, ...]) -> Any:
     return worst if worst_rank >= 0 else None
 
 
-def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetSpec | None:
+def build_appraisal_summary(
+    layout: ExportLayout, titles: SheetTitles, shape: ExportShape
+) -> SheetSpec | None:
     """Build the conditional appraisal-summary sheet (§7).
 
     Returns None when ``allocate_titles`` left the role out because the
     exported template carries no appraisal layer (``layout.appraisal is
     None``) — the workbook orchestrator then omits
-    sheet #k+1 and any risk-of-bias section still renders as a tidy table.
+    sheet #k+1 and any risk-of-bias section still renders on its level sheet.
 
     Mode-aware Overall columns (§7):
       * consensus / single_user -> a single ``Overall`` column (the record's
@@ -109,6 +117,10 @@ def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetS
       * all_users -> consensus ``Overall`` + one ``Overall`` column per
         reviewer, in ``layout.reviewers`` order (mirrors the matrix
         reviewer-axis fan-out), keyed by ``AppraisalRow.per_reviewer_overall``.
+
+    Publication (§5 rule 8, §12.3) drops both worst-domain Overall kinds, keeps
+    the template's ``derived_labels`` overalls in full text (D7), renders the
+    verdicts as Publication cells and closes with the footnote block.
     """
     title = titles.fixed.get("appraisal_summary")
     appraisal = layout.appraisal
@@ -124,9 +136,11 @@ def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetS
     # by `derived_judgment_service` — the same module the run view uses.
     # Templates without a spec keep the legacy column unchanged.
     derived_labels = appraisal.derived_labels
-    if derived_labels:
-        header_cells.extend(Cell(label, _HEADER_STYLE) for label in derived_labels)
-    else:
+    publication = shape == "publication"
+    target: DisplayTarget = "publication" if publication else "matrix"
+    legacy_overall = not derived_labels and not publication
+    header_cells.extend(Cell(label, _HEADER_STYLE) for label in derived_labels)
+    if legacy_overall:
         header_cells.append(Cell(_OVERALL_COL, _HEADER_STYLE))
 
     reviewer_overall_cols: tuple[Any, ...] = ()
@@ -136,26 +150,32 @@ def build_appraisal_summary(layout: ExportLayout, titles: SheetTitles) -> SheetS
     # development *Quality* together with evaluation *Risk of Bias* into one
     # meaningless number. A template that declares its own overalls has exactly
     # those overalls; a second, laxer answer next to them is worse than none.
-    if layout.mode is ExportMode.ALL_USERS and not derived_labels:
+    if layout.mode is ExportMode.ALL_USERS and legacy_overall:
         reviewer_overall_cols = tuple(layout.reviewers)
         for reviewer in reviewer_overall_cols:
             header_cells.append(Cell(f"{_OVERALL_COL} — {reviewer.display_label}", _HEADER_STYLE))
 
     rows: list[tuple[Cell, ...]] = [tuple(header_cells)]
+    used: set[str] = set()
     for row in appraisal.rows:
         cells = [Cell(row.record_label)]
-        cells.extend(Cell(v) for v in row.domain_verdicts)
-        if derived_labels:
-            cells.extend(Cell(v) for v in row.derived_values)
-        else:
+        for v, f in zip(row.domain_verdicts, appraisal.domain_fields, strict=True):
+            if publication and v is not None and (key := footnote_key(v)) is not None:
+                used.add(key)
+            cells.append(Cell(None if v is None else display_value(v, f, target=target)))
+        cells.extend(Cell(v) for v in row.derived_values)
+        if legacy_overall:
             cells.append(Cell(row.overall))
         for reviewer in reviewer_overall_cols:
             cells.append(Cell(row.per_reviewer_overall.get(reviewer.reviewer_id)))
         rows.append(tuple(cells))
+    notes = publication_footnotes(used)
+    if notes:
+        rows.extend(((Cell(None),), *((Cell(n),) for n in notes)))
 
     # Record column + the overall column(s) — one legacy, or one per declared
     # derived judgment — plus one width per domain and per per-reviewer Overall.
-    overall_cols = len(derived_labels) if derived_labels else 1
+    overall_cols = len(derived_labels) + (1 if legacy_overall else 0)
     domain_and_overall = len(domain_labels) + overall_cols + len(reviewer_overall_cols)
     return SheetSpec(
         title=title,

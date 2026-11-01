@@ -39,6 +39,7 @@ import type {
     ZoteroImportJob,
 } from '@/types/background-jobs';
 import {t} from '@/lib/copy';
+import {extractionExportErrorText} from '@/lib/extraction-export-errors';
 import {getExportStatus as getArticlesExportStatus, type ExportStatusResponse} from '@/services/articlesExportService';
 import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
@@ -205,6 +206,10 @@ export function NotificationCenter() {
             ? {label: t('aiBatch', 'startEngineAction'), onClick: () => navigate('/settings?tab=integrations')}
             : undefined,
         });
+        return;
+      }
+      if (job.type === 'extraction-export') {
+        toast.error(extractionExportErrorText(undefined, job.error), {duration: 7000});
         return;
       }
         toast.error(`${t('navigation', 'errorPrefix')}: ${job.error || t('navigation', 'operationFailed')}`, {
@@ -616,7 +621,7 @@ function getJobDescription(job: BackgroundJob): string {
             return t('extraction', 'exportSuccessToast');
         }
         if (job.status === 'failed') {
-            return job.error || t('extraction', 'exportFailedToast');
+            return extractionExportErrorText(undefined, job.error);
         }
         if (job.status === 'cancelled') {
             return t('extraction', 'exportCancel');

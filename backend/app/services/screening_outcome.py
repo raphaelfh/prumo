@@ -2,7 +2,8 @@
 
 Nothing here touches the database. ``derive_state`` turns the current decisions
 and the latest ruling into a phase and an outcome; ``caller_status`` and
-``reveals_peers`` decide what one caller is told about it. ``reveals_peers`` is
+``reveals_peers`` decide what one caller is told about it; ``record_status``
+is the records list's reading of ``caller_status``. ``reveals_peers`` is
 THE blind-review rule: every read that could show another reviewer's decision
 asks it.
 """
@@ -19,6 +20,7 @@ from app.schemas.screening import (
     ScreeningCallerStatus,
     ScreeningDecisionValue,
     ScreeningOutcomeKind,
+    ScreeningRecordStatus,
 )
 
 
@@ -70,10 +72,14 @@ def derive_state(
     reviewer_count: int,
     decisions: Sequence[CurrentDecision],
     ruling: CurrentRuling | None,
+    reasons_must_match: bool = False,
 ) -> AssignmentState:
     """The assignment's phase and outcome; ``decisions`` holds each reviewer's decision.
 
-    A reviewer's decision is final, so the latest ruling is the last word.
+    A reviewer's latest decision is their current one: final in dual review,
+    re-decidable by a solo reviewer until a ruling (§6.3); the latest ruling is
+    the last word. With ``reasons_must_match`` (full text), differing exclusion
+    reasons are a conflict too.
     """
     if ruling is not None:
         return AssignmentState(
@@ -86,6 +92,8 @@ def derive_state(
         return _CONFLICT
     reasons = {d.exclusion_reason for d in decisions}
     differ = len(reasons) > 1
+    if reasons_must_match and differ:
+        return _CONFLICT
     kind: ScreeningOutcomeKind = "solo" if reviewer_count == 1 else "consensus"
     reason = None if differ else next(iter(reasons))
     return AssignmentState("decided", Outcome(kind, values.pop(), reason, differ))
@@ -109,6 +117,38 @@ def caller_status(
     if state.phase == "conflict":
         return "conflict" if is_arbitrator and not seated else "awaiting_others"
     return "awaiting_me" if can_review and not seated else "awaiting_others"
+
+
+_DECIDED_STATUS: dict[ScreeningDecisionValue, ScreeningRecordStatus] = {
+    "include": "included",
+    "exclude": "excluded",
+    "maybe": "maybe",
+    "not_retrieved": "not_retrieved",
+}
+
+
+def record_status(
+    state: AssignmentState,
+    *,
+    seated: bool,
+    is_arbitrator: bool,
+    can_review: bool,
+) -> ScreeningRecordStatus:
+    """The records-list status of an enrolled record for one caller, through ``caller_status``.
+
+    ``awaiting_others`` splits on the seat rule: ``waiting`` for a caller who
+    decided, ``in_review`` for anyone else, so a conflict never shows to a
+    reviewer as anything but those two.
+    """
+    status = caller_status(state, seated=seated, is_arbitrator=is_arbitrator, can_review=can_review)
+    if status == "decided":
+        assert state.outcome is not None  # caller_status answers decided only with an outcome
+        return _DECIDED_STATUS[state.outcome.decision]
+    if status == "awaiting_me":
+        return "to_screen"
+    if status == "conflict":
+        return "conflict"
+    return "waiting" if seated else "in_review"
 
 
 def reveals_peers(state: AssignmentState, *, seated: bool, is_arbitrator: bool) -> bool:

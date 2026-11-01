@@ -30,7 +30,7 @@ async def test_dictionary_with_empty_article_ids_returns_200(
     assert auth_as_profile == SEED.primary_profile
     res = await db_client.post(_URL.format(pid=SEED.primary_project), json=_BODY)
     assert res.status_code == 200, res.text
-    assert "Data dictionary" in load_workbook(io.BytesIO(res.content)).sheetnames
+    assert "Codebook" in load_workbook(io.BytesIO(res.content)).sheetnames
 
 
 async def _insert_article(db: AsyncSession, project_id: UUID, *, title: str) -> UUID:

@@ -35,6 +35,8 @@ export interface RunSplitShellProps {
    * Viewer.Root self-creates a store when none is passed.
    */
   viewerStore?: StoreApi<ViewerState>;
+  /** Rendered inside another shell that owns ⇧⌘\ and Escape: register neither. */
+  nested?: boolean;
 }
 
 /**
@@ -52,6 +54,7 @@ export function RunSplitShell({
   initialPdfOpen = false,
   pdfState,
   viewerStore,
+  nested = false,
 }: RunSplitShellProps) {
   const internalPdf = usePdfPanel({ initialOpen: initialPdfOpen });
   const pdf = pdfState ?? internalPdf;
@@ -59,8 +62,10 @@ export function RunSplitShell({
   // ⇧⌘\ maximizes the PDF — the sibling of ⌘\, the section rail's chord. A mod
   // chord types nothing, so it works while the cursor sits in a form field.
   useKeyboardShortcuts({
-    bindings: [{ type: "chord", key: "\\", mod: true, shift: true, handler: pdf.toggleExpanded }],
-    enabled: true,
+    bindings: [
+      { type: "chord", key: "\\", code: "Backslash", mod: true, shift: true, handler: pdf.toggleExpanded },
+    ],
+    enabled: !nested,
   });
 
   // Escape leaves the expanded view.
@@ -76,7 +81,7 @@ export function RunSplitShell({
   // behind it. A second Escape then restores the split.
   const { isExpanded, collapse } = pdf;
   useEffect(() => {
-    if (!isExpanded) return;
+    if (nested || !isExpanded) return;
     const onKeyDownCapture = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || isDialogOpen()) return;
       event.preventDefault();
@@ -85,7 +90,7 @@ export function RunSplitShell({
     };
     window.addEventListener("keydown", onKeyDownCapture, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDownCapture, { capture: true });
-  }, [isExpanded, collapse]);
+  }, [nested, isExpanded, collapse]);
 
   // Expanded: the PDF is the whole workspace. The form panel and handle leave
   // the tree rather than collapsing to zero width — a zero-width panel keeps

@@ -16,21 +16,21 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import replace
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-import pytest
 from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
-from app.models.extraction_workflow import ExtractionProposalRecord
+from app.services.exports.codebook_model import VersionSections, build_codebook_entries
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
 # orchestrator package.
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction.workbook import (
     ExportShape,
     allocate_titles,
@@ -38,22 +38,18 @@ from app.services.exports.extraction.workbook import (
     matrix_fits,
 )
 from app.services.exports.extraction_snapshot_reader import AllowedValue
+from app.services.exports.values import ExportValue, build_option_labels, to_export_value
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
-    FieldDictEntry,
-    FrontMatter,
     ReviewerDescriptor,
     SectionDescriptor,
-    TidyRow,
-    TidyTable,
 )
 
 # Hard-coded UUIDs for the fixed layout — module-level so the README/Methods
-# front-matter, the data dictionary, and the tidy table all reference the SAME
+# front-matter, the data dictionary, and the level sheet all reference the SAME
 # ids two builds over, keeping the new sheets byte-identical across builds.
 _SECTION_ID = uuid4()
 _FIELD_ID = uuid4()
@@ -63,12 +59,22 @@ _ARTICLE_ID = uuid4()
 _GENERATED_AT = datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC)
 
 
+def _tv(raw: object) -> ExportValue:
+    """``raw`` typed against a TEXT field, as a value-map entry."""
+    return to_export_value(
+        {"value": raw},
+        FieldDescriptor(
+            field_id=uuid4(), label="T", type=ExtractionFieldType.TEXT, allowed_values=()
+        ),
+        {},
+    )
+
+
 def _fixed_layout() -> ExportLayout:
     """A layout whose every UUID is hard-coded so two runs produce the
     same workbook bytes (mod doc-properties).
 
-    Populates the §4 publication projections — ``front_matter`` (README /
-    Methods), ``data_dictionary``, ``tidy_tables``, and an explicit ``None``
+    Populates the §4 projections — ``generated_at`` (README), ``codebook``, a repeating section (its level sheet), and an explicit ``None``
     ``appraisal`` — so the new sub-builder sheets actually render and their
     XML parts are covered by the structural-determinism assertion below.
     """
@@ -83,65 +89,36 @@ def _fixed_layout() -> ExportLayout:
         label="1. Source of data",
         parent_entity_type_id=None,
         fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+        name="source_of_data",
     )
     article = ArticleDescriptor(
         article_id=_ARTICLE_ID,
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=_RUN_ID,
         version_id=None,
         entries={(_SECTION_ID, None): (_INST_ID,)},
     )
 
-    # README / Methods front-matter (§4 #1). Its ``generated_at`` is hard-coded,
-    # so the rendered "Generated at" cell is identical across builds; the only
-    # surviving per-build divergence is the openpyxl docProps timestamp.
-    front_matter = FrontMatter(
-        project_name="Test Project",
-        template_name="CHARMS",
-        template_version=1,
-        export_mode_label="Consensus",
-        generated_at=_GENERATED_AT,
-        article_count=1,
-        record_count=1,
-        legend=(("—", "field not present in this Run"),),
-        caveats=("Reviewer outcomes are best-effort.",),
-        obsolete_fields_per_article={},
-    )
-    # Data dictionary (§4 #k+2): one entry with a select option set so a
-    # Dropdown lists sheet co-renders and is covered by the structural diff.
-    data_dictionary = (
-        FieldDictEntry(
-            field_id=_FIELD_ID,
-            section_label="1. Source of data",
-            label="1.1 Source of data",
-            type=ExtractionFieldType.SELECT,
-            unit=None,
-            description="Where the predictor data came from.",
-            allowed_values=(
-                AllowedValue(value="registry", label="Existing registry"),
-                AllowedValue(value="cohort", label="New cohort"),
-            ),
-            is_required=True,
-            allow_other=False,
-        ),
-    )
-    # Tidy table (§5.3): one records-as-rows sheet at the section grain.
-    tidy_tables = (
-        TidyTable(
-            section_id=_SECTION_ID,
-            title="1. Source of data",
-            cardinality=ExtractionCardinality.ONE,
-            column_field_ids=(_FIELD_ID,),
-            column_labels=("1.1 Source of data",),
-            rows=(
-                TidyRow(
-                    article_id=_ARTICLE_ID,
-                    instance_id=None,
-                    record_label="Gaca, 2011",
-                    values=("Existing registry",),
+    # Codebook (§4.4): the field as a select with an option set, so an
+    # Options sheet co-renders and is covered by the structural diff.
+    coded = replace(
+        section,
+        fields=(
+            replace(
+                field,
+                type=ExtractionFieldType.SELECT,
+                description="Where the predictor data came from.",
+                allowed_values=(
+                    AllowedValue(value="registry", label="Existing registry"),
+                    AllowedValue(value="cohort", label="New cohort"),
                 ),
+                is_required=True,
             ),
         ),
+    )
+    codebook = build_codebook_entries(
+        VersionSections(_SECTION_ID, 1, (coded,), {}), (), build_option_labels((coded,))
     )
     return ExportLayout(
         project_name="Test Project",
@@ -153,13 +130,9 @@ def _fixed_layout() -> ExportLayout:
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=_GENERATED_AT,
-        ),
-        value_map={(_RUN_ID, _INST_ID, _FIELD_ID): "Existing registry"},
-        front_matter=front_matter,
-        data_dictionary=data_dictionary,
-        tidy_tables=tidy_tables,
+        generated_at=_GENERATED_AT,
+        value_map={value_key(_RUN_ID, _INST_ID, _FIELD_ID): _tv("Existing registry")},
+        codebook=codebook,
         appraisal=None,
     )
 
@@ -186,27 +159,27 @@ def test_build_workbook_consensus_is_deterministic_modulo_doc_properties():
         assert entries_a[name] == entries_b[name], f"divergent entry: {name}"
 
 
-def test_build_workbook_ai_metadata_path_is_deterministic():
-    """SC-007 budget aside, the AI metadata sheet itself is deterministic
+def test_build_workbook_ai_proposals_path_is_deterministic():
+    """SC-007 budget aside, the AI proposals sheet itself is deterministic
     when the layout is fixed."""
+    from app.services.exports.ai_proposal_projection import EngineFacts
+    from app.services.exports.values import ExportValue
     from app.services.extraction_export_service import AIProposalRow
 
     base = _fixed_layout()
     proposals = (
         AIProposalRow(
-            article_label="Gaca, 2011",
-            section_label="1. Source of data",
-            instance_index=1,
-            field_label="1.1 Source of data",
-            ai_proposed_value="Existing registry",
+            article_id=base.articles[0].article_id,
+            instance_id=uuid4(),
+            field_id=base.sections[0].fields[0].field_id,
+            ai_proposal_id=uuid4(),
+            created_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
+            engine=EngineFacts("openai", "gpt-4o-mini", "v1"),
+            value=ExportValue(raw=None, status="answered", value_text="Existing registry"),
             confidence=0.93,
             rationale="LLM reasoning",
-            evidence_text="excerpt",
-            evidence_pages="4",
-            proposed_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
-            model_used="gpt-4o-mini",
-            reviewer_outcome="accepted",
-            final_value_used="Existing registry",
+            evidence_quote="excerpt",
+            page="4",
         ),
     )
     layout = ExportLayout(
@@ -219,14 +192,14 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
         mode=base.mode,
         include_ai_metadata=True,
         anonymize_reviewer_names=base.anonymize_reviewer_names,
-        notes=base.notes,
+        generated_at=base.generated_at,
         value_map=base.value_map,
         ai_proposal_rows=proposals,
     )
     a = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
     b = build_workbook(layout, ExportShape.COMPLETE, include_matrix=True)
 
-    # Open both and compare the AI metadata sheet cell-by-cell.
+    # Open both and compare the AI proposals sheet cell-by-cell.
     wb_a = load_workbook(io.BytesIO(a))
     wb_b = load_workbook(io.BytesIO(b))
     ws_a = wb_a["AI proposals"]
@@ -234,115 +207,6 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
     rows_a = [list(r) for r in ws_a.iter_rows(values_only=True)]
     rows_b = [list(r) for r in ws_b.iter_rows(values_only=True)]
     assert rows_a == rows_b
-
-
-# ----------------------------------------------------------------------
-# Regression: _load_ai_proposal_rows key-shape for ALL_USERS mode
-# ----------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() -> None:
-    """Regression: when mode=ALL_USERS, the consensus value_map uses 4-tuple
-    keys (run_id, instance_id, field_id, None). _load_ai_proposal_rows must
-    use the 4-tuple lookup; a 3-tuple would silently produce final_value=None.
-    """
-    from app.services.extraction_export_service import ExtractionExportService
-
-    run_id = uuid4()
-    inst_id = uuid4()
-    field_id = uuid4()
-    entity_type_id = uuid4()
-    article_id = uuid4()
-    pid = uuid4()
-    ts = datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC)
-
-    field = FieldDescriptor(
-        field_id=field_id,
-        label="1.1 Source",
-        type=ExtractionFieldType.TEXT,
-        allowed_values=(),
-    )
-    section = SectionDescriptor(
-        entity_type_id=entity_type_id,
-        label="1. Source of data",
-        parent_entity_type_id=None,
-        fields=(field,),
-    )
-    article = ArticleDescriptor(
-        article_id=article_id,
-        header_label="Gaca, 2011",
-        run_id=run_id,
-        version_id=None,
-        entries={(entity_type_id, None): (inst_id,)},
-    )
-
-    # ALL_USERS value_map: consensus column uses (run_id, inst_id, field_id, None).
-    value_map = {(run_id, inst_id, field_id, None): "Existing registry"}
-
-    # Mock the six DB execute calls in _load_ai_proposal_rows order (B-3a):
-    #   1. instance query, 2. proposal query, 3. evidence query,
-    #   4. decision query, 5. whole-ExtractionRun query (via .scalars()),
-    #   6. entity-type label fallback. The run-snapshot label tier between
-    #   5 and 6 starts with db.get (NOT db.execute); stubbing db.get -> None
-    #   keeps it a clean no-op so the live fallback queries still fire.
-    def _result(rows):
-        r = MagicMock()
-        r.all.return_value = rows
-        return r
-
-    def _scalars(items):
-        r = MagicMock()
-        r.scalars.return_value.all.return_value = items
-        return r
-
-    run = MagicMock()
-    run.id = run_id
-    run.parameters = {}
-    run.results = {}
-    run.version_id = uuid4()
-
-    mock_db = AsyncMock()
-    mock_db.get = AsyncMock(return_value=None)  # snapshot label tier no-op
-    mock_db.execute = AsyncMock(
-        side_effect=[
-            _result([(inst_id, entity_type_id, article_id)]),  # instances
-            _result(
-                [
-                    (
-                        pid,
-                        run_id,
-                        inst_id,
-                        field_id,
-                        {"value": "Existing registry"},
-                        0.9,
-                        "rationale",
-                        ts,
-                        ExtractionProposalRecord(run_id=run_id),
-                    )
-                ]
-            ),  # proposals
-            _result([]),  # evidence
-            _result(
-                [(run_id, inst_id, field_id, uuid4(), "accept_proposal", pid)]
-            ),  # decisions (reviewer-tagged)
-            _scalars([run]),  # the in-scope ExtractionRun rows
-            _result([(entity_type_id, "1. Source of data")]),  # entity labels
-        ]
-    )
-
-    service = ExtractionExportService(db=mock_db, user_id="user-1")
-    rows = await service._load_ai_proposal_rows(
-        articles=(article,),
-        sections=(section,),
-        value_map=value_map,
-        mode=ExportMode.ALL_USERS,
-        target_reviewer_id=None,
-    )
-
-    assert len(rows) == 1
-    # Before the fix this was None; after the fix it resolves via the 4-tuple key.
-    assert rows[0].final_value_used == "Existing registry"
 
 
 # ----------------------------------------------------------------------
@@ -391,7 +255,7 @@ def test_column_guard_boundary() -> None:
         articles = tuple(
             ArticleDescriptor(
                 article_id=uuid4(),
-                header_label=f"a{i}",
+                article_label=f"a{i}",
                 run_id=uuid4(),
                 version_id=None,
                 # One cardinality=one study section ⇒ a single data column
@@ -410,7 +274,7 @@ def test_column_guard_boundary() -> None:
             mode=ExportMode.CONSENSUS,
             include_ai_metadata=False,
             anonymize_reviewer_names=False,
-            notes=ExportNotes(),
+            generated_at=datetime(2026, 1, 1, tzinfo=UTC),
             value_map={},
         )
 
@@ -424,7 +288,7 @@ def test_column_guard_boundary() -> None:
 
 # ----------------------------------------------------------------------
 # S8 / Task 73: extend structural determinism to the new publication sheets
-# (README/Methods, Data dictionary, tidy tables, Dropdown lists) + a
+# (README/Methods, Codebook, level sheets, Options) + a
 # 500×100 all-users case that blows past the 16,384-column guard.
 # ----------------------------------------------------------------------
 
@@ -459,12 +323,12 @@ def test_new_sheets_are_structurally_deterministic() -> None:
 
     # The new sub-builder sheets are present in the rendered workbook.
     names = _sheet_titles(build_workbook(layout, ExportShape.COMPLETE, include_matrix=True))
-    assert "Data dictionary" in names
+    assert "Codebook" in names
     assert any(n.startswith("README") or "Methods" in n for n in names)
-    # The tidy table + co-located dropdown catalogue render too (the
-    # _fixed_layout dictionary entry carries select options).
-    assert "Dropdown lists" in names
-    assert "1. Source of data" in names
+    # The level sheets and the Options sheet render too (the _fixed_layout
+    # codebook entry carries select options).
+    assert "Options" in names
+    assert {"Articles", "source_of_data"} <= set(names)
 
 
 def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayout:
@@ -494,7 +358,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
     articles = tuple(
         ArticleDescriptor(
             article_id=uuid4(),
-            header_label=f"A{i}",
+            article_label=f"A{i}",
             run_id=uuid4(),
             version_id=uuid4(),
             entries={(sec_id, None): tuple(uuid4() for _ in range(subcols_each))},
@@ -515,7 +379,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map={},
     )
 
@@ -560,6 +424,7 @@ def _appraisal_layout(
         reviewers=reviewers,
         value_map=value_map,
         mode=ExportMode.ALL_USERS,
+        reviewer_id=None,
     )
     return ExportLayout(
         project_name="QA Project",
@@ -571,9 +436,7 @@ def _appraisal_layout(
         mode=ExportMode.ALL_USERS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(
-            generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
-        ),
+        generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         value_map=value_map,
         appraisal=appraisal,
     )
@@ -637,7 +500,7 @@ def _tied_appraisal_inputs():
     inst1, inst2 = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(sid1, None): (inst1,), (sid2, None): (inst2,)},
@@ -655,12 +518,12 @@ def _tied_appraisal_inputs():
     # for the consensus column AND for each reviewer. The differing byte strings
     # give the first-wins tie-break teeth (a last-wins rollup would yield ``high``).
     value_map = {
-        (run_id, inst1, f1.field_id, None): "High",
-        (run_id, inst2, f2.field_id, None): "high",
-        (run_id, inst1, f1.field_id, r1): "High",
-        (run_id, inst2, f2.field_id, r1): "high",
-        (run_id, inst1, f1.field_id, r2): "High",
-        (run_id, inst2, f2.field_id, r2): "high",
+        value_key(run_id, inst1, f1.field_id): _tv("High"),
+        value_key(run_id, inst2, f2.field_id): _tv("high"),
+        value_key(run_id, inst1, f1.field_id, r1): _tv("High"),
+        value_key(run_id, inst2, f2.field_id, r1): _tv("high"),
+        value_key(run_id, inst1, f1.field_id, r2): _tv("High"),
+        value_key(run_id, inst2, f2.field_id, r2): _tv("high"),
     }
     return (d1, d2), (article,), reviewers, value_map
 
@@ -677,10 +540,14 @@ def test_appraisal_summary_spec_is_reproducible_and_tie_breaks_first_worst() -> 
     )
 
     spec_a = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
     spec_b = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
     assert spec_a is not None
 
@@ -728,7 +595,9 @@ def test_appraisal_reviewer_columns_pinned_to_layout_order() -> None:
         value_map=value_map,
     )
     forward = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
     reversed_reviewers = tuple(reversed(reviewers))
     layout = _appraisal_layout(
@@ -738,7 +607,9 @@ def test_appraisal_reviewer_columns_pinned_to_layout_order() -> None:
         value_map=value_map,
     )
     backward = build_appraisal_summary(
-        layout, allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True)
+        layout,
+        allocate_titles(layout, ExportShape.COMPLETE, include_matrix=True),
+        ExportShape.COMPLETE,
     )
 
     fwd_header = tuple(c.value for c in forward.rows[0])

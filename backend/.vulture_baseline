@@ -3,7 +3,7 @@
 #
 # ADMISSION RULE: an entry belongs here only if the symbol is consumed
 # by a framework or library rather than by name from app/. In practice
-# that is one of five shapes:
+# that is one of four shapes:
 #   * Starlette `dispatch` — BaseHTTPMiddleware calls it per request.
 #   * Celery — LoggedTask's on_failure/on_success/on_retry hooks, and
 #     signal-handler kwargs the framework passes by name.
@@ -11,8 +11,6 @@
 #     of the database, never by a Python reader in app/.
 #   * Library option objects — docling pipeline options, openpyxl
 #     worksheet properties: written here, read by the library.
-#   * AIProposalRow — consumed positionally via `dataclasses.astuple`,
-#     so no field is ever read by name (see ai_metadata.py).
 #
 # Anything that does not fit one of those is dead code: delete it,
 # then regenerate with scripts/vulture_baseline.py --update.
@@ -32,13 +30,6 @@ app/services/exports/extraction/sheet_spec.py:attribute:data_type
 app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
 app/services/exports/extraction/sheet_spec.py:attribute:quotePrefix
 app/services/exports/extraction/sheet_spec.py:attribute:tabColor
-app/services/extraction_export_service.py:variable:ai_proposed_value
-app/services/extraction_export_service.py:variable:article_label
-app/services/extraction_export_service.py:variable:final_value_used
-app/services/extraction_export_service.py:variable:instance_index
-app/services/extraction_export_service.py:variable:model_used
-app/services/extraction_export_service.py:variable:proposed_at
-app/services/extraction_export_service.py:variable:reviewer_outcome
 app/worker/celery_app.py:method:on_failure
 app/worker/celery_app.py:method:on_retry
 app/worker/celery_app.py:method:on_success

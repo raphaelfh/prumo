@@ -1,0 +1,141 @@
+import {render, screen} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {describe, expect, it, vi} from 'vitest';
+
+import {DuplicateComparePanel} from '@/components/screening/duplicates/DuplicateComparePanel';
+import {TooltipProvider} from '@/components/ui/tooltip';
+import type {DuplicatePair} from '@/services/duplicatesService';
+
+type Side = DuplicatePair['kept'];
+
+function side(id: string, over: Partial<Side> = {}): Side {
+  return {
+    article_id: id,
+    title: `Title ${id}`,
+    authors: ['Smith J'],
+    publication_year: 2020,
+    journal_title: 'Nature',
+    doi: null,
+    pmid: null,
+    ingestion_source: 'PUBMED',
+    has_pdf: false,
+    has_abstract: true,
+    screening_decisions: 0,
+    has_review_work: false,
+    has_refusing_work: false,
+    ...over,
+  };
+}
+
+function pair(removedOver: Partial<Side> = {}, keptOver: Partial<Side> = {}, over: Partial<DuplicatePair> = {}): DuplicatePair {
+  return {
+    article_id: 'rem',
+    kept_article_id: 'kept',
+    tier: 'exact',
+    basis: 'pmid',
+    match_label: 'pmid',
+    removed: side('rem', removedOver),
+    kept: side('kept', keptOver),
+    ...over,
+  };
+}
+
+function setup(p: DuplicatePair, busy = false) {
+  const h = {onMerge: vi.fn(), onDistinct: vi.fn(), onSkip: vi.fn(), onUndo: vi.fn()};
+  render(
+    <TooltipProvider delayDuration={0}>
+      <DuplicateComparePanel pair={p} busy={busy} {...h} />
+    </TooltipProvider>,
+  );
+  return h;
+}
+
+describe('DuplicateComparePanel', () => {
+  it("defaults Keep to the server's suggestion", () => {
+    setup(pair());
+    expect(screen.getByRole('radio', {name: 'Keep record 1: "Title kept"'})).toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep record 2: "Title rem"'})).not.toBeChecked();
+  });
+
+  it('gives the two Keep radios distinct names when the titles are identical', () => {
+    setup(pair({title: 'Same title'}, {title: 'Same title'}));
+    expect(screen.getByRole('radio', {name: 'Keep record 1: "Same title"'})).toBeChecked();
+    expect(screen.getByRole('radio', {name: 'Keep record 2: "Same title"'})).not.toBeChecked();
+  });
+
+  it('marks differing fields with a dot', () => {
+    setup(pair({publication_year: 2019, title: 'Same'}, {title: 'Same'}));
+    // One dot per column on the single differing row (year).
+    expect(screen.getAllByLabelText('Differs')).toHaveLength(2);
+  });
+
+  it('keep-the-other: removed side with only TA decisions is mergeable, with the set-aside warning', async () => {
+    // Server-consistent: TA decisions => has_review_work, but no FT/extraction work.
+    const h = setup(
+      pair({screening_decisions: 2, has_review_work: true}, {screening_decisions: 0, title: 'Kept title'}),
+    );
+    expect(
+      screen.getByText("Title rem's title/abstract decisions (2) are set aside; Kept title will need screening"),
+    ).toBeInTheDocument();
+    const merge = screen.getByRole('button', {name: 'Merge, keep selected'});
+    expect(merge).toBeEnabled();
+    await userEvent.click(merge);
+    expect(h.onMerge).toHaveBeenCalledWith('rem', 'kept');
+  });
+
+  it('words the screening work count in the singular for one decision', () => {
+    setup(pair({screening_decisions: 1, has_review_work: true}, {screening_decisions: 3, has_review_work: true}));
+    expect(screen.getByText('1 decision')).toBeInTheDocument();
+    expect(screen.getByText('3 decisions')).toBeInTheDocument();
+  });
+
+  it('merge posts the selected keeper', async () => {
+    const h = setup(pair());
+    await userEvent.click(screen.getByRole('radio', {name: 'Keep record 2: "Title rem"'}));
+    await userEvent.click(screen.getByRole('button', {name: 'Merge, keep selected'}));
+    expect(h.onMerge).toHaveBeenCalledWith('kept', 'rem');
+  });
+
+  it('merge posts the server suggestion by default', async () => {
+    const h = setup(pair());
+    await userEvent.click(screen.getByRole('button', {name: 'Merge, keep selected'}));
+    expect(h.onMerge).toHaveBeenCalledWith('rem', 'kept');
+  });
+
+  it('disables Merge with a tooltip when the removed side has full-text or extraction work', async () => {
+    setup(pair({has_review_work: true, has_refusing_work: true}));
+    const merge = screen.getByRole('button', {name: 'Merge, keep selected'});
+    expect(merge).toBeDisabled();
+    await userEvent.hover(merge.parentElement!);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'This record already has full-text or extraction work, so keep it instead.',
+    );
+  });
+
+  it('disables Merge with a tooltip when both sides have review work', async () => {
+    const h = setup(
+      pair({screening_decisions: 1, has_review_work: true}, {screening_decisions: 2, has_review_work: true}),
+    );
+    const merge = screen.getByRole('button', {name: 'Merge, keep selected'});
+    expect(merge).toBeDisabled();
+    expect(screen.getByRole('button', {name: 'Not duplicates'})).toBeEnabled();
+    await userEvent.hover(merge.parentElement!);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Both records have review work: mark them Not duplicates or leave the pair open.',
+    );
+    expect(h.onMerge).not.toHaveBeenCalled();
+  });
+
+  it('resolved pair shows who decided and Undo', async () => {
+    const h = setup(pair({}, {}, {verdict: 'duplicate', decided_by_name: 'Ana', created_at: '2026-10-01T10:00:00Z'}));
+    expect(screen.getByText(/Merged by Ana/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Merge, keep selected'})).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', {name: 'Undo'}));
+    expect(h.onUndo).toHaveBeenCalled();
+  });
+
+  it('busy disables every button', () => {
+    setup(pair(), true);
+    for (const b of screen.getAllByRole('button')) expect(b).toBeDisabled();
+  });
+});

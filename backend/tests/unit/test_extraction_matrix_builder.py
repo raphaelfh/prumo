@@ -9,6 +9,7 @@ merged record headers and study-section repeat-not-merge identical.
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -18,14 +19,16 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.services.exports.descriptors import value_key
 from app.services.exports.extraction.matrix import build_matrix
 from app.services.exports.extraction.sheet_spec import _render_sheet_spec
 from app.services.exports.extraction.workbook import ExportShape, allocate_titles, build_workbook
+from app.services.exports.values import ExportValue, build_option_labels, to_export_value
 from app.services.extraction_export_service import (
+    AllowedValue,
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    ExportNotes,
     FieldDescriptor,
     SectionDescriptor,
 )
@@ -42,7 +45,7 @@ def _layout(sections, articles, value_map):
         mode=ExportMode.CONSENSUS,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         value_map=value_map,
     )
 
@@ -68,7 +71,7 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
     run_id = uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="Gaca, 2011",
+        article_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
         entries={(eid, None): (inst_a, inst_b)},
@@ -78,8 +81,8 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
             (section,),
             (article,),
             {
-                (run_id, inst_a, fid): "CT angiography",
-                (run_id, inst_b, fid): "MRI",
+                value_key(run_id, inst_a, fid): to_export_value("CT angiography", field, {}),
+                value_key(run_id, inst_b, fid): to_export_value("MRI", field, {}),
             },
         ),
         ExportShape.COMPLETE,
@@ -134,6 +137,7 @@ def _spec_layout(
     value_map: dict | None = None,
     mode: ExportMode = ExportMode.CONSENSUS,
     reviewers: tuple = (),
+    reviewer_id: UUID | None = None,
 ) -> ExportLayout:
     return ExportLayout(
         project_name="P",
@@ -145,8 +149,9 @@ def _spec_layout(
         mode=mode,
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
-        notes=ExportNotes(),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
         value_map=value_map or {},
+        reviewer_id=reviewer_id,
     )
 
 
@@ -162,7 +167,7 @@ def test_header_block_labels() -> None:
     run_id, inst_id, art_id = uuid4(), uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=art_id,
-        header_label="Smith, 2020",
+        article_label="Smith, 2020",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -170,7 +175,9 @@ def test_header_block_labels() -> None:
     layout = _spec_layout(
         sections=(section,),
         articles=(article,),
-        value_map={(run_id, inst_id, field.field_id): "Registry"},
+        value_map={
+            value_key(run_id, inst_id, field.field_id): to_export_value("Registry", field, {})
+        },
     )
     ws = _render_matrix(layout)
     assert ws.cell(row=1, column=1).value == "Section"
@@ -217,7 +224,7 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     m1, m2 = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(model_id, None): (m1, m2), (study_id, None): (study_inst,)},
@@ -225,7 +232,11 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     layout = _spec_layout(
         sections=(study, model),
         articles=(article,),
-        value_map={(run_id, study_inst, study_field.field_id): "Doe"},
+        value_map={
+            value_key(run_id, study_inst, study_field.field_id): to_export_value(
+                "Doe", study_field, {}
+            )
+        },
     )
     ws = _render_matrix(layout)
     # Study value repeated across BOTH model sub-columns (C and D), not merged.
@@ -248,7 +259,7 @@ def test_matrix_structural_styling() -> None:
     run_id, inst_id = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -293,7 +304,7 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
     run_id, inst_id = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -318,7 +329,9 @@ def _value_cell(ws, field: FieldDescriptor):
     raise AssertionError(f"no row found for field {field.label!r}")
 
 
-def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> ExportLayout:
+def _single_field_layout(
+    field: FieldDescriptor, value: ExportValue, *, sec_id: UUID, rater: UUID | None = None
+) -> ExportLayout:
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Section",
@@ -328,7 +341,7 @@ def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> 
     run_id, inst_id = uuid4(), uuid4()
     article = ArticleDescriptor(
         article_id=uuid4(),
-        header_label="A",
+        article_label="A",
         run_id=run_id,
         version_id=None,
         entries={(sec_id, None): (inst_id,)},
@@ -336,56 +349,74 @@ def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> 
     return _spec_layout(
         sections=(section,),
         articles=(article,),
-        value_map={(run_id, inst_id, field.field_id): raw_value},
+        value_map={value_key(run_id, inst_id, field.field_id, rater): value},
     )
 
 
 def test_boolean_false_value_renders_no_not_yes() -> None:
-    # Regression for the boolean-inversion data-corruption: the consensus
-    # value_map is populated with ``resolve_value`` output, which collapses a
-    # ``False`` boolean to the STRING ``"No"`` (value_envelope §6). The matrix
-    # cell formatter must pass that pre-resolved ``"No"`` through unchanged. A
-    # ``bool("No")``-based re-implementation is truthy and would silently emit
-    # ``"Yes"`` — inverting every False boolean in every exported workbook.
-    from app.services.exports.value_envelope import resolve_value
-
+    # Regression for the boolean-inversion data-corruption: a stored ``False``
+    # must render "No", never a truthy "Yes".
     sec_id = uuid4()
     field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN)
-
-    # End-to-end through the production resolve path: False -> "No".
-    resolved_false = resolve_value(False, field=field)
-    assert resolved_false == "No"
-    ws_false = _render_matrix(_single_field_layout(field, resolved_false, sec_id=sec_id))
+    ws_false = _render_matrix(
+        _single_field_layout(field, to_export_value({"value": False}, field, {}), sec_id=sec_id)
+    )
     assert _value_cell(ws_false, field) == "No"
-
-    # And True -> "Yes" (the other branch, so the test is not vacuous).
-    resolved_true = resolve_value(True, field=field)
-    assert resolved_true == "Yes"
-    ws_true = _render_matrix(_single_field_layout(field, resolved_true, sec_id=sec_id))
+    ws_true = _render_matrix(
+        _single_field_layout(field, to_export_value({"value": True}, field, {}), sec_id=sec_id)
+    )
     assert _value_cell(ws_true, field) == "Yes"
-
-
-def test_boolean_raw_false_instance_renders_no() -> None:
-    # Defensive: even a raw ``False`` bool reaching the cell (field=BOOLEAN)
-    # must render ``"No"`` via format_export_scalar, never ``"Yes"``.
-    sec_id = uuid4()
-    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN)
-    ws = _render_matrix(_single_field_layout(field, False, sec_id=sec_id))
-    assert _value_cell(ws, field) == "No"
 
 
 def test_select_value_renders_as_string() -> None:
     sec_id = uuid4()
     field = _spec_field("Choice", ExtractionFieldType.SELECT)
-    ws = _render_matrix(_single_field_layout(field, "Cohort", sec_id=sec_id))
+    ws = _render_matrix(
+        _single_field_layout(field, to_export_value({"value": "Cohort"}, field, {}), sec_id=sec_id)
+    )
     assert _value_cell(ws, field) == "Cohort"
 
 
 def test_multiselect_list_value_joins_with_semicolons() -> None:
     sec_id = uuid4()
     field = _spec_field("Tags", ExtractionFieldType.MULTISELECT)
-    ws = _render_matrix(_single_field_layout(field, ["age", "sex", "BMI"], sec_id=sec_id))
+    value = to_export_value({"value": ["age", "sex", "BMI"]}, field, {})
+    ws = _render_matrix(_single_field_layout(field, value, sec_id=sec_id))
     assert _value_cell(ws, field) == "age; sex; BMI"
+
+
+def test_select_cell_shows_the_option_label_not_the_code() -> None:
+    sec_id = uuid4()
+    field = FieldDescriptor(
+        field_id=uuid4(),
+        label="Risk",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=(AllowedValue("L", "Low"), AllowedValue("H", "High")),
+    )
+    labels = build_option_labels(
+        [
+            SectionDescriptor(
+                entity_type_id=sec_id, label="Section", parent_entity_type_id=None, fields=(field,)
+            )
+        ]
+    )
+    ws = _render_matrix(
+        _single_field_layout(field, to_export_value({"value": "L"}, field, labels), sec_id=sec_id)
+    )
+    assert _value_cell(ws, field) == "Low"
+
+
+def test_single_user_cell_reads_the_reviewer_slot() -> None:
+    sec_id, r = uuid4(), uuid4()
+    field = _spec_field("N", ExtractionFieldType.TEXT)
+    layout = replace(
+        _single_field_layout(
+            field, to_export_value({"value": "mine"}, field, {}), sec_id=sec_id, rater=r
+        ),
+        mode=ExportMode.SINGLE_USER,
+        reviewer_id=r,
+    )
+    assert _value_cell(_render_matrix(layout), field) == "mine"
 
 
 def test_matrix_module_has_no_legacy_builder_dependency() -> None:
@@ -399,3 +430,34 @@ def test_matrix_module_has_no_legacy_builder_dependency() -> None:
         if isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     assert "app.services.exports.extraction_xlsx_builder" not in imported
+
+
+def test_matrix_bands_a_fieldless_group_that_owns_fields() -> None:
+    """Rule 2: a fieldless MANY is skipped only when no descendant has fields."""
+    groups = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Groups",
+        parent_entity_type_id=None,
+        fields=(),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    items = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Items",
+        parent_entity_type_id=groups.entity_type_id,
+        fields=(_spec_field("Name", ExtractionFieldType.TEXT),),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    e1, i1 = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        article_label="Smith, 2020",
+        run_id=uuid4(),
+        version_id=None,
+        entries={(groups.entity_type_id, None): (e1,), (items.entity_type_id, e1): (i1,)},
+    )
+    ws = _render_matrix(_spec_layout(sections=(groups, items), articles=(article,)))
+    bands = [
+        v for r in range(2, ws.max_row + 1) if isinstance(v := ws.cell(row=r, column=1).value, str)
+    ]
+    assert bands == ["1. Groups", "2. Items"]

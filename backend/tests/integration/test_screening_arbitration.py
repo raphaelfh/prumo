@@ -1,4 +1,4 @@
-"""Screening conflicts and arbitration over HTTP, on real Postgres.
+"""Screening conflicts (as the records read shows them) and arbitration over HTTP, on real Postgres.
 
 Timestamp trap: ``db_session`` is one outer transaction, so a default
 ``enrolled_at`` (``now()``) ties. A test that needs "latest" still seeds the
@@ -18,7 +18,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
-from app.models.screening import ScreeningArbitration
+from app.models.screening import FULL_TEXT, ScreeningArbitration, ScreeningAssignment
 from tests.integration.conftest import SEED
 from tests.integration.helpers.engine_setup import client_as
 from tests.integration.helpers.screening_fixtures import (
@@ -39,8 +39,8 @@ JAN_2 = datetime(2026, 1, 2, tzinfo=UTC)
 JAN_3 = datetime(2026, 1, 3, tzinfo=UTC)
 
 
-def _conflicts_path(project_id: UUID) -> str:
-    return f"/api/v1/projects/{project_id}/screening/conflicts"
+def _records_path(project_id: UUID) -> str:
+    return f"/api/v1/projects/{project_id}/screening/records?phase=title_abstract"
 
 
 def _arbitration_path(assignment_id: UUID) -> str:
@@ -57,8 +57,14 @@ async def _request(
         app.dependency_overrides.clear()
 
 
-async def _conflicts(db: AsyncSession, user: UUID, project_id: UUID) -> Response:
-    return await _request(db, user, "GET", _conflicts_path(project_id))
+async def _records(db: AsyncSession, user: UUID, project_id: UUID) -> Response:
+    return await _request(db, user, "GET", _records_path(project_id))
+
+
+async def _statuses(db: AsyncSession, user: UUID, project_id: UUID) -> dict[str, str]:
+    """``user``'s records-read status of every enrolled row, by assignment id."""
+    rows = (await _records(db, user, project_id)).json()["data"]["rows"]
+    return {row["assignment_id"]: row["status"] for row in rows if row["assignment_id"]}
 
 
 async def _rule(
@@ -142,11 +148,16 @@ async def test_conflicts_list_for_arbitrators(db_session: AsyncSession) -> None:
     viewer = await add_member(db_session, project_id, "viewer")
 
     for arbitrator in (MANAGER, consensus):
-        response = await _conflicts(db_session, arbitrator, project_id)
+        response = await _records(db_session, arbitrator, project_id)
         assert response.status_code == 200
         data = response.json()["data"]
-        assert [item["assignment_id"] for item in data["items"]] == [str(a1)]
-        decisions = data["items"][0]["decisions"]
+        statuses = {r["assignment_id"]: r["status"] for r in data["rows"] if r["assignment_id"]}
+        assert str(a4) not in statuses
+        assert [i for i, status in statuses.items() if status == "conflict"] == [str(a1)]
+        assert statuses[str(a2)] == "included"
+        assert data["exclusion_reasons"] == REASONS
+        view = (await _request(db_session, arbitrator, "GET", _assignment_path(a1))).json()["data"]
+        decisions = view["peer_decisions"]
         assert [
             (d["id"], d["reviewer_id"], d["reviewer_name"], d["decision"]) for d in decisions
         ] == [
@@ -154,13 +165,15 @@ async def test_conflicts_list_for_arbitrators(db_session: AsyncSession) -> None:
             (str(d_b), str(b), "Reviewer B", "exclude"),
         ]
         assert decisions[1]["exclusion_reason"] == "Not ML"
-        assert data["exclusion_reasons"] == REASONS
 
-    assert (await _conflicts(db_session, a, project_id)).status_code == 403
-    assert (await _conflicts(db_session, viewer, project_id)).status_code == 403
+    for reviewer in (a, b):
+        statuses = await _statuses(db_session, reviewer, project_id)
+        assert statuses[str(a1)] == "waiting"
+        assert "conflict" not in statuses.values()
+    assert "conflict" not in (await _statuses(db_session, viewer, project_id)).values()
 
 
-async def test_unconfigured_project_lists_no_conflict(db_session: AsyncSession) -> None:
+async def test_unconfigured_project_shows_no_conflict(db_session: AsyncSession) -> None:
     project_id = await make_project(db_session)
     a = await add_member(db_session, project_id, "reviewer")
     b = await add_member(db_session, project_id, "reviewer")
@@ -169,10 +182,12 @@ async def test_unconfigured_project_lists_no_conflict(db_session: AsyncSession) 
     )
     await _conflict(db_session, assignment, a, b)
 
-    response = await _conflicts(db_session, MANAGER, project_id)
+    response = await _records(db_session, MANAGER, project_id)
+    view = (await _request(db_session, MANAGER, "GET", _assignment_path(assignment))).json()
 
-    assert response.status_code == 200
-    assert response.json()["data"]["items"] == []
+    assert response.status_code == 409
+    assert _error_code(response) == "SCREENING_NOT_CONFIGURED"
+    assert view["data"]["status"] != "conflict"
 
 
 async def test_rule_by_selecting_a_decision(db_session: AsyncSession) -> None:
@@ -194,8 +209,7 @@ async def test_rule_by_selecting_a_decision(db_session: AsyncSession) -> None:
         )
     ).scalar_one()
     assert (ruling.selected_decision_id, ruling.decided_by) == (d_b, MANAGER)
-    listed = (await _conflicts(db_session, MANAGER, project_id)).json()["data"]["items"]
-    assert listed == []
+    assert await _statuses(db_session, MANAGER, project_id) == {str(a1): "excluded"}
     a_view = (await _request(db_session, a, "GET", f"/api/v1/screening/assignments/{a1}")).json()[
         "data"
     ]
@@ -329,15 +343,13 @@ async def test_a_seated_arbitrator_cannot_see_or_rule_their_own_conflict(
         None,
     )
     assert view["my_decision"]["id"] == str(d_s)
-    listed = (await _conflicts(db_session, seated, project_id)).json()["data"]["items"]
-    assert listed == []
+    assert await _statuses(db_session, seated, project_id) == {str(a1): "waiting"}
     refused = await _rule(db_session, seated, a1, [d_s, d_b], selected_decision_id=d_s)
     assert refused.status_code == 403
     assert _error_code(refused) == "SCREENING_SELF_ARBITRATION"
     assert await _rulings(db_session, a1) == 0
 
-    listed = (await _conflicts(db_session, unseated, project_id)).json()["data"]["items"]
-    assert [item["assignment_id"] for item in listed] == [str(a1)]
+    assert await _statuses(db_session, unseated, project_id) == {str(a1): "conflict"}
     ruled = await _rule(db_session, unseated, a1, [d_s, d_b], selected_decision_id=d_b)
     assert ruled.status_code == 200, ruled.text
     after = (await _request(db_session, seated, "GET", _assignment_path(a1))).json()["data"]
@@ -371,3 +383,104 @@ async def test_override_reason_must_be_in_the_protocol(db_session: AsyncSession)
     assert response.status_code == 409
     assert _error_code(response) == "SCREENING_UNKNOWN_EXCLUSION_REASON"
     assert await _rulings(db_session, a1) == 0
+
+
+async def _with_full_text(db: AsyncSession, project_id: UUID, ta_assignment: UUID) -> UUID:
+    """Send the TA assignment's article to full text (FT count 2); returns the FT assignment."""
+    article = (
+        await db.execute(
+            select(ScreeningAssignment.article_id).where(ScreeningAssignment.id == ta_assignment)
+        )
+    ).scalar_one()
+    (ft,) = await enroll_articles(db, project_id, [article], by=MANAGER, phase=FULL_TEXT)
+    await set_reviewer_count(db, project_id, 2, key="full_text_reviewer_count")
+    return ft
+
+
+@pytest.mark.parametrize(
+    ("phase", "fields", "code"),
+    [
+        ("full_text", {"decision": "maybe"}, "SCREENING_DECISION_NOT_IN_PHASE"),
+        ("title_abstract", {"decision": "not_retrieved"}, "SCREENING_DECISION_NOT_IN_PHASE"),
+        ("full_text", {"decision": "exclude"}, "SCREENING_REASON_REQUIRED"),
+    ],
+    ids=["maybe-at-full-text", "not-retrieved-at-title-abstract", "exclude-without-reason"],
+)
+async def test_override_must_fit_the_phase(
+    db_session: AsyncSession, phase: str, fields: dict[str, str], code: str
+) -> None:
+    project_id, a, b, (a1,) = await _project(db_session)
+    target = await _with_full_text(db_session, project_id, a1) if phase == "full_text" else a1
+    d_a, d_b = await _conflict(db_session, target, a, b)
+
+    refused = await _rule(db_session, MANAGER, target, [d_a, d_b], **fields)
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == code
+    assert await _rulings(db_session, target) == 0
+
+
+async def test_title_abstract_ruling_after_full_text_is_refused(db_session: AsyncSession) -> None:
+    project_id, a, b, (a1,) = await _project(db_session)
+    d_a, d_b = await _conflict(db_session, a1, a, b)
+    await add_ruling(db_session, a1, MANAGER, "include", selected=d_a, created_at=JAN_3)
+    await _with_full_text(db_session, project_id, a1)
+
+    refused = await _rule(db_session, MANAGER, a1, [d_a, d_b], decision="exclude")
+
+    assert refused.status_code == 409
+    assert _error_code(refused) == "SCREENING_PHASE_ADVANCED"
+    assert await _rulings(db_session, a1) == 1
+
+
+async def _full_text_pair(
+    db: AsyncSession, first: str, second: str, *, seat_manager: bool = False
+) -> tuple[UUID, UUID, UUID, tuple[UUID, UUID]]:
+    """An FT assignment (count 2) where A (or the manager) says ``first`` and B ``second``.
+
+    Returns (project, FT assignment, B, (decision ids)).
+    """
+    project_id, a, b, (a1,) = await _project(db)
+    ft = await _with_full_text(db, project_id, a1)
+    first_user = MANAGER if seat_manager else a
+    d_a = await add_decision(db, ft, first_user, first, created_at=JAN_1)
+    d_b = await add_decision(db, ft, b, second, created_at=JAN_2)
+    return project_id, ft, b, (d_a, d_b)
+
+
+async def test_pdf_found_later(db_session: AsyncSession) -> None:
+    _, ft, _, ruled_on = await _full_text_pair(db_session, "not_retrieved", "not_retrieved")
+    seen = (await _request(db_session, MANAGER, "GET", _assignment_path(ft))).json()["data"]
+    assert seen["outcome"]["decision"] == "not_retrieved"
+
+    ruled = await _rule(db_session, MANAGER, ft, list(ruled_on), decision="include")
+
+    assert ruled.status_code == 200, ruled.text
+    outcome = ruled.json()["data"]["outcome"]
+    assert (outcome["kind"], outcome["decision"]) == ("arbitrated", "include")
+    assert await _rulings(db_session, ft) == 1
+
+
+async def test_pdf_found_later_is_not_ruled_by_a_seated_arbitrator(
+    db_session: AsyncSession,
+) -> None:
+    _, ft, _, ruled_on = await _full_text_pair(
+        db_session, "not_retrieved", "not_retrieved", seat_manager=True
+    )
+
+    refused = await _rule(db_session, MANAGER, ft, list(ruled_on), decision="include")
+
+    assert refused.status_code == 403
+    assert _error_code(refused) == "SCREENING_SELF_ARBITRATION"
+    assert await _rulings(db_session, ft) == 0
+
+
+async def test_not_retrieved_vs_include_is_ruled_like_a_conflict(db_session: AsyncSession) -> None:
+    _, ft, _, ruled_on = await _full_text_pair(db_session, "include", "not_retrieved")
+    view = (await _request(db_session, MANAGER, "GET", _assignment_path(ft))).json()["data"]
+    assert view["status"] == "conflict"
+
+    ruled = await _rule(db_session, MANAGER, ft, list(ruled_on), selected_decision_id=ruled_on[0])
+
+    assert ruled.status_code == 200, ruled.text
+    assert ruled.json()["data"]["outcome"]["decision"] == "include"

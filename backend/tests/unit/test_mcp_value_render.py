@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.exports.value_envelope import PeeledValue, peel_envelope
+from app.services.exports.values import PeeledValue, peel_envelope
 from app.services.mcp_value_render import McpFieldInfo, capped_values, mcp_value
 from app.services.value_semantics import ABSENT_REASON_LABELS
 from app.utils.compact_json import compact_json

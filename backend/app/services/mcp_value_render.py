@@ -17,7 +17,7 @@ from typing import Any
 from uuid import UUID
 
 from app.schemas.mcp_extractions import McpValue
-from app.services.exports.value_envelope import peel_envelope
+from app.services.exports.values import peel_envelope
 from app.services.value_semantics import ABSENT_REASON_LABELS
 from app.utils.compact_json import compact_json
 from app.utils.text_caps import cap_json_weight

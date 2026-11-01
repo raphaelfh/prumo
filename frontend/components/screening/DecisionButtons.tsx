@@ -1,10 +1,18 @@
 /**
  * Include / Exclude / Maybe, and "Exclude with reason" when the protocol
- * lists reasons. The keyboard goes through the pure `screeningKeyAction`; one
- * window listener applies it, unless another handler took the key or an
+ * lists reasons. At full text there is no Maybe: Exclude (and 2 / E) always
+ * opens the reasons, a reason being required; "Report not retrieved" is a
+ * ghost button with no key. The note is the caller's (`DecisionNote`).
+ * The keyboard goes through the pure `screeningKeyAction`; one window listener applies it, unless another handler took the key or an
  * overlay other than its own reasons dialog is open. The caller keys this
  * component by record, so a record change closes the reasons dialog.
+ *
+ * `recorded` (a solo record's own decision) draws that button with the
+ * recorded-choice ring; choosing it again does nothing, another value
+ * re-decides. A recorded exclusion re-decides through the reason list only
+ * with a reason other than `recordedReason`.
  */
+import {Check} from 'lucide-react';
 import {useEffect, useRef, useState} from 'react';
 
 import {AppDialog} from '@/components/patterns/AppDialog';
@@ -13,20 +21,55 @@ import {KbdBadge} from '@/components/ui/kbd-badge';
 import {isDialogOpen} from '@/hooks/useKeyboardShortcuts';
 import {t} from '@/lib/copy';
 import {screeningKeyAction} from '@/lib/screening/keymap';
-import type {ScreeningDecisionCreate} from '@/services/screeningService';
+import {cn} from '@/lib/utils';
+import type {ScreeningDecisionCreate, ScreeningPhase} from '@/services/screeningService';
 
 interface DecisionButtonsProps {
   reasons: string[];
   disabled: boolean;
   onDecide: (body: ScreeningDecisionCreate) => void;
+  phase: ScreeningPhase;
+  /** The caller's recorded decision on a solo record: drawn with the recorded-choice ring; pressing it again does nothing, another value re-decides. */
+  recorded?: ScreeningDecisionCreate['decision'] | null;
+  /** The recorded exclusion's reason: picking it again does nothing, another reason re-decides. */
+  recordedReason?: string | null;
 }
 
-export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsProps) {
+type Decision = ScreeningDecisionCreate['decision'];
+
+const DECISIONS = [
+  {decision: 'include', key: '1', label: 'decisionInclude', variant: 'default'},
+  {decision: 'exclude', key: '2', label: 'decisionExclude', variant: 'outline'},
+  {decision: 'maybe', key: '3', label: 'decisionMaybe', variant: 'outline'},
+] as const satisfies readonly {decision: Decision; key: string; label: string; variant: 'default' | 'outline'}[];
+
+export function DecisionButtons({
+  reasons,
+  disabled,
+  onDecide,
+  phase,
+  recorded,
+  recordedReason,
+}: DecisionButtonsProps) {
+  const fullText = phase === 'full_text';
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const reasonsList = useRef<HTMLOListElement>(null);
+  const decisions = DECISIONS.filter(({decision}) => !(fullText && decision === 'maybe'));
+
+  const decide = (decision: Decision) => {
+    // A full-text exclusion needs a reason: the list opens first, even over a
+    // recorded exclusion (the same reason is a no-op in `pickReason`).
+    if (fullText && decision === 'exclude') {
+      if (reasons.length > 0) setReasonsOpen(true);
+      return;
+    }
+    if (decision === recorded) return;
+    onDecide({decision});
+  };
 
   const pickReason = (reason: string) => {
     setReasonsOpen(false);
+    if (recorded === 'exclude' && reason === recordedReason) return;
     onDecide({decision: 'exclude', exclusion_reason: reason});
   };
 
@@ -35,10 +78,10 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
       if (disabled || event.repeat || event.defaultPrevented) return;
       // Another overlay (the PubMed import, a menu, a confirm) owns the keys.
       if (isDialogOpen(reasonsOpen ? reasonsList.current : null)) return;
-      const action = screeningKeyAction(event, reasonsOpen);
+      const action = screeningKeyAction(event, reasonsOpen, phase);
       if (action === null) return;
       if (action.kind === 'decide') {
-        onDecide({decision: action.decision});
+        decide(action.decision);
       } else if (action.kind === 'open_reasons') {
         if (reasons.length === 0) return;
         setReasonsOpen(true);
@@ -56,31 +99,31 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="default" aria-keyshortcuts="1" disabled={disabled} onClick={() => onDecide({decision: 'include'})}>
-          {t('screening', 'decisionInclude')}
-          <KbdBadge keys={['1']} />
-        </Button>
-        <Button
-          size="default"
-          variant="outline"
-          aria-keyshortcuts="2"
-          disabled={disabled}
-          onClick={() => onDecide({decision: 'exclude'})}
-        >
-          {t('screening', 'decisionExclude')}
-          <KbdBadge keys={['2']} />
-        </Button>
-        <Button
-          size="default"
-          variant="outline"
-          aria-keyshortcuts="3"
-          disabled={disabled}
-          onClick={() => onDecide({decision: 'maybe'})}
-        >
-          {t('screening', 'decisionMaybe')}
-          <KbdBadge keys={['3']} />
-        </Button>
-        {reasons.length > 0 && (
+        {decisions.map(({decision, key, label, variant}) => {
+          const isRecorded = recorded === decision;
+          const filled = !isRecorded && variant === 'default';
+          return (
+            <Button
+              key={decision}
+              size="default"
+              variant={isRecorded ? 'outline' : variant}
+              aria-keyshortcuts={key}
+              aria-pressed={recorded ? isRecorded : undefined}
+              className={cn(isRecorded && 'bg-success/10 text-success ring-1 ring-success hover:bg-success/10')}
+              disabled={disabled}
+              onClick={() => decide(decision)}
+            >
+              {isRecorded && <Check className="h-4 w-4" strokeWidth={1.5} />}
+              {t('screening', label)}
+              {/* The muted chip vanishes on bg-primary: re-tint it from the button's foreground. */}
+              <KbdBadge
+                keys={[key]}
+                className={cn(filled && 'border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground/80')}
+              />
+            </Button>
+          );
+        })}
+        {!fullText && reasons.length > 0 && (
           <Button
             size="default"
             variant="ghost"
@@ -92,8 +135,20 @@ export function DecisionButtons({reasons, disabled, onDecide}: DecisionButtonsPr
             <KbdBadge keys={['E']} />
           </Button>
         )}
+        {fullText && (
+          <Button
+            size="default"
+            variant="ghost"
+            disabled={disabled || recorded === 'not_retrieved'}
+            onClick={() => decide('not_retrieved')}
+          >
+            {t('screening', 'reportNotRetrieved')}
+          </Button>
+        )}
       </div>
-      <p className="text-xs text-muted-foreground">{t('screening', 'keyboardHint')}</p>
+      <p className="text-xs text-muted-foreground">
+        {t('screening', fullText ? 'keyboardHintFullText' : 'keyboardHint')}
+      </p>
       <AppDialog
         open={reasonsOpen}
         onOpenChange={setReasonsOpen}

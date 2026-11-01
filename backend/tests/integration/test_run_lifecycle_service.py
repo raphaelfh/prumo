@@ -583,6 +583,17 @@ async def test_approve_and_finalize_publishes_agreed_and_finalizes(
     )
     assert len(published) == 1
 
+    from app.services.run_lifecycle_service import APPROVE_ALL_RATIONALE
+
+    assert APPROVE_ALL_RATIONALE == "Approved: reviewers agree (Phase 2 approve-all)."
+    rationale = (
+        await db_session.execute(
+            text("SELECT rationale FROM public.extraction_consensus_decisions WHERE run_id = :r"),
+            {"r": str(run.id)},
+        )
+    ).scalar_one()
+    assert rationale == APPROVE_ALL_RATIONALE
+
     await db_session.rollback()
 
 
@@ -1479,6 +1490,7 @@ async def test_qa_single_user_export_not_blank_after_advance(
 ) -> None:
 
     from app.models.extraction import ExtractionFieldType
+    from app.services.exports.cell_record import value_map_from_cells
     from app.services.extraction_export_service import (
         ExtractionExportService,
         FieldDescriptor,
@@ -1495,10 +1507,11 @@ async def test_qa_single_user_export_not_blank_after_advance(
     )
 
     export = ExtractionExportService(db=db_session, user_id=str(profile_id))
-    value_map = await export._build_single_user_value_map(
-        run_ids=[run_id],
-        reviewer_id=profile_id,
-        fields_by_id={
+    cells = await export._load_reviewer_cells(run_ids=[run_id], reviewer_ids=[profile_id])
+    value_map = value_map_from_cells(
+        cells,
+        slots="reviewer",
+        fields={
             field_id: FieldDescriptor(
                 field_id=field_id,
                 label="QA Field",
@@ -1506,7 +1519,8 @@ async def test_qa_single_user_export_not_blank_after_advance(
                 allowed_values=(),
             )
         },
+        labels={},
     )
     assert value_map, "single-user QA export must not be blank after materialization"
-    assert "final answer" in " ".join(str(v) for v in value_map.values())
+    assert "final answer" in " ".join(str(v.value_text) for v in value_map.values())
     await db_session.rollback()

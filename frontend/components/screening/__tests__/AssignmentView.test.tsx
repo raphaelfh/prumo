@@ -14,7 +14,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
 import {AssignmentView} from '@/components/screening/AssignmentView';
-import type {ScreeningAssignmentRead} from '@/services/screeningService';
+import type {ScreeningAssignmentRead, ScreeningConfigRead, ScreeningRecordRow} from '@/services/screeningService';
 import {server} from '@/test/mocks/server';
 
 const ASSIGNMENT_URL = '*/api/v1/screening/assignments/:assignmentId';
@@ -35,6 +35,10 @@ function assignment(overrides: Partial<ScreeningAssignmentRead> = {}): Screening
       journal_title: 'Lancet',
       pmid: null,
       publication_year: 2021,
+      mesh_terms: null,
+      keywords: null,
+      article_type: null,
+      language: null,
     },
     my_decision: {
       id: 'd1',
@@ -66,38 +70,80 @@ function failAssignment(status: number, code: string) {
   );
 }
 
-function renderView({canReview = true, onBack = vi.fn()} = {}) {
+const ROW: ScreeningRecordRow = {
+  article_id: 'art1',
+  assignment_id: 'a1',
+  doi: null,
+  first_author: 'Smith J',
+  has_pdf: false,
+  ingestion_source: null,
+  journal_title: 'Lancet',
+  my_decision: 'include',
+  my_exclusion_reason: null,
+  outcome: null,
+  outcome_exclusion_reason: null,
+  outcome_kind: null,
+  ta_outcome: null,
+  ta_outcome_kind: null,
+  ta_reviewer_count: null,
+  pmid: null,
+  publication_year: 2021,
+  queue_rank: 1,
+  status: 'waiting',
+  title: 'Deep learning for sepsis',
+};
+
+function config(canReview: boolean): ScreeningConfigRead {
+  return {
+    can_arbitrate: false,
+    can_manage: false,
+    can_review: canReview,
+    enrolled: 1,
+    exclusion_reasons: [],
+    not_enrolled: 0,
+    reviewer_capable: 2,
+    reviewer_count: 2,
+    reviewer_count_locked: true,
+    full_text_reviewer_count: null,
+    full_text_count_locked: false,
+    full_text_ready: 0,
+    full_text_enrolled: 0,
+  };
+}
+
+function renderView({canReview = true, row = ROW}: {canReview?: boolean; row?: ScreeningRecordRow} = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
+  const onNotInPhase = vi.fn();
   render(
     <QueryClientProvider client={client}>
-      <AssignmentView assignmentId="a1" canReview={canReview} onBack={onBack} />
+      <AssignmentView
+        assignmentId="a1"
+        row={row}
+        config={config(canReview)}
+        phase="title_abstract"
+        criteria={{inclusion: [], exclusion: []}}
+        maximized={false}
+        onDecided={vi.fn()}
+        onNotInPhase={onNotInPhase}
+      />
     </QueryClientProvider>,
   );
-  return {onBack, client};
+  return {onNotInPhase, client};
 }
 
 describe('AssignmentView', () => {
-  it('renders not-found for a missing assignment', async () => {
+  it('hands a missing assignment to onNotInPhase, with no back button', async () => {
     failAssignment(404, 'NOT_FOUND');
-    const user = userEvent.setup();
-    const {onBack} = renderView();
-    expect(await screen.findByText('This record no longer exists.')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', {name: 'Back to screening'}));
-    expect(onBack).toHaveBeenCalled();
-  });
-
-  it('renders forbidden for a non-member', async () => {
-    failAssignment(403, 'FORBIDDEN');
-    renderView();
-    expect(await screen.findByText('You do not have permission to do this.')).toBeInTheDocument();
-    expect(screen.getByRole('button', {name: 'Back to screening'})).toBeInTheDocument();
+    const {onNotInPhase} = renderView();
+    await waitFor(() => expect(onNotInPhase).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', {name: 'Back to screening'})).toBeNull();
   });
 
   it('shows no peers while the record is blind', async () => {
     serveAssignment(assignment());
     renderView();
     expect(await screen.findByRole('heading', {name: 'Deep learning for sepsis'})).toBeInTheDocument();
-    expect(screen.getByText('Waiting for other reviewers')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for others')).toBeInTheDocument();
     expect(screen.getByText('Your decision')).toBeInTheDocument();
     expect(screen.queryByText('Other reviewers')).not.toBeInTheDocument();
     expect(screen.queryByText('Outcome')).not.toBeInTheDocument();
@@ -121,9 +167,9 @@ describe('AssignmentView', () => {
         ],
       }),
     );
-    renderView();
+    renderView({row: {...ROW, status: 'included', outcome: 'include', outcome_kind: 'consensus'}});
     expect(await screen.findByText('Outcome')).toBeInTheDocument();
-    expect(screen.getByText('Decided')).toBeInTheDocument();
+    expect(screen.getByText('Included')).toBeInTheDocument();
     expect(screen.getByText('consensus')).toBeInTheDocument();
     expect(screen.getByText('Other reviewers')).toBeInTheDocument();
     expect(screen.getByText('Ana Lima')).toBeInTheDocument();
@@ -156,7 +202,7 @@ describe('AssignmentView', () => {
       }),
     );
     const user = userEvent.setup();
-    renderView({canReview: true});
+    renderView({canReview: true, row: {...ROW, status: 'to_screen', my_decision: null}});
     await screen.findByRole('heading', {name: 'Deep learning for sepsis'});
     expect(calls.count).toBe(1);
 
