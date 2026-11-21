@@ -70,7 +70,6 @@ PROMOTE='gh pr create --base main --head dev --title "Promote dev to main"'
 
 echo "# incident-history rules"
 expect "reset-db asks"                     ask   'make reset-db'
-expect "railway domain asks"               ask   'railway domain'
 expect "push dev:main denied"              deny  'git push origin dev:main'
 expect "push main denied"                  deny  'git push -u origin main'
 expect "push HEAD:main denied"             deny  'git push origin HEAD:main'
@@ -98,7 +97,6 @@ echo "# ceiling: no active run → the human touch"
 clear_state
 expect "no run: promotion asks"            ask   "$PROMOTE"
 expect "no run: promotion; asks"           ask   'gh pr create --base main;'
-expect "no run: railway up asks"           ask   'railway up'
 
 echo "# ceiling: dev"
 set_state ceiling=dev phase=5
@@ -111,7 +109,6 @@ expect "dev: merge -m denied"              deny  'gh pr merge 456 -m'
 expect "dev: sh -c merge --merge denied"   deny  'sh -c "gh pr merge 12 --auto --merge"'
 expect "dev: env-prefixed gh denied"       deny  'GH_TOKEN=x gh pr create --base main --head dev'
 expect "dev: absolute gh path denied"      deny  '/opt/homebrew/bin/gh pr merge 3 --merge'
-expect "dev: railway up denied"            deny  'railway up'
 expect "dev: squash to dev still ok"       allow 'gh pr merge 123 --auto --squash'
 
 # A ceiling binds the session driving the run, not the whole repository. The
@@ -122,19 +119,17 @@ expect "dev: squash to dev still ok"       allow 'gh pr merge 123 --auto --squas
 echo "# ceiling: scoped to the run's orchestrator"
 set_state ceiling=dev phase=5 "orchestrator=$ROOT"
 expect "dev, owned by me: denied"          deny  "$PROMOTE"
-expect "dev, owned by me: deploy denied"   deny  'railway up'
 
 set_state ceiling=dev phase=5 "orchestrator=/somewhere/else/worktree"
 expect "dev, someone else's run: asks"     ask   "$PROMOTE"
-expect "dev, someone else's run: deploy asks" ask 'railway up'
 
 # The prod path must survive the scoping untouched: promotion is the
 # orchestrator's own Phase 6 and no seat promotes, so a --to prod run keeps its
 # whole autonomous cycle. Evidence, not ownership, is what gates it.
-set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA" "orchestrator=$ROOT"
+set_state ceiling=prod phase=promote "preflight=GREEN@$DEV_SHA" "orchestrator=$ROOT"
 expect "prod, owned by me, GREEN: allowed" allow "$PROMOTE"
 
-set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA" "orchestrator=/somewhere/else"
+set_state ceiling=prod phase=promote "preflight=GREEN@$DEV_SHA" "orchestrator=/somewhere/else"
 expect "prod, someone else's run: asks"    ask   "$PROMOTE"
 
 # A run with no orchestrator= (written before the field existed) still binds
@@ -143,20 +138,24 @@ set_state ceiling=dev phase=5
 expect "legacy state still binds root"     deny  "$PROMOTE"
 
 echo "# ceiling: prod — evidence-gated"
-set_state ceiling=prod phase=6
+set_state ceiling=prod phase=promote
 expect "prod, no preflight: denied"        deny  "$PROMOTE"
-set_state ceiling=prod phase=6 "preflight=RED@$DEV_SHA"
+set_state ceiling=prod phase=promote "preflight=RED@$DEV_SHA"
 expect "prod, RED preflight: denied"       deny  "$PROMOTE"
-set_state ceiling=prod phase=6 preflight=GREEN@0000000000000000000000000000000000000000
+set_state ceiling=prod phase=promote preflight=GREEN@0000000000000000000000000000000000000000
 expect "prod, stale preflight: denied"     deny  "$PROMOTE"
-set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA"
+set_state ceiling=prod phase=promote "preflight=GREEN@$DEV_SHA"
 got=$(decision "$PROMOTE")
 if [ "$got" = allow ] || [ "$got" = ask ]; then
   pass=$((pass + 1)); echo "ok   prod, fresh GREEN → $got (ask only when an upgrade() in the promoted range is destructive)"
 else
   fail=$((fail + 1)); echo "FAIL prod, fresh GREEN → got '$got'"
 fi
-expect "prod: railway redeploy allowed (rollback path)" allow 'railway redeploy'
+# `ship.sh phase promote` holds the evidence checks (a multi-slice spec's
+# every-slice-landed rule lives only there), so promotion outside it is denied.
+set_state ceiling=prod phase=ship "preflight=GREEN@$DEV_SHA"
+expect "prod, GREEN but not in promote: denied" deny "$PROMOTE"
+expect "prod, not in promote: merge --merge denied" deny 'gh pr merge 9 --merge'
 
 echo "# terminal and malformed states do not count"
 set_state ceiling=prod phase=done "preflight=GREEN@$DEV_SHA"

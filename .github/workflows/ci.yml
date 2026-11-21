@@ -155,7 +155,7 @@ jobs:
       CORS_ORIGINS: "http://localhost:5173"
       # docling resolves layout/TableFormer models from this dir instead of
       # downloading from HuggingFace Hub at parse time (same mechanism as the
-      # Railway image, backend/Dockerfile). Populated by the cache/prefetch
+      # production image, backend/Dockerfile). Populated by the cache/prefetch
       # steps below. /home/runner is $HOME on ubuntu-latest — env values are
       # not tilde-expanded, so the path is spelled out.
       DOCLING_ARTIFACTS_PATH: /home/runner/.cache/docling-models
@@ -218,7 +218,7 @@ jobs:
       - name: Prefetch docling models (layout + TableFormer)
         if: steps.docling-cache.outputs.cache-hit != 'true'
         run: |
-          # Same model set as the Railway image (backend/Dockerfile): the
+          # Same model set as the production image (backend/Dockerfile): the
           # OCR-disabled standard pipeline only needs layout + TableFormer.
           for attempt in 1 2 3; do
             uv run python -c "

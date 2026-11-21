@@ -2,7 +2,7 @@
 
 Local only: it refuses any database that is not on this machine, and it is
 never called from ``app.seed``, which runs on every production boot
-(``backend/Dockerfile``, ``railway.toml``). It creates no auth users: it seats
+(the ``backend/Dockerfile`` ``CMD``). It creates no auth users: it seats
 existing local profiles. It grows per slice: S2 duplicate pairs (#15/#16 an
 open exact PMID pair, #17/#18 a merged DOI pair with #18 removed); S3 full-text
 records, one with a PDF uploaded to the local ``articles`` bucket.

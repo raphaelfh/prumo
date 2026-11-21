@@ -165,7 +165,7 @@ async def test_a_json_null_criteria_list_does_not_raise(db_session: AsyncSession
 
     The natural way to concatenate the arrays would abort ``alembic upgrade
     head`` on one such row — and the Dockerfile chains ``alembic upgrade head &&
-    gunicorn``, so that aborts the Railway deploy, not just the migration.
+    gunicorn``, so that aborts the backend deploy, not just the migration.
     """
     await _set(
         db_session,

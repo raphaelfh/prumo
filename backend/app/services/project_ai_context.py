@@ -83,7 +83,7 @@ _IC_LABELS = {
 
 #: Migration 0063 flattened ``timing`` to match its five siblings, and the PICOT
 #: editor writes the flat shape. The nested pair is still read, PERMANENTLY, not
-#: as a leftover: Railway and Vercel deploy independently, so a browser holding
+#: as a leftover: the backend and Vercel deploy independently, so a browser holding
 #: the pre-0063 bundle keeps writing ``timing.prediction_moment`` after the
 #: migration has run, and a reader that only understood flat would silently drop
 #: what that manager typed.

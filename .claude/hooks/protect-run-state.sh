@@ -19,8 +19,8 @@ FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null
 [ -n "$FILE" ] || exit 0
 
 case "$FILE" in
-  */.superpowers/ship-spec/*/state)
-    jq -n '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:"Run state is written by scripts/ship.sh only. Use: ship.sh phase <name> | ship.sh ci [sha] | ship.sh preflight-record <GREEN|RED> [sha] | ship.sh halt <reason> | ship.sh done. Hand-editing this file is how phase markers and timestamps stopped matching the work (2026-09-07: 8+ entries up to 43 min ahead of the clock, a phase marker 27 min early)."}}'
+  */.superpowers/ship-spec/*/state|*/.superpowers/ship-spec/*/manifest)
+    jq -n '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:"Run state is written by scripts/ship.sh only. Use: ship.sh init|slice|phase <name> | ship.sh ci [sha] | ship.sh preflight-record <GREEN|RED> [sha] | ship.sh halt <reason> | ship.sh done. Hand-editing this file is how phase markers and timestamps stopped matching the work (2026-09-07: 8+ entries up to 43 min ahead of the clock, a phase marker 27 min early)."}}'
     exit 0 ;;
 esac
 

@@ -53,7 +53,7 @@ def test_module_has_explicit_task_route(module: str, _sample_task: str) -> None:
     landing on a queue that may or may not be consumed by the worker.
 
     Pairs with ``tests/unit/test_celery_routes_drift.py`` which then
-    asserts every routed queue is actually consumed by the Railway
+    asserts every routed queue is actually consumed by the deployed
     worker. Together they form a two-step guard: routes must exist
     (this test) AND must map to a real queue (drift test).
     """

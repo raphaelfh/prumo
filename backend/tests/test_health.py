@@ -5,6 +5,8 @@ Tests for health check and basic endpoints.
 import pytest
 from httpx import AsyncClient
 
+from app.core.config import settings
+
 
 @pytest.mark.asyncio
 async def test_health_check(client: AsyncClient) -> None:
@@ -22,10 +24,10 @@ async def test_health_reports_the_deployed_commit(client: AsyncClient) -> None:
     """/health carries the commit the running build was deployed from.
 
     The post-deploy smoke asserts this against the promoted SHA — it is the
-    only signal that catches the documented failure class where Railway
-    sticks on an older commit while CI is green (a reachability probe alone
-    cannot tell a stale build from a fresh one). Falls back to "unknown"
-    outside Railway, which the smoke degrades to a warning.
+    only signal that catches the failure class where a deploy sticks on an
+    older commit (a reachability probe alone cannot tell a stale build from a
+    fresh one). Falls back to "unknown" when Coolify did not inject
+    ``SOURCE_COMMIT``, which the smoke degrades to a warning.
     """
     response = await client.get("/health")
 
@@ -34,6 +36,18 @@ async def test_health_reports_the_deployed_commit(client: AsyncClient) -> None:
     assert "commit" in data
     assert isinstance(data["commit"], str)
     assert data["commit"]
+
+
+@pytest.mark.asyncio
+async def test_health_commit_comes_from_coolify_source_commit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Coolify injects ``SOURCE_COMMIT``; /health echoes it verbatim."""
+    monkeypatch.setattr(settings, "SOURCE_COMMIT", "abc123")
+
+    response = await client.get("/health")
+
+    assert response.json()["commit"] == "abc123"
 
 
 @pytest.mark.asyncio

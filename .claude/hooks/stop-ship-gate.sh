@@ -110,9 +110,10 @@ for f in "$ROOT"/.superpowers/ship-spec/*/state; do
   # against its own $PWD, and the ownership check above already guarantees
   # CWD_ROOT is that owner. Running it from $wt would find no active run and
   # report unknown, which in promote blocks forever for the wrong reason.
+  # `--run` names this run: a multi-slice orchestrator owns several.
   if [ "$phase" = promote ]; then
     dev_sha=$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null || echo "")
-    live=$(cd "$CWD_ROOT" 2>/dev/null && bash "$ROOT/scripts/ship.sh" ci "$dev_sha" 2>/dev/null | tail -1)
+    live=$(cd "$CWD_ROOT" 2>/dev/null && bash "$ROOT/scripts/ship.sh" --run "$(basename "$dir")" ci "$dev_sha" 2>/dev/null | tail -1)
     case "$live" in
       GREEN@*) ;;
       *) block "ship-spec phase promote: CI on origin/dev (${dev_sha:-unknown}) is '${live:-unknown}'. Red or unknown evidence never promotes. To stop instead: \`bash scripts/ship.sh halt <reason>\`." ;;

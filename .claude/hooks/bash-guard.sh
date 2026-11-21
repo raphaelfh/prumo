@@ -72,10 +72,6 @@ if seg_matches "${GIT}[[:space:]]+push" && seg_has '[[:space:]]fabianofilho([[:s
   deny "fabianofilho is the read-only upstream remote. Push to origin instead."
 fi
 
-if seg_matches 'railway[[:space:]]+up' && seg_has -- '--path-as-root'; then
-  deny "railway up --path-as-root is retired. Verified re-trigger: empty-commit PR to main (plain 'railway up' from the root also failed 2026-08-18) — see docs/reference/deployment.md § Manual deploy fallback."
-fi
-
 if seg_matches 'make[[:space:]]+(reset-db|db-fresh)' || seg_matches 'supabase[[:space:]]+db[[:space:]]+reset'; then
   ask "DESTRUCTIVE: wipes the local database. Prefer 'make db-fresh' (migrate + seed). After a bare reset, E2E needs 'make db-seed'."
 fi
@@ -93,13 +89,6 @@ fi
 
 if seg_matches "${GIT}[[:space:]]+push" && seg_has '(^|[[:space:]])(--force(-with-lease)?|-f)([[:space:]]|$)'; then
   ask "Force push rewrites remote history. Confirm."
-fi
-
-# `railway domain` with no argument CREATES a subdomain on the linked service
-# (non-interactive mode does not prompt). Recurred twice, once with the memory
-# on file — an instruction that failed twice becomes a hook.
-if seg_matches 'railway[[:space:]]+domain'; then
-  ask "railway domain CREATES a domain on the linked service (the no-arg form recurred twice). To READ URLs use 'railway status' or the dashboard. Confirm."
 fi
 
 # Rebase merges are never used here: squash into dev, merge-commit into main.
@@ -123,19 +112,17 @@ fi
 #
 # A promotion is `gh pr create --base main` or `gh pr merge --merge` (the
 # merge-commit method is used only for dev → main; feature PRs squash to dev).
-# A deploy is `railway up` / `railway redeploy`. Deploys are ceiling-checked
-# only, so the rollback fast path stays one command.
+# Promotion is the only deploy path: Coolify builds `main` on push, so no
+# Bash command deploys on its own (docs/reference/deployment.md).
 # ---------------------------------------------------------------------------
 
 is_promotion=0
-is_deploy=0
 if seg_matches 'gh[[:space:]]+pr[[:space:]]+create' && seg_has '(--base[= ]+|-B[= ]*)main([[:space:]]|$)'; then is_promotion=1; fi
 if seg_matches 'gh[[:space:]]+pr[[:space:]]+merge' && seg_has '(^|[[:space:]])(--merge|-m)([[:space:]]|$)'; then is_promotion=1; fi
-if seg_matches 'railway[[:space:]]+(up|redeploy)'; then is_deploy=1; fi
 
 trimmed() { sed -n "s/^$1=//p" "$2" | tail -1 | tr -d '[:space:]'; }
 
-if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
+if [ "$is_promotion" = 1 ]; then
   # A run's ceiling binds the session that DRIVES it, not the whole repo.
   # State lives under the common git dir so every worktree can read it, and
   # reading it is not owning it — the same lesson the Stop gate learned in
@@ -177,10 +164,10 @@ if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
     ask "A /ship-spec run is live in another session ($FOREIGN) and does not bind this checkout ($INVOKER). If you ARE that run's orchestrator, promote from its checkout so its ceiling applies. Otherwise this is a hand promotion while someone else's run is open — confirm; the deploy-release skill is the runbook."
   fi
   if [ "$ACTIVE_COUNT" -eq 0 ]; then
-    ask "No active /ship-spec run declares a ceiling (no .superpowers/ship-spec/*/state with a live phase). Promoting or deploying to prod by hand — confirm; the deploy-release skill is the runbook."
+    ask "No active /ship-spec run declares a ceiling (no .superpowers/ship-spec/*/state with a live phase). Promoting to prod by hand — confirm; the deploy-release skill is the runbook."
   fi
   if [ "$ACTIVE_COUNT" -gt 1 ]; then
-    deny "More than one active /ship-spec run state names this checkout as orchestrator. Mark finished runs phase=done (or halted) before promoting."
+    deny "More than one active /ship-spec run state names this checkout as orchestrator. A spec promotes once, from its last slice: end the others with 'ship.sh --run <name> done' (or halt) first."
   fi
 
   ceiling=$(trimmed ceiling "$ACTIVE")
@@ -189,32 +176,38 @@ if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
     *) deny "ship-spec ceiling is '${ceiling:-unset}' (state: $ACTIVE). This run cannot touch main or prod. Re-invoke with --to prod to promote." ;;
   esac
 
-  if [ "$is_promotion" = 1 ]; then
-    # Fresh GREEN preflight on the exact commit being promoted (origin/dev).
-    pf=$(trimmed preflight "$ACTIVE")
-    head_dev=$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null || echo "")
-    case "$pf" in
-      GREEN@*)
-        if [ -z "$head_dev" ] || [ "${pf#GREEN@}" != "$head_dev" ]; then
-          deny "preflight evidence is '$pf' but origin/dev is '${head_dev:-unknown}'. Re-run /preflight on the promoted commit and record preflight=GREEN@<sha> in $ACTIVE."
-        fi
-        ;;
-      *)
-        deny "No GREEN preflight recorded in $ACTIVE (found '${pf:-none}'). Run /preflight first; red or unknown evidence never promotes."
-        ;;
-    esac
-
-    # The one human touch at any rung that shares a database: a deploy is
-    # reversible, a data-destructive migration is not. Only the upgrade()
-    # body counts — every downgrade() drops what upgrade() created.
-    migs=$(git -C "$ROOT" diff --name-only origin/main...origin/dev -- backend/alembic/versions/ 2>/dev/null | grep -v '/archive/' || true)
-    for m in $migs; do
-      body=$(git -C "$ROOT" show "origin/dev:$m" 2>/dev/null | awk '/^def upgrade\(/{f=1; next} /^def downgrade\(/{f=0} f')
-      if printf '%s' "$body" | grep -Eiq 'drop_table|drop_column|DROP (TABLE|COLUMN)|TRUNCATE|DELETE FROM'; then
-        ask "Promoted range contains a data-destructive migration ($m, upgrade body). A deploy is reversible; this is not. Confirm promotion."
-      fi
-    done
+  # Promotion happens IN the promote phase. `ship.sh phase promote` is where
+  # the evidence (preflight on origin/dev; for a multi-slice spec, every
+  # slice landed) is checked, so a run that never entered it cannot promote.
+  ph=$(trimmed phase "$ACTIVE")
+  if [ "$ph" != promote ]; then
+    deny "ship-spec run $ACTIVE is in phase '${ph:-unset}', not promote. Enter it with 'bash scripts/ship.sh phase promote', which checks the evidence."
   fi
+
+  # Fresh GREEN preflight on the exact commit being promoted (origin/dev).
+  pf=$(trimmed preflight "$ACTIVE")
+  head_dev=$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null || echo "")
+  case "$pf" in
+    GREEN@*)
+      if [ -z "$head_dev" ] || [ "${pf#GREEN@}" != "$head_dev" ]; then
+        deny "preflight evidence is '$pf' but origin/dev is '${head_dev:-unknown}'. Re-run /preflight on the promoted commit and record preflight=GREEN@<sha> in $ACTIVE."
+      fi
+      ;;
+    *)
+      deny "No GREEN preflight recorded in $ACTIVE (found '${pf:-none}'). Run /preflight first; red or unknown evidence never promotes."
+      ;;
+  esac
+
+  # The one human touch at any rung that shares a database: a deploy is
+  # reversible, a data-destructive migration is not. Only the upgrade()
+  # body counts — every downgrade() drops what upgrade() created.
+  migs=$(git -C "$ROOT" diff --name-only origin/main...origin/dev -- backend/alembic/versions/ 2>/dev/null | grep -v '/archive/' || true)
+  for m in $migs; do
+    body=$(git -C "$ROOT" show "origin/dev:$m" 2>/dev/null | awk '/^def upgrade\(/{f=1; next} /^def downgrade\(/{f=0} f')
+    if printf '%s' "$body" | grep -Eiq 'drop_table|drop_column|DROP (TABLE|COLUMN)|TRUNCATE|DELETE FROM'; then
+      ask "Promoted range contains a data-destructive migration ($m, upgrade body). A deploy is reversible; this is not. Confirm promotion."
+    fi
+  done
 fi
 
 exit 0

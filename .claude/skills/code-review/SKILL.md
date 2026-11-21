@@ -87,7 +87,7 @@ Apply it to every diff: yours before you ask for review, anyone's before you app
 
 - [ ] Read `docs/reference/migrations.md` before touching `backend/alembic/versions/`.
 - [ ] Revision id ≤ 32 characters, `down_revision` is the current head, one logical change per file.
-- [ ] A migration that deletes or updates rows guards itself in SQL (`AND NOT EXISTS …`). Railway runs `alembic upgrade head` at boot, so a migration that raises blocks every later deploy, the fix included.
+- [ ] A migration that deletes or updates rows guards itself in SQL (`AND NOT EXISTS …`). `prumo-web` runs `alembic upgrade head` at boot, so a migration that raises blocks every later deploy, the fix included.
 - [ ] No data migration in the same revision as a schema change that locks the table.
 
 ### I. Tests

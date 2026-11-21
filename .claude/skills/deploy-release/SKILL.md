@@ -1,23 +1,25 @@
 ---
 name: deploy-release
-description: Runbook for shipping prumo to production — promoting dev to main, Railway deploy mechanics (Wait-for-CI, SKIPPED-SHA recovery), Supabase auth/storage migration deploys, proving the promoted build is live, env-var rotation, and rollback. Invoke manually with /deploy-release when deploying, promoting, or recovering a stuck deploy.
+description: Runbook for shipping prumo to production — promoting dev to main, Coolify deploy mechanics (builds main on push, web + worker), Supabase auth/storage migration deploys, proving the promoted build is live, env-var rotation, and rollback. Invoke manually with /deploy-release when deploying, promoting, or recovering a stuck deploy.
 disable-model-invocation: true
 ---
 
 # Deploy & Release (prumo)
 
-Production topology: **Railway** (FastAPI web + Celery worker + Redis,
-deploys from `main`) · **Vercel** (frontend, deploys from `main`,
-`VITE_API_URL` → Railway web) · **Supabase** (Postgres + Auth +
-Storage). Prod URLs: backend `https://web-production-48b398.up.railway.app`,
-frontend `https://prumoai.vercel.app`.
+Production topology: **Coolify** on a Hostinger VPS (`prumo-web` FastAPI,
+`prumo-worker` Celery, `prumo-redis`; builds from `main`) · **Vercel**
+(frontend, deploys from `main`, `VITE_API_URL` → `prumo-web`) ·
+**Supabase** `pwtaciozopymgcwimxxh`, `sa-east-1` (Postgres + Auth +
+Storage). Prod URLs: backend `https://prumo-api.healthnumbers.com.br`,
+frontend `https://prumoai.vercel.app`. Topology, env vars and the reasons:
+`docs/reference/deployment.md`, ADR 0024.
 
 ## Normal release
 
 1. Everything lands on `dev` via squash-merged PRs behind the 8
    required checks.
 2. Pre-deploy gate: run `/preflight` (read-only; probes Vercel,
-   Supabase advisors, Railway health).
+   Supabase advisors, the Coolify backend).
 3. Promote via a **merge-commit PR** — `dev → main` cannot fast-forward
    (`main` carries the `Merge pull request #NNN from raphaelfh/dev`
    commits dev lacks, so `git push origin dev:main` is rejected as
@@ -42,16 +44,17 @@ frontend `https://prumoai.vercel.app`.
 
    Before promoting a column or table drop,
    `git grep -n "<column>" origin/main -- 'frontend/**'` for PostgREST
-   reads. Vercel and Railway deploy independently and cached bundles
+   reads. Vercel and Coolify deploy independently and cached bundles
    outlive the deploy, so the frontend stops reading it first (deploy
-   Vercel before Railway, or ship the frontend change a release earlier).
-4. Railway (GitHub App) waits for the full Actions suite — **CI and
-   docs-ci** — on the main push, then builds **two** deployments, web
-   and worker. The web container runs `alembic upgrade head` before
-   gunicorn, so app-schema migrations deploy atomically with code.
-   `WAITING` is Wait-for-CI, not a stall.
+   Vercel before the backend, or ship the frontend change a release earlier).
+4. Coolify (GitHub App) builds `backend/Dockerfile` on the main push,
+   once per application: **two** deployments, `prumo-web` and
+   `prumo-worker`, on the VPS. It does not wait for CI — the required
+   checks already gated the promotion PR. The web container runs
+   `alembic upgrade head` and the seed before gunicorn, so app-schema
+   migrations deploy atomically with code.
 5. Vercel builds the frontend from `main` independently (Ready within
-   about a minute, long before Railway).
+   about a minute, long before the backend).
 6. The Supabase GitHub integration deploys `supabase/migrations/*.sql`
    on the same push (next section).
 7. Prove the promoted build is live (§ Verify prod).
@@ -76,19 +79,18 @@ check-runs) proves reachability, not the build: push and
 6-hourly scheduled run fails on it. Prove it yourself:
 
 - Capture prod's `/health.commit` **before** promoting. After both
-  Railway services report SUCCESS, `/health.commit` equals the new main
-  SHA **and** differs from the captured one.
-- Railway state per service: `mcp__railway__list-deployments` (no
-  `serviceId`) or `gh api repos/<o>/<r>/commits/<sha>/status`;
-  `railway deployment list` can show only one service. Build logs of
-  the in-flight deploy: `mcp__railway__get-logs` with its
-  `deploymentId` and `types: ["build"]` (`railway logs --build` shows
-  the currently deployed image's build).
+  Coolify deployments finish, `/health.commit` equals the new main SHA
+  **and** differs from the captured one. It reads `SOURCE_COMMIT`;
+  `unknown` means "Include Source Commit in Build" is off on `prumo-web`.
+- Coolify state per application: the `coolify` MCP
+  (`search_resources` query `prumo` for status, `list_deployments` +
+  `get_deployment` with `include_log_summary=true` for the in-flight
+  build). The dashboard shows the same per application.
 - Worker: Celery logs `celery@<host> ready.` once per process, so after
   a Redis reconnect a healthy worker's tail stays silent. A log check
-  cannot tell recovered from failing: ask the user to authorize
-  `railway redeploy --service worker`, then confirm the fresh boot
-  block ends in `ready.`.
+  cannot tell recovered from failing: ask the user to authorize a
+  restart of `prumo-worker` (Coolify `control` action `restart`), then
+  confirm the fresh boot block ends in `ready.`.
 - Frontend: `vercel inspect <url> --cwd <main checkout>` (target
   production, Ready, prod alias) plus the GitHub `Vercel` status on the
   promoted SHA. Prove the content with a two-sided grep of the live
@@ -104,30 +106,24 @@ check-runs) proves reachability, not the build: push and
   status code before reading content.
 - API change: probe `/api/v1/openapi.json` for the new route.
 
-## Stuck deploy: the SKIPPED-SHA failure mode
+## Stuck or failed deploy
 
-If a workflow on the main push reports SKIPPED (e.g. path-filtered
-docs-ci), Railway's Wait-for-CI can wedge — and it does **not**
-self-heal when you re-run the job. Recovery, in order:
-
-1. Merge a newer commit into `main` **via PR** — `main` is protected,
-   so the empty commit cannot be pushed directly (verified 2026-08-18,
-   #635): `git commit --allow-empty -m "chore: nudge railway
-   wait-for-ci"`, then a PR to `main`.
-2. `railway up` from the repo root is documented but **unverified
-   today**: on 2026-08-18 it failed with "Deployment does not have an
-   associated build" (`dockerfilePath` is relative to
-   `rootDirectory=/backend`). The `backend --path-as-root` form is
-   retired and bash-guard-blocked. Details:
-   `docs/reference/deployment.md` § Manual deploy fallback.
-
-Detection: `/health.commit` stays on the old SHA while CI is green
+Detection: `/health.commit` stays on the old SHA after the deploy window
 (§ Verify prod); the scheduled smoke run is the alarm.
+
+1. Read the newest `prumo-web` deployment (`list_deployments`,
+   `get_deployment` with `include_log_summary=true`). A failed build or a
+   boot that exits (Alembic, seed) is fixed forward with a PR.
+2. No deployment started for the main SHA (webhook missed): ask the user
+   to authorize a Coolify `deploy` of `prumo-web` and `prumo-worker`. It
+   builds the current `main` head, so it ships only what was already promoted.
 
 ## Rollback
 
-- No migration in the promoted range: Railway dashboard → service →
-  Deployments → Redeploy the last green image (≤2 min).
+- No migration in the promoted range: roll each application back to
+  its previous image (Coolify dashboard → application → Deployments →
+  Rollback, or the MCP `list_rollback_images` + `rollback_application`
+  after the user authorizes it).
 - A migration ran: an older image crash-loops, because
   `check_pending_migrations` (`backend/app/main.py`) exits when the DB
   head is unknown to its code. Roll forward with a fix, or hand-run
@@ -139,15 +135,11 @@ Detection: `/health.commit` stays on the old SHA while CI is green
 
 - Canonical table: `docs/reference/deployment.md`. Env files are
   gitignored — nothing to commit.
-- Railway shared variables need a per-service value + service restart
-  (CLI `${{shared.X}}` resolved empty — known gotcha).
+- Backend values shared by web and worker are Coolify environment-level
+  Shared Variables, referenced in each application as
+  `{{environment.KEY}}`. A changed value reaches a container only after
+  that application is redeployed.
 - Vercel: the Supabase integration is inert for this Vite app — the
   frontend reads separate `VITE_*` copies, so key rotation requires a
   manual `VITE_*` update + prod rebuild. Never widen `envPrefix`
   (would leak service-role/JWT/POSTGRES_PASSWORD into the bundle).
-
-## Railway CLI notes
-
-- MCP token can expire while the CLI still works; verify the worker
-  with `railway logs --service worker` (look for "Connected to
-  redis://").

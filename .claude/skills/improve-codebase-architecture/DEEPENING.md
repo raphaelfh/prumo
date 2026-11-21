@@ -24,7 +24,7 @@ Recommendation shape: *"Define a port at the seam, implement the HTTP adapter fo
 
 ### 4. True external (Mock)
 
-Third-party services you don't control: LLM providers, Supabase Auth and Storage, Vercel and Railway APIs. The deepened module takes the external dependency as an injected port; tests provide a fake adapter.
+Third-party services you don't control: LLM providers, Supabase Auth and Storage, Vercel and Coolify APIs. The deepened module takes the external dependency as an injected port; tests provide a fake adapter.
 
 ## Seam discipline
 

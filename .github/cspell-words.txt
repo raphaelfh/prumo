@@ -41,11 +41,13 @@ codeium
 conftest
 contextvar
 contextvars
+Coolify
 coro
 covidence
 cspell
 CSPRNG
 customised
+cutover
 CVPR
 Damen
 dataclass
@@ -83,12 +85,14 @@ graphifyy
 GROBID
 gunicorn
 healthcheck
+healthnumbers
 HIPAA
 hitl
 HKDF
 HMAC
 hono
 hosmer
+Hostinger
 hotspots
 httpx
 idempotently
@@ -172,6 +176,7 @@ prumoai
 psutil
 psycopg
 pubmed
+pwtaciozopymgcwimxxh
 pydantic
 PyMuPDF
 pymupdf4llm
@@ -223,6 +228,7 @@ Starlette
 structlog
 studylevel
 supabase
+Supavisor
 sveltekit
 swallowers
 tablename
@@ -240,8 +246,10 @@ toplevel
 torch
 trace
 trace_id
+Traefik
 tripod
 tsx
+TTFB
 turbopack
 unblind
 unblinded

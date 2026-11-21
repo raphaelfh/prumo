@@ -1,13 +1,19 @@
 ---
-status: accepted
-last_reviewed: 2026-05-24
+status: superseded
+last_reviewed: 2026-11-21
 owner: '@raphaelfh'
 adr_number: '0004'
+superseded_by: '0024'
 ---
 
 # Host backend (web + worker + Redis) on Railway instead of Render
 
-> **Status:** Accepted · Date: 2026-05-24 · Deciders: @raphaelfh
+> **Status:** Superseded by [ADR-0024](0024-coolify-vps-and-supabase-sa-east-1.md) (2026-11-21)
+> · Date: 2026-05-24 · Deciders: @raphaelfh
+> **Supersedes:** N/A · **Superseded by:** 0024
+>
+> The backend moved to a Coolify VPS and Supabase to `sa-east-1`;
+> `railway.toml` and the Railway services are gone.
 
 ## Context and Problem Statement
 
@@ -49,6 +55,5 @@ Redis plugin.
 
 ## More Information
 
-- [Deployment reference](../reference/deployment.md)
 - [Archived plan](../superpowers/plans/archive/2026-05-24-render-to-railway/plan.md)
-- [`railway.toml`](../../railway.toml)
+- `railway.toml` (deleted; see git history)
