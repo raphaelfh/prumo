@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-23
+last_reviewed: 2026-11-21
 owner: '@raphaelfh'
 ---
 
@@ -8,36 +8,61 @@ owner: '@raphaelfh'
 
 # Deployment
 
+Why this topology: [ADR 0024](../adr/0024-coolify-vps-and-supabase-sa-east-1.md).
+
 ## Topology
 
 ```text
 Browser
    │
    ▼
-Vercel ─── (VITE_API_URL=https://web-production-48b398.up.railway.app) ──▶ Railway web (FastAPI + gunicorn)
+Vercel ─── (VITE_API_URL=https://prumo-api.healthnumbers.com.br) ──▶ Traefik (Coolify proxy, Let's Encrypt)
+                                                              │
+                                                              ▼
+                                                          prumo-web (FastAPI + gunicorn)
                                                               │
                                                               │ Celery .delay()
                                                               ▼
-                                                          Railway Redis (managed)
+                                                          prumo-redis (internal network)
                                                               ▲
                                                               │ broker
                                                               │
-                                                          Railway worker (Celery)
+                                                          prumo-worker (Celery)
                                                               │
                                                               ▼
-                                                          Supabase (Postgres + Auth + Storage)
+                                                          Supabase prumo-sa (Postgres + Auth + Storage)
                                                           (web also writes directly)
 ```
 
-All three Railway services + the Redis plugin live in the same project, region **US East** (`us-east4-eqdc4a` — same AZ class as Supabase US East).
+The backend runs on a Hostinger VPS in Campinas (Brazil) managed by
+**Coolify**: project `prumo`, environment `production`, three resources.
+Supabase is the managed project `prumo-sa` (ref `pwtaciozopymgcwimxxh`,
+region `sa-east-1`, São Paulo). The frontend stays on Vercel at
+`https://prumoai.vercel.app`.
 
 ## Services
 
-| Service | Builder | Start | Public | Healthcheck |
-| --- | --- | --- | --- | --- |
-| `web` | `backend/Dockerfile` | `alembic upgrade head && python -m app.seed && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` (Dockerfile CMD) | yes — <https://web-production-48b398.up.railway.app> | `/health` |
-| `worker` | `backend/Dockerfile` | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery` (Railway custom start command — overrides Dockerfile CMD) | no | none |
-| `Redis` | Railway managed plugin | n/a | private network only (`redis.railway.internal`) | n/a |
+| Service | Builder | Start | Public | Healthcheck | Limits |
+| --- | --- | --- | --- | --- | --- |
+| `prumo-web` | Coolify Dockerfile build of `backend/Dockerfile` (base directory `/backend`, branch `main`) | Dockerfile `CMD`: `alembic upgrade head && python -m app.seed && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` | yes — `https://prumo-api.healthnumbers.com.br` (port 8000 behind Traefik) | none in Coolify (see below) | 1 GB, 1.5 CPU |
+| `prumo-worker` | same build, same image | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery`, set with the Custom Docker Option `--entrypoint` (it replaces the Dockerfile `CMD`) | no | none (Celery serves no HTTP) | 2 GB, 2 CPU |
+| `prumo-redis` | Coolify database `redis:8.2` | no persistence (broker only: `task_acks_late` + `task_reject_on_worker_lost` cover a restart) | no — internal network only | Coolify default | — |
+
+The worker's `--queues` list above is the in-repo mirror of the Coolify
+entrypoint: `backend/tests/unit/test_celery_routes_drift.py` reads it from
+this file and fails when a routed queue is missing. Change both together.
+
+**Health checks.** The image has no `curl` or `wget`, which Coolify's HTTP
+probe runs inside the container, so the probe is off for `prumo-web`, and the
+image carries no `HEALTHCHECK` (it would mark every worker container unhealthy,
+since web and worker share the image). A deploy is therefore not gated on
+`/health`: read it after every deploy (deploy-release skill § Verify prod) and
+let the post-deploy smoke alarm.
+
+**Client IP.** Traefik overwrites `X-Real-Ip` with the caller's address, so
+`prumo-web` sets `TRUSTED_CLIENT_IP_HEADER=X-Real-Ip`. The DNS record for the
+API is DNS-only in Cloudflare; turning on Cloudflare's proxy would make
+Traefik see Cloudflare's address and needs `CF-Connecting-IP` instead.
 
 ## Worker — task runner
 
@@ -75,17 +100,28 @@ prevents this in CI, but the log event is the runtime safety net.
 
 ## Environment variables
 
-The tracked templates are `backend/.env.example` and the root `.env.example`; real env files match `.gitignore` line 21 (`.env.*`). Two hosts, two requirement sets: the **Railway (backend)** tables immediately below, and the **Vercel (frontend)** subsection further down (the `VITE_` prefix rule makes them genuinely different). These tables are the canonical reference; paste the values into the Railway dashboard or use the Railway CLI to set them.
+The tracked templates are `backend/.env.example` and the root `.env.example`; real env files match `.gitignore` line 21 (`.env.*`). Two hosts, two requirement sets: the **Coolify (backend)** tables immediately below, and the **Vercel (frontend)** subsection further down (the `VITE_` prefix rule makes them genuinely different). These tables are the canonical reference; the running Coolify env is the source of truth for values.
+
+**Where values live in Coolify.** A value both services need is an
+environment-level **Shared Variable** (Project `prumo` → `production` →
+Shared Variables), and each application references it as
+`{{environment.KEY}}`, so web and worker cannot drift. A value only one
+service needs is set on that application. A changed value reaches a container
+on that application's next redeploy. `SUPABASE_URL` is currently a literal on
+each application rather than a reference: the shared variable was malformed
+during the cutover.
 
 ### Shared across all services
 
 | Key | Source |
 | --- | --- |
 | `ENCRYPTION_KEY` | set once, never rotate (encrypted Zotero and LLM-connection keys would become unreadable); MUST be the same value across web + worker (Zotero credentials are cross-process). Both refuse to boot while it is blank or the `.env.example` placeholder, unless `SUPABASE_ENV=local` (`app/core/security.py::check_encryption_key`) |
-| `SUPABASE_URL` | Supabase project settings |
+| `SUPABASE_URL` | Supabase project settings (`https://pwtaciozopymgcwimxxh.supabase.co`) |
+| `SUPABASE_ANON_KEY` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings |
 | `DATABASE_URL` | Supabase Session pooler (used for app traffic; see [Reaching prod Postgres](#reaching-prod-postgres)) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
+| `REDIS_URL` | `redis://prumo-redis:6379/0` style URL on the Coolify internal network (copy the internal URL from the `prumo-redis` resource) |
 | `OPENAI_API_KEY` | OpenAI dashboard |
 | `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; since C1b this pair is the FALLBACK for projects with no stored `llm_engine` setting (the ⚙ popover writes `projects.settings.llm_engine`, which wins). MUST still be the same value across web + worker: unset projects resolve it independently in each service (`/api/v1/extraction/models` in **web**, `/api/v1/extraction/sections` in the **worker**) — a per-service mismatch silently runs two different engines for those projects. The former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
 | `DEBUG` | `false` |
@@ -94,41 +130,45 @@ The tracked templates are `backend/.env.example` and the root `.env.example`; re
 | `API_V1_PREFIX` | `/api/v1` |
 | `SUPABASE_ENV` | `production` |
 
+`/health.commit` reads `SOURCE_COMMIT`, which Coolify passes to the build
+when **Include Source Commit in Build** is on for `prumo-web`; the Dockerfile
+copies it into the image env. With it off, `/health.commit` is `unknown`.
+
 ### Reaching prod Postgres
 
 Connect only through the Session pooler:
-`postgresql://postgres.<project-ref>:<password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require`.
-The direct host `db.<project-ref>.supabase.co` is IPv6-only and refuses
-IPv4 clients. The password is the one in Railway `web`'s `DATABASE_URL`;
-pass it inline (`DATABASE_URL=... uv run ...`), never by editing
-`backend/.env`. Never use Supabase's "Reset database password": `web` and
-`worker` both hold the current one.
+`postgresql://postgres.pwtaciozopymgcwimxxh:<password>@<pooler-host>:5432/postgres?sslmode=require`,
+where `<pooler-host>` is the `sa-east-1` pooler host shown under **Connect** in
+the Supabase dashboard. The direct host `db.<project-ref>.supabase.co` is
+IPv6-only and refuses IPv4 clients. The password is the one in the
+`DATABASE_URL` shared variable; pass it inline (`DATABASE_URL=... uv run ...`),
+never by editing `backend/.env`. Never use Supabase's "Reset database
+password": `prumo-web` and `prumo-worker` both hold the current one.
 
 ### Service-level overrides
 
 | Service | Key | Value |
 | --- | --- | --- |
-| `web` | `CORS_ORIGINS` | Comma-separated allow-list that **extends** the always-allowed defaults baked into [`backend/app/core/config.py`](../../backend/app/core/config.py) (already pins `prumoai.vercel.app` + localhost). The live value lives in the Railway `web` env — the running env is the source of truth, not this table. |
-| `web` | `PUBLIC_APP_URL` | Public origin of the web app, used for links in agent results (`editor_url`). Default `https://prumoai.vercel.app`; production leaves it unset, so the default applies. There is no staging environment today; one would set its own origin here. |
-| `web` | `MCP_ALLOWED_HOSTS` | Comma-separated `Host` allow-list for the `/mcp` mount (`web-production-48b398.up.railway.app` in production). Default `localhost:*,127.0.0.1:*,[::1]:*,test`; a host not listed gets 421, so leaving it unset in production fails closed. |
-| `web` | `MCP_ALLOWED_ORIGINS` | Comma-separated browser `Origin` allow-list for `/mcp`. Default empty: no browser origin may call it (CLI agents send no `Origin` and pass). |
-| `web` | `MCP_MAX_INFLIGHT_PER_TOKEN` | Concurrent `/mcp` requests per token per process (default 4, half the default web pool of 8, so one token cannot hold every connection); over it the request gets 429 with `Retry-After: 1`. Keep it at most half of `DB_POOL_SIZE` + `DB_MAX_OVERFLOW`. |
-| `web` | `DB_POOL_SIZE` | Web engine pool size (default 5; at least 1). Rule: web `DB_POOL_SIZE` + `DB_MAX_OVERFLOW` + the worker's connections stay at or below the pooler client cap. Production uses the Supabase pooler in session mode, capped at 15 clients: defaults give web 5 + 3 = 8, worker 2 children x up to 2 sessions = 4 (an assumption: no setting caps sessions per task), total 12, leaving 3 for migrations and admin sessions. Raising web or worker concurrency means re-doing this sum. |
-| `web` | `DB_MAX_OVERFLOW` | Connections the web pool may open beyond `DB_POOL_SIZE` under load (default 3; 0 gives a fixed-size pool); counts toward the pooler cap above. |
-| `web` | `DB_POOL_TIMEOUT` | Seconds a request waits for a pooled connection (default 10). Past it, or when the database refuses or drops the connection, `/mcp` answers 503 with `Retry-After: 2`, during the token lookup or the tool call alike. |
-| `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
-| `web` | `RATE_LIMIT_STORAGE_URI` | `${{Redis.REDIS_URL}}` (reference variable). Unset falls back to `memory://`, which is per process: limits then reset on restart and are not shared across instances. |
-| `web` | `TRUSTED_CLIENT_IP_HEADER` | `X-Real-IP` in production. The request header every per-IP rate-limit key reads (OAuth `/register` and `/token`, unauthenticated `/mcp`, anonymous REST). Unset keys on the TCP peer, which behind Railway's edge is the proxy: every caller then shares one bucket. Trust assumption: Railway's edge overwrites a caller-supplied `X-Real-IP` (its http logs record the real `srcIp` for a request that spoofed the header), and `web` has no TCP proxy or other public path that bypasses the edge. A value that is not one IP literal falls back to the peer. Never set it on a service reachable without the edge. |
-| `web` | `NCBI_EMAIL` | Optional. Contact email sent to NCBI E-utilities with `tool=prumo` on PubMed imports (NCBI asks for one). Unset, a non-dry-run PubMed import is refused with 503 `NCBI_EMAIL_NOT_CONFIGURED`; dry runs need none. |
-| `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
-| `worker` | `NCBI_EMAIL` | Optional. Same value as `web`: the worker's efetch calls send it with `tool=prumo`. |
+| `prumo-web` | `CORS_ORIGINS` | Comma-separated allow-list that **extends** the always-allowed defaults baked into [`backend/app/core/config.py`](../../backend/app/core/config.py) (already pins `prumoai.vercel.app` + localhost). The running Coolify env is the source of truth, not this table. |
+| `prumo-web` | `PUBLIC_APP_URL` | Public origin of the web app, used for links in agent results (`editor_url`) and the OAuth consent page. Default `https://prumoai.vercel.app`. There is no staging environment today; one would set its own origin here. |
+| `prumo-web` | `PUBLIC_API_URL` | `https://prumo-api.healthnumbers.com.br`. Turns OAuth for `/mcp` on and is its issuer (ADR 0022): changing it makes every MCP OAuth client authorize again. |
+| `prumo-web` | `MCP_ALLOWED_HOSTS` | Comma-separated `Host` allow-list for the `/mcp` mount (`prumo-api.healthnumbers.com.br` in production). Default `localhost:*,127.0.0.1:*,[::1]:*,test`; a host not listed gets 421, so leaving it unset in production fails closed. |
+| `prumo-web` | `MCP_ALLOWED_ORIGINS` | Comma-separated browser `Origin` allow-list for `/mcp`. Default empty: no browser origin may call it (CLI agents send no `Origin` and pass). |
+| `prumo-web` | `MCP_MAX_INFLIGHT_PER_TOKEN` | Concurrent `/mcp` requests per token per process (default 4, half the default web pool of 8, so one token cannot hold every connection); over it the request gets 429 with `Retry-After: 1`. Keep it at most half of `DB_POOL_SIZE` + `DB_MAX_OVERFLOW`. |
+| `prumo-web` | `DB_POOL_SIZE` | Web engine pool size (default 5; at least 1). Rule: web `DB_POOL_SIZE` + `DB_MAX_OVERFLOW` + the worker's connections stay at or below the pooler client cap. Production uses the Supabase pooler in session mode, capped at 15 clients: defaults give web 5 + 3 = 8, worker 2 children x up to 2 sessions = 4 (an assumption: no setting caps sessions per task), total 12, leaving 3 for migrations and admin sessions. Raising web or worker concurrency means re-doing this sum. |
+| `prumo-web` | `DB_MAX_OVERFLOW` | Connections the web pool may open beyond `DB_POOL_SIZE` under load (default 3; 0 gives a fixed-size pool); counts toward the pooler cap above. |
+| `prumo-web` | `DB_POOL_TIMEOUT` | Seconds a request waits for a pooled connection (default 10). Past it, or when the database refuses or drops the connection, `/mcp` answers 503 with `Retry-After: 2`, during the token lookup or the tool call alike. |
+| `prumo-web` | `RATE_LIMIT_STORAGE_URI` | The `prumo-redis` internal URL. Unset falls back to `memory://`, which is per process: limits then reset on restart and are not shared across instances. |
+| `prumo-web` | `TRUSTED_CLIENT_IP_HEADER` | `X-Real-Ip` in production. The request header every per-IP rate-limit key reads (OAuth `/register` and `/token`, unauthenticated `/mcp`, anonymous REST). Unset keys on the TCP peer, which behind Traefik is the proxy: every caller then shares one bucket. Trust assumption: Traefik overwrites a caller-supplied `X-Real-Ip`, and `prumo-web` publishes no port that bypasses Traefik. A value that is not one IP literal falls back to the peer. Never set it on a service reachable without the proxy. |
+| `prumo-web` | `NCBI_EMAIL` | Optional. Contact email sent to NCBI E-utilities with `tool=prumo` on PubMed imports (NCBI asks for one). Unset, a non-dry-run PubMed import is refused with 503 `NCBI_EMAIL_NOT_CONFIGURED`; dry runs need none. |
+| `prumo-worker` | `NCBI_EMAIL` | Optional. Same value as `prumo-web`: the worker's efetch calls send it with `tool=prumo`. |
 
 ### Feedback / Linear
 
 | Key | Purpose | Used by |
 | --- | --- | --- |
 | `LINEAR_API_KEY` | Linear personal/workspace API key (SECRET) — used to create feedback issues via the Linear GraphQL API | `web`, `worker` |
-| `LINEAR_TEAM_ID` | Linear **Feedback** team UUID (key `FEE`) — in-app feedback routes here; the Prumo team is GitHub-sync/automation only, NOT the feedback target. Must be the team **UUID, not the `FEE` slug** (`issueCreate(teamId:)` requires the UUID; the slug fails). Validated at boot in `config.py`; the live value lives in the Railway env (source of truth). | `web`, `worker` |
+| `LINEAR_TEAM_ID` | Linear **Feedback** team UUID (key `FEE`) — in-app feedback routes here; the Prumo team is GitHub-sync/automation only, NOT the feedback target. Must be the team **UUID, not the `FEE` slug** (`issueCreate(teamId:)` requires the UUID; the slug fails). Validated at boot in `config.py`; the live value lives in the Coolify shared variable (source of truth). | `web`, `worker` |
 | `FEEDBACK_MEDIA_BUCKET` | Supabase Storage bucket for feedback screenshots/clips (default `feedback-media`) | `worker` |
 
 ### Vercel (frontend) — only `VITE_*` reaches the browser
@@ -142,7 +182,7 @@ Canonical frontend vars (set in the Vercel project for Production + Preview):
 
 | Key | Required | Notes |
 | --- | --- | --- |
-| `VITE_API_URL` | yes | Railway backend base URL (`https://web-production-48b398.up.railway.app`). |
+| `VITE_API_URL` | yes | Backend base URL (`https://prumo-api.healthnumbers.com.br`). |
 | `VITE_SUPABASE_URL` | yes | Supabase project URL — same value as the integration's `SUPABASE_URL`, but it must carry the `VITE_` prefix. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | yes | Supabase publishable (anon) key. `VITE_SUPABASE_ANON_KEY` is accepted as a fallback. |
 | `VITE_SITE_URL` | yes | Auth redirect base for the sign-up-confirmation and password-reset e-mails (`getAuthRedirectBaseUrl` in `frontend/pages/Auth.tsx`; falls back to `window.location.origin` when unset). Must equal the production origin **and** be allow-listed in Supabase — see [Supabase auth redirects](#supabase-auth-redirects-the-silent-failure) below. |
@@ -183,10 +223,10 @@ non-`VITE_` names, since they are invisible to the build.)
 
 The Vercel project currently also holds backend-only vars (`SUPABASE_SERVICE_ROLE_KEY`,
 `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `ENCRYPTION_KEY`,
-`OPENAI_API_KEY`, `REDIS_*`, `RAILWAY_RUN_COMMAND`, …). FastAPI runs on **Railway**, not
+`OPENAI_API_KEY`, `REDIS_*`, `RAILWAY_RUN_COMMAND`, …). FastAPI runs on **Coolify**, not
 Vercel, so these are unused by the static build (no `VITE_` prefix → never bundled) but
 are needless secret surface on a second platform. They are safe to delete from Vercel;
-keep them only on Railway.
+keep them only in Coolify.
 
 #### Supabase auth redirects: the silent failure
 
@@ -228,7 +268,7 @@ both origins allow-listed.
 
 ## Migrations
 
-Alembic runs automatically as part of the web service's Dockerfile `CMD`,
+Alembic runs automatically as part of `prumo-web`'s Dockerfile `CMD`,
 followed by the seed, which converges the global template catalogue on
 every deploy:
 
@@ -239,53 +279,63 @@ alembic upgrade head && python -m app.seed && gunicorn ...
 The seed is idempotent end to end — every template seeder early-returns on
 an existing row and the instruction backfill is fill-if-null — so a deploy
 installs newly added global templates without a manual step and never
-touches existing rows. A seed failure aborts the boot: Railway marks the
-deploy failed and keeps the previous build live.
+touches existing rows. A seed or migration failure aborts the boot: the
+container exits before gunicorn binds, so the new build never serves. With
+Coolify's healthcheck off, read the deployment status and `/health` to see it
+(§ Rollback).
 
-The worker does NOT run Alembic or the seed — it boots after the web
-service via Celery startup. To add a migration:
+The worker does NOT run Alembic or the seed — its entrypoint replaces the
+`CMD`. To add a migration:
 
 1. Create it locally: `cd backend && alembic revision --autogenerate -m "description"`.
 2. Test locally: `alembic upgrade head` against the local stack.
-3. Open a PR to `dev`. Once merged, promote `dev → main` via a merge-commit PR, not a fast-forward push (see the deploy-release skill runbook for the commands). Railway then deploys `web`, which runs Alembic before booting gunicorn.
+3. Open a PR to `dev`. Once merged, promote `dev → main` via a merge-commit PR, not a fast-forward push (see the deploy-release skill runbook for the commands). Coolify then deploys `prumo-web`, which runs Alembic before booting gunicorn.
 
 Auth/storage migrations (`supabase/migrations/`) are authored with the
 Supabase CLI (see `docs/reference/migrations.md`) and deployed by the same
-`main` push, through the Supabase GitHub integration. Its `Supabase Preview`
-check on the `main` commit is not a required context, so read it after any
-promotion that touches `supabase/`. Never apply one through the Supabase MCP
-`apply_migration`: it records a generated version that does not match the
-file, and every later integration deploy fails on the mismatch.
+`main` push, through the Supabase GitHub integration on `prumo-sa`. Its
+`Supabase Preview` check on the `main` commit is not a required context, so
+read it after any promotion that touches `supabase/`. Never apply one through
+the Supabase MCP `apply_migration`: it records a generated version that does
+not match the file, and every later integration deploy fails on the mismatch.
 
 ## Rollback
 
 If a deploy breaks production:
 
-1. **Fast path** (≤2 min): in the Railway dashboard → `web` service → Deployments tab → find the last green deployment → ⋯ → **Redeploy**. Railway redeploys the previous image without rebuilding.
-2. **Slow path** (full revert): `git revert <bad-commit> && git push origin main`. Railway auto-deploys the revert.
+1. **Fast path**: in Coolify → `prumo-web` (and `prumo-worker`) →
+   Deployments → **Rollback** to the previous image. Coolify keeps earlier
+   images on the VPS, so this does not rebuild. A migration that already ran
+   makes an older image exit at boot (`check_pending_migrations`): roll
+   forward instead, or run `alembic downgrade <prev>` first.
+2. **Slow path** (full revert): revert the bad commit on `dev` and promote
+   it to `main` through the normal PR; Coolify deploys the revert.
 
-To roll back the frontend, change `VITE_API_URL` in Vercel back to the previous value and redeploy.
+To roll back the frontend, promote the previous deployment in Vercel.
 
 ## Deploys are triggered by
 
-Both `web` and `worker` are wired to `raphaelfh/prumo` branch `main`,
-root directory `/backend`, builder `DOCKERFILE`, with **Wait for CI**
-enabled (Railway holds the deploy until the GitHub Actions workflow
-on the head commit passes).
+`prumo-web` and `prumo-worker` are wired to `raphaelfh/prumo` branch `main`
+through Coolify's GitHub App, base directory `/backend`, build pack
+Dockerfile.
 
-- Push to `main` → Railway queues a deploy for both services. If CI
-  passes, deploys promote. If CI fails or is skipped, the Railway
-  deployment is marked `SKIPPED` and stays pending until a newer
-  commit's CI goes green.
+- Push to `main` → Coolify builds and rolls out both applications, each from
+  its own build of the same Dockerfile. Coolify does **not** wait for CI: the
+  required checks on the `dev → main` promotion PR are the gate, so never
+  push to `main` outside a promotion (bash-guard denies it).
 - Push to `dev` → no deploy. Use `dev` for staging-style integration;
   promote `dev → main` to ship — via a merge-commit PR, not a
   fast-forward push (`main` carries merge commits dev lacks). See the
   deploy-release skill for the commands + runbook.
+- A missed webhook (no deployment for the main SHA) is recovered by a manual
+  **Deploy** of both applications in Coolify; it builds the current `main`
+  head, so it ships only what was already promoted.
 
 ### What CI gates the deploy on
 
-The Railway "Wait for CI" gate waits for every required check on the
-head commit. As of 2026-05-24 the relevant ones for backend code:
+The required checks on the `dev → main` promotion PR are the only gate:
+Coolify deploys whatever lands on `main`. As of 2026-05-24 the relevant ones
+for backend code:
 
 1. **`backend-lint`** — ruff lint + ruff format (mypy advisory).
 2. **`fitness`** — every fitness function in `scripts/fitness/`
@@ -312,11 +362,7 @@ head commit. As of 2026-05-24 the relevant ones for backend code:
 5. **`backend-build`** — Docker image build.
 6. **`frontend-lint`** + **`frontend-build`** + the ephemeral-stack
    frontend E2E (self-provisioned, no secrets needed).
-7. **`docs-ci`** — runs on the same push. Railway's "Wait for CI" waits
-   for the **full** Actions suite (CI **and** `docs-ci`), so a `docs-ci`
-   that reports SKIPPED (path-filtered) can wedge the deploy — recover
-   per the deploy-release skill (push a newer commit, or `railway up`
-   from the repo root).
+7. **`docs-ci`** — path-filtered; it gates the PR when docs change.
 
 After a deploy, the `post-deploy-smoke` workflow (push-triggered +
 every 6 hours) verifies prod in three layers; a failure emails the
@@ -324,19 +370,14 @@ owner. It is the deploy safety net, not a gate.
 
 1. **Reachability** — `/health`, the frontend root, and a CORS preflight
    from the prod origin.
-2. **Deployed commit** — `/health.commit` (the Railway-injected
-   `RAILWAY_GIT_COMMIT_SHA`, surfaced via `settings`) must equal the
-   promoted SHA. This is what actually catches the wedge described above:
-   reachability alone cannot tell a fresh deploy from one stuck on an
-   older commit. **Only the 6-hourly scheduled run fails on a mismatch.**
-   A push-triggered run polls (up to ~10 min) and then merely warns,
-   because it races the deploy it is verifying and a red check on the SHA
-   makes Railway's wait-for-CI skip that deploy — which deadlocks prod
-   into permanent staleness. That deadlock was observed on `a4dc5b65`
-   (2026-08-24): the first promotion after the assertion went live had its
-   deploy SKIPPED on both services, leaving prod on the previous build.
-   The scheduled run is not attached to a commit, so it can page without
-   wedging anything.
+2. **Deployed commit** — `/health.commit` (Coolify's `SOURCE_COMMIT`,
+   surfaced via `settings`) must equal the promoted SHA. Reachability alone
+   cannot tell a fresh deploy from one stuck on an older commit or a failed
+   build. **Only the 6-hourly scheduled run fails on a mismatch.** A
+   push-triggered run polls (up to ~10 min) and then merely warns, because
+   it races the build it is verifying; the scheduled run checks a settled
+   deploy.
+
 There is deliberately **no credentialed probe and no Playwright suite
 pointed at prod**. An authenticated probe was built and then removed
 (2026-08-23): beyond layer 1 it only adds the narrow delta between "JWKS
@@ -351,39 +392,3 @@ provisioned — so it silently self-skipped to a green "pass".
 Override the env-driven thresholds via repo variables
 (`PRUMO_DIFF_COVERAGE_MIN`, `PRUMO_CRITICAL_COVERAGE_MIN`) when
 deliberately experimenting; do not edit `ci.yml` for one-off tweaks.
-
-### Manual deploy fallback
-
-Two distinct scenarios, with different (and unequal) escape hatches:
-
-**Deploy wedged but CI green** (QUEUED for no reason, SKIPPED-SHA
-wait-for-CI wedge): re-trigger the git-linked deploy with an empty
-commit merged into `main` **via PR** — `main` is protected, so a direct
-push is not possible. Verified 2026-08-18 (#635):
-
-```bash
-git switch -c chore/redeploy-nudge origin/main
-git commit --allow-empty -m "chore(deploy): re-trigger the Railway deploy for <sha>"
-gh pr create --base main --title "chore(deploy): re-trigger the Railway deploy" --body "..."
-```
-
-**Shipping past a red CI** (e.g. coverage temporarily dips while a
-spec is in flight): the documented CLI path is
-
-```bash
-# run from the repo ROOT — the older `backend --path-as-root` form is
-# retired and bash-guard-blocked
-railway up --service web --detach -m "<msg>"
-railway up --service worker --detach -m "<msg>"
-```
-
-but it is **unverified today**: on 2026-08-18 it failed with
-"Deployment does not have an associated build" (there is no root
-Dockerfile; `dockerfilePath` is relative to `rootDirectory=/backend`),
-and `railway up backend` fails with "prefix not found". Until a working
-invocation is re-verified against the live project, assume there is no
-CLI path past a red CI — fix CI or use the dashboard's Redeploy (which
-only redeploys the last built image, i.e. old code).
-
-Use these sparingly. Manual deploys bypass the gates; if you are
-shipping past a red CI, document why in the deploy message.

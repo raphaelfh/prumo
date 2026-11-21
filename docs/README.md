@@ -31,7 +31,7 @@ tutorial lives here.*
 
 | Reference | What's inside |
 | --- | --- |
-| [Deployment](./reference/deployment.md) | Topology, env vars, rollback, Railway specifics |
+| [Deployment](./reference/deployment.md) | Topology, env vars, rollback, Coolify specifics |
 | [Migrations](./reference/migrations.md) | Alembic vs Supabase split, squash recipe, RLS conventions |
 | [Constitution](./reference/constitution.md) | Non-negotiable architectural principles (layering, typed everything, split migration ownership) |
 | [Extraction + HITL architecture](./reference/extraction-hitl-architecture.md) | Canonical schema, run lifecycle, RLS posture |
