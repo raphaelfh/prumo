@@ -181,7 +181,7 @@ def test_nested_timing_survives_a_half_filled_mixed_shape() -> None:
 def test_a_hybrid_timing_keeps_BOTH_the_flat_and_the_nested_text() -> None:
     """Flat and nested keys can coexist on one row, and both are real input.
 
-    Migration 0063 flattens the slot, but Railway and Vercel deploy
+    Migration 0063 flattens the slot, but the backend and Vercel deploy
     independently: a browser still holding the pre-0063 bundle edits one timing
     box, ``updatePICOTSField`` SPREADS the parent, and the nested key lands back
     beside the migrated flat one. Treating the shapes as either/or drops

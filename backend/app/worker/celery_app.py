@@ -44,9 +44,11 @@ celery_app.conf.update(
     # Retry settings
     task_default_retry_delay=60,  # 1 minute between retries
     task_max_retries=3,
-    # Concurrency. Railway bills resident RAM, and every prefork child imports
-    # the whole app, so idle children cost money around the clock. Tasks are
-    # I/O-bound (LLM/HTTP) and rate-limited to 10/m, so 2 children suffice.
+    # Concurrency. The ceiling is the Supabase session pooler's 15-client cap:
+    # web holds up to 8 (DB_POOL_SIZE 5 + DB_MAX_OVERFLOW 3) and each child up
+    # to 2, so 2 children leave 3 for migrations and admin sessions
+    # (docs/reference/deployment.md). Tasks are I/O-bound (LLM/HTTP) and
+    # rate-limited to 10/m, so 2 children suffice; redo that sum before raising.
     worker_concurrency=2,
     # Recycle a child once it exceeds ~400 MB (KiB; checked after each task)
     # so memory grown during a heavy PDF/LLM task is returned.
@@ -64,7 +66,7 @@ celery_app.conf.update(
     # ``include=`` MUST appear here explicitly — the registry test in
     # ``tests/unit/test_celery_app_task_registry.py`` enforces this so
     # new task modules cannot silently fall back to the default
-    # ``celery`` queue (which the Railway worker may or may not be
+    # ``celery`` queue (which the deployed worker may or may not be
     # consuming). The drift guard
     # ``tests/unit/test_celery_routes_drift.py`` then asserts every
     # queue named here is in the worker ``--queues=...`` list.
@@ -78,7 +80,7 @@ celery_app.conf.update(
         # so a long-running extraction can't starve a user-initiated export.
         "app.worker.tasks.extraction_export_tasks.*": {"queue": "exports"},
         # Article exports (CSV/RIS/RDF + ZIP) — explicit `celery` queue so
-        # the drift guard has a clean baseline. The Railway worker
+        # the drift guard has a clean baseline. The deployed worker
         # consumes `celery` alongside the three named queues.
         "app.worker.tasks.export_tasks.*": {"queue": "celery"},
         # Feedback forwarding to Linear — low-volume, no special resource

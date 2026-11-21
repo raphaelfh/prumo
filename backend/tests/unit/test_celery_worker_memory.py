@@ -1,8 +1,8 @@
 """Guards for the worker's resident-memory footprint.
 
-Railway bills RAM held, not RAM used: every prefork child imports the whole
-app, so idle children are paid for around the clock. Keep the pool small and
-recycle a child that grew during a heavy (PDF/LLM) task.
+Every prefork child imports the whole app and holds Supabase pooler clients
+(the pooler caps the deployment at 15). Keep the pool small and recycle a child
+that grew during a heavy (PDF/LLM) task.
 """
 
 from __future__ import annotations
