@@ -90,7 +90,7 @@ every line, rewrite the docstring, split into one-change-per-file.
 - `revision` matches the `00NN_<summary>` filename prefix, and **must be
   ≤ 32 chars** (`alembic_version.version_num` is `character varying(32)`; an
   over-long id fails at *apply* time — breaking CI Backend Tests and the
-  Railway `alembic upgrade head` deploy, and `--sql` offline does not
+  `alembic upgrade head` on deploy, and `--sql` offline does not
   catch it). `.claude/rules/backend.md` enforces this.
 - `down_revision` points at the previous head — never branch.
 

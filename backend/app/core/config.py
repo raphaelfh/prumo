@@ -141,11 +141,13 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.MCP_ALLOWED_ORIGINS.split(",") if o.strip()]
 
     # =================== DEPLOY IDENTITY ===================
-    # Injected by Railway on every deploy. Surfaced by /health so the
-    # post-deploy smoke can prove WHICH build is live — reachability alone
-    # cannot distinguish a fresh deploy from one stuck on an older SHA.
-    # ``None`` outside Railway (local dev, tests, CI).
-    RAILWAY_GIT_COMMIT_SHA: str | None = None
+    # The deployed git commit, injected by Coolify as ``SOURCE_COMMIT`` when
+    # "Include Source Commit in Build" is on (the Dockerfile copies the build
+    # arg into the image env). Surfaced by /health so the post-deploy smoke
+    # can prove WHICH build is live — reachability alone cannot distinguish a
+    # fresh deploy from one stuck on an older SHA.
+    # ``None`` off-platform (local dev, tests, CI).
+    SOURCE_COMMIT: str | None = None
 
     # =================== SUPABASE ===================
     SUPABASE_URL: str
@@ -208,8 +210,8 @@ class Settings(BaseSettings):
     # a provider whose key is empty is BYOK-only in that deployment.
     # The default must stay in app.llm.catalog.CATALOG — a default that falls
     # off the roster reads as "retired" and blocks every run that never chose
-    # an engine. No Railway env override exists for it: prod follows this code
-    # default at deploy time.
+    # an engine. No production env override exists for it: prod follows this
+    # code default at deploy time.
     LLM_PROVIDER: str = "openai"
     LLM_DEFAULT_MODEL: str = "gpt-5.6-luna"
     LLM_TIMEOUT_SECONDS: float = 120.0
@@ -247,9 +249,10 @@ class Settings(BaseSettings):
     # processes and restarts. Unset -> per-process ``memory://``.
     RATE_LIMIT_STORAGE_URI: str | None = None
     # Request header carrying the caller's IP, set by the hosting edge proxy
-    # (Railway: ``X-Real-IP``). Per-IP buckets key on it only when set; unset
-    # keys on the TCP peer. Trust assumption: the edge overwrites any copy the
-    # caller sends, and no path bypasses the edge (docs/reference/deployment.md).
+    # (Coolify's Traefik: ``X-Real-Ip``). Per-IP buckets key on it only when
+    # set; unset keys on the TCP peer. Trust assumption: the edge overwrites any
+    # copy the caller sends, and no path bypasses the edge
+    # (docs/reference/deployment.md).
     TRUSTED_CLIENT_IP_HEADER: str | None = None
 
     # =================== REDIS ===================

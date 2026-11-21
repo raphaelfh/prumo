@@ -36,10 +36,10 @@ prumo skills defer generic process to it.
 
 ## Stack
 
-FastAPI + SQLAlchemy 2 async + Alembic + Celery/Redis on **Railway**;
-Postgres/Auth/Storage on **Supabase**; React 19 + Vite + TanStack Query +
-Zustand + shadcn on **Vercel**. In-house i18n at `frontend/lib/copy/` (no i18n
-lib).
+FastAPI + SQLAlchemy 2 async + Alembic + Celery/Redis on a **Coolify VPS**
+(Hostinger); Postgres/Auth/Storage on **Supabase** (`sa-east-1`); React 19 +
+Vite + TanStack Query + Zustand + shadcn on **Vercel**. In-house i18n at
+`frontend/lib/copy/` (no i18n lib).
 
 ## Layout gotchas
 

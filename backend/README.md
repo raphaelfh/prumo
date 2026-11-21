@@ -59,7 +59,7 @@ backend/
 ├── alembic/                # Migration env
 │   └── versions/           # Migrations (active) + versions/archive/
 ├── tests/                  # pytest (integration + unit + e2e contract)
-├── Dockerfile              # Used by Railway for both web and worker
+├── Dockerfile              # Built by Coolify for both web and worker
 └── pyproject.toml          # Dependencies (uv)
 ```
 
@@ -97,7 +97,7 @@ fast path is `make db-fresh` from the repo root.
 
 - [Migration strategy](../docs/reference/migrations.md) — Alembic owns `public`, Supabase CLI owns `auth`/`storage`. Hand-write migrations, one logical change each, RLS on every new table.
 - [Extraction + HITL architecture](../docs/reference/extraction-hitl-architecture.md) — schema, run lifecycle, RLS posture.
-- [Deployment](../docs/reference/deployment.md) — Railway topology, env vars, gunicorn timeouts, rollback.
+- [Deployment](../docs/reference/deployment.md) — Coolify topology, env vars, gunicorn timeouts, rollback.
 - [Extraction E2E observability](../docs/how-to/observability-extraction.md) — `trace_id`, `run_id`, `db_duration_ms`.
 - [ADRs](../docs/adr/) — recorded architecture decisions.
 - [Constitution](../.specify/memory/constitution.md) — non-negotiable architectural principles (layered architecture, DI first, split migration ownership, security by design, typed everything).
@@ -109,7 +109,7 @@ docker build -t prumo-backend .
 docker run -p 8000:8000 --env-file .env prumo-backend
 ```
 
-(The image tag `prumo-backend` is local-only — Railway builds the same
+(The image tag `prumo-backend` is local-only — Coolify builds the same
 Dockerfile and tags it internally.)
 
 ## License

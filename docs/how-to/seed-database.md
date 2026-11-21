@@ -92,7 +92,7 @@ cd backend && uv run python -m app.seed                         # directly
 
 ### Default — the deploy converges the seed (adopted since #715)
 
-The Railway `web` service's Dockerfile `CMD` runs the seed on every boot,
+The `prumo-web` service's Dockerfile `CMD` runs the seed on every boot,
 between Alembic and gunicorn:
 
 ```dockerfile
@@ -101,9 +101,10 @@ CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && gunicorn -k uvic
 
 Because `seed.py` is idempotent, every deploy converges the global template
 catalogue with no manual step — a template merged to `main` is installed by
-that same deploy. A seed failure aborts the boot: Railway marks the deploy
-failed and keeps the previous build live. The `worker` service overrides the
-`CMD` (Celery) and runs neither Alembic nor the seed.
+that same deploy. A seed failure aborts the boot: the container exits before
+gunicorn binds, and the deploy fails loudly (`docs/reference/deployment.md`
+§ Migrations). The `prumo-worker` service overrides the `CMD` (Celery) and runs
+neither Alembic nor the seed.
 
 ### Escape hatch — one-off manual run
 

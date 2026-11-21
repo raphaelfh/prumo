@@ -1,18 +1,17 @@
 ---
-description: Pre-deploy readiness gate — runs verification-before-completion locally then probes Vercel, Supabase and Railway. Read-only.
+description: Pre-deploy readiness gate — runs verification-before-completion locally then probes Vercel, Supabase and the Coolify backend. Read-only.
 argument-hint: "[--local-only] [--remote-only]"
 allowed-tools:
   - Task
   - Read
   - Bash(curl:*)
   - Bash(vercel:*)
-  - Bash(railway:*)
   - Bash(git rev-parse:*)
   - mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__get_advisors
   - mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__query_logs
   - mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__list_migrations
-  - mcp__railway__list_deployments
-  - mcp__railway__get_logs
+  - mcp__coolify__search_resources
+  - mcp__coolify__list_deployments
 model: sonnet
 ---
 
@@ -51,12 +50,13 @@ headless / CI / cron run — the historical reason preflight kept RED-halting):
   Supabase MCP server of its own. When neither is available the advisor gate
   degrades on DB-surface impact (WARN if the promotion touches no
   migrations/models, UNKNOWN if it does) instead of hard-blocking every deploy.
-- **Railway** (worker/Redis) → the `railway` CLI (`railway login`, repo linked
-  to prumo/production). MCP is fallback only.
+- **Coolify** (web/worker/Redis on the VPS) → the `coolify` MCP server
+  (API-token auth, so it works headless; read-only tools only here). The web
+  service's `/health` is a plain `curl` and needs no credential.
 - **Vercel** → the `vercel` CLI (`vercel login`).
 
-So a fully headless preflight needs, once: `SUPABASE_ACCESS_TOKEN` set, and the
-`railway` + `vercel` CLIs logged in. Missing only the Supabase PAT still yields a
+So a fully headless preflight needs, once: `SUPABASE_ACCESS_TOKEN` set, the
+`coolify` MCP configured, and the `vercel` CLI logged in. Missing only the Supabase PAT still yields a
 usable gate for non-DB promotions (see the remote-supabase degradation).
 
 ---
@@ -86,7 +86,7 @@ STOP:
 Regenerate the Supabase advisor baseline for prumo. Steps:
 1. Resolve advisors headlessly-first (same credential order as the
    remote-supabase gate). Project ref REF = `project_id` in
-   <PROJECT_ROOT>/supabase/config.toml (fallback gdfslcfeobjdxihqtcsk).
+   <PROJECT_ROOT>/supabase/config.toml (fallback pwtaciozopymgcwimxxh).
    - If env SUPABASE_ACCESS_TOKEN is set: curl the Management API
        curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
          "https://api.supabase.com/v1/projects/$REF/advisors/security"
@@ -231,7 +231,7 @@ This gate MUST work headlessly (non-interactive / CI / cron), so it resolves a
 Supabase credential in priority order and never hard-blocks merely because an
 interactive OAuth MCP is unavailable. Resolve the project ref first: read
 `project_id` from <PROJECT_ROOT>/supabase/config.toml (fallback:
-gdfslcfeobjdxihqtcsk); call it REF.
+pwtaciozopymgcwimxxh); call it REF.
 
 CREDENTIAL RESOLUTION (stop at the first that works):
 
@@ -293,7 +293,7 @@ When a credential IS available (PATH 1 or 2), run three checks:
      Mismatch → FAIL ("auth/storage migration drift"); match → PASS. If the
      migrations source is unavailable on the chosen path, note "migrations not
      checked on this path" (does not block). NOTE: Alembic state is checked
-     indirectly via the Railway gate (its Dockerfile runs `alembic upgrade head`).
+     indirectly via the remote-deploys gate (the web Dockerfile runs `alembic upgrade head`).
 
   C. Recent errors (last 5 min, level=error / status>=500). MCP query_logs, or
      the Management API logs endpoint. Any errors → WARN; none → PASS. If logs
@@ -320,7 +320,7 @@ evidence: |
 ```text
 You are the `remote-deploys` preflight gate for prumo. READ-ONLY.
 
-Four checks across Vercel and Railway (web + worker + Redis):
+Four checks across Vercel and the Coolify backend (web + worker + Redis):
 
   A. Vercel — latest deployment.
      Run: vercel ls --prod --yes 2>&1 | head -20
@@ -337,31 +337,27 @@ Four checks across Vercel and Railway (web + worker + Redis):
      Any HTTP 5xx in recent output → WARN. Clean → PASS.
      CLI unavailable → TOOL-MISSING.
 
-  C. Railway — backend health (web service).
-     Run: curl -fsS --max-time 10 -o /dev/null -w "%{http_code}" \
-            https://web-production-48b398.up.railway.app/health
-     - HTTP 200 → PASS
+  C. Coolify — backend health (prumo-web).
+     Run: curl -fsS --max-time 10 https://prumo-api.healthnumbers.com.br/health
+     - HTTP 200 with every `checks` flag (jwks_ready, db_ready, storage_ready)
+       true → PASS
+     - HTTP 200 with a false `checks` flag → WARN (name the flag)
      - Anything else, or curl exit non-zero → FAIL
 
-  D. Railway — worker + Redis health (via the authenticated Railway CLI —
-     headless, no MCP; the repo is linked to the prumo/production environment).
-     The worker has no public endpoint, so read its logs:
-       1. `railway status 2>&1 | head`  — confirm Project "prumo" +
-          Environment "production" (if it errors "Unauthorized" / "not linked",
-          the CLI is unusable — fall back to the MCP below).
-       2. `railway logs --service worker 2>&1 | head -80`  — in the most recent
-          boot block look for:
-            - "celery@... ready."               → worker accepting jobs
-            - "Connected to redis://" (or no redis error) → Redis reachable
-            - "Starting Container"               → a boot occurred
-          celery-ready present AND no redis error → PASS. Boot present but the
-          celery-ready marker missing → WARN. "[ERROR]" / "ConnectionError" /
-          "Connection refused" in the recent block → FAIL.
-     If the Railway CLI is unavailable/unauthenticated, fall back to
-     `mcp__railway__get_logs` (service_id 7acd0799-9685-4445-971a-707bc1b9c41f,
-     limit=40) with the same marker logic; if neither works, report the worker
-     sub-check TOOL-MISSING (WARN-tier — do NOT fabricate a PASS/FAIL). Check C
-     (curl /health) is independent of this and MUST still run regardless.
+  D. Coolify — worker + Redis + last deploy (via the `coolify` MCP; read-only).
+     ToolSearch "select:mcp__coolify__search_resources,mcp__coolify__list_deployments"
+     (max_results 2), then:
+       1. `search_resources` query="prumo" → the status of `prumo-web`,
+          `prumo-worker` and `prumo-redis`. `running:*` for the worker (it has
+          no healthcheck, so `running:unknown` is normal) and
+          `running:healthy` for Redis → PASS. `restarting` or `exited` on any
+          of the three → FAIL. Any other value → WARN.
+       2. `list_deployments` for the prumo-web application UUID from step 1 →
+          the newest deployment. `failed` → FAIL; `in_progress`/`queued` →
+          WARN ("deploy in flight"); `finished` → PASS.
+     If the `coolify` MCP is unavailable, report this sub-check TOOL-MISSING
+     (WARN-tier — do NOT fabricate a PASS/FAIL). Check C (curl /health) is
+     independent of this and MUST still run regardless.
 
 Aggregate: worst status across A, B, C, D wins (a TOOL-MISSING sub-check is
 WARN-tier, never RED on its own).
@@ -370,12 +366,12 @@ Return ONLY the following YAML block:
 
 gate: remote-deploys
 status: PASS | WARN | FAIL | UNKNOWN
-summary: <e.g. "Vercel READY 2h ago / no 5xx / Railway /health 200 / worker+Redis ready">
+summary: <e.g. "Vercel READY 2h ago / no 5xx / /health 200 all checks / worker+Redis running">
 evidence: |
   Vercel: <deployment id, readyState, age>
   Vercel logs: <5xx count or "clean">
-  Railway web: <status code from /health>
-  Railway worker: <last deploy status, "redis ready" / "redis err">
+  Coolify web: <status code + checks from /health>
+  Coolify worker/Redis: <status of each, newest prumo-web deployment status>
 ```
 
 ---

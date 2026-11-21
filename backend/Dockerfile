@@ -91,11 +91,16 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Health check — read the same ${PORT:-8000} the CMD binds to so the
-# container is correctly marked healthy on Railway (where PORT is
-# injected) as well as locally (where it falls back to 8000).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import httpx, os; httpx.get(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
+# The deployed commit, surfaced by /health. Coolify passes SOURCE_COMMIT as a
+# build arg when "Include Source Commit in Build" is on. Declared last so the
+# per-commit value only invalidates this layer, not the dependency layers.
+ARG SOURCE_COMMIT
+ENV SOURCE_COMMIT=${SOURCE_COMMIT}
+
+# No HEALTHCHECK: web and worker share this image, and Celery serves no
+# HTTP, so an image-level probe marks every worker container unhealthy and
+# Coolify rolls the deploy back. Probe GET /health on the web service from the
+# platform instead; the worker gets no probe.
 
 # Run migrations, converge the seed catalogue, then start the application.
 #
@@ -106,9 +111,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 # backfill is fill-if-null), while `seed_probast_ai` CONVERGES — it updates
 # the row and replaces its children under deterministic ids every boot, which
 # is what lets a corrected template spec reach a database that already has it.
-# A seed failure aborts the boot LOUDLY: Railway
-# marks the deploy failed and keeps the previous build live, which is the
-# correct failure mode — never serve code whose catalogue is missing.
+# A seed failure aborts the boot LOUDLY: the container exits before gunicorn
+# binds, which is the correct failure mode — never serve code whose catalogue
+# is missing (docs/reference/deployment.md § Migrations).
 # The worker overrides this CMD (Celery start command), so the seed runs
 # exactly once per deploy, after Alembic and before gunicorn.
 CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app"]

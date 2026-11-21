@@ -31,7 +31,7 @@ reviewers and a recorded consensus step. 🔬
 Choose the setup that works best for you:
 
 - **Live instance**
-  The hosted deployment runs at [prumoai.vercel.app](https://prumoai.vercel.app) — Vercel for the frontend, Railway for the API and workers, Supabase for Postgres, Auth, and Storage.
+  The hosted deployment runs at [prumoai.vercel.app](https://prumoai.vercel.app) — Vercel for the frontend, a Coolify VPS for the API and workers, Supabase for Postgres, Auth, and Storage.
 
 - **Run it locally**
   Full control over your data: one `make setup`, one `make start`, and the whole stack (Supabase, FastAPI, Celery worker, Vite) comes up together.
@@ -161,7 +161,6 @@ prumo/
 ├── supabase/migrations/     # Auth + Storage migrations only
 ├── docs/                    # Documentation (Diátaxis)
 ├── scripts/                 # Automation scripts
-├── railway.toml             # Backend IaC (Railway)
 ├── vercel.json              # Frontend project config
 └── docker-compose.yml       # Local-only Postgres helper
 ```
@@ -171,10 +170,10 @@ prumo/
 | Service | Platform |
 | --- | --- |
 | Frontend | Vercel — auto-deploys `main` |
-| Backend `web` (FastAPI + gunicorn) | Railway, Hobby plan, US East |
-| Backend `worker` (Celery) | Railway, Hobby plan, US East |
-| Redis | Railway managed plugin |
-| Postgres + Auth + Storage | Supabase |
+| Backend `prumo-web` (FastAPI + gunicorn) | Coolify on a Hostinger VPS (Brazil), builds `main` |
+| Backend `prumo-worker` (Celery) | Coolify, same VPS and image |
+| Redis | Coolify `prumo-redis` (internal network) |
+| Postgres + Auth + Storage | Supabase, `sa-east-1` |
 
 See [`docs/reference/deployment.md`](docs/reference/deployment.md) for the
 topology diagram, the full environment-variable reference, deploy gates,
