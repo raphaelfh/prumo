@@ -167,8 +167,8 @@ password": `prumo-web` and `prumo-worker` both hold the current one.
 
 | Key | Purpose | Used by |
 | --- | --- | --- |
-| `LINEAR_API_KEY` | Linear personal/workspace API key (SECRET) — used to create feedback issues via the Linear GraphQL API | `web`, `worker` |
-| `LINEAR_TEAM_ID` | Linear **Feedback** team UUID (key `FEE`) — in-app feedback routes here; the Prumo team is GitHub-sync/automation only, NOT the feedback target. Must be the team **UUID, not the `FEE` slug** (`issueCreate(teamId:)` requires the UUID; the slug fails). Validated at boot in `config.py`; the live value lives in the Coolify shared variable (source of truth). | `web`, `worker` |
+| `LINEAR_API_KEY` | Linear personal/workspace API key (SECRET) — used to create feedback issues via the Linear GraphQL API | `worker` (only `feedback_tasks` reads them) |
+| `LINEAR_TEAM_ID` | Linear **Feedback** team UUID (key `FEE`) — in-app feedback routes here; the Prumo team is GitHub-sync/automation only, NOT the feedback target. Must be the team **UUID, not the `FEE` slug** (`issueCreate(teamId:)` requires the UUID; the slug fails). Validated at boot in `config.py`; the live value lives in the Coolify shared variable (source of truth). | `worker` (only `feedback_tasks` reads them) |
 | `FEEDBACK_MEDIA_BUCKET` | Supabase Storage bucket for feedback screenshots/clips (default `feedback-media`) | `worker` |
 
 ### Vercel (frontend) — only `VITE_*` reaches the browser
