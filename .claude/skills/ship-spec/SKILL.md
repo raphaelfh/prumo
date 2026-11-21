@@ -21,7 +21,6 @@ allowed-tools:
   - Bash(uv run*)
   - Bash(cd backend*)
   - Bash(curl:*)
-  - Bash(railway:*)
   - mcp__Claude_Browser__preview_start
   - mcp__Claude_Browser__computer
   - mcp__Claude_Browser__read_page
@@ -301,20 +300,20 @@ STOP. The next phase is not for you; the hook denies it regardless.
    SHA, so the Stop hook sees `PENDING` and refuses to end the turn: wait in
    the foreground with `gh pr checks <n> --watch --fail-fast --interval 30`,
    then re-run `bash scripts/ship.sh ci`. `deploy-release` is the source of truth for
-   Railway's Wait-for-CI, the SKIPPED-SHA wedge and its recovery.
+   the Coolify deploy that follows and its recovery.
 
 ## `verify` — in prod, or roll back
 
 `bash scripts/ship.sh phase verify`, then follow `deploy-release § Verify prod`
 (read `.claude/skills/deploy-release/SKILL.md`): `/health.commit` equals the new
-main SHA and differs from the one captured before promoting, both Railway
-services SUCCESS, the frontend proven by content, the new route in
+main SHA and differs from the one captured before promoting, both Coolify
+deployments (`prumo-web`, `prumo-worker`) finished, the frontend proven by content, the new route in
 `/api/v1/openapi.json`. A green `post-deploy-smoke` proves reachability only;
 never point a suite at prod.
 
 **Red anywhere here ⇒ roll back first, report second**, per
-`deploy-release § Rollback`. The hook allows `railway redeploy` without a
-preflight for this; after a migration ran, a redeploy crash-loops and the
+`deploy-release § Rollback` (a Coolify rollback to the previous image, which
+no hook gates); after a migration ran, the older image crash-loops and the
 rollback is a roll-forward or a hand-run `alembic downgrade`.
 
 ## Multi-slice specs
@@ -368,7 +367,7 @@ Run `bash scripts/ship.sh facts` and capture its output, **then**
 `done` ends it. End with one block:
 
 - `## RESULT: SHIPPED TO DEV` — PR URL, CI state, auto-merge status; or
-- `## RESULT: SHIPPED TO PROD` — main SHA, Railway/Vercel state, `/health` code,
+- `## RESULT: SHIPPED TO PROD` — main SHA, Coolify/Vercel state, `/health` code,
   smoke run URL; or
 - `## RESULT: HALTED AT <phase>` — the red/unknown evidence verbatim and exactly
   what to fix to resume; or

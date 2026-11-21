@@ -24,7 +24,7 @@ before writing code. This file is the always-true core.
 - App schema = Alembic only. From `backend/`:
   `alembic revision --autogenerate -m "..."` then `alembic upgrade head`.
 - Revision ids must be **≤ 32 chars** (`alembic_version.version_num`
-  is varchar(32); overflow breaks CI and the Railway deploy).
+  is varchar(32); overflow breaks CI and the Coolify deploy).
 - `auth`/`storage` schemas = Supabase CLI (`supabase migration new`). A
   `main` push deploys them through the Supabase GitHub integration; its
   `Supabase Preview` check is not a required context, so read it after a

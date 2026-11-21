@@ -5,7 +5,7 @@ description: "Use when writing or changing prumo backend code under `backend/` o
 
 # Backend Development (prumo)
 
-FastAPI web service + Celery worker + Redis on Railway, one Postgres on Supabase. The API and the worker connect as a privileged role and **bypass RLS**; the browser reads through Supabase with RLS. Alembic owns the app schema; the Supabase CLI owns `auth` and `storage`. The always-true rules are in `.claude/rules/backend.md` (layering, ownership guards, dead code): this skill adds how to write the code.
+FastAPI web service + Celery worker + Redis on a Coolify VPS, one Postgres on Supabase. The API and the worker connect as a privileged role and **bypass RLS**; the browser reads through Supabase with RLS. Alembic owns the app schema; the Supabase CLI owns `auth` and `storage`. The always-true rules are in `.claude/rules/backend.md` (layering, ownership guards, dead code): this skill adds how to write the code.
 
 ## Layout
 
@@ -89,7 +89,7 @@ uv run alembic upgrade head && uv run alembic check
 - Enum value: `ALTER TYPE … ADD VALUE` in a migration **and** the `POSTGRESQL_ENUM_VALUES` entry.
 - **Function grants.** Supabase's default ACL gives every new `public` function a direct `anon` EXECUTE grant that `REVOKE … FROM PUBLIC` leaves in place, so each function migration writes both `REVOKE EXECUTE … FROM PUBLIC` and `REVOKE EXECUTE … FROM anon` (precedent `0060_revoke_anon_entity_key.py`); `REVOKE … FROM <role>` alone is a no-op while PUBLIC still holds it. CI's plain Postgres cannot see this class: `test_no_security_definer_function_is_anon_executable` means something only against local Supabase, and prod advisors confirm a real exposure.
 - An RLS policy calling a SECURITY DEFINER function the current role cannot EXECUTE segfaults Supabase's Postgres (the cluster restarts). Revoke that role's table access instead of granting `anon` EXECUTE, which PostgREST publishes at `/rest/v1/rpc`. `GRANT anon, authenticated, service_role TO CURRENT_USER` segfaults it too (supautils).
-- Railway runs `alembic upgrade head` at boot, so a migration that raises blocks every later deploy. A data migration that deletes or updates rows guards itself in SQL (`AND NOT EXISTS …`) and stays idempotent; see `0039_absent_reason_backfill.py`.
+- `prumo-web` runs `alembic upgrade head` at boot, so a migration that raises blocks every later deploy. A data migration that deletes or updates rows guards itself in SQL (`AND NOT EXISTS …`) and stays idempotent; see `0039_absent_reason_backfill.py`.
 - CI runs `upgrade head` and `alembic check`, never a downgrade. When a downgrade matters, add a round-trip case to `backend/tests/integration/test_migration_roundtrip.py` and bump its head pin.
 - Local reset: `make db-fresh` (migrate + seed), not `make reset-db`.
 
@@ -107,7 +107,7 @@ def run_section_extraction_task(self, payload_json: dict, user_id: str, trace_id
 ```
 
 - Never `asyncio.run` or the app-wide engine inside a task: a pooled engine reused across per-task loops raises "attached to a different loop". Build Supabase and DB clients inside the coroutine.
-- A new task module is registered in three places: `include=` and `task_routes` in `celery_app.py`, and its queue in the worker's `--queues` in `railway.toml`. `tests/unit/test_celery_app_task_registry.py` and `test_celery_routes_drift.py` guard them. A worker started without `--queues` consumes only `celery`, so extractions, imports and exports never run: `cd backend && uv run celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery`.
+- A new task module is registered in three places: `include=` and `task_routes` in `celery_app.py`, and its queue in the worker's `--queues`, documented in `docs/reference/deployment.md` § Services and set on the Coolify `prumo-worker` entrypoint. `tests/unit/test_celery_app_task_registry.py` and `test_celery_routes_drift.py` guard them. A worker started without `--queues` consumes only `celery`, so extractions, imports and exports never run: `cd backend && uv run celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery`.
 - Arguments are primitives (uuid strings, dicts), never ORM objects. Tasks are idempotent: a retry re-enters with the same payload. `task_acks_late` is global, so each task's hard `time_limit` stays under the broker `visibility_timeout` (3600 s).
 - `.delay()` is synchronous; a failed enqueue answers 503 `SERVICE_UNAVAILABLE` (`endpoints/section_extraction.py`).
 
