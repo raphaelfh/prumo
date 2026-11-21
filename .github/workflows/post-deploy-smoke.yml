@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
 
 env:
-  API_BASE: https://web-production-48b398.up.railway.app
+  API_BASE: https://prumo-api.healthnumbers.com.br
   FRONTEND_BASE: https://prumoai.vercel.app
 
 jobs:

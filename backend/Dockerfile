@@ -91,11 +91,10 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Health check — read the same ${PORT:-8000} the CMD binds to so the
-# container is correctly marked healthy on Railway (where PORT is
-# injected) as well as locally (where it falls back to 8000).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import httpx, os; httpx.get(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
+# No HEALTHCHECK: web and worker share this image, and Celery serves no
+# HTTP, so an image-level probe marks every worker container unhealthy and
+# Coolify rolls the deploy back. Probe GET /health on the web service from the
+# platform instead; the worker gets no probe.
 
 # Run migrations, converge the seed catalogue, then start the application.
 #
