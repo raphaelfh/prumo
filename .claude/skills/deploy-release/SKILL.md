@@ -47,7 +47,7 @@ frontend `https://prumoai.vercel.app`. Topology, env vars and the reasons:
    reads. Vercel and Coolify deploy independently and cached bundles
    outlive the deploy, so the frontend stops reading it first (deploy
    Vercel before the backend, or ship the frontend change a release earlier).
-4. Coolify (GitHub App) builds `backend/Dockerfile` on the main push,
+4. Coolify (repository webhook) builds `backend/Dockerfile` on the main push,
    once per application: **two** deployments, `prumo-web` and
    `prumo-worker`, on the VPS. It does not wait for CI — the required
    checks already gated the promotion PR. The web container runs
