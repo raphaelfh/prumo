@@ -313,6 +313,21 @@ If a deploy breaks production:
 
 To roll back the frontend, promote the previous deployment in Vercel.
 
+## Backups
+
+The Supabase free plan has no downloadable backups, so the Coolify service
+`prumo-backup` (a `postgres:17-alpine` container that only sleeps) runs the
+scheduled task `pg-dump-daily` at 06:00 UTC. It `pg_dump`s
+`DIRECT_DATABASE_URL` in custom format into the `prumo-pg-backups` volume as
+`prumo-<UTC timestamp>.dump`, checks the archive with `pg_restore -l`, and
+deletes dumps older than 14 days. The script lives in the service's compose
+entrypoint (`/usr/local/bin/prumo-backup`). Postgres only: Storage objects are
+not in the dump. The volume is on the same VPS, so this covers Supabase data
+loss, not loss of the VPS.
+
+Restore into an empty database (never over prod without a ruling):
+`pg_restore --no-owner --no-privileges -d "<target url>" prumo-<ts>.dump`.
+
 ## Deploys are triggered by
 
 `prumo-web` and `prumo-worker` are wired to `raphaelfh/prumo` branch `main`,
