@@ -52,12 +52,12 @@ The worker's `--queues` list above is the in-repo mirror of the Coolify
 entrypoint: `backend/tests/unit/test_celery_routes_drift.py` reads it from
 this file and fails when a routed queue is missing. Change both together.
 
-**Health checks.** The image has no `curl` or `wget`, which Coolify's HTTP
-probe runs inside the container, so the probe is off for `prumo-web`, and the
-image carries no `HEALTHCHECK` (it would mark every worker container unhealthy,
-since web and worker share the image). A deploy is therefore not gated on
-`/health`: read it after every deploy (deploy-release skill § Verify prod) and
-let the post-deploy smoke alarm.
+**Health checks.** Coolify's HTTP probe runs inside the container, so the
+image installs `curl` and `prumo-web` is probed on `GET /health` (port 8000): a
+build whose container never answers is not rolled out. The image carries no
+`HEALTHCHECK` (it would mark every worker container unhealthy, since web and
+worker share the image), and the worker has no probe. Still read `/health`
+after every deploy (deploy-release skill § Verify prod).
 
 **Client IP.** Traefik overwrites `X-Real-Ip` with the caller's address, so
 `prumo-web` sets `TRUSTED_CLIENT_IP_HEADER=X-Real-Ip`. The DNS record for the
@@ -280,9 +280,9 @@ The seed is idempotent end to end — every template seeder early-returns on
 an existing row and the instruction backfill is fill-if-null — so a deploy
 installs newly added global templates without a manual step and never
 touches existing rows. A seed or migration failure aborts the boot: the
-container exits before gunicorn binds, so the new build never serves. With
-Coolify's healthcheck off, read the deployment status and `/health` to see it
-(§ Rollback).
+container exits before gunicorn binds, so the new build never serves: the
+health probe fails and Coolify keeps the previous container. Read the
+deployment status and `/health` to see it (§ Rollback).
 
 The worker does NOT run Alembic or the seed — its entrypoint replaces the
 `CMD`. To add a migration:
@@ -313,11 +313,29 @@ If a deploy breaks production:
 
 To roll back the frontend, promote the previous deployment in Vercel.
 
+## Backups
+
+The Supabase free plan has no downloadable backups, so the Coolify service
+`prumo-backup` (a `postgres:17-alpine` container that only sleeps) runs the
+scheduled task `pg-dump-daily` at 06:00 UTC. It `pg_dump`s
+`DIRECT_DATABASE_URL` in custom format into the `prumo-pg-backups` volume as
+`prumo-<UTC timestamp>.dump`, checks the archive with `pg_restore -l`, and
+deletes dumps older than 14 days. The script lives in the service's compose
+entrypoint (`/usr/local/bin/prumo-backup`). Postgres only: Storage objects are
+not in the dump. The volume is on the same VPS, so this covers Supabase data
+loss, not loss of the VPS.
+
+Restore into an empty database (never over prod without a ruling):
+`pg_restore --no-owner --no-privileges -d "<target url>" prumo-<ts>.dump`.
+
 ## Deploys are triggered by
 
-`prumo-web` and `prumo-worker` are wired to `raphaelfh/prumo` branch `main`
-through Coolify's GitHub App, base directory `/backend`, build pack
-Dockerfile.
+`prumo-web` and `prumo-worker` are wired to `raphaelfh/prumo` branch `main`,
+base directory `/backend`, build pack Dockerfile. A GitHub repository webhook
+(`push` events) posts to Coolify's manual GitHub endpoint
+(`/webhooks/source/github/events/manual`); both applications hold the same
+manual webhook secret, so one push deploys both, and Coolify ignores pushes to
+any other branch.
 
 - Push to `main` → Coolify builds and rolls out both applications, each from
   its own build of the same Dockerfile. Coolify does **not** wait for CI: the

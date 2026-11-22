@@ -56,8 +56,11 @@ WORKDIR /app
 # opencv historically dlopen libGL/libxcb/glib at import; the slim base ships
 # none of these. Kept conservatively even though OCR is now disabled — removing
 # them is a separate, tested cleanup once cv2 is confirmed unreachable.
+# curl: Coolify runs its HTTP health probe inside the container with curl or
+# wget, and the slim base has neither; without it the probe always fails.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        curl \
         libgl1 libglib2.0-0 libxcb1 libxext6 libsm6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -99,8 +102,8 @@ ENV SOURCE_COMMIT=${SOURCE_COMMIT}
 
 # No HEALTHCHECK: web and worker share this image, and Celery serves no
 # HTTP, so an image-level probe marks every worker container unhealthy and
-# Coolify rolls the deploy back. Probe GET /health on the web service from the
-# platform instead; the worker gets no probe.
+# Coolify rolls the deploy back. Coolify probes GET /health on the web service
+# (with the curl installed above); the worker gets no probe.
 
 # Run migrations, converge the seed catalogue, then start the application.
 #
